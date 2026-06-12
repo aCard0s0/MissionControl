@@ -1,59 +1,42 @@
-# MissionControl
+# Hermes Mission Control
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.0.1.
+Operations dashboard for [Hermes Agent](https://hermes-agent.nousresearch.com/) deployments — deploy and inspect Hermes containers across Docker hosts, watch live telemetry and logs, and perform small safe edits.
 
-## Development server
+> Read and visualize almost everything. Edit only the smallest safe config surface.
 
-To start a local development server, run:
+Documentation: [docs/architecture.md](docs/architecture.md) · [docs/api.md](docs/api.md) · [docs/mission_control_guidelines.md](docs/mission_control_guidelines.md)
 
-```bash
-ng serve
-```
+## Modules
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+| Module | Stack | Role |
+|---|---|---|
+| [applications/mission-control-fe](applications/mission-control-fe) | Angular 22, signals, GSAP, CDK | "Night Ops" dashboard UI |
+| [applications/mission-control-server](applications/mission-control-server) | Spring Boot 3.5, Java 21, SQLite, docker-java | Docker gateway API + serves the UI |
 
-## Code scaffolding
+Both ship in **one container**: Spring Boot serves the Angular build and the API on the same origin.
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+## Quick start (Docker)
 
 ```bash
-ng generate --help
+scripts/deploy-docker.sh            # build combined image + run on :8080
+PORT=9000 scripts/deploy-docker.sh  # custom port
+MC_DATA_MODE=mock scripts/deploy-docker.sh   # demo mode with mock data
 ```
 
-## Building
+The script mounts `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
 
-To build the project run:
+## Development
 
 ```bash
-ng build
+# backend — http://localhost:8080
+cd applications/mission-control-server && mvn spring-boot:run
+
+# frontend — http://localhost:4300 (proxies /api and /health to :8080)
+cd applications/mission-control-fe && npm install && npm start
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+The frontend dev default is `dataMode: 'mock'` (no backend needed) — switch to `live` in [public/config.js](applications/mission-control-fe/public/config.js) to drive it from the real backend.
 
-## Running unit tests
+## Status
 
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+Live mode today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, persisted ops board. Hermes profile introspection (SOUL.md, skills, MCP, cron) is mock-only until the hermes adapter lands — the UI states this explicitly.

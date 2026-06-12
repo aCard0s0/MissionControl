@@ -1,0 +1,242 @@
+@if (agent(); as a) {
+  <div class="page-head" data-reveal>
+    <a routerLink="/agents" class="back mono">← agents</a>
+    <div class="ident">
+      <div class="glyph mono">{{ a.name.slice(0, 2).toUpperCase() }}</div>
+      <div>
+        <h2 class="mono">{{ a.name }}</h2>
+        <div class="sub dim">{{ a.role }} · <span class="mono faint">~/.hermes/profiles/{{ a.name }}/</span></div>
+      </div>
+    </div>
+    <div class="head-right">
+      <mc-status [status]="a.state" [live]="a.state === 'active'" />
+      <span class="chip info mono">{{ a.provider }} / {{ a.model }}</span>
+      <button class="btn sm danger ghost" (click)="removing.set(true)">delete profile</button>
+    </div>
+  </div>
+
+  <div class="tabbar mono" data-reveal>
+    @for (t of tabs; track t) {
+      <button class="tab" [class.on]="tab() === t" (click)="tab.set(t)">{{ t }}</button>
+    }
+  </div>
+
+  @switch (tab()) {
+    @case ('overview') {
+      <div class="grid cols-2">
+        <div class="panel" data-reveal>
+          <div class="panel-h">ACTIVE CONFIG <span class="spacer"></span><span class="chip off">read-only</span></div>
+          <div class="panel-b kv mono">
+            <div><span class="k">provider</span><span>{{ a.provider }}</span></div>
+            <div><span class="k">model</span><span>{{ a.model }}</span></div>
+            <div><span class="k">api key</span><span>{{ a.apiKeyMasked }}</span></div>
+            <div><span class="k">terminal.cwd</span><span>{{ a.cwd }}</span></div>
+            <div><span class="k">skills enabled</span><span>{{ enabledSkills(a) }}</span></div>
+            <div><span class="k">mcp servers</span><span>{{ a.mcp.length }}</span></div>
+            <p class="lock-hint">full edits via <code>hermes -p {{ a.name }} setup</code></p>
+          </div>
+        </div>
+
+        <div class="panel" data-reveal>
+          <div class="panel-h">
+            INTEGRATIONS
+            <span class="spacer"></span>
+            <button class="btn sm" [disabled]="pinging()" (click)="ping()">{{ pinging() ? 'checking…' : 'check connectivity' }}</button>
+          </div>
+          <div class="panel-b int-list">
+            @for (i of a.integrations; track i.kind) {
+              <div class="int-row">
+                <mc-status [status]="i.status" [label]="i.kind" />
+                <span class="mono faint detail">{{ i.detail }}</span>
+              </div>
+            }
+            @if (!a.integrations.length) { <p class="dim">No integrations configured.</p> }
+          </div>
+        </div>
+
+        <div class="panel" data-reveal>
+          <div class="panel-h">TODAY</div>
+          <div class="panel-b kv mono">
+            <div><span class="k">messages</span><span>{{ a.msgsToday }}</span></div>
+            <div><span class="k">tokens</span><span>{{ a.tokensToday }}k</span></div>
+            <div><span class="k">error rate</span><span [class.bad]="a.errorRate > 2">{{ a.errorRate.toFixed(1) }}%</span></div>
+            <div><span class="k">last active</span><span>{{ ago(a.lastActive) }}</span></div>
+          </div>
+        </div>
+
+        <div class="panel" data-reveal>
+          <div class="panel-h">SESSIONS</div>
+          <div class="panel-b">
+            @for (s of a.sessions; track s.id) {
+              <div class="sess-row mono">
+                <mc-status [status]="s.status" label=" " />
+                <span>{{ s.title }}</span>
+                <span class="faint">{{ s.platform }}</span>
+                <span class="faint right">{{ s.messages }} msgs · {{ ago(s.startedAt) }}</span>
+              </div>
+            }
+            @if (!a.sessions.length) { <p class="dim">No recent sessions.</p> }
+          </div>
+        </div>
+      </div>
+    }
+
+    @case ('soul') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">
+          SOUL.md
+          <span class="chip on">safe edit surface</span>
+          <span class="spacer"></span>
+          @if (soulSaved()) { <span class="chip on">saved ✓</span> }
+          <button class="btn sm ghost" [disabled]="!soulDirty()" (click)="soulDraft.set(a.soul)">revert</button>
+          <button class="btn sm primary" [disabled]="!soulDirty()" (click)="saveSoul()">save</button>
+        </div>
+        <div class="panel-b">
+          <textarea class="input soul" [ngModel]="soulDraft()" (ngModelChange)="soulDraft.set($event)" spellcheck="false"></textarea>
+          <p class="lock-hint">writes to <code>~/.hermes/profiles/{{ a.name }}/SOUL.md</code> — the agent reloads it on next turn</p>
+        </div>
+      </div>
+    }
+
+    @case ('skills') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">SKILLS <span class="spacer"></span><span class="faint">{{ enabledSkills(a) }}/{{ a.skills.length }} enabled</span></div>
+        <div class="panel-b">
+          @for (s of a.skills; track s.id) {
+            <div class="skill-row">
+              <button class="toggle mono" [class.on]="s.enabled" (click)="store.toggleSkill(a.id, s.id)">
+                {{ s.enabled ? 'ON' : 'OFF' }}
+              </button>
+              <div class="skill-id">
+                <span class="mono name">{{ s.name }}</span>
+                <span class="chip" [class.info]="s.source === 'hub'" [class.off]="s.source !== 'hub'">{{ s.source }} · v{{ s.version }}</span>
+              </div>
+              <span class="dim desc">{{ s.description }}</span>
+              <button class="btn sm danger ghost" (click)="store.removeSkill(a.id, s.id)">remove</button>
+            </div>
+          }
+          <div class="add-row">
+            <input class="input" [(ngModel)]="skillName" placeholder="skill name e.g. pdf-tools" />
+            <select class="select" [(ngModel)]="skillSource">
+              <option value="hub">skills hub</option>
+              <option value="user">local / user</option>
+            </select>
+            <button class="btn primary" [disabled]="!skillName.trim()" (click)="addSkill()">add skill</button>
+          </div>
+          <p class="lock-hint">skills follow the agentskills.io standard — also <code>hermes skills install &lt;name&gt;</code></p>
+        </div>
+      </div>
+    }
+
+    @case ('mcp') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">MCP SERVERS</div>
+        <div class="panel-b">
+          @for (m of a.mcp; track m.id) {
+            <div class="mcp-row mono">
+              <mc-status [status]="m.status" />
+              <span class="name">{{ m.name }}</span>
+              <span class="chip off">{{ m.transport }}</span>
+              <span class="faint">{{ m.tools }} tools</span>
+              <span class="faint">{{ m.latencyMs !== null ? m.latencyMs + 'ms' : '—' }}</span>
+              <span class="spacer"></span>
+              <button class="btn sm danger ghost" (click)="store.removeMcp(a.id, m.id)">disconnect</button>
+            </div>
+          }
+          @if (!a.mcp.length) { <p class="dim">No MCP servers connected.</p> }
+          <div class="add-row">
+            <input class="input" [(ngModel)]="mcpName" placeholder="server name e.g. github" />
+            <select class="select" [(ngModel)]="mcpTransport">
+              <option value="http">http</option>
+              <option value="sse">sse</option>
+              <option value="stdio">stdio</option>
+            </select>
+            <button class="btn primary" [disabled]="!mcpName.trim()" (click)="addMcp()">connect</button>
+          </div>
+          <p class="lock-hint">equivalent CLI: <code>hermes -p {{ a.name }} mcp install &lt;server&gt;</code></p>
+        </div>
+      </div>
+    }
+
+    @case ('jobs') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">SCHEDULED JOBS <span class="spacer"></span><a routerLink="/calendar" class="mono">calendar →</a></div>
+        <div class="panel-b">
+          @for (j of agentJobs(); track j.id) {
+            <div class="job-row">
+              <button class="toggle mono" [class.on]="j.enabled" (click)="store.toggleJob(j.id)">{{ j.enabled ? 'ON' : 'OFF' }}</button>
+              <div class="job-id">
+                <span class="mono name">{{ j.name }}</span>
+                <span class="mono faint">{{ j.schedule }} → {{ j.deliverTo }}</span>
+              </div>
+              <span class="mono faint">{{ j.lastRun ? 'last ' + ago(j.lastRun) + ' · ' + (j.lastStatus ?? '') : 'never ran' }}</span>
+              <span class="chip info mono">{{ until(j.nextRun) }}</span>
+            </div>
+            <div class="job-prompt mono dim">“{{ j.prompt }}”</div>
+          }
+          @if (!agentJobs().length) { <p class="dim">No jobs assigned to this agent.</p> }
+        </div>
+      </div>
+    }
+
+    @case ('activity') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">AGENT LOG TAIL</div>
+        <div class="panel-b logs mono">
+          @for (l of agentLogs(); track $index) {
+            <div class="log-line">
+              <span class="faint">{{ clock(l.ts) }}</span>
+              <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase() }}</span>
+              <span class="src faint">{{ l.source }}</span>
+              <span class="msg">{{ l.msg }}</span>
+            </div>
+          }
+          @if (!agentLogs().length) { <p class="dim">No recent entries for this agent.</p> }
+        </div>
+      </div>
+    }
+
+    @case ('files') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">
+          PROFILE FILES
+          <span class="spacer"></span>
+          @for (f of ['SOUL.md', 'MEMORY.md', 'config.yaml']; track f) {
+            <button class="tab file-tab" [class.on]="fileView() === f" (click)="fileView.set($any(f))">{{ f }}</button>
+          }
+        </div>
+        <div class="panel-b">
+          <pre class="file mono">{{ fileContent() }}</pre>
+          <p class="lock-hint">
+            @if (fileView() === 'SOUL.md') { editable in the <button class="linklike" (click)="tab.set('soul')">soul tab</button> }
+            @else { read-only — edit via <code>hermes -p {{ a.name }} setup</code> }
+          </p>
+        </div>
+      </div>
+    }
+  }
+
+  @if (removing()) {
+    <div class="scrim" (click)="removing.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="panel-h crit-h">DELETE PROFILE</div>
+        <div class="modal-b">
+          <p class="dim">Deletes <span class="mono">{{ a.name }}</span> — its config, memory, sessions, skills, jobs, and webhooks. Cannot be undone.</p>
+          <div class="field">
+            <label>type <span class="mono">{{ a.name }}</span> to confirm</label>
+            <input class="input" [(ngModel)]="confirmText" [placeholder]="a.name" />
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" (click)="removing.set(false)">cancel</button>
+            <button class="btn danger" [disabled]="confirmText !== a.name" (click)="confirmRemove()">delete permanently</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+} @else {
+  <div class="panel empty" data-reveal>
+    <p class="mono dim">Agent not found in the active container.</p>
+    <a routerLink="/agents" class="mono">← back to agents</a>
+  </div>
+}

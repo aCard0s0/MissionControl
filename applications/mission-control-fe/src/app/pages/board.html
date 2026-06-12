@@ -1,0 +1,42 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">{{ store.selectedContainer()?.name ?? '—' }}</div>
+    <h2>Ops Board</h2>
+  </div>
+  <span class="mono faint hint">drag cards between columns — state syncs to the agents' task queue</span>
+</div>
+
+<div class="board" data-reveal>
+  @for (col of columns; track col.key) {
+    <div class="col panel">
+      <div class="panel-h">
+        {{ col.label }}
+        <span class="spacer"></span>
+        <span class="count" [class.zero]="byColumn()[col.key].length === 0">{{ byColumn()[col.key].length }}</span>
+      </div>
+      <div class="col-body"
+           cdkDropList
+           [id]="'col-' + col.key"
+           [cdkDropListData]="col.key"
+           [cdkDropListConnectedTo]="listIds"
+           (cdkDropListDropped)="drop($event)">
+        @for (t of byColumn()[col.key]; track t.id) {
+          <div class="card" cdkDrag [cdkDragData]="t" [class.done]="col.key === 'done'">
+            <div class="card-top">
+              <span class="prio mono" [class]="'p-' + t.priority">{{ t.priority }}</span>
+              <span class="mono faint">{{ ago(t.createdAt) }}</span>
+            </div>
+            <div class="title">{{ t.title }}</div>
+            <div class="card-foot">
+              <span class="agent mono">@{{ agentName(t.agentId) }}</span>
+              @for (tag of t.tags; track tag) { <span class="tag mono">#{{ tag }}</span> }
+            </div>
+          </div>
+        }
+        @if (byColumn()[col.key].length === 0) {
+          <div class="empty-col mono faint">empty</div>
+        }
+      </div>
+    </div>
+  }
+</div>

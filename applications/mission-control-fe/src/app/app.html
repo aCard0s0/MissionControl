@@ -1,0 +1,74 @@
+<aside class="side">
+  <div class="brand">
+    <div class="sigil"><span class="beacon"></span>HERMES // OPS</div>
+    <h1>MISSION<br>CONTROL<span>_</span></h1>
+  </div>
+
+  <nav>
+    @for (item of nav; track item.path; let i = $index) {
+      <a [routerLink]="item.path" routerLinkActive="active"
+         [routerLinkActiveOptions]="{ exact: item.exact }">
+        <span class="idx">0{{ i + 1 }}</span>{{ item.label }}
+      </a>
+    }
+  </nav>
+
+  <div class="side-foot">
+    <mc-status [status]="store.fleetHealth()" [label]="'fleet ' + store.fleetHealth()" [live]="true" />
+    <mc-status [status]="store.dockerOverall()" [label]="'docker ' + store.dockerOverall()" />
+    <span>{{ store.containers().length }} containers · {{ store.agents().length }} profiles</span>
+    <span>hermes-agent v0.16.0</span>
+  </div>
+</aside>
+
+<header class="top">
+  <div class="ctx">
+    <button class="ctx-btn" (click)="pickerOpen.set(!pickerOpen())">
+      @if (store.selectedContainer(); as c) {
+        <mc-status [status]="c.status" label=" " [live]="c.status === 'running' || c.status === 'unhealthy'" />
+        <span>{{ c.name }}</span>
+        <span class="hash">{{ c.shortId }}</span>
+      } @else {
+        <span class="dim">no container</span>
+      }
+      <span class="caret">▾</span>
+    </button>
+
+    @if (pickerOpen()) {
+      <div class="scrim-click" (click)="pickerOpen.set(false)"></div>
+      <div class="ctx-pop">
+        @for (c of store.containers(); track c.id) {
+          <button class="ctx-row" [class.sel]="c.id === store.selectedContainerId()" (click)="pick(c.id)">
+            <mc-status [status]="c.status" label=" " />
+            <span>{{ c.name }}</span>
+            <span class="hash faint">{{ c.shortId }}</span>
+            <span class="meta">
+              {{ c.version }} · up {{ uptime(c.startedAt) }}<br>
+              cpu {{ c.cpu.toFixed(0) }}% · ram {{ (c.ram / c.ramTotal * 100).toFixed(0) }}%
+            </span>
+          </button>
+        }
+        <a class="ctx-foot" routerLink="/containers" (click)="pickerOpen.set(false)">+ deploy new container</a>
+      </div>
+    }
+  </div>
+
+  <span class="ctx-note">active context — views never mix containers</span>
+
+  <span class="spacer"></span>
+
+  <div class="clock">
+    <div class="t">{{ utc() }}</div>
+    <div class="d">{{ dateLine() }}</div>
+  </div>
+</header>
+
+<main>
+  @if (store.liveNotice(); as notice) {
+    <div class="live-notice mono">{{ notice }}</div>
+  }
+  @if (store.liveError(); as err) {
+    <div class="live-notice crit mono">{{ err }}</div>
+  }
+  <router-outlet />
+</main>

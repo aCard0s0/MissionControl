@@ -1,0 +1,168 @@
+@if (c(); as ctr) {
+  <div class="page-head" data-reveal>
+    <div>
+      <div class="crumb mono">CONTAINER OVERVIEW</div>
+      <h2>{{ ctr.name }} <span class="hash mono">{{ ctr.shortId }}</span></h2>
+    </div>
+    <div class="head-meta mono">
+      <mc-status [status]="ctr.status" [live]="ctr.status !== 'stopped'" />
+      <span class="sep">·</span>
+      <span>{{ ctr.image }}:{{ ctr.version }}</span>
+      <span class="sep">·</span>
+      <span>up {{ uptime(ctr.startedAt) }}</span>
+    </div>
+  </div>
+
+  @if (ctr.status === 'stopped') {
+    <div class="panel empty" data-reveal>
+      <p class="mono dim">Container is stopped — no telemetry.</p>
+      <p class="lock-hint">start it from <a routerLink="/containers">containers</a> or run <code>hermes gateway start</code></p>
+    </div>
+  } @else {
+    <!-- resource strip -->
+    <div class="grid res" data-reveal>
+      <div class="panel res-card">
+        <div class="panel-h">CPU</div>
+        <div class="panel-b">
+          <div class="big"><mc-num [value]="ctr.cpu" [decimals]="0" suffix="%" /></div>
+          <mc-gauge [value]="ctr.cpu" />
+          <mc-sparkline class="spark" [data]="ctr.cpuHist" [max]="100" />
+        </div>
+      </div>
+      <div class="panel res-card">
+        <div class="panel-h">MEMORY</div>
+        <div class="panel-b">
+          <div class="big"><mc-num [value]="ctr.ram / ctr.ramTotal * 100" [decimals]="0" suffix="%" /></div>
+          <mc-gauge [value]="ctr.ram / ctr.ramTotal * 100" />
+          <div class="sub mono faint">{{ mb(ctr.ram) }} / {{ mb(ctr.ramTotal) }}</div>
+        </div>
+      </div>
+      <div class="panel res-card">
+        <div class="panel-h">DISK</div>
+        <div class="panel-b">
+          @if (ctr.diskTotal > 0) {
+            <div class="big"><mc-num [value]="ctr.disk / ctr.diskTotal * 100" [decimals]="0" suffix="%" /></div>
+            <mc-gauge [value]="ctr.disk / ctr.diskTotal * 100" [warnAt]="75" [critAt]="85" />
+            <div class="sub mono faint">{{ ctr.disk.toFixed(1) }} / {{ ctr.diskTotal }} GB</div>
+          } @else {
+            <div class="big"><mc-num [value]="ctr.disk" [decimals]="2" /></div>
+            <div class="sub mono faint">GB on disk — no quota reported</div>
+          }
+        </div>
+      </div>
+      <div class="panel res-card">
+        <div class="panel-h">NETWORK I/O</div>
+        <div class="panel-b">
+          <div class="big net">
+            <span>▼ <mc-num [value]="ctr.netIn" [decimals]="0" /></span>
+            <span>▲ <mc-num [value]="ctr.netOut" [decimals]="0" /></span>
+          </div>
+          <div class="sub mono faint">KB/s</div>
+          <mc-sparkline class="spark cyan" [data]="ctr.netHist" />
+        </div>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <!-- agents -->
+      <div class="panel" data-reveal>
+        <div class="panel-h">
+          PROFILES / AGENTS
+          <span class="spacer"></span>
+          <a routerLink="/agents" class="mono">all →</a>
+        </div>
+        <div class="panel-b">
+          <div class="count-row mono">
+            <span class="count on">{{ agentCounts().active }} active</span>
+            <span class="count warn">{{ agentCounts().idle }} idle</span>
+            <span class="count off">{{ agentCounts().dormant }} dormant</span>
+          </div>
+          @for (a of store.containerAgents(); track a.id) {
+            <a class="agent-row" [routerLink]="['/agents', a.id]">
+              <mc-status [status]="a.state" label=" " [live]="a.state === 'active'" />
+              <span class="mono name">{{ a.name }}</span>
+              <span class="dim role">{{ a.role }}</span>
+              <span class="mono faint right">{{ a.model }} · {{ ago(a.lastActive) }}</span>
+            </a>
+          }
+        </div>
+      </div>
+
+      <!-- log tail -->
+      <div class="panel" data-reveal>
+        <div class="panel-h">
+          LOG TAIL
+          <span class="spacer"></span>
+          @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }}</span> }
+        </div>
+        <div class="panel-b logs mono">
+          @for (l of recentLogs(); track $index) {
+            <div class="log-line">
+              <span class="faint">{{ clock(l.ts) }}</span>
+              <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase().padEnd(5) }}</span>
+              <span class="src faint">{{ l.source }}</span>
+              <span class="msg">{{ l.msg }}</span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <!-- jobs -->
+      <div class="panel" data-reveal>
+        <div class="panel-h">
+          SCHEDULER
+          <span class="spacer"></span>
+          <a routerLink="/calendar" class="mono">calendar →</a>
+        </div>
+        <div class="panel-b">
+          <div class="count-row mono">
+            <span class="count on">{{ jobStats().enabled }} enabled</span>
+            <span class="count off">{{ jobStats().total - jobStats().enabled }} paused</span>
+            @if (jobStats().failed > 0) { <span class="count crit">{{ jobStats().failed }} failing</span> }
+          </div>
+          @if (jobStats().next; as next) {
+            <div class="next-job mono">
+              <span class="faint">next:</span> {{ next.name }}
+              <span class="chip info">{{ until(next.nextRun) }}</span>
+              <span class="faint">→ {{ next.deliverTo }}</span>
+            </div>
+          }
+          @for (j of store.containerJobs().slice(0, 4); track j.id) {
+            <div class="job-row mono">
+              <mc-status [status]="j.enabled ? (j.lastStatus === 'fail' ? 'fail' : 'ok') : 'off'" label=" " />
+              <span>{{ j.name }}</span>
+              <span class="faint sched">{{ j.schedule }}</span>
+              <span class="faint right">{{ j.lastRun ? 'ran ' + ago(j.lastRun) : 'never ran' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- connections -->
+      <div class="panel" data-reveal>
+        <div class="panel-h">CONNECTIONS</div>
+        <div class="panel-b">
+          <div class="count-row mono">
+            <span class="count on">{{ mcpStats().connected }} MCP connected</span>
+            @if (mcpStats().errored > 0) { <span class="count crit">{{ mcpStats().errored }} MCP failing</span> }
+          </div>
+          <div class="chips">
+            @for (i of comms(); track i.kind) {
+              <span class="chip" [class.on]="i.status === 'up'" [class.warn]="i.status === 'degraded'"
+                    [class.crit]="i.status === 'down'" [class.off]="i.status === 'off'">
+                {{ i.kind }} · {{ i.status }}
+              </span>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+} @else {
+  <div class="panel empty" data-reveal>
+    <p class="mono dim">No container selected.</p>
+    <p class="lock-hint">deploy one from <a routerLink="/containers">containers</a></p>
+  </div>
+}

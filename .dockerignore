@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/target
+**/.angular
+.git
+.claude
+docs
+*.md
+.DS_Store
+data

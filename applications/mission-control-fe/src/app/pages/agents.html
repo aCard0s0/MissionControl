@@ -1,0 +1,103 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">{{ store.selectedContainer()?.name ?? '—' }}</div>
+    <h2>Agents</h2>
+  </div>
+  <div class="head-stats mono">
+    <span><mc-num [value]="totals().active" /> active</span>
+    <span><mc-num [value]="totals().msgs" /> msgs today</span>
+    <span><mc-num [value]="totals().tokens" suffix="k" /> tokens today</span>
+  </div>
+  <button class="btn primary"
+          [disabled]="!store.selectedContainer() || store.config.dataMode === 'live'"
+          [title]="store.config.dataMode === 'live' ? 'profile management requires the hermes adapter (roadmap)' : ''"
+          (click)="createOpen.set(true)">+ new agent</button>
+</div>
+
+@if (store.containerAgents().length === 0) {
+  <div class="panel empty" data-reveal>
+    @if (store.config.dataMode === 'live') {
+      <p class="mono dim">Profile introspection requires the hermes adapter — not wired into the backend yet.</p>
+      <p class="lock-hint">inspect profiles directly: <code>docker exec -it &lt;container&gt; hermes profile list</code></p>
+    } @else {
+      <p class="mono dim">No profiles in this container.</p>
+      <p class="lock-hint">equivalent CLI: <code>hermes profile create &lt;name&gt;</code></p>
+    }
+  </div>
+}
+
+<div class="grid" data-reveal>
+  @for (a of store.containerAgents(); track a.id) {
+    <a class="panel card" [routerLink]="['/agents', a.id]">
+      <div class="panel-h">
+        <mc-status [status]="a.state" [live]="a.state === 'active'" />
+        <span class="spacer"></span>
+        <span class="faint">{{ ago(a.lastActive) }}</span>
+      </div>
+      <div class="panel-b">
+        <div class="glyph mono" [class.dim-glyph]="a.state === 'dormant'">{{ a.name.slice(0, 2).toUpperCase() }}</div>
+        <h3 class="mono">{{ a.name }}</h3>
+        <div class="role dim">{{ a.role }}</div>
+        <div class="model mono faint">{{ a.provider }} / {{ a.model }}</div>
+
+        <div class="stat-row mono">
+          <div><span class="v">{{ a.msgsToday }}</span><span class="k faint">msgs</span></div>
+          <div><span class="v">{{ a.tokensToday }}k</span><span class="k faint">tokens</span></div>
+          <div><span class="v" [class.bad]="a.errorRate > 2">{{ a.errorRate.toFixed(1) }}%</span><span class="k faint">errors</span></div>
+          <div><span class="v">{{ a.skills.length }}</span><span class="k faint">skills</span></div>
+        </div>
+
+        <div class="chips">
+          @for (kind of upIntegrations(a.id); track kind) {
+            <span class="chip on">{{ kind }}</span>
+          }
+          @if (a.mcp.length) { <span class="chip info">{{ a.mcp.length }} mcp</span> }
+        </div>
+      </div>
+    </a>
+  }
+</div>
+
+@if (createOpen()) {
+  <div class="scrim" (click)="createOpen.set(false)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h">NEW AGENT PROFILE — {{ store.selectedContainer()?.name }}</div>
+      <div class="modal-b">
+        <div class="field">
+          <label>profile name</label>
+          <input class="input" [(ngModel)]="name" placeholder="ops-bot" autofocus />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>provider</label>
+            <select class="select" [ngModel]="provider" (ngModelChange)="provider = $event; onProvider($event)">
+              @for (p of providers; track p) { <option [value]="p">{{ p }}</option> }
+            </select>
+          </div>
+          <div class="field">
+            <label>model</label>
+            <select class="select" [(ngModel)]="model">
+              @for (m of modelsFor(); track m) { <option [value]="m">{{ m }}</option> }
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>API key — stored in the profile's .env</label>
+          <input class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…" />
+        </div>
+        <div class="field">
+          <label>clone from — optional, copies config + soul + skills</label>
+          <select class="select" [(ngModel)]="cloneFrom">
+            <option value="">— blank profile —</option>
+            @for (a of store.containerAgents(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
+          </select>
+        </div>
+        <p class="lock-hint">equivalent CLI: <code>hermes profile create {{ name || 'my-agent' }}{{ cloneFrom ? ' --clone' : '' }}</code></p>
+        <div class="modal-actions">
+          <button class="btn ghost" (click)="createOpen.set(false)">cancel</button>
+          <button class="btn primary" [disabled]="!name.trim() || !apiKey.trim()" (click)="create()">create profile</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}

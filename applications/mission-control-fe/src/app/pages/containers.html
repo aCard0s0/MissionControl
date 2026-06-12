@@ -1,0 +1,159 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">FLEET</div>
+    <h2>Containers</h2>
+  </div>
+  <button class="btn primary" [disabled]="!connectedHosts().length"
+          [title]="connectedHosts().length ? '' : 'no connected docker host'"
+          (click)="openDeploy()">+ deploy container</button>
+</div>
+
+<!-- docker daemons the dashboard can deploy to -->
+<div class="panel hosts" data-reveal>
+  <div class="panel-h">
+    DOCKER HOSTS
+    <span class="spacer"></span>
+    <button class="btn sm ghost" (click)="addingHost.set(!addingHost())">{{ addingHost() ? 'cancel' : '+ remote host' }}</button>
+  </div>
+  <div class="panel-b">
+    @for (h of store.dockerHosts(); track h.id) {
+      <div class="host-row mono">
+        <mc-status [status]="h.status" [live]="h.status === 'connected'" />
+        <span class="hname">{{ h.name }}</span>
+        <span class="hurl faint">{{ h.url }}</span>
+        @if (h.engine) { <span class="chip off">{{ h.engine }} · api {{ h.apiVersion }}</span> }
+        @if (h.latencyMs !== null) { <span class="faint">{{ h.latencyMs }}ms</span> }
+        @if (h.note) { <span class="hnote faint">— {{ h.note }}</span> }
+        <span class="spacer"></span>
+        <button class="btn sm ghost" [disabled]="h.status === 'connecting'" (click)="store.checkDockerHost(h.id)">
+          {{ h.status === 'connecting' ? 'checking…' : 'check' }}
+        </button>
+        @if (h.kind === 'remote') {
+          <button class="btn sm danger ghost" (click)="store.removeDockerHost(h.id)">remove</button>
+        }
+      </div>
+    }
+    @if (addingHost()) {
+      <div class="host-add">
+        <input class="input" [(ngModel)]="hostName" placeholder="name e.g. edge-vm" />
+        <input class="input" [(ngModel)]="hostUrl" placeholder="tcp://10.0.0.5:2376" />
+        <button class="btn primary" [disabled]="!hostName.trim() || !hostUrlValid()" (click)="addHost()">connect</button>
+      </div>
+      <p class="lock-hint">remote daemons should expose the API over TLS — <code>dockerd -H tcp://0.0.0.0:2376 --tlsverify</code></p>
+    }
+  </div>
+</div>
+
+<div class="grid" data-reveal>
+  @for (c of store.containers(); track c.id) {
+    <div class="panel card" [class.sel]="c.id === store.selectedContainerId()">
+      <div class="panel-h">
+        <mc-status [status]="c.status" [live]="c.status !== 'stopped'" />
+        <span class="spacer"></span>
+        <span class="hash">{{ c.shortId }}</span>
+      </div>
+      <div class="panel-b">
+        <h3 class="mono">{{ c.name }}</h3>
+        <div class="meta mono faint">{{ c.image }}:{{ c.version }} · on {{ hostName_(c.hostId) }}</div>
+        <div class="stats mono">
+          <div><span class="faint">uptime</span><span>{{ uptime(c.startedAt) }}</span></div>
+          <div><span class="faint">profiles</span><span>{{ profileCount(c.id) }}</span></div>
+          <div><span class="faint">cpu</span><span>{{ c.cpu.toFixed(0) }}%</span></div>
+          <div><span class="faint">ram</span><span>{{ (c.ram / c.ramTotal * 100).toFixed(0) }}%</span></div>
+          <div><span class="faint">disk</span><span>{{ c.diskTotal > 0 ? (c.disk / c.diskTotal * 100).toFixed(0) + '%' : c.disk.toFixed(2) + ' GB' }}</span></div>
+        </div>
+        @if (c.status !== 'stopped') {
+          <mc-sparkline class="spark" [data]="c.cpuHist" [max]="100" />
+        } @else {
+          <div class="spark flat mono faint">no telemetry — stopped</div>
+        }
+        <div class="actions">
+          <button class="btn sm primary" (click)="open(c.id)">select</button>
+          @if (c.status === 'stopped') {
+            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'running')">start</button>
+          } @else {
+            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'stopped')">stop</button>
+          }
+          <span class="spacer"></span>
+          <button class="btn sm danger ghost" (click)="removing.set(c)">remove</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
+
+@if (!store.containers().length) {
+  <div class="panel empty" data-reveal>
+    @if (store.config.dataMode === 'live' && store.backendStatus() !== 'connected') {
+      <p class="mono dim">No containers — waiting for the Mission Control backend.</p>
+      <p class="lock-hint">the banner above shows the connection state; discovery starts as soon as it connects</p>
+    } @else {
+      <p class="mono dim">No Hermes containers detected{{ store.config.dataMode === 'live' ? ' on the connected hosts' : '' }}.</p>
+      <p class="lock-hint">deploy one above, or run <code>docker run -d nousresearch/hermes-agent</code></p>
+    }
+  </div>
+}
+
+<p class="lock-hint" data-reveal>
+  containers map to <code>docker run nousresearch/hermes-agent</code> — profiles inside map to <code>hermes profile create &lt;name&gt;</code>
+</p>
+
+@if (deployOpen()) {
+  <div class="scrim" (click)="deployOpen.set(false)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h">DEPLOY HERMES CONTAINER</div>
+      <div class="modal-b">
+        <div class="field">
+          <label>container name</label>
+          <input class="input" [(ngModel)]="deployName" placeholder="hermes-staging" autofocus />
+        </div>
+        <div class="field">
+          <label>image version</label>
+          <select class="select" [(ngModel)]="deployVersion">
+            <option>v0.16.0</option>
+            <option>v0.15.2</option>
+            <option>v0.15.0</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>docker host</label>
+          <select class="select" [(ngModel)]="deployHost">
+            @for (h of connectedHosts(); track h.id) {
+              <option [value]="h.id">{{ h.name }} — {{ h.url }}</option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label>seed profiles — comma separated, optional</label>
+          <input class="input" [(ngModel)]="deployProfiles" placeholder="ops, research" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" (click)="deployOpen.set(false)">cancel</button>
+          <button class="btn primary" [disabled]="!deployName.trim()" (click)="deploy()">deploy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (removing(); as c) {
+  <div class="scrim" (click)="removing.set(null)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h crit-h">REMOVE CONTAINER</div>
+      <div class="modal-b">
+        <p class="dim">
+          This deletes <span class="mono">{{ c.name }}</span> and all
+          {{ profileCount(c.id) }} profile(s), jobs, and webhooks inside it. It cannot be undone.
+        </p>
+        <div class="field">
+          <label>type <span class="mono">{{ c.name }}</span> to confirm</label>
+          <input class="input" [(ngModel)]="confirmText" [placeholder]="c.name" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" (click)="removing.set(null)">cancel</button>
+          <button class="btn danger" [disabled]="confirmText !== c.name" (click)="confirmRemove()">remove permanently</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}

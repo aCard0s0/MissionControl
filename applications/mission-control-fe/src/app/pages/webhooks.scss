@@ -1,0 +1,63 @@
+:host { display: block; }
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
+  h2 { font-size: 22px; }
+}
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+
+  .chip { cursor: pointer; background: var(--panel); transition: all .15s;
+    &:hover { border-color: var(--faint); }
+    &.on { color: var(--acc); border-color: rgba(63,240,143,.4); background: var(--acc-soft); }
+  }
+}
+
+.form-panel { margin-bottom: 14px; }
+.form { display: flex; flex-direction: column; gap: 12px; }
+.row { display: grid; grid-template-columns: 1fr 200px; gap: 12px; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 12px;
+}
+
+.hook {
+  .name { color: var(--text); font-size: 12px; letter-spacing: .02em; text-transform: none; }
+
+  .kv {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 11px;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+
+    div { display: flex; gap: 14px; align-items: baseline; }
+    .k { width: 70px; flex: none; color: var(--faint); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; }
+    .v { display: flex; flex-wrap: wrap; gap: 6px; word-break: break-all; }
+  }
+
+  .deliveries {
+    font-size: 11px;
+    .dl-head { font-size: 9px; letter-spacing: .16em; margin-bottom: 6px; }
+    .dl-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 4px 0;
+      .right { margin-left: auto; }
+    }
+  }
+}
+
+.empty { align-items: center; gap: 8px; padding: 48px; text-align: center; }

@@ -1,43 +1,38 @@
-# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
-# Compiled output
-/dist
-/tmp
-/out-tsc
-/bazel-out
-
-# Node
-/node_modules
+# Node / Angular (any module under applications/)
+node_modules/
+dist/
+.angular/
+out-tsc/
 npm-debug.log
 yarn-error.log
+.sass-cache/
+coverage/
+testem.log
+__screenshots__/
+
+# Java / Maven
+target/
+*.class
+
+# Local databases / runtime data
+data/
+*.db
 
 # IDEs and editors
-.idea/
 .project
 .classpath
 .c9/
 *.launch
 .settings/
 *.sublime-workspace
-
-# Visual Studio Code
+.idea/
+.history/
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/mcp.json
-.history/*
-
-# Miscellaneous
-/.angular/cache
-.sass-cache/
-/connect.lock
-/coverage
-/libpeerconnection.log
-testem.log
-/typings
-__screenshots__/
 
 # System files
 .DS_Store
