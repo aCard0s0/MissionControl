@@ -1,5 +1,7 @@
 // ── Hermes Mission Control · "Night Ops" design tokens ─────────────────────
 :root {
+  color-scheme: dark;
+
   --bg: #06080a;
   --panel: #0b0e12;
   --panel-2: #10141a;
@@ -13,6 +15,7 @@
 
   --acc: #3ff08f;          // signal green — live data
   --acc-soft: rgba(63, 240, 143, 0.12);
+  --acc-soft-2: rgba(63, 240, 143, 0.2);
   --amber: #ffb454;        // warning
   --amber-soft: rgba(255, 180, 84, 0.12);
   --red: #ff5d5d;          // critical
@@ -21,12 +24,68 @@
   --cyan-soft: rgba(77, 201, 240, 0.12);
   --violet: #a07bff;
 
+  // border tints of the accents
+  --acc-line: rgba(63, 240, 143, 0.4);
+  --amber-line: rgba(255, 180, 84, 0.4);
+  --red-line: rgba(255, 93, 93, 0.4);
+  --cyan-line: rgba(77, 201, 240, 0.4);
+
+  --glow: rgba(63, 240, 143, 0.025);       // ambient accent wash behind main
+  --scanline: rgba(255, 255, 255, 0.006);
+  --shadow: rgba(0, 0, 0, 0.55);           // popover / modal drop shadows
+  --scrim: rgba(2, 4, 6, 0.72);
+
+  // terminal stays dark in both themes — never theme-switched
+  --term-bg: #0b0e12;
+  --term-line: #1b222b;
+  --term-text: #e6edf3;
+  --term-dim: #94a1ae;
+  --term-faint: #5b6873;
+  --term-acc: #3ff08f;
+
   --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-disp: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --r: 4px;
   --r-lg: 6px;
+}
+
+// ── "Day Ops" — same room, lights on ────────────────────────────────────────
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel-2: #eef1f4;
+  --panel-3: #e7ebf0;
+  --line: #dde3e9;
+  --line-2: #c6cfd8;
+
+  --text: #11181f;
+  --dim: #4d5a66;
+  --faint: #75828f;
+
+  --acc: #0a9d5c;          // signal green, darkened for contrast on white
+  --acc-soft: rgba(10, 157, 92, 0.1);
+  --acc-soft-2: rgba(10, 157, 92, 0.18);
+  --amber: #b06000;
+  --amber-soft: rgba(176, 96, 0, 0.1);
+  --red: #d12f2f;
+  --red-soft: rgba(209, 47, 47, 0.08);
+  --cyan: #0b7fb3;
+  --cyan-soft: rgba(11, 127, 179, 0.1);
+  --violet: #6a3fd8;
+
+  --acc-line: rgba(10, 157, 92, 0.45);
+  --amber-line: rgba(176, 96, 0, 0.4);
+  --red-line: rgba(209, 47, 47, 0.4);
+  --cyan-line: rgba(11, 127, 179, 0.4);
+
+  --glow: rgba(10, 157, 92, 0.04);
+  --scanline: rgba(15, 23, 32, 0.008);
+  --shadow: rgba(15, 23, 32, 0.18);
+  --scrim: rgba(23, 32, 41, 0.45);
 }
 
 * { box-sizing: border-box; }
@@ -56,8 +115,8 @@ body::after {
     0deg,
     transparent 0px,
     transparent 3px,
-    rgba(255, 255, 255, 0.006) 3px,
-    rgba(255, 255, 255, 0.006) 4px
+    var(--scanline) 3px,
+    var(--scanline) 4px
   );
 }
 
@@ -122,10 +181,10 @@ a:hover { text-decoration: underline; }
   color: var(--dim);
   white-space: nowrap;
 
-  &.on    { color: var(--acc);   border-color: rgba(63,240,143,.35);  background: var(--acc-soft); }
-  &.warn  { color: var(--amber); border-color: rgba(255,180,84,.35);  background: var(--amber-soft); }
-  &.crit  { color: var(--red);   border-color: rgba(255,93,93,.35);   background: var(--red-soft); }
-  &.info  { color: var(--cyan);  border-color: rgba(77,201,240,.35);  background: var(--cyan-soft); }
+  &.on    { color: var(--acc);   border-color: var(--acc-line);   background: var(--acc-soft); }
+  &.warn  { color: var(--amber); border-color: var(--amber-line); background: var(--amber-soft); }
+  &.crit  { color: var(--red);   border-color: var(--red-line);   background: var(--red-soft); }
+  &.info  { color: var(--cyan);  border-color: var(--cyan-line);  background: var(--cyan-soft); }
   &.off   { color: var(--faint); }
 }
 
@@ -151,13 +210,13 @@ a:hover { text-decoration: underline; }
 
   &.primary {
     background: var(--acc-soft);
-    border-color: rgba(63,240,143,.4);
+    border-color: var(--acc-line);
     color: var(--acc);
-    &:hover:not(:disabled) { background: rgba(63,240,143,.2); border-color: var(--acc); }
+    &:hover:not(:disabled) { background: var(--acc-soft-2); border-color: var(--acc); }
   }
   &.danger {
     color: var(--red);
-    &:hover:not(:disabled) { background: var(--red-soft); border-color: rgba(255,93,93,.5); }
+    &:hover:not(:disabled) { background: var(--red-soft); border-color: var(--red-line); }
   }
   &.ghost { background: transparent; border-color: transparent; color: var(--dim);
     &:hover:not(:disabled) { color: var(--text); border-color: var(--line-2); background: var(--panel-2); }
@@ -217,7 +276,7 @@ a:hover { text-decoration: underline; }
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgba(2, 4, 6, 0.72);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   z-index: 100;
   display: flex;
@@ -232,12 +291,18 @@ a:hover { text-decoration: underline; }
   background: var(--panel);
   border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 80px var(--shadow);
+
+  @media (max-width: 760px) {
+    width: min(520px, 92vw);
+    max-height: 88dvh;
+    overflow-y: auto;
+  }
 }
 
 // CDK drag-drop ghosting
 .cdk-drag-preview {
-  box-shadow: 0 12px 40px rgba(0,0,0,.55);
+  box-shadow: 0 12px 40px var(--shadow);
   opacity: .95;
 }
 .cdk-drag-placeholder { opacity: .18; }

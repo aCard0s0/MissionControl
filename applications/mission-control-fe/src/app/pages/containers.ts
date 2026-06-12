@@ -23,9 +23,12 @@ export class ContainersPage {
 
   protected readonly deployOpen = signal(false);
   protected deployName = '';
-  protected deployVersion = 'v0.16.0';
+  protected deployVersion = '';
   protected deployProfiles = '';
   protected deployHost = 'dh-local';
+  protected readonly deployTags = signal<string[]>([]);
+  protected readonly tagsLoading = signal(false);
+  protected readonly tagsError = signal<string | null>(null);
 
   protected readonly addingHost = signal(false);
   protected hostName = '';
@@ -46,7 +49,11 @@ export class ContainersPage {
   protected openDeploy(): void {
     // never carry a stale host id into the modal — snap to a connected host
     this.deployHost = this.connectedHosts()[0]?.id ?? '';
+    this.deployTags.set([]);
+    this.tagsError.set(null);
+    this.tagsLoading.set(false);
     this.deployOpen.set(true);
+    void this.loadTags(this.deployHost);
   }
 
   protected profileCount(id: string): number {
@@ -61,11 +68,12 @@ export class ContainersPage {
   protected deploy(): void {
     const name = this.deployName.trim();
     const host = this.store.hostById(this.deployHost);
-    if (!name || !host || host.status !== 'connected') return;
+    if (!name || !host || host.status !== 'connected' || !this.deployVersion) return;
     const profiles = this.deployProfiles.split(',').map(p => p.trim()).filter(Boolean);
     const id = this.store.deployContainer(name, this.deployVersion, profiles, this.deployHost);
     this.deployOpen.set(false);
     this.deployName = this.deployProfiles = '';
+    this.deployTags.set([]);
     if (id) {
       // mock returns the id synchronously; live selects it after the daemon reports it
       this.store.selectContainer(id);
@@ -89,6 +97,32 @@ export class ContainersPage {
     this.addingHost.set(false);
     this.hostName = '';
     this.hostUrl = 'tcp://';
+  }
+
+  protected async loadTags(hostId: string): Promise<void> {
+    if (!hostId) {
+      this.deployTags.set([]);
+      this.deployVersion = '';
+      return;
+    }
+    this.tagsLoading.set(true);
+    this.tagsError.set(null);
+    try {
+      const { tags } = await this.store.imageTags(hostId);
+      if (hostId !== this.deployHost) return;   // host changed mid-flight — stale response
+      this.deployTags.set(tags);
+      if (!tags.includes(this.deployVersion)) {
+        this.deployVersion = tags.includes('latest') ? 'latest' : (tags[0] ?? '');
+      }
+    } catch (error) {
+      if (hostId !== this.deployHost) return;
+      const message = error instanceof Error ? error.message : String(error);
+      this.tagsError.set(message || 'failed to load image tags');
+      this.deployTags.set([]);
+      this.deployVersion = '';
+    } finally {
+      this.tagsLoading.set(false);
+    }
   }
 
   protected hostName_(id: string): string {

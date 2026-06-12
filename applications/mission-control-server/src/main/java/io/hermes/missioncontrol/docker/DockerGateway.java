@@ -3,20 +3,28 @@ package io.hermes.missioncontrol.docker;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
+import com.github.dockerjava.api.model.AccessMode;
+import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Frame;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.Image;
+import com.github.dockerjava.api.model.RestartPolicy;
 import com.github.dockerjava.api.model.Statistics;
 import com.github.dockerjava.api.model.StatisticNetworksConfig;
 import com.github.dockerjava.api.model.Version;
+import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.core.InvocationBuilder;
 import com.github.dockerjava.api.async.ResultCallback;
 import io.hermes.missioncontrol.AppProperties;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
 
@@ -58,14 +66,21 @@ public class DockerGateway {
         .exec();
 
     String filter = props.containerFilter() == null ? "" : props.containerFilter().toLowerCase(Locale.ROOT);
+    String hermesRepo = normalizeRepository(props.hermesImage());
     List<ContainerDto> result = new ArrayList<>();
     for (Container c : containers) {
       String name = primaryName(c);
       String image = c.getImage() == null ? "" : c.getImage();
-      if (!includeAll && !filter.isEmpty()
-          && !image.toLowerCase(Locale.ROOT).contains(filter)
-          && !name.toLowerCase(Locale.ROOT).contains(filter)) {
-        continue;
+      if (!includeAll) {
+        String repo = normalizeRepository(splitImage(image)[0]);
+        if (!hermesRepo.isEmpty()) {
+          if (!hermesRepo.equals(repo)) continue;
+        } else if (!filter.isEmpty()) {
+          if (!image.toLowerCase(Locale.ROOT).contains(filter)
+              && !name.toLowerCase(Locale.ROOT).contains(filter)) {
+            continue;
+          }
+        }
       }
       result.add(toDto(client, c, hostId));
     }
@@ -114,11 +129,32 @@ public class DockerGateway {
     return new String[]{image, "latest"};
   }
 
+  private static String normalizeRepository(String repository) {
+    if (repository == null) return "";
+    String repo = repository;
+    int idx = repo.lastIndexOf(':');
+    if (idx > 0 && repo.indexOf('/', idx) == -1) {
+      repo = repo.substring(0, idx);
+    }
+    String normalized = repo.toLowerCase(Locale.ROOT);
+    if (normalized.startsWith("docker.io/")) {
+      return normalized.substring("docker.io/".length());
+    }
+    if (normalized.startsWith("registry-1.docker.io/")) {
+      return normalized.substring("registry-1.docker.io/".length());
+    }
+    if (normalized.startsWith("index.docker.io/")) {
+      return normalized.substring("index.docker.io/".length());
+    }
+    return normalized;
+  }
+
   private static String mapStatus(String state, String statusText) {
     String s = state == null ? "" : state.toLowerCase(Locale.ROOT);
     if ("running".equals(s)) {
       return statusText != null && statusText.contains("(unhealthy)") ? "unhealthy" : "running";
     }
+    if ("restarting".equals(s)) return "unhealthy";
     if ("exited".equals(s) || "created".equals(s) || "paused".equals(s) || "dead".equals(s)) return "stopped";
     return "unknown";
   }
@@ -228,23 +264,98 @@ public class DockerGateway {
     return new LogLineDto(ts, level, "container", msg);
   }
 
+  // ── images ──────────────────────────────────────────────────────────────
+
+  public ImageTagsDto imageTags(String url) {
+    DockerClient client = clients.forUrl(url);
+    String repository = props.hermesImage() == null ? "" : props.hermesImage();
+    String targetRepo = normalizeRepository(repository);
+    if (targetRepo.isBlank()) {
+      return new ImageTagsDto(repository, List.of());
+    }
+    Set<String> tags = new HashSet<>();
+    List<Image> images = client.listImagesCmd().withShowAll(true).exec();
+    for (Image image : images) {
+      String[] repoTags = image.getRepoTags();
+      if (repoTags == null) continue;
+      for (String repoTag : repoTags) {
+        if (repoTag == null || repoTag.contains("<none>")) continue;
+        String[] parts = splitImage(repoTag);
+        String repo = normalizeRepository(parts[0]);
+        if (!targetRepo.equals(repo)) continue;
+        String tag = parts[1];
+        if (tag != null && !tag.isBlank()) tags.add(tag);
+      }
+    }
+    List<String> sorted = new ArrayList<>(tags);
+    sorted.sort(DockerGateway::compareTags);
+    return new ImageTagsDto(repository, sorted);
+  }
+
+  private static int compareTags(String left, String right) {
+    if ("latest".equals(left)) return "latest".equals(right) ? 0 : -1;
+    if ("latest".equals(right)) return 1;
+    int[] leftVer = parseSemver(left);
+    int[] rightVer = parseSemver(right);
+    if (leftVer != null && rightVer != null) {
+      for (int i = 0; i < 3; i++) {
+        if (leftVer[i] != rightVer[i]) {
+          return Integer.compare(rightVer[i], leftVer[i]);
+        }
+      }
+      return 0;
+    }
+    if (leftVer != null) return -1;
+    if (rightVer != null) return 1;
+    return right.compareTo(left);
+  }
+
+  private static int[] parseSemver(String tag) {
+    if (tag == null) return null;
+    String trimmed = tag.startsWith("v") ? tag.substring(1) : tag;
+    if (!trimmed.matches("\\d+(\\.\\d+){0,2}")) return null;
+    String[] parts = trimmed.split("\\.");
+    int[] result = new int[]{0, 0, 0};
+    for (int i = 0; i < parts.length && i < 3; i++) {
+      result[i] = Integer.parseInt(parts[i]);
+    }
+    return result;
+  }
+
   // ── lifecycle ────────────────────────────────────────────────────────────
 
   public String deploy(String url, String hostId, String name, String version, List<String> profiles) {
     DockerClient client = clients.forUrl(url);
     String tag = version == null || version.isBlank() ? "latest" : version;
     String image = props.hermesImage() + ":" + tag;
+    String volumeName = "mc-hermes-" + name;
 
     Map<String, String> labels = Map.of(
         "mc.managed", "true",
-        "mc.profiles", profiles == null ? "" : String.join(",", profiles));
+        "mc.profiles", profiles == null ? "" : String.join(",", profiles),
+        "mc.dataVolume", volumeName);
+
+    client.createVolumeCmd().withName(volumeName).exec();
+    HostConfig hostConfig = HostConfig.newHostConfig()
+        .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw))
+        .withRestartPolicy(RestartPolicy.unlessStoppedRestart());
 
     CreateContainerResponse created;
     try {
-      created = client.createContainerCmd(image).withName(name).withLabels(labels).exec();
+      created = client.createContainerCmd(image)
+          .withName(name)
+          .withLabels(labels)
+          .withHostConfig(hostConfig)
+          .withCmd("gateway", "run")
+          .exec();
     } catch (NotFoundException missingImage) {
       pull(client, props.hermesImage(), tag);
-      created = client.createContainerCmd(image).withName(name).withLabels(labels).exec();
+      created = client.createContainerCmd(image)
+          .withName(name)
+          .withLabels(labels)
+          .withHostConfig(hostConfig)
+          .withCmd("gateway", "run")
+          .exec();
     }
     client.startContainerCmd(created.getId()).exec();
     return created.getId();

@@ -109,15 +109,23 @@
         </div>
         <div class="field">
           <label>image version</label>
-          <select class="select" [(ngModel)]="deployVersion">
-            <option>v0.16.0</option>
-            <option>v0.15.2</option>
-            <option>v0.15.0</option>
+          <select class="select" [(ngModel)]="deployVersion"
+                  [disabled]="tagsLoading() || !deployTags().length">
+            @for (tag of deployTags(); track tag) {
+              <option [value]="tag">{{ tag }}</option>
+            }
           </select>
+          @if (tagsLoading()) {
+            <p class="lock-hint">loading image tags…</p>
+          } @else if (tagsError()) {
+            <p class="lock-hint">image tags unavailable — {{ tagsError() }}</p>
+          } @else if (!deployTags().length) {
+            <p class="lock-hint">No local Hermes images found on this host.</p>
+          }
         </div>
         <div class="field">
           <label>docker host</label>
-          <select class="select" [(ngModel)]="deployHost">
+          <select class="select" [(ngModel)]="deployHost" (ngModelChange)="loadTags($event)">
             @for (h of connectedHosts(); track h.id) {
               <option [value]="h.id">{{ h.name }} — {{ h.url }}</option>
             }
@@ -127,9 +135,15 @@
           <label>seed profiles — comma separated, optional</label>
           <input class="input" [(ngModel)]="deployProfiles" placeholder="ops, research" />
         </div>
+        <p class="lock-hint">
+          Hermes needs <code>/opt/data/.env</code>. Initialize a new volume once:
+          <code>docker run -it --rm -v mc-hermes-&lt;name&gt;:/opt/data nousresearch/hermes-agent setup</code>
+        </p>
         <div class="modal-actions">
           <button class="btn ghost" (click)="deployOpen.set(false)">cancel</button>
-          <button class="btn primary" [disabled]="!deployName.trim()" (click)="deploy()">deploy</button>
+          <button class="btn primary"
+                  [disabled]="!deployName.trim() || !deployTags().length || tagsLoading()"
+                  (click)="deploy()">deploy</button>
         </div>
       </div>
     </div>

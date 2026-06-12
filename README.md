@@ -11,19 +11,25 @@ Documentation: [docs/architecture.md](docs/architecture.md) · [docs/api.md](doc
 | Module | Stack | Role |
 |---|---|---|
 | [applications/mission-control-fe](applications/mission-control-fe) | Angular 22, signals, GSAP, CDK | "Night Ops" dashboard UI |
-| [applications/mission-control-server](applications/mission-control-server) | Spring Boot 3.5, Java 21, SQLite, docker-java | Docker gateway API + serves the UI |
+| [applications/mission-control-server](applications/mission-control-server) | Spring Boot 3.5, Java 24, SQLite, docker-java | Docker gateway API + serves the UI |
 
 Both ship in **one container**: Spring Boot serves the Angular build and the API on the same origin.
 
 ## Quick start (Docker)
 
 ```bash
-scripts/deploy-docker.sh            # build combined image + run on :8080
-PORT=9000 scripts/deploy-docker.sh  # custom port
-MC_DATA_MODE=mock scripts/deploy-docker.sh   # demo mode with mock data
+./mc start --build      # build combined image + deploy behind tailscale (default)
+./mc start --ts=off     # plain docker instead — http://localhost:8080
+./mc start --ts=off --mock --port=9000   # demo mode with mock data, custom port
+./mc status             # which flavor is running, where
+./mc logs -f            # follow app logs
 ```
 
-The script mounts `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
+Both flavors mount `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
+
+## Remote access (tailscale)
+
+The default `./mc start` flavor ([deploy/tailscale](deploy/tailscale)) runs the image behind a tailscale sidecar — reachable from any of your devices at `http://mission-control.<tailnet>.ts.net`, and unreachable from the LAN or internet (no host ports published). Runbook: [docs/deployment-tailscale.md](docs/deployment-tailscale.md).
 
 ## Development
 

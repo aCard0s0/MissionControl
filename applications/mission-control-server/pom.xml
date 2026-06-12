@@ -18,7 +18,7 @@
   <description>Mission Control backend — Docker gateway, host registry, board state, SPA host</description>
 
   <properties>
-    <java.version>21</java.version>
+    <java.version>24</java.version>
     <docker-java.version>3.4.2</docker-java.version>
   </properties>
 
@@ -34,6 +34,11 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <!-- web terminal: WebSocket bridge into `docker exec` -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-websocket</artifactId>
     </dependency>
 
     <!-- dashboard-owned state only (host registry, board tasks) — Hermes

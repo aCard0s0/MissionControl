@@ -11,9 +11,9 @@ Guiding principle (see [mission_control_guidelines.md](mission_control_guideline
 MissionControl/
 ├── applications/
 │   ├── mission-control-fe/        Angular 22 dashboard (zoneless, signals, GSAP)
-│   └── mission-control-server/    Spring Boot 3.5 backend (Java 21)
+│   └── mission-control-server/    Spring Boot 3.5 backend (Java 24)
 ├── docs/                          this documentation
-├── scripts/deploy-docker.sh       build + run the combined image
+├── mc                             manager script — build + deploy (tailscale or plain docker)
 ├── Dockerfile                     combined image (FE + BE, one container)
 └── pom.xml                        maven aggregator
 ```
@@ -72,6 +72,15 @@ which is the next roadmap step.
 | `MC_DB_PATH` | `/data/mission-control.db` | SQLite file |
 | `MC_API_BASE_URL` | `` (same origin) | only for split FE/BE deployments |
 | `MC_PORT` | `8080` | server port |
+
+### Container deploy defaults
+
+Mission Control deploys Hermes containers with:
+- `gateway run` as the command
+- a per-container volume mounted at `/opt/data`
+- restart policy `unless-stopped`
+
+New volumes must be initialized once with `nousresearch/hermes-agent setup` to create `/opt/data/.env`.
 
 ## Security notes
 

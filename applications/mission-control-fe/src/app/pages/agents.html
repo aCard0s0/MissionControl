@@ -9,19 +9,16 @@
     <span><mc-num [value]="totals().tokens" suffix="k" /> tokens today</span>
   </div>
   <button class="btn primary"
-          [disabled]="!store.selectedContainer() || store.config.dataMode === 'live'"
-          [title]="store.config.dataMode === 'live' ? 'profile management requires the hermes adapter (roadmap)' : ''"
-          (click)="createOpen.set(true)">+ new agent</button>
+          [disabled]="!store.selectedContainer()"
+          (click)="openCreate()">+ new agent</button>
 </div>
 
 @if (store.containerAgents().length === 0) {
   <div class="panel empty" data-reveal>
+    <p class="mono dim">No profiles in this container.</p>
+    <p class="lock-hint">equivalent CLI: <code>hermes profile create &lt;name&gt;</code></p>
     @if (store.config.dataMode === 'live') {
-      <p class="mono dim">Profile introspection requires the hermes adapter — not wired into the backend yet.</p>
       <p class="lock-hint">inspect profiles directly: <code>docker exec -it &lt;container&gt; hermes profile list</code></p>
-    } @else {
-      <p class="mono dim">No profiles in this container.</p>
-      <p class="lock-hint">equivalent CLI: <code>hermes profile create &lt;name&gt;</code></p>
     }
   </div>
 }
@@ -71,20 +68,30 @@
           <div class="field">
             <label>provider</label>
             <select class="select" [ngModel]="provider" (ngModelChange)="provider = $event; onProvider($event)">
-              @for (p of providers; track p) { <option [value]="p">{{ p }}</option> }
+              @for (p of providers(); track p) { <option [value]="p">{{ p }}</option> }
             </select>
           </div>
           <div class="field">
             <label>model</label>
             <select class="select" [(ngModel)]="model">
-              @for (m of modelsFor(); track m) { <option [value]="m">{{ m }}</option> }
+              @if (modelsLoading()) { <option value="" disabled>loading models…</option> }
+              @for (m of models(); track m) { <option [value]="m">{{ m }}</option> }
             </select>
           </div>
         </div>
-        <div class="field">
-          <label>API key — stored in the profile's .env</label>
-          <input class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…" />
-        </div>
+        @if (apiKeyRequired()) {
+          <div class="field">
+            <label>API key — stored in the profile's .env</label>
+            <div class="key-row">
+              <input class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…"
+                     (blur)="refreshLive()" />
+              <button class="btn ghost key-refresh" type="button"
+                      title="fetch live model list from the provider"
+                      [disabled]="!apiKey.trim()"
+                      (click)="refreshLive()">↻</button>
+            </div>
+          </div>
+        }
         <div class="field">
           <label>clone from — optional, copies config + soul + skills</label>
           <select class="select" [(ngModel)]="cloneFrom">
@@ -95,7 +102,9 @@
         <p class="lock-hint">equivalent CLI: <code>hermes profile create {{ name || 'my-agent' }}{{ cloneFrom ? ' --clone' : '' }}</code></p>
         <div class="modal-actions">
           <button class="btn ghost" (click)="createOpen.set(false)">cancel</button>
-          <button class="btn primary" [disabled]="!name.trim() || !apiKey.trim()" (click)="create()">create profile</button>
+          <button class="btn primary"
+                  [disabled]="!name.trim() || !model || (apiKeyRequired() && !apiKey.trim())"
+                  (click)="create()">create profile</button>
         </div>
       </div>
     </div>

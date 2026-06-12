@@ -55,7 +55,7 @@
 
     &:hover { border-color: var(--line-2); }
     &.out { opacity: .32; }
-    &.today { border-color: rgba(63,240,143,.5); .num { color: var(--acc); } }
+    &.today { border-color: var(--acc-line); .num { color: var(--acc); } }
     &.sel { background: var(--acc-soft); border-color: var(--acc); }
 
     .num { font-size: 11px; color: var(--dim); }
@@ -134,7 +134,7 @@
     background: var(--panel);
     transition: all .15s;
     &:hover { border-color: var(--faint); }
-    &.on { color: var(--acc); border-color: rgba(63,240,143,.4); background: var(--acc-soft); }
+    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
   }
 }
 
@@ -165,4 +165,37 @@
   color: var(--faint);
   &.ok { color: var(--acc); }
   &.bad { color: var(--red); }
+}
+
+@media (max-width: 760px) {
+  .page-head {
+    flex-wrap: wrap;
+    gap: 12px;
+    .month-nav { margin-left: 0; .label { min-width: 100px; } }
+  }
+
+  .cal {
+    padding: 10px;
+    .weekhead { gap: 3px; }
+    .grid { gap: 3px; }
+    .day {
+      padding: 3px 4px;
+      .num { font-size: 10px; }
+      .more { font-size: 8px; }
+    }
+    .legend { flex-wrap: wrap; gap: 10px; }
+  }
+
+  .jobs {
+    .job-line { flex-wrap: wrap; row-gap: 6px; }
+    .job-meta { margin-left: 0; }
+    .job-prompt { margin-left: 0; }
+  }
+
+  .form {
+    padding: 10px;
+    .row { grid-template-columns: 1fr; }
+  }
+
+  .cron-fields { grid-template-columns: repeat(5, minmax(44px, auto)); }
 }

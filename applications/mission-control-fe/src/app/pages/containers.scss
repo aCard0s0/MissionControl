@@ -45,7 +45,7 @@
 
 .card {
   transition: border-color .2s;
-  &.sel { border-color: rgba(63, 240, 143, .45); }
+  &.sel { border-color: var(--acc-line); }
   &:hover { border-color: var(--line-2); }
   &.sel:hover { border-color: var(--acc); }
 
@@ -95,3 +95,30 @@
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 
 .crit-h { color: var(--red); }
+
+@media (max-width: 1024px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .page-head { flex-wrap: wrap; gap: 8px; }
+
+  .hosts {
+    .host-row {
+      flex-wrap: wrap;
+      row-gap: 4px;
+      .hnote { flex-basis: 100%; white-space: normal; }
+      .spacer { flex-basis: 100%; }
+    }
+    .host-add { grid-template-columns: 1fr; }
+  }
+
+  .grid { grid-template-columns: 1fr; }
+
+  .empty { padding: 20px 12px; }
+
+  .modal-b {
+    padding: 10px;
+    .input, .select { width: 100%; }
+  }
+}

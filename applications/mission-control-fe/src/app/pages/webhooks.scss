@@ -17,7 +17,7 @@
 
   .chip { cursor: pointer; background: var(--panel); transition: all .15s;
     &:hover { border-color: var(--faint); }
-    &.on { color: var(--acc); border-color: rgba(63,240,143,.4); background: var(--acc-soft); }
+    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
   }
 }
 
@@ -61,3 +61,23 @@
 }
 
 .empty { align-items: center; gap: 8px; padding: 48px; text-align: center; }
+
+@media (max-width: 1024px) {
+  .list { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .page-head { flex-wrap: wrap; gap: 10px; }
+  .row { grid-template-columns: 1fr; }
+  .list { grid-template-columns: 1fr; }
+
+  .hook {
+    .panel-h { flex-wrap: wrap; row-gap: 6px; }
+    .kv div:first-child .v { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .deliveries .dl-row { flex-wrap: wrap; row-gap: 2px;
+      .right { flex-basis: 100%; margin-left: 0; }
+    }
+  }
+
+  .empty { padding: 28px 14px; }
+}

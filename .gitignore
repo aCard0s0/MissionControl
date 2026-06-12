@@ -37,3 +37,6 @@ data/
 # System files
 .DS_Store
 Thumbs.db
+
+# Deployment secrets (tailscale auth key etc.)
+deploy/**/.env

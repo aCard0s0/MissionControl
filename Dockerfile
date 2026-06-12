@@ -10,7 +10,7 @@ COPY applications/mission-control-fe/ ./
 RUN npx ng build
 
 # ── backend build (bundles the frontend into classpath:/static) ─────────────
-FROM maven:3.9-eclipse-temurin-21 AS be-build
+FROM maven:3.9-eclipse-temurin-24 AS be-build
 WORKDIR /srv
 COPY applications/mission-control-server/pom.xml ./
 RUN mvn -q -B dependency:go-offline
@@ -20,7 +20,7 @@ COPY --from=fe-build /fe/dist/MissionControl/browser ./src/main/resources/static
 RUN rm -f ./src/main/resources/static/config.js && mvn -q -B -DskipTests package
 
 # ── runtime ──────────────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:24-jre-alpine
 WORKDIR /app
 COPY --from=be-build /srv/target/mission-control-server-*.jar app.jar
 

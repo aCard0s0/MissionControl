@@ -17,7 +17,7 @@
 
   <div class="tabbar mono" data-reveal>
     @for (t of tabs; track t) {
-      <button class="tab" [class.on]="tab() === t" (click)="tab.set(t)">{{ t }}</button>
+      <button class="tab" [class.on]="tab() === t" (click)="selectTab(t)">{{ t }}</button>
     }
   </div>
 
@@ -79,6 +79,138 @@
           </div>
         </div>
       </div>
+    }
+
+    @case ('setup') {
+      <div class="panel setup-head" data-reveal>
+        <div class="panel-h">
+          SETUP STATUS
+          <span class="spacer"></span>
+          @if (setupLoading()) { <span class="faint">running hermes status…</span> }
+          <button class="btn sm ghost" [disabled]="setupLoading()" (click)="loadSetup()">refresh</button>
+        </div>
+        <div class="panel-b env-strip">
+          @if (setup(); as s) {
+            <mc-status [status]="s.envExists ? 'up' : 'warn'" [label]="s.envExists ? '.env' : '.env missing'" />
+            <span class="mono faint path">{{ s.envPath }}</span>
+            <span class="spacer"></span>
+            @if (!s.envExists) {
+              <button class="btn sm primary" [disabled]="envBusy() === '.env'" (click)="initEnv()">
+                {{ envBusy() === '.env' ? 'creating…' : 'create .env template' }}
+              </button>
+            }
+          } @else {
+            <p class="dim">{{ setupLoading() ? 'running hermes status…' : 'setup status unavailable — refresh to retry' }}</p>
+          }
+        </div>
+      </div>
+
+      @if (setup(); as s) {
+        <div class="grid cols-2">
+          <div class="panel" data-reveal>
+            <div class="panel-h">API KEYS</div>
+            <div class="panel-b">
+              @for (k of s.apiKeys; track k.envVar) {
+                <div class="env-row">
+                  <mc-status [status]="k.set ? 'up' : 'off'" [label]="k.label" />
+                  <span class="mono faint var">{{ k.envVar }}</span>
+                  @if (k.masked) { <span class="mono dim masked">{{ k.masked }}</span> }
+                  <span class="spacer"></span>
+                  <input class="input key-in" type="password" [(ngModel)]="envDrafts[k.envVar]" placeholder="value" />
+                  <button class="btn sm primary"
+                          [disabled]="!envDrafts[k.envVar]?.trim() || envBusy() === k.envVar"
+                          (click)="setEnv(k.envVar)">{{ envBusy() === k.envVar ? '…' : 'set' }}</button>
+                  @if (k.set) {
+                    <button class="btn sm danger ghost" [disabled]="envBusy() === k.envVar" (click)="clearEnv(k.envVar)">clear</button>
+                  }
+                </div>
+              }
+              @if (!s.apiKeys.length) { <p class="dim">No API keys defined.</p> }
+            </div>
+          </div>
+
+          <div class="panel" data-reveal>
+            <div class="panel-h">AUTH PROVIDERS</div>
+            <div class="panel-b">
+              @for (p of s.authProviders; track p.label) {
+                <div class="env-row">
+                  <mc-status [status]="p.ok ? 'up' : 'off'" [label]="p.label" />
+                  <span class="dim status-text">{{ p.status }}</span>
+                  <span class="spacer"></span>
+                  @if (p.hint) {
+                    <span class="chip info mono">run: {{ p.hint }}</span>
+                    <button class="btn sm ghost" (click)="store.openTerminal()">open terminal</button>
+                  }
+                </div>
+              }
+              @if (!s.authProviders.length) { <p class="dim">No auth providers detected.</p> }
+            </div>
+          </div>
+
+          <div class="panel" data-reveal>
+            <div class="panel-h">API-KEY PROVIDERS</div>
+            <div class="panel-b">
+              @for (p of s.apiKeyProviders; track p.label) {
+                <div class="env-row">
+                  <mc-status [status]="p.ok ? 'up' : 'off'" [label]="p.label" />
+                  <span class="dim status-text">{{ p.status }}</span>
+                </div>
+              }
+              @if (!s.apiKeyProviders.length) { <p class="dim">No API-key providers detected.</p> }
+              <p class="lock-hint">configure via <code>hermes model</code> in the terminal</p>
+            </div>
+          </div>
+
+          <div class="panel" data-reveal>
+            <div class="panel-h">MESSAGING PLATFORMS</div>
+            <div class="panel-b">
+              @for (m of s.messaging; track m.tokenVar) {
+                <div class="msg-block">
+                  <div class="env-row">
+                    <button class="msg-label" (click)="toggleMsg(m.tokenVar)">
+                      <mc-status [status]="m.ok ? 'up' : 'off'" [label]="m.label" />
+                    </button>
+                    <span class="dim status-text">{{ m.status }}</span>
+                    <span class="mono faint var">{{ m.tokenVar }}</span>
+                    <span class="spacer"></span>
+                    <button class="btn sm ghost" (click)="toggleMsg(m.tokenVar)">
+                      {{ msgOpen() === m.tokenVar ? 'close' : 'configure' }}
+                    </button>
+                  </div>
+                  @if (msgOpen() === m.tokenVar) {
+                    <div class="msg-config">
+                      <div class="msg-field">
+                        <label class="mono faint">{{ m.tokenVar }}</label>
+                        <input class="input" type="password" [(ngModel)]="envDrafts[m.tokenVar]" placeholder="token" />
+                        <button class="btn sm primary"
+                                [disabled]="!envDrafts[m.tokenVar]?.trim() || envBusy() === m.tokenVar"
+                                (click)="setEnv(m.tokenVar)">{{ envBusy() === m.tokenVar ? '…' : 'set' }}</button>
+                        @if (m.ok) {
+                          <button class="btn sm danger ghost" [disabled]="envBusy() === m.tokenVar" (click)="clearEnv(m.tokenVar)">clear</button>
+                        }
+                      </div>
+                      @if (m.homeVar; as hv) {
+                        <div class="msg-field">
+                          <label class="mono faint">{{ hv }}</label>
+                          @if (m.homeChannel) { <span class="chip off mono">{{ m.homeChannel }}</span> }
+                          <input class="input" [(ngModel)]="envDrafts[hv]" placeholder="home channel" />
+                          <button class="btn sm primary"
+                                  [disabled]="!envDrafts[hv]?.trim() || envBusy() === hv"
+                                  (click)="setEnv(hv)">{{ envBusy() === hv ? '…' : 'set' }}</button>
+                          @if (m.homeChannel) {
+                            <button class="btn sm danger ghost" [disabled]="envBusy() === hv" (click)="clearEnv(hv)">clear</button>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+              @if (!s.messaging.length) { <p class="dim">No messaging platforms detected.</p> }
+            </div>
+          </div>
+        </div>
+      }
     }
 
     @case ('soul') {
@@ -151,7 +283,15 @@
               <option value="sse">sse</option>
               <option value="stdio">stdio</option>
             </select>
-            <button class="btn primary" [disabled]="!mcpName.trim()" (click)="addMcp()">connect</button>
+            @if (mcpTransport === 'stdio') {
+              <input class="input" [(ngModel)]="mcpCommand" placeholder="command e.g. npx" />
+              <input class="input" [(ngModel)]="mcpArgs" placeholder="args e.g. @modelcontextprotocol/server-github" />
+            } @else {
+              <input class="input" [(ngModel)]="mcpUrl" placeholder="url e.g. https://mcp.example.com" />
+            }
+            <button class="btn primary"
+                    [disabled]="!mcpName.trim() || (mcpTransport === 'stdio' ? !mcpCommand.trim() : !mcpUrl.trim())"
+                    (click)="addMcp()">connect</button>
           </div>
           <p class="lock-hint">equivalent CLI: <code>hermes -p {{ a.name }} mcp install &lt;server&gt;</code></p>
         </div>
@@ -204,13 +344,23 @@
           @for (f of ['SOUL.md', 'MEMORY.md', 'config.yaml']; track f) {
             <button class="tab file-tab" [class.on]="fileView() === f" (click)="fileView.set($any(f))">{{ f }}</button>
           }
+          @if (fileView() === 'config.yaml') {
+            @if (configSaved()) { <span class="chip on">saved ✓</span> }
+            <button class="btn sm ghost" [disabled]="!configDirty()" (click)="configDraft.set(a.configYaml)">revert</button>
+            <button class="btn sm primary" [disabled]="!configDirty()" (click)="saveConfig()">save</button>
+          }
         </div>
         <div class="panel-b">
-          <pre class="file mono">{{ fileContent() }}</pre>
-          <p class="lock-hint">
-            @if (fileView() === 'SOUL.md') { editable in the <button class="linklike" (click)="tab.set('soul')">soul tab</button> }
-            @else { read-only — edit via <code>hermes -p {{ a.name }} setup</code> }
-          </p>
+          @if (fileView() === 'config.yaml') {
+            <textarea class="input soul" [ngModel]="configDraft()" (ngModelChange)="configDraft.set($event)" spellcheck="false"></textarea>
+            <p class="lock-hint">platform tokens (<code>slack</code>, <code>whatsapp</code>, <code>honcho</code>, …) and model overrides (<code>model.default</code> / <code>model.base_url</code>) live here — invalid YAML is rejected by the backend</p>
+          } @else {
+            <pre class="file mono">{{ fileContent() }}</pre>
+            <p class="lock-hint">
+              @if (fileView() === 'SOUL.md') { editable in the <button class="linklike" (click)="tab.set('soul')">soul tab</button> }
+              @else { read-only — edit via <code>hermes -p {{ a.name }} setup</code> }
+            </p>
+          }
         </div>
       </div>
     }

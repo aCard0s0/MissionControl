@@ -1,4 +1,8 @@
-<aside class="side">
+@if (sideOpen()) {
+  <div class="side-scrim" (click)="closeSide()"></div>
+}
+
+<aside class="side" [class.open]="sideOpen()">
   <div class="brand">
     <div class="sigil"><span class="beacon"></span>HERMES // OPS</div>
     <h1>MISSION<br>CONTROL<span>_</span></h1>
@@ -7,7 +11,7 @@
   <nav>
     @for (item of nav; track item.path; let i = $index) {
       <a [routerLink]="item.path" routerLinkActive="active"
-         [routerLinkActiveOptions]="{ exact: item.exact }">
+         [routerLinkActiveOptions]="{ exact: item.exact }" (click)="closeSide()">
         <span class="idx">0{{ i + 1 }}</span>{{ item.label }}
       </a>
     }
@@ -22,6 +26,8 @@
 </aside>
 
 <header class="top">
+  <button class="menu-btn" aria-label="menu" (click)="toggleSide()">☰</button>
+
   <div class="ctx">
     <button class="ctx-btn" (click)="pickerOpen.set(!pickerOpen())">
       @if (store.selectedContainer(); as c) {
@@ -48,7 +54,7 @@
             </span>
           </button>
         }
-        <a class="ctx-foot" routerLink="/containers" (click)="pickerOpen.set(false)">+ deploy new container</a>
+        <a class="ctx-foot" routerLink="/containers" (click)="pickerOpen.set(false); closeSide()">+ deploy new container</a>
       </div>
     }
   </div>
@@ -61,6 +67,8 @@
     <div class="t">{{ utc() }}</div>
     <div class="d">{{ dateLine() }}</div>
   </div>
+
+  <button class="theme-btn" aria-label="toggle theme" (click)="toggleTheme()">{{ theme() === 'dark' ? '☀' : '☾' }}</button>
 </header>
 
 <main>
@@ -72,3 +80,5 @@
   }
   <router-outlet />
 </main>
+
+<mc-terminal-panel />
