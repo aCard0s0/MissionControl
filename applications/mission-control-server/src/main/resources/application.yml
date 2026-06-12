@@ -21,6 +21,10 @@ mc:
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
   container-filter: ${MC_CONTAINER_FILTER:hermes}
   version: 0.1.0
+  # curated model catalog fallbacks, used when no live provider fetch is possible
+  models:
+    anthropic: ${MC_MODELS_ANTHROPIC:claude-fable-5,claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5-20251001}
+    openai: ${MC_MODELS_OPENAI:gpt-5.2,gpt-5.2-mini,gpt-5.1,gpt-4.1}
 
 logging:
   level:

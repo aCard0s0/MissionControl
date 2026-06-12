@@ -23,6 +23,30 @@ export interface DockerHost {
   note: string | null;
 }
 
+export type ModelProviderStatus = 'connected' | 'error' | 'unknown';
+
+/** A self-hosted model server (ollama) Mission Control can pull models on. */
+export interface ModelProvider {
+  id: string;
+  name: string;
+  /** base url of the ollama server, e.g. http://host.docker.internal:11434 */
+  url: string;
+  kind: 'ollama';
+  status: ModelProviderStatus;
+  version: string | null;      // e.g. "0.6.4"
+  /** human-readable reason when the provider is not connected */
+  detail: string | null;
+}
+
+/** A model available on an ollama provider (from GET {url}/api/tags). */
+export interface OllamaModel {
+  name: string;                // e.g. "gemma3:4b"
+  sizeBytes: number;
+  family: string;              // e.g. "gemma3"
+  parameterSize: string;       // e.g. "4.3B"
+  modifiedAt: number;          // epoch ms
+}
+
 export interface HermesContainer {
   id: string;
   name: string;

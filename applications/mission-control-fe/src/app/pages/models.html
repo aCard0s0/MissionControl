@@ -1,0 +1,109 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">FLEET</div>
+    <h2>Models</h2>
+  </div>
+  <button class="btn primary" (click)="addingProvider.set(!addingProvider())">
+    {{ addingProvider() ? 'cancel' : '+ model provider' }}
+  </button>
+</div>
+
+<!-- ollama registries Mission Control can pull models from -->
+<div class="panel providers" data-reveal>
+  <div class="panel-h">MODEL PROVIDERS</div>
+  <div class="panel-b">
+    @for (p of store.modelProviders(); track p.id) {
+      <div class="provider-row mono" [class.sel]="p.id === selectedId()">
+        <mc-status [status]="p.status" [live]="p.status === 'connected'" />
+        <span class="pname">{{ p.name }}</span>
+        <span class="purl faint">{{ p.url }}</span>
+        @if (p.version) { <span class="chip off">ollama {{ p.version }}</span> }
+        @if (p.detail) { <span class="pnote faint">— {{ p.detail }}</span> }
+        <span class="spacer"></span>
+        <button class="btn sm primary" (click)="select(p.id)">models</button>
+        <button class="btn sm ghost" (click)="store.checkModelProvider(p.id)">check</button>
+        <button class="btn sm danger ghost" (click)="removeProvider(p.id)">remove</button>
+      </div>
+    } @empty {
+      <p class="mono dim">No model providers registered — add an ollama endpoint above.</p>
+    }
+    @if (addingProvider()) {
+      <div class="provider-add">
+        <input class="input" [(ngModel)]="provName" placeholder="name e.g. mac-ollama" />
+        <input class="input" [(ngModel)]="provUrl" placeholder="http://host.docker.internal:11434" />
+        <button class="btn primary" [disabled]="!provName.trim() || !urlValid()" (click)="addProvider()">add</button>
+      </div>
+      <p class="lock-hint">
+        hermes containers must reach ollama via <code>host.docker.internal</code> or a LAN ip —
+        <code>localhost</code> inside a container is not the mac host
+      </p>
+    }
+  </div>
+</div>
+
+@if (selected(); as p) {
+  <div class="panel models-panel" data-reveal>
+    <div class="panel-h">
+      MODELS — {{ p.name }}
+      <span class="spacer"></span>
+      <button class="btn sm ghost" [disabled]="modelsLoading()" (click)="loadModels(p.id)">
+        {{ modelsLoading() ? 'loading…' : 'refresh' }}
+      </button>
+    </div>
+    <div class="panel-b">
+      @if (modelsLoading() && !models().length) {
+        <p class="mono dim">loading models…</p>
+      } @else if (modelsError()) {
+        <p class="mono dim">models unavailable — {{ modelsError() }}</p>
+      } @else if (!models().length) {
+        <p class="mono dim">No models on this provider — pull one below.</p>
+      } @else {
+        <div class="model-row head mono faint">
+          <span>name</span><span>params</span><span>family</span><span>size</span><span>modified</span><span></span>
+        </div>
+        @for (m of models(); track m.name) {
+          <div class="model-row mono">
+            <span class="mname">{{ m.name }}</span>
+            <span>{{ m.parameterSize }}</span>
+            <span class="faint">{{ m.family }}</span>
+            <span>{{ (m.sizeBytes / 1e9).toFixed(1) }} GB</span>
+            <span class="faint">{{ ago(m.modifiedAt) }}</span>
+            <span class="m-actions">
+              @if (removingModel() === m.name) {
+                <button class="btn sm danger" (click)="removeModel(m.name)">confirm</button>
+                <button class="btn sm ghost" (click)="removingModel.set(null)">cancel</button>
+              } @else {
+                <button class="btn sm danger ghost" (click)="removingModel.set(m.name)">remove</button>
+              }
+            </span>
+          </div>
+        }
+      }
+
+      <div class="pull-bar">
+        <input class="input" [(ngModel)]="pullName" placeholder="gemma3:4b" (keyup.enter)="pull()" />
+        <button class="btn primary" [disabled]="!pullName.trim()" (click)="pull()">pull model</button>
+      </div>
+      @if (pulls().length) {
+        <div class="pull-chips">
+          @for (pl of pulls(); track pl.model) {
+            <span class="chip"
+                  [class.info]="pl.status === 'pulling'"
+                  [class.on]="pl.status === 'done'"
+                  [class.crit]="pl.status === 'error'"
+                  [title]="pl.detail ?? ''">{{ pl.model }} · {{ pl.status }}</span>
+          }
+        </div>
+      }
+      <p class="lock-hint">equivalent CLI: <code>ollama pull gemma3:4b</code> on the provider host</p>
+    </div>
+  </div>
+}
+
+<div class="panel use-hint" data-reveal>
+  <div class="panel-h">USE IN AN AGENT</div>
+  <div class="panel-b">
+    <p class="lock-hint">new agent: <code>Agents → + new agent</code> and pick provider <code>ollama: &lt;provider name&gt;</code></p>
+    <p class="lock-hint">existing agent: set <code>model.default</code> + <code>model.base_url</code> in its <code>config.yaml</code> — Files tab on the agent page</p>
+  </div>
+</div>
