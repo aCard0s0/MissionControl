@@ -1,0 +1,27 @@
+server:
+  port: ${MC_PORT:8080}
+
+spring:
+  application:
+    name: mission-control-server
+  datasource:
+    url: jdbc:sqlite:${MC_DB_PATH:./data/mission-control.db}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite is a single-writer file database — one connection avoids lock contention
+      maximum-pool-size: 1
+  sql:
+    init:
+      mode: always
+
+mc:
+  data-mode: ${MC_DATA_MODE:live}
+  api-base-url: ${MC_API_BASE_URL:}
+  docker-socket: ${MC_DOCKER_SOCKET:unix:///var/run/docker.sock}
+  hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
+  container-filter: ${MC_CONTAINER_FILTER:hermes}
+  version: 0.1.0
+
+logging:
+  level:
+    com.github.dockerjava: WARN
