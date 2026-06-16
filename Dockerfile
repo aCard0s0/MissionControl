@@ -31,4 +31,8 @@ ENV MC_DATA_MODE=live \
 
 VOLUME /data
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Heap sized from the container's cgroup memory limit (set in compose), not host
+# RAM — the container shares the tailscale netns and would otherwise see host
+# totals. CPU pool sizing is left to the cgroup CPU quota (compose `cpus`); do
+# not pin -XX:ActiveProcessorCount. Fail fast on OOM so restart policy recovers.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]

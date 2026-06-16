@@ -12,8 +12,9 @@ MissionControl/
 ├── applications/
 │   ├── mission-control-fe/        Angular 22 dashboard (zoneless, signals, GSAP)
 │   └── mission-control-server/    Spring Boot 3.5 backend (Java 24)
+├── deploy/tailscale/              compose stack — tailscale sidecar + app + optional ollama
 ├── docs/                          this documentation
-├── mc                             manager script — build + deploy (tailscale or plain docker)
+├── mc                             manager script — build + deploy (tailscale or plain docker) + ollama
 ├── Dockerfile                     combined image (FE + BE, one container)
 └── pom.xml                        maven aggregator
 ```
@@ -28,7 +29,8 @@ MissionControl/
 │  ├── GET /health         liveness + docker connectivity              │
 │  ├── /api/hosts          docker host registry (SQLite) + live probes │
 │  ├── /api/containers     inventory / stats / logs / lifecycle        │
-│  └── /api/board/tasks    kanban state (SQLite)                       │
+│  ├── /api/board/tasks    kanban state (SQLite)                       │
+│  └── /ws/terminal        xterm.js ↔ docker exec (multi-tab shells)   │
 │            │                                                         │
 │            ▼ docker-java (zerodep transport)                         │
 │  unix:///var/run/docker.sock  (mounted)  +  tcp://remote:2376 hosts  │
@@ -60,6 +62,26 @@ Hermes profile/agent introspection (SOUL.md, skills, MCP, sessions, cron) is
 **not wired in live mode yet** — the UI says so explicitly. That requires a
 hermes adapter in the backend (`docker exec hermes …` / profile file reads),
 which is the next roadmap step.
+
+## Terminal
+
+A VSCode-style panel pinned to the bottom of the dashboard
+(`applications/mission-control-fe/src/app/shared/terminal-panel.ts`) bridges xterm.js to
+the backend `/ws/terminal` endpoint, which runs `docker exec` (interactive tty, bash/sh)
+inside a container — so `hermes` commands behave exactly as over `docker exec -it`. Binary
+WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`) sets the size.
+
+- **Tabs.** Each tab is an independent shell — its own xterm instance and its own WebSocket
+  to a chosen host+container (`terminal-session.ts`) — so you can run two agents in the same
+  container, or shells across different containers/hosts, at once. The backend treats every
+  connection as a separate `docker exec` keyed by WebSocket session id, so N concurrent
+  sessions need no server-side change.
+- **Targets.** A new tab defaults to the active container but is re-pointable to any container
+  via a per-tab picker. The tab list (host+container per tab) persists to `localStorage`
+  (`mc-terminal-tabs`) and is restored on reload; the exec sessions themselves always restart
+  on reconnect, since a shell is bound to its connection. Background tabs keep their socket
+  open, so their output keeps streaming while another tab is on screen.
+- **Live only.** The panel needs the live backend — it is disabled in mock mode.
 
 ## Environment variables (combined image)
 

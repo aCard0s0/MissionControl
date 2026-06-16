@@ -49,9 +49,17 @@ public class TerminalWebSocketConfig implements WebSocketConfigurer {
         InetSocketAddress host = request.getHeaders().getHost();
         URI o = URI.create(origin);
         int originPort = o.getPort() != -1 ? o.getPort() : ("https".equals(o.getScheme()) ? 443 : 80);
+        int hostPort = host == null ? -1 : host.getPort();
+        if (hostPort == 0) {
+          // no explicit port in the Host header (e.g. behind the tailscale
+          // serve proxy) — infer the default from the forwarded scheme
+          String proto = request.getHeaders().getFirst("X-Forwarded-Proto");
+          String scheme = proto != null ? proto : request.getURI().getScheme();
+          hostPort = "https".equalsIgnoreCase(scheme) ? 443 : 80;
+        }
         boolean sameOrigin = host != null && o.getHost() != null
             && o.getHost().equalsIgnoreCase(host.getHostString())
-            && originPort == host.getPort();
+            && originPort == hostPort;
         if (!sameOrigin) response.setStatusCode(HttpStatus.FORBIDDEN);
         return sameOrigin;
       }

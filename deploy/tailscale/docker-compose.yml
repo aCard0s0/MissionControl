@@ -5,10 +5,18 @@
 # the dashboard is invisible to the LAN and the internet. Tailscale serve
 # forwards tailnet TCP :80 to the app on 127.0.0.1:8080.
 #
+# An optional ollama service (profile "ollama", started by './mc start' unless
+# --ollama=off) provides a local model runtime. Unlike the dashboard it DOES
+# publish a host port (default 11434, override with OLLAMA_PORT): Hermes agent
+# containers run on the host daemon outside this stack and reach it via
+# http://host.docker.internal:11434. It is independent of tailscale so the
+# plain flavor ('./mc start --ts=off') can run it too.
+#
 # Usage (via the repo-root manager script — this flavor is the default):
 #   cp .env.example .env       # fill in TS_AUTHKEY
 #   ./mc start --build         # build hermes-mission-control:latest + compose up -d
 #   ./mc status                # tailscale health + the exact URL
+#   ./mc ollama pull llama3.2  # manage models in the ollama service
 #   open http://mission-control.<tailnet>.ts.net
 
 services:
@@ -47,8 +55,31 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - mission-control-data:/data
+    # Bound the blast radius of a runaway (e.g. leaked terminal exec threads):
+    # cpus caps CPU, mem_limit pairs with -XX:MaxRAMPercentage=75 (~768m heap),
+    # and pids_limit turns a thread leak into a contained failure instead of a
+    # host-starving spin. cgroup-level — unaffected by the shared tailscale netns.
+    cpus: "2.0"
+    mem_limit: 1g
+    pids_limit: 512
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]               # opt-in — './mc start' activates it
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"  # host port for agent containers outside the stack
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
 
 volumes:
   tailscale-state:
   mission-control-data:
+  ollama-models:

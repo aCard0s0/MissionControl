@@ -8,19 +8,29 @@ import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.model.Frame;
 import io.hermes.missioncontrol.docker.DockerClients;
 import io.hermes.missioncontrol.hosts.HostService;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.PingMessage;
+import org.springframework.web.socket.PongMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.AbstractWebSocketHandler;
@@ -29,8 +39,22 @@ import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorato
 /**
  * Bridges a browser xterm.js session to `docker exec` in a Hermes container.
  *
- * Protocol: binary frames carry raw terminal bytes both ways; text frames
+ * <p>Protocol: binary frames carry raw terminal bytes both ways; text frames
  * carry JSON control messages from the client ({"type":"resize","cols":..,"rows":..}).
+ *
+ * <p>Each session is a live docker-exec stream that holds two JVM-side daemon
+ * threads (a frame reader and a stdin writer). If a session is abandoned — a
+ * background tab, a closed browser, a half-open TCP connection — those threads
+ * can spin or pile up and peg the CPU. Three mechanisms keep that bounded:
+ * <ol>
+ *   <li><b>Deterministic teardown</b> ({@link #teardown}) stops both threads and
+ *       releases the cap slot. Every close path routes through {@code shells.remove}
+ *       so exactly one caller runs it, made idempotent by a per-shell CAS guard.</li>
+ *   <li><b>Heartbeat + reaper</b> ({@link #sweep}) pings each session and reaps
+ *       idle, over-lifetime, or unresponsive (dead-browser) sessions.</li>
+ *   <li><b>Concurrency caps</b> — a global and per-client ceiling on live sessions.</li>
+ * </ol>
+ * All limits come from {@link TerminalProperties} ({@code mc.terminal.*}).
  */
 @Component
 public class TerminalSocketHandler extends AbstractWebSocketHandler {
@@ -39,17 +63,77 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   private static final String SHELL =
       "command -v bash >/dev/null 2>&1 && exec bash -i || exec sh -i";
 
-  private record Shell(DockerClient client, String execId, PipedOutputStream stdin,
-                       ResultCallback.Adapter<Frame> output, WebSocketSession sender) {}
+  /**
+   * One live docker-exec shell. A mutable holder (not a record) so the reaper can
+   * read liveness timestamps and teardown can be guarded by {@link #torndown}.
+   */
+  private static final class Shell {
+    final DockerClient client;
+    final String execId;
+    final String containerId;
+    final PipedOutputStream stdin;
+    final ResultCallback.Adapter<Frame> output;
+    final WebSocketSession sender;   // ConcurrentWebSocketSessionDecorator — serializes sends
+    final WebSocketSession raw;      // undecorated session — id + remote address
+    final String clientKey;          // remote address, for the per-client cap
+    final long createdAtMs;
+    volatile long lastActivityMs;    // bumped on any inbound frame (keystroke/resize)
+    volatile long lastPongMs;        // bumped on pong — the half-open-TCP detector
+    final AtomicBoolean torndown = new AtomicBoolean(false);
+
+    Shell(DockerClient client, String execId, String containerId, PipedOutputStream stdin,
+          ResultCallback.Adapter<Frame> output, WebSocketSession sender, WebSocketSession raw,
+          String clientKey, long now) {
+      this.client = client;
+      this.execId = execId;
+      this.containerId = containerId;
+      this.stdin = stdin;
+      this.output = output;
+      this.sender = sender;
+      this.raw = raw;
+      this.clientKey = clientKey;
+      this.createdAtMs = now;
+      this.lastActivityMs = now;
+      this.lastPongMs = now;
+    }
+  }
 
   private final DockerClients clients;
   private final HostService hosts;
+  private final TerminalProperties props;
   private final ObjectMapper mapper = new ObjectMapper();
   private final Map<String, Shell> shells = new ConcurrentHashMap<>();
 
-  public TerminalSocketHandler(DockerClients clients, HostService hosts) {
+  // concurrency caps — globalCount is the source of truth, not shells.size()
+  private final AtomicInteger globalCount = new AtomicInteger();
+  private final Map<String, AtomicInteger> perClientCount = new ConcurrentHashMap<>();
+
+  // idle/heartbeat reaper — single daemon thread, mirrors ModelProviderService's executor pattern
+  private final ScheduledExecutorService reaper = Executors.newSingleThreadScheduledExecutor(r -> {
+    Thread t = new Thread(r, "terminal-reaper");
+    t.setDaemon(true);
+    return t;
+  });
+
+  public TerminalSocketHandler(DockerClients clients, HostService hosts, TerminalProperties props) {
     this.clients = clients;
     this.hosts = hosts;
+    this.props = props;
+  }
+
+  @PostConstruct
+  void startReaper() {
+    long tick = Math.max(1_000, props.heartbeatInterval().toMillis());
+    reaper.scheduleAtFixedRate(this::sweep, tick, tick, TimeUnit.MILLISECONDS);
+  }
+
+  @PreDestroy
+  void stopReaper() {
+    reaper.shutdownNow();
+    // tear down any still-open shells so their docker-exec threads don't outlive the app
+    for (String id : shells.keySet()) {
+      teardown(shells.remove(id), CloseStatus.GOING_AWAY.withReason("server shutdown"), "shutdown");
+    }
   }
 
   @Override
@@ -70,71 +154,109 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
       return;
     }
 
-    DockerClient client = clients.forUrl(url);
-    ExecCreateCmdResponse exec = client.execCreateCmd(containerId)
-        .withAttachStdin(true)
-        .withAttachStdout(true)
-        .withAttachStderr(true)
-        .withTty(true)
-        // plain sh, not a login shell — `sh -l` sources /etc/profile which
-        // resets PATH and loses the image's /opt/hermes/bin entry
-        .withCmd("sh", "-c", SHELL)
-        .exec();
+    // ── admission: global + per-client caps (atomic reserve, back out on per-client overflow) ──
+    String clientKey = remoteKey(session);
+    if (globalCount.get() >= props.maxSessions()) {
+      log.warn("terminal session rejected — global cap {} reached", props.maxSessions());
+      session.close(CloseStatus.SERVICE_OVERLOAD.withReason("terminal session limit reached"));
+      return;
+    }
+    AtomicInteger perClient = perClientCount.computeIfAbsent(clientKey, k -> new AtomicInteger());
+    if (perClient.incrementAndGet() > props.maxSessionsPerClient()) {
+      perClient.decrementAndGet();
+      log.warn("terminal session rejected — per-client cap {} reached for {}",
+          props.maxSessionsPerClient(), clientKey);
+      session.close(CloseStatus.SERVICE_OVERLOAD.withReason("per-client terminal limit reached"));
+      return;
+    }
+    globalCount.incrementAndGet();
+    // a slot is now reserved — every exit path below must release it (teardown / releaseSlot do)
 
-    PipedOutputStream stdin = new PipedOutputStream();
-    PipedInputStream stdinSource = new PipedInputStream(stdin, 16 * 1024);
-    // docker frames arrive on a transport thread; the decorator serializes sends
-    WebSocketSession sender = new ConcurrentWebSocketSessionDecorator(session, 10_000, 512 * 1024);
+    Shell shell = null;
+    try {
+      DockerClient client = clients.forUrl(url);
+      ExecCreateCmdResponse exec = client.execCreateCmd(containerId)
+          .withAttachStdin(true)
+          .withAttachStdout(true)
+          .withAttachStderr(true)
+          .withTty(true)
+          // plain sh, not a login shell — `sh -l` sources /etc/profile which
+          // resets PATH and loses the image's /opt/hermes/bin entry
+          .withCmd("sh", "-c", SHELL)
+          .exec();
 
-    ResultCallback.Adapter<Frame> output = new ResultCallback.Adapter<>() {
-      @Override
-      public void onNext(Frame frame) {
-        byte[] payload = frame.getPayload();
-        if (payload == null) return;
-        try {
-          sender.sendMessage(new BinaryMessage(payload));
-        } catch (IOException e) {
-          try { sender.close(); } catch (IOException ignored) { }
+      PipedOutputStream stdin = new PipedOutputStream();
+      PipedInputStream stdinSource = new PipedInputStream(stdin, 16 * 1024);
+      // docker frames arrive on a transport thread; the decorator serializes sends
+      WebSocketSession sender = new ConcurrentWebSocketSessionDecorator(session, 10_000, 512 * 1024);
+      long now = System.currentTimeMillis();
+
+      ResultCallback.Adapter<Frame> output = new ResultCallback.Adapter<>() {
+        @Override
+        public void onNext(Frame frame) {
+          byte[] payload = frame.getPayload();
+          if (payload == null) return;
+          try {
+            sender.sendMessage(new BinaryMessage(payload));
+          } catch (IOException e) {
+            // browser gone — full teardown so the exec threads stop and the slot frees
+            teardown(shells.remove(session.getId()),
+                CloseStatus.SERVER_ERROR.withReason("send failed"), "send-failed");
+          }
         }
-      }
 
-      @Override
-      public void onComplete() {
-        closeQuietly(sender, CloseStatus.NORMAL.withReason("shell exited"));
-      }
+        @Override
+        public void onComplete() {
+          teardown(shells.remove(session.getId()),
+              CloseStatus.NORMAL.withReason("shell exited"), "shell-exited");
+        }
 
-      @Override
-      public void onError(Throwable t) {
-        log.warn("terminal stream error for {}: {}", containerId, t.getMessage());
-        closeQuietly(sender, CloseStatus.SERVER_ERROR.withReason("stream error"));
-      }
-    };
+        @Override
+        public void onError(Throwable t) {
+          log.warn("terminal stream error for {}: {}", containerId, t.getMessage());
+          teardown(shells.remove(session.getId()),
+              CloseStatus.SERVER_ERROR.withReason("stream error"), "stream-error");
+        }
+      };
 
-    shells.put(session.getId(), new Shell(client, exec.getId(), stdin, output, sender));
-    client.execStartCmd(exec.getId()).withStdIn(stdinSource).exec(output);
+      shell = new Shell(client, exec.getId(), containerId, stdin, output, sender, session, clientKey, now);
+      shells.put(session.getId(), shell);   // register before start so an early frame finds the holder
+      client.execStartCmd(exec.getId()).withStdIn(stdinSource).exec(output);
+    } catch (Exception e) {
+      log.warn("terminal setup failed for {}: {}", containerId, e.getMessage());
+      if (shell != null) {
+        teardown(shells.remove(session.getId()),
+            CloseStatus.SERVER_ERROR.withReason("setup failed"), "setup-failure");
+      } else {
+        releaseSlot(clientKey);   // shell never built — release the reserved slot directly
+      }
+      closeQuietly(session, CloseStatus.SERVER_ERROR.withReason("setup failed"));
+    }
   }
 
   @Override
   protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) throws Exception {
     Shell shell = shells.get(session.getId());
     if (shell == null) return;
+    shell.lastActivityMs = System.currentTimeMillis();
     byte[] bytes = new byte[message.getPayload().remaining()];
     message.getPayload().get(bytes);
-    shell.stdin().write(bytes);
-    shell.stdin().flush();
+    shell.stdin.write(bytes);
+    shell.stdin.flush();
   }
 
   @Override
   protected void handleTextMessage(WebSocketSession session, TextMessage message) {
     Shell shell = shells.get(session.getId());
     if (shell == null) return;
+    shell.lastActivityMs = System.currentTimeMillis();
     try {
       JsonNode node = mapper.readTree(message.getPayload());
       if ("resize".equals(node.path("type").asText())) {
         int cols = node.path("cols").asInt(0);
         int rows = node.path("rows").asInt(0);
         if (cols > 0 && rows > 0) {
-          shell.client().resizeExecCmd(shell.execId()).withSize(rows, cols).exec();
+          shell.client.resizeExecCmd(shell.execId).withSize(rows, cols).exec();
         }
       }
     } catch (Exception e) {
@@ -143,12 +265,80 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   }
 
   @Override
+  protected void handlePongMessage(WebSocketSession session, PongMessage message) {
+    Shell shell = shells.get(session.getId());
+    if (shell != null) shell.lastPongMs = System.currentTimeMillis();
+  }
+
+  @Override
   public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-    Shell shell = shells.remove(session.getId());
-    if (shell == null) return;
-    // EOF on stdin makes the shell exit, which ends the exec on the daemon side
-    try { shell.stdin().close(); } catch (IOException ignored) { }
-    try { shell.output().close(); } catch (IOException ignored) { }
+    teardown(shells.remove(session.getId()), status, "ws-closed");
+  }
+
+  /** Reaper tick: ping each live session and reap the stale ones. */
+  private void sweep() {
+    long now = System.currentTimeMillis();
+    long idle = props.idleTimeout().toMillis();
+    long life = props.sessionMaxLifetime().toMillis();
+    long pong = props.pongTimeout().toMillis();
+    for (Shell shell : shells.values()) {   // ConcurrentHashMap iterator is weakly consistent — safe
+      try {
+        if (now - shell.createdAtMs > life) { reap(shell, "max-lifetime"); continue; }
+        if (now - shell.lastActivityMs > idle) { reap(shell, "idle"); continue; }
+        if (now - shell.lastPongMs > pong) { reap(shell, "pong-timeout"); continue; }
+        shell.sender.sendMessage(new PingMessage());   // serialized by the decorator
+      } catch (Exception e) {
+        reap(shell, "ping-failed");   // send threw → socket is gone
+      }
+    }
+    if (log.isDebugEnabled()) {
+      log.debug("terminal sweep: {} live session(s), global slot count {}", shells.size(), globalCount.get());
+    }
+  }
+
+  private void reap(Shell shell, String reason) {
+    teardown(shells.remove(shell.raw.getId()),
+        CloseStatus.GOING_AWAY.withReason("terminal " + reason), reason);
+  }
+
+  /**
+   * Idempotent teardown. Every path first calls {@code shells.remove(id)}, so only one caller gets
+   * the non-null Shell; the {@link Shell#torndown} CAS guards the body against a double-pass and so
+   * the cap slot is released exactly once. Steps 2–4 are what actually stop the JVM-side exec
+   * threads (the CPU-runaway source); step 1 is a best-effort nudge for the in-container shell.
+   */
+  private void teardown(Shell shell, CloseStatus status, String reason) {
+    if (shell == null || !shell.torndown.compareAndSet(false, true)) return;
+    // 1. best-effort: ask the in-container shell to exit while stdin is still open. With a TTY,
+    //    closing the pipe is not a reliable EOF, so send `exit` + Ctrl-D (EOT). We cannot kill the
+    //    exec process directly: docker-java has no stop-exec API and inspectExec's PID is the
+    //    daemon-host PID, not the in-container PID, so a `docker exec … kill` would hit the wrong
+    //    process namespace. This nudge reaps the common case (shell idle at a prompt).
+    try {
+      shell.stdin.write("exit\n".getBytes(StandardCharsets.US_ASCII));
+      shell.stdin.write(4);   // EOT
+      shell.stdin.flush();
+    } catch (IOException ignored) { /* pipe may already be gone */ }
+    // 2. abort the exec attach — closes the response stream, ending the frame-reader thread
+    try { shell.output.close(); } catch (IOException ignored) { }
+    // 3. close stdin — EOF to the PipedInputStream, ending the stdin-writer thread
+    try { shell.stdin.close(); } catch (IOException ignored) { }
+    // 4. close the websocket if still open
+    closeQuietly(shell.sender, status == null ? CloseStatus.NORMAL : status);
+    // 5. release the concurrency slot (exactly once, inside the CAS guard)
+    releaseSlot(shell.clientKey);
+    log.debug("terminal teardown {} ({})", shell.execId, reason);
+  }
+
+  private void releaseSlot(String clientKey) {
+    globalCount.decrementAndGet();
+    perClientCount.computeIfPresent(clientKey, (k, c) -> c.decrementAndGet() <= 0 ? null : c);
+  }
+
+  private static String remoteKey(WebSocketSession session) {
+    InetSocketAddress addr = session.getRemoteAddress();
+    if (addr == null || addr.getAddress() == null) return "unknown";
+    return addr.getAddress().getHostAddress();
   }
 
   private static void closeQuietly(WebSocketSession session, CloseStatus status) {

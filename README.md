@@ -23,9 +23,12 @@ Both ship in **one container**: Spring Boot serves the Angular build and the API
 ./mc start --ts=off --mock --port=9000   # demo mode with mock data, custom port
 ./mc status             # which flavor is running, where
 ./mc logs -f            # follow app logs
+./mc ollama pull llama3.2   # pull a model into the stack's ollama service
 ```
 
 Both flavors mount `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
+
+The stack also includes an **ollama** service (`./mc start` brings it up by default, `--ollama=off` opts out): a local model runtime on host port `11434` (override with `OLLAMA_PORT`), with models persisted in an `ollama-models` volume. Register it in the dashboard's Models page as `http://host.docker.internal:11434` (agent containers) or `http://localhost:11434` (this machine), and manage it with `./mc ollama …` (`list`, `pull`, `logs -f`, …).
 
 ## Remote access (tailscale)
 

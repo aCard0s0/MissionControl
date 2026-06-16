@@ -30,6 +30,14 @@ changes); `./mc status` shows tailscale health and the exact URL. `./mc start
 --ts=off` switches to a plain docker container with a published port instead —
 the two flavors never run side by side.
 
+`./mc start` also brings up the stack's **ollama** service (compose profile
+`ollama`, skip with `--ollama=off`). Unlike the dashboard it *does* publish a
+host port — default `11434`, override with `OLLAMA_PORT=11435 ./mc start` —
+because Hermes agent containers run on the host daemon outside this stack and
+reach it at `http://host.docker.internal:11434`. If another container already
+holds the port, `./mc start` warns and skips ollama without failing the
+deploy. Manage it with `./mc ollama …` (`list`, `pull <model>`, `logs -f`).
+
 ## Access
 
 From any device on your tailnet:

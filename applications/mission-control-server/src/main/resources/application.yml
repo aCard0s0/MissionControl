@@ -21,6 +21,15 @@ mc:
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
   container-filter: ${MC_CONTAINER_FILTER:hermes}
   version: 0.1.0
+  # terminal (/ws/terminal docker exec) session limits — bound runaway/abandoned
+  # shells so their JVM-side reader/writer threads cannot accumulate
+  terminal:
+    max-sessions: ${MC_TERMINAL_MAX_SESSIONS:50}
+    max-sessions-per-client: ${MC_TERMINAL_MAX_SESSIONS_PER_CLIENT:5}
+    idle-timeout: ${MC_TERMINAL_IDLE_TIMEOUT:30m}
+    session-max-lifetime: ${MC_TERMINAL_SESSION_MAX_LIFETIME:8h}
+    heartbeat-interval: ${MC_TERMINAL_HEARTBEAT_INTERVAL:30s}
+    pong-timeout: ${MC_TERMINAL_PONG_TIMEOUT:90s}
   # curated model catalog fallbacks, used when no live provider fetch is possible
   models:
     anthropic: ${MC_MODELS_ANTHROPIC:claude-fable-5,claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5-20251001}

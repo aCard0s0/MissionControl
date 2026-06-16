@@ -222,9 +222,25 @@ export class HermesStore {
     this.pollLogs();
   }
 
-  private toast(message: string): void {
+  toast(message: string): void {
     this.liveError.set(message);
     setTimeout(() => this.liveError.set(null), 6_000);
+  }
+
+  /** Run `fn` over `items` with at most `limit` in flight at once. Caps the
+   *  per-container fan-out of the pollers so a slow daemon can't open dozens of
+   *  concurrent requests every tick. */
+  private async mapPool<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const idx = next++;
+        results[idx] = await fn(items[idx]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+    return results;
   }
 
   private async refreshHosts(): Promise<void> {
@@ -256,40 +272,54 @@ export class HermesStore {
     } catch { /* keep last inventory */ }
   }
 
+  private agentsInFlight = false;
   private async refreshAgents(): Promise<void> {
-    const containers = this.containers();
-    if (!containers.length) {
-      this.agents.set([]);
-      return;
+    if (this.agentsInFlight) return;   // skip a tick rather than overlap fan-outs
+    this.agentsInFlight = true;
+    try {
+      const containers = this.containers();
+      if (!containers.length) {
+        this.agents.set([]);
+        return;
+      }
+      const prev = this.agents();
+      const lists = await this.mapPool(containers, 6, c =>
+        this.api.agents(c.hostId, c.id)
+          .then(list => list.map(a => this.toAgentProfile(a)))
+          // transient per-container failure — keep its last known profiles
+          .catch(() => prev.filter(a => a.containerId === c.id)));
+      this.agents.set(lists.flat());
+    } finally {
+      this.agentsInFlight = false;
     }
-    const prev = this.agents();
-    const lists = await Promise.all(containers.map(c =>
-      this.api.agents(c.hostId, c.id)
-        .then(list => list.map(a => this.toAgentProfile(a)))
-        // transient per-container failure — keep its last known profiles
-        .catch(() => prev.filter(a => a.containerId === c.id))));
-    this.agents.set(lists.flat());
   }
 
+  private statsInFlight = false;
   private async pollStats(): Promise<void> {
-    const running = this.containers().filter(c => c.status === 'running' || c.status === 'unhealthy');
-    await Promise.all(running.map(async c => {
-      try {
-        const s = await this.api.stats(c.hostId, c.id);
-        const prev = this.netMeta.get(c.id);
-        this.netMeta.set(c.id, { rx: s.rxBytes, tx: s.txBytes, at: s.sampledAt });
-        const dt = prev ? (s.sampledAt - prev.at) / 1000 : 0;
-        const netIn = prev && dt > 0 ? Math.max(0, (s.rxBytes - prev.rx) / dt / 1024) : 0;
-        const netOut = prev && dt > 0 ? Math.max(0, (s.txBytes - prev.tx) / dt / 1024) : 0;
-        const push = (h: number[], v: number) => [...h.slice(-59), v];
-        this.containers.update(cs => cs.map(x => x.id !== c.id ? x : {
-          ...x, cpu: s.cpuPercent, ram: s.ramMb, ramTotal: s.ramTotalMb, netIn, netOut,
-          cpuHist: push(x.cpuHist, s.cpuPercent),
-          ramHist: push(x.ramHist, s.ramMb),
-          netHist: push(x.netHist, netIn + netOut),
-        }));
-      } catch { /* container may have stopped between polls */ }
-    }));
+    if (this.statsInFlight) return;   // skip a tick rather than overlap fan-outs
+    this.statsInFlight = true;
+    try {
+      const running = this.containers().filter(c => c.status === 'running' || c.status === 'unhealthy');
+      await this.mapPool(running, 6, async c => {
+        try {
+          const s = await this.api.stats(c.hostId, c.id);
+          const prev = this.netMeta.get(c.id);
+          this.netMeta.set(c.id, { rx: s.rxBytes, tx: s.txBytes, at: s.sampledAt });
+          const dt = prev ? (s.sampledAt - prev.at) / 1000 : 0;
+          const netIn = prev && dt > 0 ? Math.max(0, (s.rxBytes - prev.rx) / dt / 1024) : 0;
+          const netOut = prev && dt > 0 ? Math.max(0, (s.txBytes - prev.tx) / dt / 1024) : 0;
+          const push = (h: number[], v: number) => [...h.slice(-59), v];
+          this.containers.update(cs => cs.map(x => x.id !== c.id ? x : {
+            ...x, cpu: s.cpuPercent, ram: s.ramMb, ramTotal: s.ramTotalMb, netIn, netOut,
+            cpuHist: push(x.cpuHist, s.cpuPercent),
+            ramHist: push(x.ramHist, s.ramMb),
+            netHist: push(x.netHist, netIn + netOut),
+          }));
+        } catch { /* container may have stopped between polls */ }
+      });
+    } finally {
+      this.statsInFlight = false;
+    }
   }
 
   private async pollLogs(): Promise<void> {

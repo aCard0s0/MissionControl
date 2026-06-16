@@ -151,6 +151,9 @@ export class HermesApi {
   private async req<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(this.base + path, {
       headers: { 'Content-Type': 'application/json' },
+      // abort a hung request so the pollers can't pile up pending fetches across
+      // ticks when the backend is slow; callers override with their own signal
+      signal: AbortSignal.timeout(15_000),
       ...init,
     });
     if (!res.ok) {
