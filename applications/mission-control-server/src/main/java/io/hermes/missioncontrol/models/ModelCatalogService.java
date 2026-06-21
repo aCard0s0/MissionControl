@@ -8,7 +8,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
@@ -27,11 +26,12 @@ public class ModelCatalogService {
       "embedding", "audio", "realtime", "image", "tts", "whisper", "moderation", "transcribe");
 
   private final ModelCatalogProperties props;
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper;
   private final HttpClient http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
 
-  public ModelCatalogService(ModelCatalogProperties props) {
+  public ModelCatalogService(ModelCatalogProperties props, ObjectMapper objectMapper) {
     this.props = props;
+    this.objectMapper = objectMapper;
   }
 
   public ModelCatalogDto configured(String provider) {
@@ -42,11 +42,14 @@ public class ModelCatalogService {
   /** Live list from the provider API; falls back to the configured list. */
   public ModelCatalogDto live(String provider, String apiKey) {
     String normalized = normalize(provider);
-    List<String> configured = configuredModels(normalized);
+    // resolve the fallback defensively: a provider the registry lists but has no
+    // curated CSV for (gemini, xai, …) must yield an empty live list, not a 404
+    List<String> configured = configuredModelsOrEmpty(normalized);
     try {
       List<String> models = switch (normalized) {
         case "anthropic" -> fetchAnthropic(apiKey);
         case "openai" -> fetchOpenai(apiKey);
+        case "openrouter" -> fetchOpenrouter(apiKey);
         default -> configured;
       };
       return new ModelCatalogDto(normalized, models, "live");
@@ -61,6 +64,8 @@ public class ModelCatalogService {
     String csv = switch (provider) {
       case "anthropic" -> props.anthropic();
       case "openai" -> props.openai();
+      case "nous" -> props.nous();
+      case "openrouter" -> props.openrouter();
       default -> throw new NoSuchElementException("unknown model provider: " + provider);
     };
     List<String> models = new ArrayList<>();
@@ -69,6 +74,16 @@ public class ModelCatalogService {
       if (!trimmed.isEmpty()) models.add(trimmed);
     }
     return models;
+  }
+
+  /** {@link #configuredModels} but empty (not an exception) for providers with no
+   *  curated list — the live path offers those a free-text id rather than a 404. */
+  private List<String> configuredModelsOrEmpty(String provider) {
+    try {
+      return configuredModels(provider);
+    } catch (NoSuchElementException e) {
+      return List.of();
+    }
   }
 
   private List<String> fetchAnthropic(String apiKey) throws Exception {
@@ -90,6 +105,17 @@ public class ModelCatalogService {
     return modelIds(send(request), ModelCatalogService::isOpenaiChatModel);
   }
 
+  /** OpenRouter's model list is public; the key is optional and only sent when present. */
+  private List<String> fetchOpenrouter(String apiKey) throws Exception {
+    HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("https://openrouter.ai/api/v1/models"))
+        .timeout(TIMEOUT)
+        .GET();
+    if (apiKey != null && !apiKey.isBlank()) {
+      builder.header("Authorization", "Bearer " + apiKey);
+    }
+    return modelIds(send(builder.build()), id -> true);
+  }
+
   private String send(HttpRequest request) throws Exception {
     HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() / 100 != 2) {
@@ -98,6 +124,9 @@ public class ModelCatalogService {
     return response.body();
   }
 
+  /** Preserves the provider API's own order, matching the configured (curated)
+   *  path which keeps its authored order — so both catalog sources order models
+   *  the same way (by source) rather than one alpha-sorting and the other not. */
   private List<String> modelIds(String body, Predicate<String> filter) throws Exception {
     JsonNode root = objectMapper.readTree(body);
     List<String> models = new ArrayList<>();
@@ -105,7 +134,6 @@ public class ModelCatalogService {
       String id = entry.path("id").asText("");
       if (!id.isBlank() && filter.test(id)) models.add(id);
     }
-    models.sort(Comparator.reverseOrder());
     return models;
   }
 

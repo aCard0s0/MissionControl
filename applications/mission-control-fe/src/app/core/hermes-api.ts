@@ -1,4 +1,4 @@
-import { BoardColumn, DockerHost, ModelProvider, OllamaModel } from './models';
+import { BoardColumn, ChatMessage, DockerHost, ModelProvider, OllamaModel, ProfileTemplateInput, SkillContent, TemplateMcp } from './models';
 
 // Typed client for mission-control-server. apiBaseUrl '' = same origin
 // (the combined image); a non-empty base supports split deployments.
@@ -57,6 +57,10 @@ export interface ApiSkillRef {
   enabled: boolean;
 }
 
+/** Wire shape for a skill's SKILL.md + files — identical to the domain
+ *  {@link SkillContent}, aliased so the two can't drift. */
+export type ApiSkillContent = SkillContent;
+
 export interface ApiMcpServer {
   id: string;
   name: string;
@@ -64,12 +68,32 @@ export interface ApiMcpServer {
   status: 'connected' | 'error' | 'disabled' | string;
   tools: number;
   latencyMs: number | null;
+  url?: string | null;
+  command?: string | null;
+  args?: string | null;
+}
+
+export interface ApiMcpTestResult {
+  name: string;
+  status: 'connected' | 'error' | 'disabled' | string;
+  tools: number;
+  latencyMs: number | null;
+  error: string | null;
 }
 
 export interface ApiIntegration {
   kind: string;
   status: 'up' | 'degraded' | 'down' | 'off' | string;
   detail: string;
+}
+
+export interface ApiSession {
+  id: string;
+  title: string;
+  platform: string;
+  startedAt: number;
+  messages: number;
+  status: 'open' | 'closed' | string;
 }
 
 export interface ApiModelCatalog {
@@ -117,6 +141,15 @@ export interface ApiSetupAuthProvider {
   hint: string | null;
 }
 
+export interface ApiModelProvider {
+  key: string;
+  label: string;
+  needsKey: boolean;
+  oauth: boolean;
+  hasCatalog: boolean;
+  envVar: string | null;          // API-key env var, or null for OAuth/keyless
+}
+
 export interface ApiSetupKeyProvider {
   label: string;
   ok: boolean;
@@ -139,6 +172,29 @@ export interface ApiAgentSetup {
   authProviders: ApiSetupAuthProvider[];
   apiKeyProviders: ApiSetupKeyProvider[];
   messaging: ApiSetupMessaging[];
+}
+
+export interface ApiTemplateSecret {
+  key: string;
+  set: boolean;
+  recoverable: boolean;
+}
+
+export interface ApiProfileTemplate {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  cwd: string;
+  soul: string;
+  memory: string;
+  skills: string[];
+  mcpServers: TemplateMcp[];
+  secrets: ApiTemplateSecret[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export class HermesApi {
@@ -273,10 +329,11 @@ export class HermesApi {
     apiKey: string,
     cloneFrom?: string,
     baseUrl?: string,
+    fromTemplateId?: string,
   ): Promise<ApiAgentProfile> {
     return this.req('/api/agents', {
       method: 'POST',
-      body: JSON.stringify({ hostId, containerId, name, provider, model, apiKey, cloneFrom, baseUrl }),
+      body: JSON.stringify({ hostId, containerId, name, provider, model, apiKey, cloneFrom, baseUrl, fromTemplateId }),
     });
   }
 
@@ -314,6 +371,17 @@ export class HermesApi {
     });
   }
 
+  skillContent(hostId: string, containerId: string, name: string, skillName: string): Promise<ApiSkillContent> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/content`);
+  }
+
+  updateSkillContent(hostId: string, containerId: string, name: string, skillName: string, body: string): Promise<ApiAgentProfile> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/content`, {
+      method: 'PUT',
+      body: JSON.stringify({ body }),
+    });
+  }
+
   addMcpServer(
     hostId: string,
     containerId: string,
@@ -332,12 +400,43 @@ export class HermesApi {
     });
   }
 
+  testMcpServer(hostId: string, containerId: string, name: string, serverName: string): Promise<ApiMcpTestResult> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp/${encodeURIComponent(serverName)}/test`, {
+      method: 'POST',
+    });
+  }
+
   integrations(hostId: string, containerId: string, name: string): Promise<ApiIntegration[]> {
     return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/integrations`);
   }
 
+  agentSessions(hostId: string, containerId: string, name: string): Promise<ApiSession[]> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/sessions`);
+  }
+
+  agentSessionMessages(hostId: string, containerId: string, name: string, sessionId: string): Promise<ChatMessage[]> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}`);
+  }
+
+  deleteAgentSession(hostId: string, containerId: string, name: string, sessionId: string): Promise<void> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    });
+  }
+
   agentSetup(hostId: string, containerId: string, name: string): Promise<ApiAgentSetup> {
     return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/setup`);
+  }
+
+  /** Container-level auth-provider status (e.g. Nous Portal OAuth) read from the
+   *  default profile — usable before any agent exists, for the create modal. */
+  authProviders(hostId: string, containerId: string): Promise<ApiSetupAuthProvider[]> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/auth-providers`);
+  }
+
+  /** The model-provider registry (single source of truth for the picker). */
+  modelProviderRegistry(): Promise<ApiModelProvider[]> {
+    return this.req('/api/providers');
   }
 
   setAgentEnv(
@@ -374,6 +473,40 @@ export class HermesApi {
 
   removeContainer(hostId: string, id: string): Promise<void> {
     return this.req(`/api/containers/${hostId}/${id}`, { method: 'DELETE' });
+  }
+
+  // ── profile templates (reusable agent blueprints) ──────────────────────────
+  profileTemplates(): Promise<ApiProfileTemplate[]> {
+    return this.req('/api/profile-templates');
+  }
+
+  createProfileTemplate(input: ProfileTemplateInput): Promise<ApiProfileTemplate> {
+    return this.req('/api/profile-templates', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  updateProfileTemplate(id: string, input: ProfileTemplateInput): Promise<ApiProfileTemplate> {
+    return this.req(`/api/profile-templates/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  }
+
+  deleteProfileTemplate(id: string): Promise<void> {
+    return this.req(`/api/profile-templates/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  captureTemplate(hostId: string, containerId: string, name: string, templateName?: string): Promise<ApiProfileTemplate> {
+    return this.req('/api/profile-templates/capture', {
+      method: 'POST',
+      body: JSON.stringify({ hostId, containerId, name, templateName }),
+    });
+  }
+
+  deployTemplate(id: string, hostId: string, containerId: string, name: string): Promise<ApiAgentProfile> {
+    return this.req(`/api/profile-templates/${encodeURIComponent(id)}/deploy`, {
+      method: 'POST',
+      body: JSON.stringify({ hostId, containerId, name }),
+    });
   }
 
   boardTasks(): Promise<ApiBoardTask[]> {

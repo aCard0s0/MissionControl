@@ -9,6 +9,7 @@ const NAV = [
   { path: '/containers', label: 'Containers', exact: false },
   { path: '/overview', label: 'Overview', exact: false },
   { path: '/agents', label: 'Agents', exact: false },
+  { path: '/profiles', label: 'Profiles', exact: false },
   { path: '/models', label: 'Models', exact: false },
   { path: '/board', label: 'Ops Board', exact: false },
   { path: '/calendar', label: 'Calendar', exact: false },

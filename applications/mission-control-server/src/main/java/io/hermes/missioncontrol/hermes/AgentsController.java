@@ -21,11 +21,14 @@ public class AgentsController {
   private final HermesProfiles profiles;
   private final HermesSetup setup;
   private final HostService hosts;
+  private final ProfileTemplateService templates;
 
-  public AgentsController(HermesProfiles profiles, HermesSetup setup, HostService hosts) {
+  public AgentsController(
+      HermesProfiles profiles, HermesSetup setup, HostService hosts, ProfileTemplateService templates) {
     this.profiles = profiles;
     this.setup = setup;
     this.hosts = hosts;
+    this.templates = templates;
   }
 
   @GetMapping
@@ -37,6 +40,14 @@ public class AgentsController {
   @PostMapping
   public AgentProfileDto create(@Valid @RequestBody CreateAgentRequest request) {
     DockerHostDto host = connected(request.hostId());
+    String templateId = request.fromTemplateId();
+    if (templateId != null && !templateId.isBlank()) {
+      // base profile exists with the request's provider/model/key — layer the
+      // template's soul/memory/skills/mcp/secrets on top of it. applyExisting
+      // re-reads the profile afterwards, so create it without a read-back.
+      profiles.createProfileBare(host.url(), request);
+      return templates.applyExisting(templateId, host.url(), request.containerId(), request.name());
+    }
     return profiles.create(host.url(), request);
   }
 
@@ -97,6 +108,27 @@ public class AgentsController {
     return profiles.uninstallSkill(host.url(), containerId, name, skillName);
   }
 
+  @GetMapping("/{hostId}/{containerId}/{name}/skills/{skillName}/content")
+  public SkillContentDto skillContent(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String skillName) {
+    DockerHostDto host = connected(hostId);
+    return profiles.readSkillContent(host.url(), containerId, name, skillName);
+  }
+
+  @PutMapping("/{hostId}/{containerId}/{name}/skills/{skillName}/content")
+  public AgentProfileDto updateSkillContent(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String skillName,
+      @RequestBody UpdateSkillContentRequest request) {
+    DockerHostDto host = connected(hostId);
+    return profiles.updateSkillContent(host.url(), containerId, name, skillName, request.body());
+  }
+
   @PostMapping("/{hostId}/{containerId}/{name}/mcp")
   public AgentProfileDto addMcp(
       @PathVariable String hostId,
@@ -115,6 +147,28 @@ public class AgentsController {
       @PathVariable String serverName) {
     DockerHostDto host = connected(hostId);
     return profiles.removeMcpServer(host.url(), containerId, name, serverName);
+  }
+
+  @PostMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}/test")
+  public McpTestResult testMcp(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String serverName) {
+    DockerHostDto host = connected(hostId);
+    return profiles.testMcpServer(host.url(), containerId, name, serverName);
+  }
+
+  /** Container-level auth-provider status (e.g. Nous Portal OAuth login), read
+   *  from the default profile's `hermes status`. OAuth tokens live at the
+   *  container level (auth.json), so this reflects whether a newly-created agent
+   *  on this container can reach providers like Nous before it even exists —
+   *  surfaced in the create-agent modal. */
+  @GetMapping("/{hostId}/{containerId}/auth-providers")
+  public List<AuthProviderDto> authProviders(
+      @PathVariable String hostId, @PathVariable String containerId) {
+    DockerHostDto host = connected(hostId);
+    return setup.setup(host.url(), containerId, "default").authProviders();
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/setup")
@@ -152,6 +206,37 @@ public class AgentsController {
       @PathVariable String name) {
     DockerHostDto host = connected(hostId);
     return profiles.integrations(host.url(), containerId, name);
+  }
+
+  @GetMapping("/{hostId}/{containerId}/{name}/sessions")
+  public List<SessionDto> sessions(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name) {
+    DockerHostDto host = connected(hostId);
+    return profiles.listSessions(host.url(), containerId, name);
+  }
+
+  @GetMapping(value = "/{hostId}/{containerId}/{name}/sessions/{sessionId}",
+      produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
+  public String sessionMessages(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String sessionId) {
+    DockerHostDto host = connected(hostId);
+    // already a JSON array string emitted by the in-container query
+    return profiles.readSessionMessages(host.url(), containerId, name, sessionId);
+  }
+
+  @DeleteMapping("/{hostId}/{containerId}/{name}/sessions/{sessionId}")
+  public void deleteSession(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String sessionId) {
+    DockerHostDto host = connected(hostId);
+    profiles.deleteSession(host.url(), containerId, name, sessionId);
   }
 
   private DockerHostDto connected(String hostId) {

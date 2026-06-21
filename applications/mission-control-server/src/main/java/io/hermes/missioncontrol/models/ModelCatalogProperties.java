@@ -7,9 +7,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * application.yml placeholders. Each value is a comma-separated list of
  * model ids.
  *
- * @param anthropic default Anthropic model ids
- * @param openai    default OpenAI model ids
+ * @param anthropic  default Anthropic model ids
+ * @param openai     default OpenAI model ids
+ * @param nous       default Nous Portal model ids (OAuth account — no live fetch)
+ * @param openrouter default OpenRouter model ids (provider/model form)
  */
 @ConfigurationProperties(prefix = "mc.models")
-public record ModelCatalogProperties(String anthropic, String openai) {
+public record ModelCatalogProperties(String anthropic, String openai, String nous, String openrouter) {
 }

@@ -1,5 +1,6 @@
 import {
-  AgentProfile, BoardTask, CronJob, DockerHost, HermesContainer, LogEntry, Webhook,
+  AgentProfile, BoardTask, ChatMessage, CronJob, DockerHost, HermesContainer, LogEntry,
+  ProfileTemplate, SessionInfo, Webhook,
 } from './models';
 
 const NOW = Date.now();
@@ -10,6 +11,69 @@ const DAY = 86_400_000;
 const hist = (base: number, jitter: number, n = 60): number[] =>
   Array.from({ length: n }, (_, i) =>
     Math.max(0, base + Math.sin(i / 7) * jitter * 0.6 + (Math.random() - 0.5) * jitter));
+
+/** Synthesizes a small but realistic chat transcript for a mock session. */
+export const buildMockChat = (s: SessionInfo): ChatMessage[] => {
+  const t0 = s.startedAt;
+  const longReport =
+    `Here's the full breakdown for "${s.title}":\n\n` +
+    Array.from({ length: 14 }, (_, i) =>
+      `  ${String(i + 1).padStart(2, '0')}. host edge-${(i % 4) + 1}  ·  p95 ${380 + i * 7}ms  ·  errors ${i % 3}  ·  cpu ${40 + i}%  ·  mem ${55 + (i % 20)}%`,
+    ).join('\n') +
+    `\n\nSummary: latency is within SLO on 3 of 4 edges; edge-2 shows a slow creep worth watching. ` +
+    `No paging-worthy conditions in the last hour. I'll keep sampling every 5 minutes and escalate if p95 crosses 600ms or errors exceed 10/min.`;
+  return [
+    { role: 'system', content: 'You are an SRE copilot. Be concise. Escalate only on paging-worthy conditions.', ts: t0 - 1_000 },
+    { role: 'user', content: `Can you look into "${s.title}"?`, ts: t0 },
+    {
+      role: 'assistant',
+      content: `On it. Let me pull the relevant signals for "${s.title}".`,
+      reasoning: 'User wants an investigation. Plan: query metrics, then summarize findings and propose next steps.',
+      toolCalls: JSON.stringify([
+        { id: 'call_1', type: 'function', function: { name: 'query_metrics', arguments: { window: '1h', topic: s.title } } },
+      ]),
+      ts: t0 + 4_000,
+    },
+    { role: 'tool', toolName: 'query_metrics', content: JSON.stringify({ samples: 1240, p95_ms: 412, errors: 3, host: 'edge-1' }), ts: t0 + 6_000 },
+    { role: 'assistant', content: longReport, ts: t0 + 9_000 },
+    { role: 'user', content: 'thanks — remind me in 30 minutes', ts: t0 + 40_000 },
+    { role: 'assistant', content: `Done — I'll re-check "${s.title}" in 30 minutes and ping you here on ${s.platform}.`, ts: t0 + 42_000 },
+  ];
+};
+
+export const seedTemplates = (): ProfileTemplate[] => [
+  {
+    id: 'pt-ops', name: 'ops-sre', description: 'Production SRE copilot — monitoring, paging, runbooks.',
+    provider: 'anthropic', model: 'claude-fable-5', baseUrl: '', cwd: '/opt/data',
+    soul: '# SOUL.md — ops-sre\n\nYou are an SRE copilot. Be concise. Escalate only on paging-worthy conditions.\n',
+    memory: '# MEMORY.md\n\n- SLO: p95 < 600ms, errors < 10/min.\n',
+    skills: ['daily-briefing', 'web-research'],
+    mcpServers: [
+      { name: 'github', transport: 'http', url: 'https://api.githubcopilot.com/mcp', enabled: true },
+      { name: 'grafana', transport: 'stdio', command: 'mcp-grafana', args: '--url http://grafana:3000', enabled: true },
+    ],
+    secrets: [
+      { key: 'ANTHROPIC_API_KEY', set: true, recoverable: true },
+      { key: 'GITHUB_TOKEN', set: true, recoverable: true },
+    ],
+    createdAt: NOW - 9 * DAY, updatedAt: NOW - 2 * DAY,
+  },
+  {
+    id: 'pt-research', name: 'research', description: 'Deep multi-source research and synthesis.',
+    provider: 'anthropic', model: 'claude-sonnet-4-6', baseUrl: '', cwd: '/opt/data',
+    soul: '# SOUL.md — research\n\nYou are a meticulous research analyst. Cite sources. Flag uncertainty.\n',
+    memory: '# MEMORY.md\n\n(empty)\n',
+    skills: ['web-research', 'deep-research'],
+    mcpServers: [
+      { name: 'notion', transport: 'sse', url: 'https://mcp.notion.com/sse', enabled: true },
+    ],
+    secrets: [
+      { key: 'ANTHROPIC_API_KEY', set: true, recoverable: true },
+      { key: 'TAVILY_API_KEY', set: false, recoverable: false },
+    ],
+    createdAt: NOW - 5 * DAY, updatedAt: NOW - 5 * DAY,
+  },
+];
 
 export const seedDockerHosts = (localSocket: string): DockerHost[] => [
   {
@@ -137,9 +201,9 @@ export const seedAgents = (): AgentProfile[] => [
       { id: 's4', name: 'pdf-tools', source: 'bundled', version: '2.1.0', description: 'Read and assemble PDF reports', enabled: false },
     ],
     mcp: [
-      { id: 'm1', name: 'github', transport: 'http', status: 'connected', tools: 24, latencyMs: 88 },
-      { id: 'm2', name: 'grafana', transport: 'sse', status: 'connected', tools: 9, latencyMs: 41 },
-      { id: 'm3', name: 'postgres-ro', transport: 'stdio', status: 'error', tools: 0, latencyMs: null },
+      { id: 'm1', name: 'github', transport: 'http', status: 'connected', tools: 24, latencyMs: 88, url: 'https://mcp.github.com/sse' },
+      { id: 'm2', name: 'grafana', transport: 'sse', status: 'connected', tools: 9, latencyMs: 41, url: 'https://grafana.internal/mcp' },
+      { id: 'm3', name: 'postgres-ro', transport: 'stdio', status: 'error', tools: 0, latencyMs: null, command: 'npx', args: '@modelcontextprotocol/server-postgres' },
     ],
     integrations: [
       { kind: 'slack', status: 'up', detail: '@atlas-ops · #ops-alerts · up 14d' },
@@ -390,3 +454,113 @@ export const seedWebhooks = (): Webhook[] => [
     ],
   },
 ];
+
+/** Mock SKILL.md bodies keyed by skill name — the agent-authored ('user') skills
+ *  get hand-written content so the explore/edit viewer has something real to show
+ *  offline. Skills missing here fall back to a synthesized stub in the store. */
+export const seedSkillBodies = (): Record<string, string> => ({
+  'incident-runbook': `---
+name: incident-runbook
+description: Walks sev runbooks step by step
+version: 1.4.0
+author: atlas (self-authored)
+source: user
+---
+
+# Incident Runbook
+
+Use when an alert fires and a severity has been assigned.
+
+## Steps
+1. Acknowledge the page and post the incident channel link.
+2. Pull the last 15m of \`grafana\` panels for the affected service.
+3. Run \`docker-doctor\` if a container is restarting.
+4. Decide rollback vs. forward-fix; record the call in \`incident-log\`.
+5. Post a one-line status every 10 minutes until resolved.
+`,
+  'citation-check': `---
+name: citation-check
+description: Verify quotes against sources
+version: 0.3.0
+author: scribe (self-authored)
+source: user
+---
+
+# Citation Check
+
+Given a draft with quoted claims, verify each quote resolves to a real source.
+
+## Procedure
+- Extract every quoted span and its inline citation.
+- Fetch the source; locate the quoted text verbatim (allow whitespace diffs).
+- Flag: missing source, paraphrase-as-quote, page mismatch.
+- Return a table: \`claim | source | status\`.
+`,
+  'inbox-triage': `---
+name: inbox-triage
+description: Classify and route inbound messages
+version: 2.0.1
+author: courier (self-authored)
+source: user
+---
+
+# Inbox Triage
+
+Classify inbound messages and route them to the right queue.
+
+## Labels
+- \`urgent\` — customer-impacting, page on-call.
+- \`billing\` — hand to ledger agent.
+- \`spam\` — drop silently.
+
+Reply tone is delegated to \`tone-match\`.
+`,
+  'endpoint-probe': `---
+name: endpoint-probe
+description: HTTP/TCP probes with screenshot capture
+version: 3.2.0
+author: watchtower (self-authored)
+source: user
+---
+
+# Endpoint Probe
+
+Probe an endpoint and capture evidence.
+
+## Checks
+- TCP connect + TLS expiry days remaining.
+- HTTP status + latency; fail if status >= 500 or latency > 2s.
+- Screenshot via headless chromium (memory-capped).
+`,
+  'incident-log': `---
+name: incident-log
+description: Append-only incident journal
+version: 1.0.0
+author: watchtower (self-authored)
+source: user
+---
+
+# Incident Log
+
+Append-only journal. Never edit past entries.
+
+Each entry: \`timestamp | severity | actor | note\`.
+`,
+  'csv-reconcile': `---
+name: csv-reconcile
+description: Match statements to ledger rows
+version: 0.1.0
+author: ledger (self-authored)
+source: user
+---
+
+# CSV Reconcile
+
+Match bank statement rows against ledger entries.
+
+## Matching
+- Exact: amount + date + normalized memo.
+- Fuzzy: amount within 1c, date ±2 days → flag for review.
+- Output unmatched rows on both sides.
+`,
+});

@@ -5,6 +5,7 @@ import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.docker.DockerClients;
 import java.io.ByteArrayOutputStream;
@@ -30,10 +31,11 @@ public class HermesProfiles {
 
   private final DockerClients clients;
   private final Yaml yaml = new Yaml();
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper;
 
-  public HermesProfiles(DockerClients clients) {
+  public HermesProfiles(DockerClients clients, ObjectMapper objectMapper) {
     this.clients = clients;
+    this.objectMapper = objectMapper;
   }
 
   public List<AgentProfileDto> list(String url, String containerId) {
@@ -46,6 +48,15 @@ public class HermesProfiles {
   }
 
   public AgentProfileDto create(String url, CreateAgentRequest request) {
+    String profileName = createProfileBare(url, request);
+    return readProfile(url, request.containerId(), profileName);
+  }
+
+  /** Creates and configures the profile but skips the read-back. The template
+   *  create/deploy flow re-reads the profile after layering its blueprint, so the
+   *  read here would be thrown away — callers that need the DTO use {@link #create}.
+   *  Returns the created profile name. */
+  String createProfileBare(String url, CreateAgentRequest request) {
     String profileName = request.name();
     if (profileName == null || !PROFILE_NAME.matcher(profileName).matches()) {
       throw new IllegalArgumentException("invalid profile name");
@@ -56,18 +67,13 @@ public class HermesProfiles {
       command.addAll(List.of("--clone", "--clone-from", cloneFrom));
     }
     exec(url, request.containerId(), command);
-    String baseUrl = request.baseUrl();
-    if (baseUrl != null && !baseUrl.isBlank()) {
-      configureModelWithBaseUrl(url, request.containerId(), profileName, request.model(), baseUrl);
-    } else {
-      configureModel(url, request.containerId(), profileName, request.provider(), request.model());
-    }
+    writeModelConfig(url, request.containerId(), profileName, request.provider(), request.model(), request.baseUrl());
     seedEnvIfMissing(url, request.containerId(), profileName);
     String envKey = apiKeyVar(normalizeProvider(request.provider()));
     if (envKey != null && request.apiKey() != null && !request.apiKey().isBlank()) {
       writeEnvVar(url, request.containerId(), profileName, envKey, request.apiKey());
     }
-    return readProfile(url, request.containerId(), profileName);
+    return profileName;
   }
 
   public void delete(String url, String containerId, String name) {
@@ -77,6 +83,16 @@ public class HermesProfiles {
   public void updateSoul(String url, String containerId, String name, String soul) {
     String path = profileDir(name) + "/SOUL.md";
     writeFile(url, containerId, path, soul == null ? "" : soul);
+  }
+
+  public void updateMemory(String url, String containerId, String name, String memory) {
+    String path = profileDir(name) + "/MEMORY.md";
+    writeFile(url, containerId, path, memory == null ? "" : memory);
+  }
+
+  /** Reads a single profile's current state (config, soul, memory, skills, mcp). */
+  public AgentProfileDto get(String url, String containerId, String name) {
+    return readProfile(url, containerId, name);
   }
 
   public AgentProfileDto updateConfig(String url, String containerId, String name, String configYaml) {
@@ -124,6 +140,9 @@ public class HermesProfiles {
 
   public AgentProfileDto installSkill(String url, String containerId, String profileName, String skillId) {
     if (skillId == null || skillId.isBlank()) throw new IllegalArgumentException("missing skill name");
+    // skill ids flow in from reusable templates (user-authored) — validate the
+    // same way uninstall does so a stray value can't be parsed as a CLI flag
+    if (!PROFILE_NAME.matcher(skillId).matches()) throw new IllegalArgumentException("invalid skill id: " + skillId);
     exec(url, containerId, List.of("hermes", "-p", profileName, "skills", "install", skillId, "--force"));
     return readProfile(url, containerId, profileName);
   }
@@ -141,22 +160,61 @@ public class HermesProfiles {
   }
 
   /** Resolves the directory backing a skill: the dir name usually matches the
-   *  skill name, but SKILL.md frontmatter may override the display name. */
+   *  skill name, but SKILL.md frontmatter may override the display name. Searches
+   *  flat and category-nested layouts alike. */
   private String findSkillDir(String url, String containerId, String profileName, String skillName) {
     String skillsDir = profileDir(profileName) + "/skills";
     String direct = skillsDir + "/" + skillName;
     if (dirExists(url, containerId, direct)) return direct;
-    ExecResult ls = exec(url, containerId, List.of("sh", "-lc", "ls -1 \"$1\" 2>/dev/null || true", "_", skillsDir));
-    for (String line : ls.stdout().split("\\R")) {
-      String dirName = line.trim();
-      if (dirName.isEmpty()) continue;
-      String skillMd = readFile(url, containerId, skillsDir + "/" + dirName + "/SKILL.md");
-      if (skillMd.isBlank()) continue;
-      if (skillName.equals(parseSkillMeta(skillMd, dirName).name())) {
-        return skillsDir + "/" + dirName;
+    for (String skillMdPath : findSkillMdPaths(url, containerId, skillsDir)) {
+      int fileSlash = skillMdPath.lastIndexOf('/');
+      String dir = fileSlash >= 0 ? skillMdPath.substring(0, fileSlash) : skillMdPath;
+      String dirName = skillDirName(skillMdPath);
+      if (skillName.equals(dirName)) return dir;
+      String skillMd = readFile(url, containerId, skillMdPath);
+      if (!skillMd.isBlank() && skillName.equals(parseSkillMeta(skillMd, dirName).name())) {
+        return dir;
       }
     }
     return null;
+  }
+
+  /** Reads a skill's SKILL.md body plus its file list, for inspection/editing. */
+  public SkillContentDto readSkillContent(String url, String containerId, String profileName, String skillName) {
+    if (skillName == null || !PROFILE_NAME.matcher(skillName).matches()) {
+      throw new IllegalArgumentException("invalid skill name");
+    }
+    String skillDir = findSkillDir(url, containerId, profileName, skillName);
+    if (skillDir == null) throw new IllegalArgumentException("skill not found: " + skillName);
+    String body = readFile(url, containerId, skillDir + "/SKILL.md");
+    return new SkillContentDto(skillName, skillDir, body, listSkillFiles(url, containerId, skillDir));
+  }
+
+  /** Overwrites a skill's SKILL.md, then re-reads the profile so the refreshed
+   *  name/version/description/source flow back to the caller. */
+  public AgentProfileDto updateSkillContent(
+      String url, String containerId, String profileName, String skillName, String body) {
+    if (skillName == null || !PROFILE_NAME.matcher(skillName).matches()) {
+      throw new IllegalArgumentException("invalid skill name");
+    }
+    if (body == null) throw new IllegalArgumentException("missing skill body");
+    String skillDir = findSkillDir(url, containerId, profileName, skillName);
+    if (skillDir == null) throw new IllegalArgumentException("skill not found: " + skillName);
+    writeFile(url, containerId, skillDir + "/SKILL.md", body);
+    return readProfile(url, containerId, profileName);
+  }
+
+  /** Relative file paths inside a skill dir (skipping dot-files), for the UI. */
+  private List<String> listSkillFiles(String url, String containerId, String skillDir) {
+    String script = "d=\"$1\"; cd \"$d\" 2>/dev/null || exit 0; "
+        + "find . -maxdepth 3 -type f -not -path '*/.*' 2>/dev/null | sed 's|^\\./||' | sort";
+    ExecResult ls = exec(url, containerId, List.of("sh", "-lc", script, "_", skillDir));
+    List<String> files = new ArrayList<>();
+    for (String line : ls.stdout().split("\\R")) {
+      String f = line.trim();
+      if (!f.isEmpty()) files.add(f);
+    }
+    return files;
   }
 
   public AgentProfileDto addMcpServer(String url, String containerId, String profileName, AddMcpServerRequest request) {
@@ -216,6 +274,121 @@ public class HermesProfiles {
 
   public List<IntegrationDto> integrations(String url, String containerId, String profileName) {
     return listIntegrations(url, containerId, profileName);
+  }
+
+  // ── sessions ────────────────────────────────────────────────────────────
+  // Hermes records conversations in a per-profile SQLite DB (state.db): the
+  // `sessions` table holds one row per conversation, `messages` holds the turns
+  // keyed by session_id. The container image has python3 but no sqlite3 CLI, so
+  // we shell out to python3 to query the DB and emit JSON. session ids/values
+  // are passed as argv + bound query params — never interpolated into SQL/shell.
+
+  private String stateDb(String profileName) {
+    return profileDir(profileName) + "/state.db";
+  }
+
+  public List<SessionDto> listSessions(String url, String containerId, String profileName) {
+    String db = stateDb(profileName);
+    if (!fileExists(url, containerId, db)) return List.of();
+    String py = """
+        import sqlite3, json, sys
+        db = sys.argv[1]
+        try:
+            con = sqlite3.connect('file:%s?mode=ro' % db, uri=True)
+            con.row_factory = sqlite3.Row
+            rows = con.execute(
+                "SELECT id, source, title, started_at, ended_at, message_count "
+                "FROM sessions WHERE archived=0 ORDER BY started_at DESC LIMIT 200").fetchall()
+            print(json.dumps([dict(r) for r in rows]))
+        except Exception:
+            print('[]')
+        """;
+    ExecResult r = exec(url, containerId, List.of("python3", "-c", py, db), false);
+    return parseSessionRows(r.stdout());
+  }
+
+  /** Returns the chat history (messages) for a session as a JSON array string. */
+  public String readSessionMessages(String url, String containerId, String profileName, String sessionId) {
+    if (sessionId == null || sessionId.isBlank()) throw new IllegalArgumentException("invalid session id");
+    String db = stateDb(profileName);
+    if (!fileExists(url, containerId, db)) return "[]";
+    // A genuinely empty session yields '[]' (exit 0). Real availability errors
+    // (locked, corrupt) still raise -> non-zero exit -> exec(check=true) throws ->
+    // the caller surfaces them. But a schema mismatch (an older/newer hermes whose
+    // messages table is missing an optional column) is degraded to '[]' rather than
+    // 500-ing the whole chat view — only OperationalErrors that aren't "locked"/
+    // "corrupt" are swallowed.
+    String py = """
+        import sqlite3, json, sys
+        db, sid = sys.argv[1], sys.argv[2]
+        con = sqlite3.connect('file:%s?mode=ro' % db, uri=True)
+        con.row_factory = sqlite3.Row
+        try:
+            rows = con.execute(
+                "SELECT role, content, tool_name, tool_calls, reasoning_content, timestamp "
+                "FROM messages WHERE session_id=? AND active=1 ORDER BY timestamp, id LIMIT 4000",
+                (sid,)).fetchall()
+        except sqlite3.OperationalError as e:
+            msg = str(e).lower()
+            if 'locked' in msg or 'malformed' in msg or 'corrupt' in msg:
+                raise
+            print('[]'); sys.exit(0)
+        out = [{'role': r['role'], 'content': r['content'] or '',
+                'toolName': r['tool_name'], 'toolCalls': r['tool_calls'],
+                'reasoning': r['reasoning_content'],
+                'ts': int((r['timestamp'] or 0) * 1000)} for r in rows]
+        print(json.dumps(out))
+        """;
+    ExecResult r = exec(url, containerId, List.of("python3", "-c", py, db, sessionId));
+    String out = r.stdout().trim();
+    return out.isEmpty() ? "[]" : out;
+  }
+
+  public void deleteSession(String url, String containerId, String profileName, String sessionId) {
+    if (sessionId == null || sessionId.isBlank()) throw new IllegalArgumentException("invalid session id");
+    String db = stateDb(profileName);
+    if (!fileExists(url, containerId, db)) throw new IllegalArgumentException("no session store for this profile");
+    String py = """
+        import sqlite3, sys
+        db, sid = sys.argv[1], sys.argv[2]
+        con = sqlite3.connect(db, timeout=10)
+        con.execute('PRAGMA busy_timeout=10000')
+        con.execute('DELETE FROM messages WHERE session_id=?', (sid,))
+        con.execute('DELETE FROM sessions WHERE id=?', (sid,))
+        con.commit(); con.close()
+        """;
+    exec(url, containerId, List.of("python3", "-c", py, db, sessionId));   // check=true surfaces errors
+  }
+
+  private List<SessionDto> parseSessionRows(String json) {
+    try {
+      List<Map<String, Object>> rows = objectMapper.readValue(json, new TypeReference<>() {});
+      List<SessionDto> out = new ArrayList<>();
+      for (Map<String, Object> row : rows) {
+        String id = stringValue(row.get("id"));
+        if (id.isBlank()) continue;
+        String title = stringValue(row.get("title"));
+        if (title.isBlank()) title = "(untitled session)";
+        String platform = stringValue(row.get("source"));
+        if (platform.isBlank()) platform = PLATFORM_CLI;
+        long startedAt = (long) (toDouble(row.get("started_at")) * 1000);
+        int messages = (int) toDouble(row.get("message_count"));
+        String status = row.get("ended_at") == null ? "open" : "closed";
+        out.add(new SessionDto(id, title, platform, startedAt, messages, status));
+      }
+      return out;
+    } catch (Exception e) {
+      return List.of();
+    }
+  }
+
+  private double toDouble(Object value) {
+    if (value instanceof Number n) return n.doubleValue();
+    try {
+      return value == null ? 0 : Double.parseDouble(String.valueOf(value).trim());
+    } catch (NumberFormatException e) {
+      return 0;
+    }
   }
 
   private AgentProfileDto readProfile(String url, String containerId, String name) {
@@ -295,40 +468,71 @@ public class HermesProfiles {
     return result.exitCode() == 0;
   }
 
-  private void configureModel(String url, String containerId, String name, String provider, String model) {
-    String normalizedProvider = normalizeProvider(provider);
-    String modelValue = normalizedProvider.isBlank() ? model : normalizedProvider + "/" + model;
-    exec(url, containerId, List.of("hermes", "-p", name, "config", "set", "model", modelValue));
+  /** Sets the profile's model through hermes' own config writer
+   *  ({@code hermes -p <name> config set model.<key> <value>}), which produces
+   *  the documented {@code model: { provider, default, base_url }} mapping and
+   *  keeps hermes' validation/migration in the loop. Only the model.* keys are
+   *  touched — sibling config keys are preserved.
+   *
+   *  <p>The model id is passed verbatim to {@code model.default} — never
+   *  concatenated as {@code provider/model} — so OpenRouter ids that already
+   *  contain a slash (e.g. {@code anthropic/claude-sonnet-4}) are stored intact.
+   *  Custom/local endpoints (ollama, vLLM, …) set {@code model.base_url} and own
+   *  their routing, so they carry no provider; standard providers (nous,
+   *  openrouter, anthropic, openai, …) set {@code model.provider}.
+   *
+   *  <p>The map is first wiped to an empty scalar ({@code model: ""}) so a
+   *  {@code --clone}'d profile cannot leak ANY stale key — provider, base_url, or
+   *  even a hand-set api_mode — from the source profile; the dotted sets then
+   *  rebuild model from scratch with only the keys the chosen provider needs.
+   *  (`hermes config set` mutates one key and preserves the rest of the map, so a
+   *  full reset is the only way to guarantee no leak.) */
+  private void writeModelConfig(
+      String url, String containerId, String name, String provider, String model, String baseUrl) {
+    for (String[] kv : modelConfigEntries(provider, model, baseUrl)) {
+      setConfig(url, containerId, name, kv[0], kv[1]);
+    }
   }
 
-  /** Custom-endpoint providers (e.g. ollama) have no `hermes config set model`
-   *  provider prefix — write model.default and model.base_url into config.yaml
-   *  directly, leaving model.provider and every other key untouched. */
-  private void configureModelWithBaseUrl(String url, String containerId, String name, String model, String baseUrl) {
-    String configPath = profileDir(name) + "/config.yaml";
-    String configYaml = readFile(url, containerId, configPath);
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> modelNode = asMutableMap(root.get("model"));
-    modelNode.put("default", model);
-    modelNode.put("base_url", baseUrl);
-    root.put("model", modelNode);
-    writeFile(url, containerId, configPath, yaml.dump(root));
+  /** Pure planner for {@link #writeModelConfig}: the ordered {@code (key, value)}
+   *  config sets. The first entry wipes {@code model} to an empty scalar (kills
+   *  any inherited map); {@code model.default} then promotes it back to a map;
+   *  finally the one applicable routing key is set — {@code model.provider} for a
+   *  standard provider, {@code model.base_url} for a custom/local endpoint, and
+   *  neither when the provider is blank/auto. Extracted (package-private, no I/O)
+   *  so the clone-reset contract is unit-testable. */
+  static List<String[]> modelConfigEntries(String provider, String model, String baseUrl) {
+    List<String[]> entries = new ArrayList<>();
+    entries.add(new String[] {"model", ""});                                   // wipe any clone leftovers
+    entries.add(new String[] {"model.default", model == null ? "" : model});   // promote back to a map
+    boolean custom = baseUrl != null && !baseUrl.isBlank();
+    if (custom) {
+      entries.add(new String[] {"model.base_url", baseUrl});   // custom endpoint owns routing
+    } else {
+      String normalizedProvider = normalizeProvider(provider);
+      if (!normalizedProvider.isBlank() && !"auto".equals(normalizedProvider)) {
+        entries.add(new String[] {"model.provider", normalizedProvider});
+      }
+    }
+    return entries;
   }
 
-  private String normalizeProvider(String provider) {
+  private void setConfig(String url, String containerId, String name, String key, String value) {
+    exec(url, containerId, List.of("hermes", "-p", name, "config", "set", key, value));
+  }
+
+  static String normalizeProvider(String provider) {
     if (provider == null) return "";
     String trimmed = provider.trim().toLowerCase(Locale.ROOT);
     if (trimmed.startsWith("nous")) return "nous";
     return trimmed;
   }
 
+  /** The provider's API-key env var (or null for OAuth/keyless/unknown), from the
+   *  shared {@link ModelProviderRegistry} so the key written into .env always
+   *  matches the providers the UI offers. */
   private String apiKeyVar(String provider) {
-    return switch (provider) {
-      case "anthropic" -> "ANTHROPIC_API_KEY";
-      case "openai" -> "OPENAI_API_KEY";
-      case "openrouter" -> "OPENROUTER_API_KEY";
-      default -> null;
-    };
+    return ModelProviderRegistry.envVar(provider);
   }
 
   void writeEnvVar(String url, String containerId, String name, String key, String value) {
@@ -395,7 +599,7 @@ public class HermesProfiles {
     throw new IllegalStateException("refusing to rewrite unparseable " + configPath);
   }
 
-  private ConfigInfo parseConfig(Map<?, ?> map) {
+  ConfigInfo parseConfig(Map<?, ?> map) {
     if (map == null || map.isEmpty()) return new ConfigInfo("auto", "", "");
     String provider = "auto";
     String model = "";
@@ -410,9 +614,20 @@ public class HermesProfiles {
       if (defaultValue.isBlank()) {
         defaultValue = stringValue(modelMap.get("model"));
       }
-      ModelInfo info = parseModelString(defaultValue);
-      provider = providerValue.isBlank() ? info.provider() : providerValue;
-      model = info.model().isBlank() ? defaultValue : info.model();
+      if (!providerValue.isBlank()) {
+        // a structured map already separates provider from the model id, so the
+        // id is taken verbatim — splitting it would drop the namespace of an
+        // OpenRouter id (anthropic/claude-sonnet-4 -> claude-sonnet-4), which the
+        // provider can no longer resolve and which breaks template re-capture.
+        provider = providerValue;
+        model = defaultValue;
+      } else {
+        // no explicit provider (custom/ollama, or legacy): fall back to the
+        // scalar "provider/model" convention.
+        ModelInfo info = parseModelString(defaultValue);
+        provider = info.provider();
+        model = info.model().isBlank() ? defaultValue : info.model();
+      }
     }
     String cwd = "";
     Object terminal = map.get("terminal");
@@ -424,25 +639,71 @@ public class HermesProfiles {
 
   private List<SkillDto> listSkills(String url, String containerId, String profileName, Map<?, ?> configMap) {
     String skillsDir = profileDir(profileName) + "/skills";
-    ExecResult ls = exec(url, containerId, List.of("sh", "-lc", "ls -1 \"$1\" 2>/dev/null || true", "_", skillsDir));
     Set<String> disabled = disabledSkills(configMap, PLATFORM_CLI);
+    Set<String> bundled = bundledSkillNames(url, containerId, skillsDir);
     List<SkillDto> skills = new ArrayList<>();
-    for (String line : ls.stdout().split("\\R")) {
-      String dirName = line.trim();
-      if (dirName.isEmpty()) continue;
-      String skillMd = readFile(url, containerId, skillsDir + "/" + dirName + "/SKILL.md");
+    for (String skillMdPath : findSkillMdPaths(url, containerId, skillsDir)) {
+      String dirName = skillDirName(skillMdPath);
+      String skillMd = readFile(url, containerId, skillMdPath);
       if (skillMd == null || skillMd.isBlank()) continue;
       SkillMeta meta = parseSkillMeta(skillMd, dirName);
+      String source = resolveSkillSource(meta, bundled);
       boolean enabled = !disabled.contains(meta.name());
       skills.add(new SkillDto(
           meta.name(),
           meta.name(),
-          meta.source(),
+          source,
           meta.version(),
           meta.description(),
           enabled));
     }
     return skills;
+  }
+
+  /** All SKILL.md paths under a profile's skills dir — flat (skills/<x>/SKILL.md)
+   *  AND category-nested (skills/<category>/<x>/SKILL.md), skipping curator
+   *  backups and other dot-dirs. The old flat-only `ls` missed nested skills. */
+  private List<String> findSkillMdPaths(String url, String containerId, String skillsDir) {
+    ExecResult find = exec(url, containerId, List.of("sh", "-lc",
+        "find \"$1\" -mindepth 1 -maxdepth 3 -name SKILL.md -not -path '*/.*' 2>/dev/null || true", "_", skillsDir));
+    List<String> paths = new ArrayList<>();
+    for (String line : find.stdout().split("\\R")) {
+      String p = line.trim();
+      if (!p.isEmpty()) paths.add(p);
+    }
+    return paths;
+  }
+
+  /** Skill directory name from a `.../<dir>/SKILL.md` path. */
+  private String skillDirName(String skillMdPath) {
+    int fileSlash = skillMdPath.lastIndexOf('/');
+    String dir = fileSlash >= 0 ? skillMdPath.substring(0, fileSlash) : skillMdPath;
+    int dirSlash = dir.lastIndexOf('/');
+    return dirSlash >= 0 ? dir.substring(dirSlash + 1) : dir;
+  }
+
+  /** Names listed in skills/.bundled_manifest ("name:hash" per line) ship with
+   *  Hermes. Anything present on disk but absent here was created locally — by
+   *  the agent itself or the curator (which authors umbrella skills). */
+  private Set<String> bundledSkillNames(String url, String containerId, String skillsDir) {
+    Set<String> names = new HashSet<>();
+    String manifest = readFile(url, containerId, skillsDir + "/.bundled_manifest");
+    if (manifest == null) return names;
+    for (String line : manifest.split("\\R")) {
+      String trimmed = line.trim();
+      if (trimmed.isEmpty()) continue;
+      int colon = trimmed.indexOf(':');
+      String name = colon >= 0 ? trimmed.substring(0, colon).trim() : trimmed;
+      if (!name.isEmpty()) names.add(name);
+    }
+    return names;
+  }
+
+  /** Frontmatter `source` wins when an author declares it; otherwise a skill in
+   *  the bundled manifest is "bundled" and everything else is agent-authored "user". */
+  private String resolveSkillSource(SkillMeta meta, Set<String> bundled) {
+    if (meta.source() != null && !meta.source().isBlank()) return meta.source();
+    return bundled.contains(meta.name()) ? "bundled" : "user";
   }
 
   private Set<String> disabledSkills(Map<?, ?> configMap, String platform) {
@@ -514,12 +775,14 @@ public class HermesProfiles {
             String name = stringValue(meta.get("name"));
             String description = stringValue(meta.get("description"));
             String version = stringValue(meta.get("version"));
-            return new SkillMeta(name.isBlank() ? fallbackName : name, "bundled", version, description);
+            // frontmatter may declare its origin; blank means "infer from manifest"
+            String source = stringValue(meta.get("source"));
+            return new SkillMeta(name.isBlank() ? fallbackName : name, source, version, description);
           }
         } catch (Exception ignored) { }
       }
     }
-    return new SkillMeta(fallbackName, "bundled", "", "");
+    return new SkillMeta(fallbackName, "", "", "");
   }
 
   private List<McpServerDto> listMcpServers(Map<?, ?> configMap) {
@@ -541,9 +804,67 @@ public class HermesProfiles {
           tools = (int) list.stream().filter(x -> !stringValue(x).isBlank()).count();
         }
       }
-      result.add(new McpServerDto(name, name, transport, enabled ? "connected" : "disabled", tools, null));
+      String url = stringValue(server.get("url"));
+      String command = stringValue(server.get("command"));
+      String args = joinArgs(server.get("args"));
+      result.add(new McpServerDto(name, name, transport, enabled ? "connected" : "disabled", tools, null,
+          url.isBlank() ? null : url, command.isBlank() ? null : command, args.isBlank() ? null : args));
     }
     return result;
+  }
+
+  /** Joins a YAML args list back into a space-separated string for the edit form. */
+  private String joinArgs(Object node) {
+    if (node instanceof List<?> list) {
+      List<String> parts = new ArrayList<>();
+      for (Object v : list) {
+        String s = stringValue(v);
+        if (!s.isBlank()) parts.add(s);
+      }
+      return String.join(" ", parts);
+    }
+    return stringValue(node);
+  }
+
+  /** Probes a single MCP server's reachability via docker exec, timing the call. */
+  public McpTestResult testMcpServer(String url, String containerId, String profileName, String serverName) {
+    if (serverName == null || serverName.isBlank()) throw new IllegalArgumentException("missing server name");
+    String configPath = profileDir(profileName) + "/config.yaml";
+    Map<?, ?> configMap = parseYamlMap(readFile(url, containerId, configPath));
+    Object serversNode = configMap.get("mcp_servers");
+    if (!(serversNode instanceof Map<?, ?> servers) || !(servers.get(serverName) instanceof Map<?, ?> server)) {
+      return new McpTestResult(serverName, "error", 0, null, "server not found in config.yaml");
+    }
+    int tools = 0;
+    Object toolsNode = server.get("tools");
+    if (toolsNode instanceof Map<?, ?> toolsMap && toolsMap.get("include") instanceof List<?> list) {
+      tools = (int) list.stream().filter(x -> !stringValue(x).isBlank()).count();
+    }
+    boolean stdio = server.containsKey("command");
+    long start = System.nanoTime();
+    ExecResult probe;
+    if (stdio) {
+      String command = stringValue(server.get("command"));
+      if (command.isBlank()) return new McpTestResult(serverName, "error", tools, null, "missing command");
+      // Best-effort liveness for stdio: resolve the launcher binary on PATH. This
+      // is a presence check, not a protocol handshake — a binary that resolves but
+      // crashes on start (bad args/missing env) still reports healthy. A full
+      // MCP `initialize` would be more accurate but risks false negatives when a
+      // server legitimately needs env/keys we don't have at test time.
+      probe = exec(url, containerId, List.of("sh", "-lc", "command -v \"$1\" >/dev/null 2>&1", "_", command), false);
+    } else {
+      String endpoint = stringValue(server.get("url"));
+      if (endpoint.isBlank()) return new McpTestResult(serverName, "error", tools, null, "missing url");
+      // reachability check — any HTTP response (even 4xx) means the endpoint is up
+      probe = exec(url, containerId,
+          List.of("sh", "-lc", "curl -s -o /dev/null --max-time 5 \"$1\"", "_", endpoint), false);
+    }
+    long latencyMs = (System.nanoTime() - start) / 1_000_000L;
+    if (probe.exitCode() == 0) {
+      return new McpTestResult(serverName, "connected", tools, latencyMs, null);
+    }
+    String detail = stdio ? "command not found on PATH" : "endpoint unreachable";
+    return new McpTestResult(serverName, "error", tools, null, detail);
   }
 
   private List<IntegrationDto> listIntegrations(String url, String containerId, String profileName) {
@@ -592,7 +913,7 @@ public class HermesProfiles {
     };
   }
 
-  private ModelInfo parseModelString(String value) {
+  ModelInfo parseModelString(String value) {
     if (value == null || value.isBlank()) {
       return new ModelInfo("auto", "");
     }
@@ -675,9 +996,9 @@ public class HermesProfiles {
 
   record ExecResult(int exitCode, String stdout, String stderr) {}
 
-  private record ConfigInfo(String provider, String model, String cwd) {}
+  record ConfigInfo(String provider, String model, String cwd) {}
 
-  private record ModelInfo(String provider, String model) {}
+  record ModelInfo(String provider, String model) {}
 
   private record SkillMeta(String name, String source, String version, String description) {}
 }
