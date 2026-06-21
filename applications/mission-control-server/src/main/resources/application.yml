@@ -1,5 +1,11 @@
 server:
   port: ${MC_PORT:8080}
+  compression:
+    # gzip large JSON responses — notably session chat history, which can reach
+    # several MB for long conversations
+    enabled: true
+    mime-types: application/json,text/plain,text/html
+    min-response-size: 1024
 
 spring:
   application:
@@ -21,6 +27,15 @@ mc:
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
   container-filter: ${MC_CONTAINER_FILTER:hermes}
   version: 0.1.0
+  # AES key material for encrypting profile-template secrets at rest. Required: the
+  # app fails to start when unset unless allow-dev-key is true (local dev only).
+  secret-key: ${MC_SECRET_KEY:}
+  # The prior secret-key value during a rotation — decryption falls back to it, so
+  # secrets stay readable until each is re-saved (re-encrypted) under the new key.
+  secret-key-previous: ${MC_SECRET_KEY_PREVIOUS:}
+  # Opt-in to a built-in dev key when secret-key is unset. Keep false in production:
+  # the dev key is in the source, so anything encrypted with it is publicly readable.
+  allow-dev-key: ${MC_ALLOW_DEV_KEY:false}
   # terminal (/ws/terminal docker exec) session limits — bound runaway/abandoned
   # shells so their JVM-side reader/writer threads cannot accumulate
   terminal:
@@ -32,8 +47,14 @@ mc:
     pong-timeout: ${MC_TERMINAL_PONG_TIMEOUT:90s}
   # curated model catalog fallbacks, used when no live provider fetch is possible
   models:
+    # Nous Portal is an OAuth account (hermes portal) — no key in the dashboard,
+    # so the catalog is always this curated list (no live fetch).
+    nous: ${MC_MODELS_NOUS:Hermes-4-405B,Hermes-4-70B,Hermes-4-14B}
     anthropic: ${MC_MODELS_ANTHROPIC:claude-fable-5,claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5-20251001}
     openai: ${MC_MODELS_OPENAI:gpt-5.2,gpt-5.2-mini,gpt-5.1,gpt-4.1}
+    # OpenRouter ids are provider/model — the live list (openrouter.ai/api/v1/models)
+    # supersedes this when reachable.
+    openrouter: ${MC_MODELS_OPENROUTER:nousresearch/hermes-4-405b,anthropic/claude-opus-4.7,anthropic/claude-sonnet-4,openai/gpt-5.2,google/gemini-2.5-pro,deepseek/deepseek-chat}
 
 logging:
   level:

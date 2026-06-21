@@ -64,21 +64,42 @@
           <label>profile name</label>
           <input class="input" [(ngModel)]="name" placeholder="ops-bot" autofocus />
         </div>
+        @if (store.profileTemplates().length) {
+          <div class="field">
+            <label>from profile — optional, applies a saved blueprint</label>
+            <select class="select" [ngModel]="fromTemplate" (ngModelChange)="onTemplate($event)">
+              <option value="">— blank, no template —</option>
+              @for (t of store.profileTemplates(); track t.id) { <option [value]="t.id">{{ t.name }}</option> }
+            </select>
+          </div>
+        }
         <div class="row">
           <div class="field">
             <label>provider</label>
             <select class="select" [ngModel]="provider" (ngModelChange)="provider = $event; onProvider($event)">
-              @for (p of providers(); track p) { <option [value]="p">{{ p }}</option> }
+              @for (p of providerOptions(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
             </select>
           </div>
           <div class="field">
-            <label>model</label>
-            <select class="select" [(ngModel)]="model">
-              @if (modelsLoading()) { <option value="" disabled>loading models…</option> }
-              @for (m of models(); track m) { <option [value]="m">{{ m }}</option> }
-            </select>
+            <label>model @if (modelsLoading()) { <span class="faint">loading…</span> }</label>
+            <input class="input" [(ngModel)]="model" list="agent-model-list"
+                   placeholder="model id" autocomplete="off" />
+            <datalist id="agent-model-list">
+              @for (m of models(); track m) { <option [value]="m"></option> }
+            </datalist>
           </div>
         </div>
+        @if (provider === 'nous') {
+          @if (nousAuth(); as auth) {
+            @if (auth.ok) {
+              <p class="lock-hint ok">✓ Nous Portal connected on this container — no API key needed.</p>
+            } @else {
+              <p class="lock-hint warn">✗ Nous Portal {{ auth.status }} — log in via <code>hermes portal</code> in the web terminal before this agent can run.</p>
+            }
+          } @else {
+            <p class="lock-hint">Nous account is authenticated via <code>hermes portal</code> in the web terminal — no API key needed here.</p>
+          }
+        }
         @if (apiKeyRequired()) {
           <div class="field">
             <label>API key — stored in the profile's .env</label>

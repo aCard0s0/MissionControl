@@ -1,20 +1,45 @@
 import { Injectable, computed, signal } from '@angular/core';
 import {
-  AgentProfile, BoardColumn, BoardTask, ContainerStatus, CronJob, DockerHost,
-  HermesContainer, Integration, LogEntry, McpServer, ModelProvider, OllamaModel, SkillRef, Webhook,
+  AgentProfile, BoardColumn, BoardTask, ChatMessage, ContainerStatus, CronJob, DockerHost,
+  HermesContainer, Integration, LogEntry, McpServer, ModelProvider, OllamaModel, ProfileTemplate,
+  ProfileTemplateInput, SessionInfo, SkillContent, SkillRef, Webhook,
 } from './models';
 import {
-  seedAgents, seedContainers, seedDockerHosts, seedJobs, seedLogs, seedTasks, seedWebhooks,
+  buildMockChat, seedAgents, seedContainers, seedDockerHosts, seedJobs, seedLogs, seedSkillBodies, seedTasks, seedTemplates, seedWebhooks,
 } from './mock-data';
 import { runtimeConfig } from './app-config';
-import { ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiPullState, HermesApi } from './hermes-api';
+import { ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiModelProvider, ApiProfileTemplate, ApiPullState, ApiSetupAuthProvider, HermesApi } from './hermes-api';
+import { maskTail } from '../shared/secret';
 
 let uid = 0;
 const nid = (p: string) => `${p}-${Date.now().toString(36)}-${uid++}`;
 
-/** Known model ids per cloud provider — used when the backend (or the
- *  provider API) cannot be reached. */
+/** Bootstrap mirror of the backend model-provider registry
+ *  (ModelProviderRegistry.java) — the picker uses this until the live
+ *  `GET /api/providers` resolves, and as the sole source in mock mode. Keep in
+ *  sync with the Java registry; the backend is authoritative when reachable. */
+const DEFAULT_LLM_PROVIDERS: ApiModelProvider[] = [
+  { key: 'nous', label: 'Nous (account)', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
+  { key: 'openrouter', label: 'OpenRouter', needsKey: true, oauth: false, hasCatalog: true, envVar: 'OPENROUTER_API_KEY' },
+  { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true, envVar: 'ANTHROPIC_API_KEY' },
+  { key: 'openai', label: 'OpenAI', needsKey: true, oauth: false, hasCatalog: true, envVar: 'OPENAI_API_KEY' },
+  { key: 'gemini', label: 'Google AI Studio', needsKey: true, oauth: false, hasCatalog: false, envVar: 'GOOGLE_API_KEY' },
+  { key: 'xai', label: 'xAI / Grok', needsKey: true, oauth: false, hasCatalog: false, envVar: 'XAI_API_KEY' },
+  { key: 'deepseek', label: 'DeepSeek', needsKey: true, oauth: false, hasCatalog: false, envVar: 'DEEPSEEK_API_KEY' },
+  { key: 'nvidia', label: 'NVIDIA NIM', needsKey: true, oauth: false, hasCatalog: false, envVar: 'NVIDIA_API_KEY' },
+  { key: 'zai', label: 'Z.AI / GLM', needsKey: true, oauth: false, hasCatalog: false, envVar: 'GLM_API_KEY' },
+  { key: 'kimi-coding', label: 'Kimi / Moonshot', needsKey: true, oauth: false, hasCatalog: false, envVar: 'KIMI_API_KEY' },
+  { key: 'minimax', label: 'MiniMax', needsKey: true, oauth: false, hasCatalog: false, envVar: 'MINIMAX_API_KEY' },
+  { key: 'stepfun', label: 'StepFun', needsKey: true, oauth: false, hasCatalog: false, envVar: 'STEPFUN_API_KEY' },
+];
+
+/** Offline model lists mirroring the server's `mc.models` catalog defaults
+ *  (application.yml) — the only model source in mock mode and the fallback when
+ *  the backend (or provider API) is unreachable. Keep in sync with `MC_MODELS_*`. */
+
 const FALLBACK_MODELS: Record<string, string[]> = {
+  nous: ['Hermes-4-405B', 'Hermes-4-70B', 'Hermes-4-14B'],
+  openrouter: ['nousresearch/hermes-4-405b', 'anthropic/claude-opus-4.7', 'anthropic/claude-sonnet-4', 'openai/gpt-5.2', 'google/gemini-2.5-pro', 'deepseek/deepseek-chat'],
   anthropic: ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
   openai: ['gpt-5.2', 'gpt-5.2-mini', 'gpt-5.1', 'gpt-4.1'],
 };
@@ -80,11 +105,16 @@ export class HermesStore {
           kind: 'ollama', status: 'connected', version: '0.6.x', detail: null,
         }]
       : []);
+  /** LLM provider registry for the create-agent / template pickers. Seeded with
+   *  the bootstrap mirror, refreshed from the backend in live mode. */
+  readonly llmProviders = signal<ApiModelProvider[]>(DEFAULT_LLM_PROVIDERS);
   readonly containers = signal<HermesContainer[]>(this.mock ? seedContainers() : []);
   readonly agents = signal<AgentProfile[]>(this.mock ? seedAgents() : []);
   readonly jobs = signal<CronJob[]>(this.mock ? seedJobs() : []);
   readonly tasks = signal<BoardTask[]>(this.mock ? seedTasks() : []);
   readonly webhooks = signal<Webhook[]>(this.mock ? seedWebhooks() : []);
+  /** Reusable agent blueprints — global, not scoped to a container. */
+  readonly profileTemplates = signal<ProfileTemplate[]>(this.mock ? seedTemplates() : []);
   private readonly logsByContainer = signal<Record<string, LogEntry[]>>(this.mock ? seedLogs() : {});
 
   readonly selectedContainerId = signal<string>(this.mock ? 'c-prod' : '');
@@ -151,6 +181,8 @@ export class HermesStore {
 
   agentById = (id: string | null) => this.agents().find(a => a.id === id) ?? null;
 
+  templateById = (id: string | null) => this.profileTemplates().find(t => t.id === id) ?? null;
+
   private toAgentProfile(api: ApiAgentProfile): AgentProfile {
     return {
       id: api.id,
@@ -180,6 +212,9 @@ export class HermesStore {
         status: m.status as any,
         tools: m.tools,
         latencyMs: m.latencyMs,
+        url: m.url ?? undefined,
+        command: m.command ?? undefined,
+        args: m.args ?? undefined,
       })),
       integrations: (api.integrations ?? []).map(i => ({
         kind: i.kind as any,
@@ -212,7 +247,7 @@ export class HermesStore {
   private async initLive(): Promise<void> {
     if (this.livePollersStarted) return;
     this.livePollersStarted = true;
-    await Promise.all([this.refreshHosts(), this.refreshModelProviders(), this.refreshContainers(), this.refreshBoard()]);
+    await Promise.all([this.refreshHosts(), this.refreshModelProviders(), this.refreshProviderRegistry(), this.refreshContainers(), this.refreshBoard(), this.refreshTemplates()]);
     await this.refreshAgents();   // needs the container list
     setInterval(() => this.refreshContainers(), 10_000);
     setInterval(() => this.refreshAgents(), 12_000);
@@ -468,6 +503,15 @@ export class HermesStore {
     } catch { /* transient backend hiccup — keep last known state */ }
   }
 
+  /** Loads the LLM provider registry; keeps the bootstrap mirror on failure. */
+  async refreshProviderRegistry(): Promise<void> {
+    if (this.mock) return;
+    try {
+      const list = await this.api.modelProviderRegistry();
+      if (list.length) this.llmProviders.set(list);
+    } catch { /* keep DEFAULT_LLM_PROVIDERS */ }
+  }
+
   addModelProvider(name: string, url: string): void {
     if (!this.mock) {
       this.api.addModelProvider(name, url)
@@ -674,6 +718,7 @@ export class HermesStore {
     apiKey: string,
     cloneFromId?: string,
     baseUrl?: string,
+    templateId?: string,
   ): Promise<string> {
     if (!this.mock) {
       const container = this.containers().find(c => c.id === containerId);
@@ -689,6 +734,7 @@ export class HermesStore {
           apiKey,
           cloneFromName,
           baseUrl,
+          templateId || undefined,
         );
         const agent = this.toAgentProfile(created);
         this.agents.update(as => [...as.filter(a => a.id !== agent.id), agent]);
@@ -701,7 +747,7 @@ export class HermesStore {
     }
     const id = nid('a');
     const src = cloneFromId ? this.agentById(cloneFromId) : null;
-    const apiKeyMasked = apiKey ? `…${apiKey.slice(-4)}` : '…';
+    const apiKeyMasked = maskTail(apiKey) || '…';
     const agent: AgentProfile = {
       id, containerId, name,
       role: src ? `Clone of ${src.name}` : 'New profile',
@@ -717,6 +763,20 @@ export class HermesStore {
       mcp: [], integrations: [{ kind: 'filesystem', status: 'up', detail: `/home/hermes/${name} (rw)` }],
       sessions: [], msgsToday: 0, tokensToday: 0, errorRate: 0, lastActive: Date.now(),
     };
+    const tmpl = templateId ? this.templateById(templateId) : null;
+    if (tmpl) {
+      if (agent.role === 'New profile') agent.role = `From ${tmpl.name}`;
+      if (tmpl.soul) agent.soul = tmpl.soul;
+      if (tmpl.memory) agent.memoryMd = tmpl.memory;
+      agent.skills = tmpl.skills.map(s => ({
+        id: nid('s'), name: s, source: 'bundled' as const, version: '1.0.0', description: '', enabled: true,
+      }));
+      agent.mcp = tmpl.mcpServers.map(m => ({
+        id: nid('m'), name: m.name, transport: m.transport,
+        status: m.enabled ? 'connected' as const : 'disabled' as const,
+        tools: 0, latencyMs: null, url: m.url, command: m.command, args: m.args,
+      }));
+    }
     this.agents.update(as => [...as, agent]);
     this.appendLog(containerId, {
       ts: Date.now(), level: 'info', source: 'system', agentId: id,
@@ -839,6 +899,63 @@ export class HermesStore {
     }));
   }
 
+  /** mock-mode SKILL.md store; edits persist in-session over the seeded bodies */
+  private readonly mockSkillBodies: Record<string, string> = this.mock ? seedSkillBodies() : {};
+
+  /** Load a skill's SKILL.md body + file list for the explore/edit viewer. */
+  async getSkillContent(agentId: string, skill: SkillRef): Promise<SkillContent | null> {
+    const a = this.agentById(agentId);
+    if (!a) return null;
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return null;
+      try {
+        const c = await this.api.skillContent(container.hostId, a.containerId, a.name, skill.name);
+        return { name: c.name, path: c.path, body: c.body, files: c.files ?? [] };
+      } catch (e: any) {
+        this.toast(`load skill failed: ${e.message}`);
+        return null;
+      }
+    }
+    const body = this.mockSkillBodies[skill.name] ?? this.synthSkillBody(skill);
+    return {
+      name: skill.name,
+      path: `~/.hermes/profiles/${a.name}/skills/${skill.name}`,
+      body,
+      files: ['SKILL.md'],
+    };
+  }
+
+  /** Persist an edited SKILL.md. Returns true on success. */
+  async saveSkillContent(agentId: string, skill: SkillRef, body: string): Promise<boolean> {
+    const a = this.agentById(agentId);
+    if (!a) return false;
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return false;
+      try {
+        const updated = await this.api.updateSkillContent(container.hostId, a.containerId, a.name, skill.name, body);
+        // guard: agent may have been removed while the PUT was in flight
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`save skill failed: ${e.message}`);
+        return false;
+      }
+    }
+    this.mockSkillBodies[skill.name] = body;
+    this.appendLog(a.containerId, {
+      ts: Date.now(), level: 'info', source: 'system', agentId,
+      msg: `skill ${skill.name} SKILL.md updated via dashboard`,
+    });
+    return true;
+  }
+
+  /** Fallback SKILL.md when no seeded body exists for a mock skill. */
+  private synthSkillBody(skill: SkillRef): string {
+    return `---\nname: ${skill.name}\ndescription: ${skill.description}\nversion: ${skill.version}\nsource: ${skill.source}\n---\n\n# ${skill.name}\n\n${skill.description}\n`;
+  }
+
   addMcp(
     agentId: string,
     name: string,
@@ -860,11 +977,49 @@ export class HermesStore {
         }));
       return;
     }
+    // mock upsert: replace a same-named server (edit), else append
     const server: McpServer = {
       id: nid('m'), name, transport, status: 'connected',
       tools: 3 + Math.floor(Math.random() * 20), latencyMs: 30 + Math.floor(Math.random() * 200),
+      url: opts?.url, command: opts?.command, args: opts?.args,
     };
-    this.agents.update(as => as.map(x => x.id !== agentId ? x : { ...x, mcp: [...x.mcp, server] }));
+    this.agents.update(as => as.map(x => {
+      if (x.id !== agentId) return x;
+      const existing = x.mcp.find(m => m.name === name);
+      const mcp = existing
+        ? x.mcp.map(m => m.name === name ? { ...server, id: m.id } : m)
+        : [...x.mcp, server];
+      return { ...x, mcp };
+    }));
+  }
+
+  /** Retest a single MCP server's reachability. */
+  async testMcp(agentId: string, serverName: string): Promise<void> {
+    const a = this.agentById(agentId);
+    if (!a) return;
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return;
+      try {
+        const r = await this.api.testMcpServer(container.hostId, a.containerId, a.name, serverName);
+        this.patchAgent(agentId, {
+          mcp: a.mcp.map(m => m.name === serverName
+            ? { ...m, status: r.status as any, tools: r.tools, latencyMs: r.latencyMs } : m),
+        });
+        if (r.error) this.toast(`mcp ${serverName}: ${r.error}`);
+      } catch (e: any) {
+        this.toast(`mcp test failed: ${e.message}`);
+      }
+      return;
+    }
+    await new Promise(res => setTimeout(res, 700));
+    const ok = Math.random() < 0.85;
+    this.agents.update(as => as.map(x => x.id !== agentId ? x : {
+      ...x, mcp: x.mcp.map(m => m.name !== serverName ? m : {
+        ...m, status: ok ? 'connected' : 'error',
+        latencyMs: ok ? 30 + Math.floor(Math.random() * 200) : null,
+      }),
+    }));
   }
 
   removeMcp(agentId: string, mcpId: string): void {
@@ -914,12 +1069,11 @@ export class HermesStore {
 
   private buildMockSetup(agent: AgentProfile): ApiAgentSetup {
     const env = this.mockEnv.get(agent.id) ?? {};
-    const mask = (v: string | undefined) => v ? '...' + v.slice(-4) : null;
     return {
       envPath: `/opt/data/profiles/${agent.name}/.env`,
       envExists: this.mockEnv.has(agent.id),
       apiKeys: MOCK_SETUP_API_KEYS.map(([label, envVar]) => ({
-        label, envVar, set: !!env[envVar], masked: mask(env[envVar]),
+        label, envVar, set: !!env[envVar], masked: maskTail(env[envVar]) || null,
       })),
       authProviders: [
         { label: 'Nous Portal', ok: false, status: 'not logged in (run: hermes portal)', hint: 'hermes portal' },
@@ -933,6 +1087,69 @@ export class HermesStore {
         homeChannel: homeVar ? env[homeVar] ?? null : null,
       })),
     };
+  }
+
+  /** Lists this agent's recorded sessions (mock returns the seeded list). */
+  agentSessions(agentId: string): Promise<SessionInfo[] | null> {
+    const a = this.agentById(agentId);
+    if (!a) return Promise.resolve(null);
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return Promise.resolve(null);
+      return this.api.agentSessions(container.hostId, a.containerId, a.name)
+        .then(list => list.map(s => ({
+          id: s.id, title: s.title, platform: s.platform,
+          startedAt: s.startedAt, messages: s.messages,
+          status: s.status === 'open' ? 'open' as const : 'closed' as const,
+        })))
+        .catch(e => { this.toast(`sessions load failed: ${e.message}`); return null; });
+    }
+    return Promise.resolve(a.sessions.map(s => ({ ...s })));
+  }
+
+  /** Chat history (messages) for a single session. */
+  agentSessionMessages(agentId: string, sessionId: string): Promise<ChatMessage[] | null> {
+    const a = this.agentById(agentId);
+    if (!a) return Promise.resolve(null);
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return Promise.resolve(null);
+      return this.api.agentSessionMessages(container.hostId, a.containerId, a.name, sessionId)
+        .catch(e => { this.toast(`session load failed: ${e.message}`); return null; });
+    }
+    const s = a.sessions.find(x => x.id === sessionId);
+    if (!s) return Promise.resolve(null);
+    return Promise.resolve(buildMockChat(s));
+  }
+
+  /** Deletes a session file; mock removes it from the in-memory list. */
+  deleteAgentSession(agentId: string, sessionId: string): Promise<void> {
+    const a = this.agentById(agentId);
+    if (!a) return Promise.resolve();
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return Promise.resolve();
+      return this.api.deleteAgentSession(container.hostId, a.containerId, a.name, sessionId);
+    }
+    this.agents.update(as => as.map(x => x.id !== agentId ? x : {
+      ...x, sessions: x.sessions.filter(s => s.id !== sessionId),
+    }));
+    return Promise.resolve();
+  }
+
+  /** Container-level auth-provider status (Nous Portal OAuth etc.) for the create
+   *  modal — readable before an agent exists. Failures degrade to an empty list
+   *  so the modal still works without the status badge. */
+  authProviders(containerId: string): Promise<ApiSetupAuthProvider[]> {
+    const container = this.containers().find(c => c.id === containerId);
+    if (!container) return Promise.resolve([]);
+    if (!this.mock) {
+      return this.api.authProviders(container.hostId, containerId).catch(() => []);
+    }
+    return Promise.resolve([
+      { label: 'Nous Portal', ok: false, status: 'not logged in (run: hermes portal)', hint: 'hermes portal' },
+      { label: 'OpenAI Codex', ok: true, status: 'logged in', hint: null },
+    ]);
   }
 
   agentSetup(agentId: string): Promise<ApiAgentSetup | null> {
@@ -1045,5 +1262,144 @@ export class HermesStore {
 
   removeWebhook(id: string): void {
     this.webhooks.update(ws => ws.filter(w => w.id !== id));
+  }
+
+  // ── profile templates (reusable agent blueprints) ──────────────────────────
+  private toTemplate(api: ApiProfileTemplate): ProfileTemplate {
+    return {
+      id: api.id,
+      name: api.name,
+      description: api.description ?? '',
+      provider: api.provider ?? '',
+      model: api.model ?? '',
+      baseUrl: api.baseUrl ?? '',
+      cwd: api.cwd ?? '',
+      soul: api.soul ?? '',
+      memory: api.memory ?? '',
+      skills: api.skills ?? [],
+      mcpServers: (api.mcpServers ?? []).map(m => ({
+        name: m.name, transport: m.transport, url: m.url, command: m.command, args: m.args,
+        enabled: m.enabled !== false,
+      })),
+      secrets: (api.secrets ?? []).map(s => ({ key: s.key, set: !!s.set, recoverable: !!s.recoverable })),
+      createdAt: api.createdAt,
+      updatedAt: api.updatedAt,
+    };
+  }
+
+  async refreshTemplates(): Promise<void> {
+    if (this.mock) return;
+    try {
+      this.profileTemplates.set((await this.api.profileTemplates()).map(t => this.toTemplate(t)));
+    } catch { /* transient backend hiccup — keep last known state */ }
+  }
+
+  private upsertTemplate(t: ProfileTemplate): void {
+    this.profileTemplates.update(ts => [t, ...ts.filter(x => x.id !== t.id)]);
+  }
+
+  /** Create (no id) or update (id) a template. Returns the id, or '' on failure. */
+  async saveTemplate(input: ProfileTemplateInput, id?: string): Promise<string> {
+    if (!this.mock) {
+      try {
+        const saved = id
+          ? await this.api.updateProfileTemplate(id, input)
+          : await this.api.createProfileTemplate(input);
+        this.upsertTemplate(this.toTemplate(saved));
+        return saved.id;
+      } catch (e: any) {
+        this.toast(`save template failed: ${e.message}`);
+        return '';
+      }
+    }
+    const now = Date.now();
+    const existing = id ? this.templateById(id) : null;
+    const prior = new Map((existing?.secrets ?? []).map(s => [s.key, s]));
+    const secrets = input.secrets
+      .filter(s => s.key.trim())
+      .map(s => {
+        if (s.value) return { key: s.key, set: true, recoverable: true };
+        return prior.get(s.key) ?? { key: s.key, set: false, recoverable: false };
+      });
+    const tmpl: ProfileTemplate = {
+      id: id ?? nid('pt'),
+      name: input.name, description: input.description, provider: input.provider, model: input.model,
+      baseUrl: input.baseUrl, cwd: input.cwd, soul: input.soul, memory: input.memory,
+      skills: input.skills.filter(s => s.trim()),
+      mcpServers: input.mcpServers.filter(m => m.name.trim()),
+      secrets,
+      createdAt: existing?.createdAt ?? now, updatedAt: now,
+    };
+    this.upsertTemplate(tmpl);
+    return tmpl.id;
+  }
+
+  async deleteTemplate(id: string): Promise<void> {
+    if (!this.mock) {
+      try {
+        await this.api.deleteProfileTemplate(id);
+      } catch (e: any) {
+        this.toast(`delete template failed: ${e.message}`);
+        return;
+      }
+    }
+    this.profileTemplates.update(ts => ts.filter(t => t.id !== id));
+  }
+
+  /** Deploy a template into a container as a new agent. Returns the agent id, or ''. */
+  async deployTemplate(templateId: string, containerId: string, name: string): Promise<string> {
+    const t = this.templateById(templateId);
+    if (!t) return '';
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === containerId);
+      if (!container) return '';
+      try {
+        const created = await this.api.deployTemplate(templateId, container.hostId, containerId, name);
+        const agent = this.toAgentProfile(created);
+        this.agents.update(as => [...as.filter(a => a.id !== agent.id), agent]);
+        return agent.id;
+      } catch (e: any) {
+        this.toast(`deploy template failed: ${e.message}`);
+        return '';
+      }
+    }
+    return this.createAgent(containerId, name, t.provider || 'anthropic', t.model || 'claude-fable-5', '', undefined, t.baseUrl || undefined, templateId);
+  }
+
+  /** Snapshot a running agent's config into a new template. Returns the template id. */
+  async captureTemplate(agentId: string, templateName?: string): Promise<string> {
+    const a = this.agentById(agentId);
+    if (!a) return '';
+    if (!this.mock) {
+      const container = this.containers().find(c => c.id === a.containerId);
+      if (!container) return '';
+      try {
+        const t = await this.api.captureTemplate(container.hostId, a.containerId, a.name, templateName);
+        this.upsertTemplate(this.toTemplate(t));
+        return t.id;
+      } catch (e: any) {
+        this.toast(`capture template failed: ${e.message}`);
+        return '';
+      }
+    }
+    const now = Date.now();
+    // mirror the backend capture: raw .env values can't be read back, so we record
+    // which provider key was set (by its real env var, not a hardcoded one) as an
+    // unset placeholder the user re-enters before deploy.
+    const keyVar = this.llmProviders().find(p => p.key === a.provider)?.envVar;
+    const tmpl: ProfileTemplate = {
+      id: nid('pt'), name: templateName?.trim() || `${a.name}-template`,
+      description: `Captured from ${a.name}`, provider: a.provider, model: a.model,
+      baseUrl: '', cwd: a.cwd, soul: a.soul, memory: a.memoryMd,
+      skills: a.skills.filter(s => s.enabled).map(s => s.name),
+      mcpServers: a.mcp.map(m => ({
+        name: m.name, transport: m.transport, url: m.url, command: m.command, args: m.args,
+        enabled: m.status !== 'disabled',
+      })),
+      secrets: keyVar ? [{ key: keyVar, set: false, recoverable: false }] : [],
+      createdAt: now, updatedAt: now,
+    };
+    this.upsertTemplate(tmpl);
+    return tmpl.id;
   }
 }

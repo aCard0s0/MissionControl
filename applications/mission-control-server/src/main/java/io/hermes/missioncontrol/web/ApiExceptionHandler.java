@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -24,6 +25,14 @@ public class ApiExceptionHandler {
   @ExceptionHandler({NoSuchElementException.class, NotFoundException.class})
   public ResponseEntity<Map<String, String>> notFound(Exception e) {
     return error(HttpStatus.NOT_FOUND, e.getMessage());
+  }
+
+  @ExceptionHandler(DataIntegrityViolationException.class)
+  public ResponseEntity<Map<String, String>> conflict(DataIntegrityViolationException e) {
+    // a UNIQUE/constraint violation that slipped past an explicit pre-check (e.g. a
+    // concurrent create/rename race) — a clean 409, not an opaque 503
+    log.warn("constraint violation: {}", brief(e.getMessage()));
+    return error(HttpStatus.CONFLICT, "that change conflicts with an existing record");
   }
 
   @ExceptionHandler(DockerException.class)

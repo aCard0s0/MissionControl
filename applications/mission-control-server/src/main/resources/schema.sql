@@ -29,3 +29,22 @@ CREATE TABLE IF NOT EXISTS model_providers (
   kind       TEXT NOT NULL CHECK (kind IN ('ollama')),
   created_at INTEGER NOT NULL
 );
+
+-- Reusable agent blueprints (soul, memory, skills, MCP servers, encrypted keys)
+-- applied when deploying a new agent. Distinct from a live in-container profile.
+CREATE TABLE IF NOT EXISTS profile_templates (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  description TEXT,
+  provider    TEXT,
+  model       TEXT,
+  base_url    TEXT,
+  cwd         TEXT,
+  soul        TEXT,
+  memory      TEXT,
+  skills      TEXT,   -- JSON array of skill ids
+  mcp_servers TEXT,   -- JSON array of McpServerSpec
+  secrets     TEXT,   -- JSON array of {key, enc} (AES-GCM ciphertext)
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);

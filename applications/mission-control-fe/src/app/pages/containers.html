@@ -46,7 +46,8 @@
 
 <div class="grid" data-reveal>
   @for (c of store.containers(); track c.id) {
-    <div class="panel card" [class.sel]="c.id === store.selectedContainerId()">
+    <div class="panel card" [class.sel]="c.id === store.selectedContainerId()"
+         role="button" tabindex="0" (click)="open(c.id)" (keydown.enter)="open(c.id)">
       <div class="panel-h">
         <mc-status [status]="c.status" [live]="c.status !== 'stopped'" />
         <span class="spacer"></span>
@@ -70,12 +71,12 @@
         <div class="actions">
           <button class="btn sm primary" (click)="open(c.id)">select</button>
           @if (c.status === 'stopped') {
-            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'running')">start</button>
+            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'running'); $event.stopPropagation()">start</button>
           } @else {
-            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'stopped')">stop</button>
+            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'stopped'); $event.stopPropagation()">stop</button>
           }
           <span class="spacer"></span>
-          <button class="btn sm danger ghost" (click)="removing.set(c)">remove</button>
+          <button class="btn sm danger ghost" (click)="removing.set(c); $event.stopPropagation()">remove</button>
         </div>
       </div>
     </div>

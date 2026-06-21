@@ -77,6 +77,14 @@ export interface SkillRef {
   enabled: boolean;
 }
 
+/** Full SKILL.md body + file listing for inspecting/editing a skill. */
+export interface SkillContent {
+  name: string;
+  path: string;
+  body: string;
+  files: string[];
+}
+
 export type McpStatus = 'connected' | 'error' | 'disabled';
 
 export interface McpServer {
@@ -86,6 +94,9 @@ export interface McpServer {
   status: McpStatus;
   tools: number;
   latencyMs: number | null;
+  url?: string;                   // http/sse endpoint (for the edit form)
+  command?: string;               // stdio command
+  args?: string;                  // stdio args, space-joined
 }
 
 export type IntegrationKind =
@@ -109,6 +120,16 @@ export interface SessionInfo {
   status: 'open' | 'closed';
 }
 
+/** One turn in a session's chat history (from the agent's state.db messages table). */
+export interface ChatMessage {
+  role: string;                   // user | assistant | tool | system
+  content: string;
+  toolName?: string | null;       // tool name for tool turns / tool results
+  toolCalls?: string | null;      // raw JSON string of requested tool calls
+  reasoning?: string | null;      // model reasoning content, when present
+  ts: number;                     // epoch ms
+}
+
 export interface AgentProfile {
   id: string;
   containerId: string;
@@ -130,6 +151,64 @@ export interface AgentProfile {
   tokensToday: number;            // thousands
   errorRate: number;              // percent
   lastActive: number;             // epoch ms
+}
+
+/** An MCP server defined in a profile template (no live status — that exists only
+ *  once deployed onto an agent). */
+export interface TemplateMcp {
+  name: string;
+  transport: 'stdio' | 'http' | 'sse';
+  url?: string;
+  command?: string;
+  args?: string;
+  enabled: boolean;
+}
+
+/** A template secret as returned from the backend — only flags, never any value.
+ *  `recoverable` is false when a stored value can no longer be decrypted (the
+ *  MC_SECRET_KEY changed) and must be re-entered. */
+export interface TemplateSecret {
+  key: string;
+  set: boolean;                   // a value is stored
+  recoverable: boolean;           // the stored value still decrypts
+}
+
+/**
+ * A reusable agent blueprint (soul, memory, skills, MCP servers, encrypted keys).
+ * Dashboard-owned and container-independent; applied when deploying an agent.
+ * Distinct from {@link AgentProfile}, which is a live agent instance.
+ */
+export interface ProfileTemplate {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  cwd: string;
+  soul: string;
+  memory: string;
+  skills: string[];               // skill ids to install
+  mcpServers: TemplateMcp[];
+  secrets: TemplateSecret[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Editor payload sent to the backend on save. Blank secret values keep the
+ *  stored secret; non-blank values replace it. */
+export interface ProfileTemplateInput {
+  name: string;
+  description: string;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  cwd: string;
+  soul: string;
+  memory: string;
+  skills: string[];
+  mcpServers: TemplateMcp[];
+  secrets: Array<{ key: string; value: string }>;
 }
 
 export interface CronJob {

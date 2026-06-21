@@ -63,7 +63,7 @@
       </div>
     </div>
 
-    <div class="grid cols-2">
+    <div class="grid cols-3">
       <!-- agents -->
       <div class="panel" data-reveal>
         <div class="panel-h">
@@ -77,38 +77,34 @@
             <span class="count warn">{{ agentCounts().idle }} idle</span>
             <span class="count off">{{ agentCounts().dormant }} dormant</span>
           </div>
+          <div class="count-row mono">
+            <span class="count">{{ skillToolCounts().skills }} skills</span>
+            <span class="count">{{ skillToolCounts().tools }} tools</span>
+          </div>
           @for (a of store.containerAgents(); track a.id) {
-            <a class="agent-row" [routerLink]="['/agents', a.id]">
-              <mc-status [status]="a.state" label=" " [live]="a.state === 'active'" />
-              <span class="mono name">{{ a.name }}</span>
-              <span class="dim role">{{ a.role }}</span>
-              <span class="mono faint right">{{ a.model }} · {{ ago(a.lastActive) }}</span>
-            </a>
-          }
-        </div>
-      </div>
-
-      <!-- log tail -->
-      <div class="panel" data-reveal>
-        <div class="panel-h">
-          LOG TAIL
-          <span class="spacer"></span>
-          @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }}</span> }
-        </div>
-        <div class="panel-b logs mono">
-          @for (l of recentLogs(); track $index) {
-            <div class="log-line">
-              <span class="faint">{{ clock(l.ts) }}</span>
-              <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase().padEnd(5) }}</span>
-              <span class="src faint">{{ l.source }}</span>
-              <span class="msg">{{ l.msg }}</span>
+            @let m = agentMeta(a);
+            <div class="agent-row" [class.active]="logAgent() === a.id">
+              <button class="agent-pick" (click)="toggleLogAgent(a.id)"
+                      [title]="logAgent() === a.id ? 'showing this agent’s logs — click to clear' : 'show this agent’s logs'">
+                <mc-status [status]="a.state" label=" " [live]="a.state === 'active'" />
+                <span class="mono name">{{ a.name }}</span>
+                <span class="dim role">{{ a.role }}</span>
+                <span class="meta mono">
+                  <span class="mc-badge" title="{{ m.skills }} skills">{{ m.skills }} sk</span>
+                  @if (m.custom) {
+                    <span class="mc-badge custom" title="{{ m.custom }} agent-authored skill(s)">{{ m.custom }} custom</span>
+                  }
+                  <span class="mc-badge" title="{{ m.mcp }} MCP servers">{{ m.mcp }} mcp</span>
+                  <span class="mc-badge" title="{{ m.tools }} MCP tools">{{ m.tools }} tl</span>
+                </span>
+                <span class="mono faint right">{{ a.model }} · {{ ago(a.lastActive) }}</span>
+              </button>
+              <a class="details" [routerLink]="['/agents', a.id]" title="open agent details">details →</a>
             </div>
           }
         </div>
       </div>
-    </div>
 
-    <div class="grid cols-2">
       <!-- jobs -->
       <div class="panel" data-reveal>
         <div class="panel-h">
@@ -157,6 +153,34 @@
             }
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- log tail — full width -->
+    <div class="panel" data-reveal>
+      <div class="panel-h">
+        LOG TAIL
+        @if (logAgentName(); as name) {
+          <span class="chip info">{{ name }} <button class="clear" (click)="logAgent.set(null)" title="clear agent filter">×</button></span>
+        }
+        <span class="spacer"></span>
+        @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }}</span> }
+        <div class="log-filter mono">
+          <button [class.on]="logLevel() === 'all'" (click)="logLevel.set('all')">all</button>
+          <button [class.on]="logLevel() === 'error'" (click)="logLevel.set('error')">error</button>
+          <button [class.on]="logLevel() === 'warn'" (click)="logLevel.set('warn')">warn</button>
+        </div>
+      </div>
+      <div class="panel-b logs mono">
+        @for (l of recentLogs(); track $index) {
+          <div class="log-line">
+            <span class="faint">{{ clock(l.ts) }}</span>
+            <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase().padEnd(5) }}</span>
+            <span class="src faint">{{ l.source }}</span>
+            <span class="msg">{{ l.msg }}</span>
+          </div>
+        }
+        @if (!recentLogs().length) { <p class="dim">No log entries match this filter.</p> }
       </div>
     </div>
   }

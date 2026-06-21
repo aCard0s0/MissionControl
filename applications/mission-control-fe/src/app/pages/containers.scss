@@ -44,10 +44,12 @@
 }
 
 .card {
+  cursor: pointer;
   transition: border-color .2s;
   &.sel { border-color: var(--acc-line); }
   &:hover { border-color: var(--line-2); }
   &.sel:hover { border-color: var(--acc); }
+  &:focus-visible { outline: none; border-color: var(--acc); }
 
   .hash { color: var(--faint); }
 

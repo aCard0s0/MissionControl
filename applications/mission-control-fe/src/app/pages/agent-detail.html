@@ -11,6 +11,7 @@
     <div class="head-right">
       <mc-status [status]="a.state" [live]="a.state === 'active'" />
       <span class="chip info mono">{{ a.provider }} / {{ a.model }}</span>
+      <button class="btn sm" (click)="openCapture()">save as template</button>
       <button class="btn sm danger ghost" (click)="removing.set(true)">delete profile</button>
     </div>
   </div>
@@ -65,17 +66,10 @@
         </div>
 
         <div class="panel" data-reveal>
-          <div class="panel-h">SESSIONS</div>
+          <div class="panel-h">SESSIONS <span class="spacer"></span><button class="linklike mono" (click)="selectTab('sessions')">open →</button></div>
           <div class="panel-b">
-            @for (s of a.sessions; track s.id) {
-              <div class="sess-row mono">
-                <mc-status [status]="s.status" label=" " />
-                <span>{{ s.title }}</span>
-                <span class="faint">{{ s.platform }}</span>
-                <span class="faint right">{{ s.messages }} msgs · {{ ago(s.startedAt) }}</span>
-              </div>
-            }
-            @if (!a.sessions.length) { <p class="dim">No recent sessions.</p> }
+            <p class="dim">View, download, or delete this agent’s conversation sessions in the
+              <button class="linklike" (click)="selectTab('sessions')">SESSIONS tab</button>.</p>
           </div>
         </div>
       </div>
@@ -213,38 +207,54 @@
       }
     }
 
-    @case ('soul') {
-      <div class="panel" data-reveal>
-        <div class="panel-h">
-          SOUL.md
-          <span class="chip on">safe edit surface</span>
-          <span class="spacer"></span>
-          @if (soulSaved()) { <span class="chip on">saved ✓</span> }
-          <button class="btn sm ghost" [disabled]="!soulDirty()" (click)="soulDraft.set(a.soul)">revert</button>
-          <button class="btn sm primary" [disabled]="!soulDirty()" (click)="saveSoul()">save</button>
-        </div>
-        <div class="panel-b">
-          <textarea class="input soul" [ngModel]="soulDraft()" (ngModelChange)="soulDraft.set($event)" spellcheck="false"></textarea>
-          <p class="lock-hint">writes to <code>~/.hermes/profiles/{{ a.name }}/SOUL.md</code> — the agent reloads it on next turn</p>
-        </div>
-      </div>
-    }
-
     @case ('skills') {
       <div class="panel" data-reveal>
         <div class="panel-h">SKILLS <span class="spacer"></span><span class="faint">{{ enabledSkills(a) }}/{{ a.skills.length }} enabled</span></div>
         <div class="panel-b">
           @for (s of a.skills; track s.id) {
-            <div class="skill-row">
-              <button class="toggle mono" [class.on]="s.enabled" (click)="store.toggleSkill(a.id, s.id)">
-                {{ s.enabled ? 'ON' : 'OFF' }}
-              </button>
-              <div class="skill-id">
-                <span class="mono name">{{ s.name }}</span>
-                <span class="chip" [class.info]="s.source === 'hub'" [class.off]="s.source !== 'hub'">{{ s.source }} · v{{ s.version }}</span>
+            <div class="skill-item" [class.expanded]="expandedSkill() === s.id">
+              <div class="skill-row">
+                <button class="toggle mono" [class.on]="s.enabled" (click)="store.toggleSkill(a.id, s.id)">
+                  {{ s.enabled ? 'ON' : 'OFF' }}
+                </button>
+                <div class="skill-id">
+                  <span class="mono name">{{ s.name }}</span>
+                  <span class="chip"
+                        [class.info]="s.source === 'hub'"
+                        [class.custom]="s.source === 'user'"
+                        [class.off]="s.source === 'bundled'"
+                        [title]="s.source === 'user' ? 'agent-authored skill' : s.source === 'hub' ? 'installed from Skills Hub' : 'ships with Hermes'">{{ s.source }} · v{{ s.version }}</span>
+                </div>
+                <span class="dim desc">{{ s.description }}</span>
+                <button class="btn sm ghost" (click)="viewSkill(s)">{{ expandedSkill() === s.id ? 'close' : 'view / edit' }}</button>
+                <button class="btn sm danger ghost" (click)="store.removeSkill(a.id, s.id)">remove</button>
               </div>
-              <span class="dim desc">{{ s.description }}</span>
-              <button class="btn sm danger ghost" (click)="store.removeSkill(a.id, s.id)">remove</button>
+              @if (expandedSkill() === s.id) {
+                <div class="skill-editor">
+                  @if (skillLoading()) {
+                    <p class="dim mono">loading SKILL.md…</p>
+                  } @else if (skillContent(); as c) {
+                    <div class="skill-editor-meta mono">
+                      <span class="faint">{{ c.path }}/SKILL.md</span>
+                      @if (c.files.length > 1) {
+                        <span class="spacer"></span>
+                        <span class="faint">{{ c.files.length }} files: {{ c.files.join(', ') }}</span>
+                      }
+                    </div>
+                    <textarea class="input soul" [ngModel]="skillBody()" (ngModelChange)="skillBody.set($event)" spellcheck="false"></textarea>
+                    <div class="editor-actions">
+                      <button class="btn primary" [disabled]="!skillDirty() || skillSaving()" (click)="saveSkill(s)">
+                        {{ skillSaving() ? 'saving…' : 'save SKILL.md' }}
+                      </button>
+                      <button class="btn sm ghost" [disabled]="!skillDirty()" (click)="skillBody.set(c.body)">revert</button>
+                      @if (skillSaved()) { <span class="chip on">saved ✓</span> }
+                      @else if (skillDirty()) { <span class="chip off">unsaved changes</span> }
+                    </div>
+                  } @else {
+                    <p class="dim mono">SKILL.md not available for this skill.</p>
+                  }
+                </div>
+              }
             </div>
           }
           <div class="add-row">
@@ -262,7 +272,37 @@
 
     @case ('mcp') {
       <div class="panel" data-reveal>
-        <div class="panel-h">MCP SERVERS</div>
+        <div class="panel-h">
+          {{ editingMcp() ? 'EDIT MCP SERVER' : 'ADD MCP SERVER' }}
+          @if (editingMcp(); as e) { <span class="chip info">{{ e }}</span> }
+        </div>
+        <div class="panel-b">
+          <div class="mcp-add">
+            <input class="input name-in" [(ngModel)]="mcpName" placeholder="server name e.g. github" />
+            <select class="select transport-in" [(ngModel)]="mcpTransport">
+              <option value="http">http</option>
+              <option value="sse">sse</option>
+              <option value="stdio">stdio</option>
+            </select>
+            @if (mcpTransport === 'stdio') {
+              <input class="input cmd-in" [(ngModel)]="mcpCommand" placeholder="command e.g. npx" />
+              <input class="input args-in" [(ngModel)]="mcpArgs" placeholder="args e.g. @modelcontextprotocol/server-github" />
+            } @else {
+              <input class="input url-in" [(ngModel)]="mcpUrl" placeholder="url e.g. https://mcp.example.com" />
+            }
+            <button class="btn primary" [disabled]="!mcpFormValid()" (click)="saveMcp()">
+              {{ editingMcp() ? 'update' : 'connect' }}
+            </button>
+            @if (editingMcp()) {
+              <button class="btn ghost" (click)="resetMcpForm()">cancel</button>
+            }
+          </div>
+          <p class="lock-hint">equivalent CLI: <code>hermes -p {{ a.name }} mcp install &lt;server&gt;</code></p>
+        </div>
+      </div>
+
+      <div class="panel" data-reveal>
+        <div class="panel-h">MCP SERVERS <span class="spacer"></span><span class="faint">{{ a.mcp.length }} connected</span></div>
         <div class="panel-b">
           @for (m of a.mcp; track m.id) {
             <div class="mcp-row mono">
@@ -272,28 +312,14 @@
               <span class="faint">{{ m.tools }} tools</span>
               <span class="faint">{{ m.latencyMs !== null ? m.latencyMs + 'ms' : '—' }}</span>
               <span class="spacer"></span>
+              <button class="btn sm ghost" [disabled]="mcpTesting() === m.id" (click)="testMcp(m)">
+                {{ mcpTesting() === m.id ? 'testing…' : 'retest' }}
+              </button>
+              <button class="btn sm ghost" (click)="editMcp(m)">edit</button>
               <button class="btn sm danger ghost" (click)="store.removeMcp(a.id, m.id)">disconnect</button>
             </div>
           }
           @if (!a.mcp.length) { <p class="dim">No MCP servers connected.</p> }
-          <div class="add-row">
-            <input class="input" [(ngModel)]="mcpName" placeholder="server name e.g. github" />
-            <select class="select" [(ngModel)]="mcpTransport">
-              <option value="http">http</option>
-              <option value="sse">sse</option>
-              <option value="stdio">stdio</option>
-            </select>
-            @if (mcpTransport === 'stdio') {
-              <input class="input" [(ngModel)]="mcpCommand" placeholder="command e.g. npx" />
-              <input class="input" [(ngModel)]="mcpArgs" placeholder="args e.g. @modelcontextprotocol/server-github" />
-            } @else {
-              <input class="input" [(ngModel)]="mcpUrl" placeholder="url e.g. https://mcp.example.com" />
-            }
-            <button class="btn primary"
-                    [disabled]="!mcpName.trim() || (mcpTransport === 'stdio' ? !mcpCommand.trim() : !mcpUrl.trim())"
-                    (click)="addMcp()">connect</button>
-          </div>
-          <p class="lock-hint">equivalent CLI: <code>hermes -p {{ a.name }} mcp install &lt;server&gt;</code></p>
         </div>
       </div>
     }
@@ -344,26 +370,139 @@
           @for (f of ['SOUL.md', 'MEMORY.md', 'config.yaml']; track f) {
             <button class="tab file-tab" [class.on]="fileView() === f" (click)="fileView.set($any(f))">{{ f }}</button>
           }
-          @if (fileView() === 'config.yaml') {
+          @if (fileView() === 'SOUL.md') {
+            @if (soulSaved()) { <span class="chip on">saved ✓</span> }
+            <button class="btn sm ghost" [disabled]="!soulDirty()" (click)="soulDraft.set(a.soul)">revert</button>
+            <button class="btn sm primary" [disabled]="!soulDirty()" (click)="saveSoul()">save</button>
+          } @else if (fileView() === 'config.yaml') {
             @if (configSaved()) { <span class="chip on">saved ✓</span> }
             <button class="btn sm ghost" [disabled]="!configDirty()" (click)="configDraft.set(a.configYaml)">revert</button>
             <button class="btn sm primary" [disabled]="!configDirty()" (click)="saveConfig()">save</button>
           }
         </div>
         <div class="panel-b">
-          @if (fileView() === 'config.yaml') {
+          <div class="file-path mono faint">~/.hermes/profiles/{{ a.name }}/{{ fileView() }}</div>
+          @if (fileView() === 'SOUL.md') {
+            <textarea class="input soul" [ngModel]="soulDraft()" (ngModelChange)="soulDraft.set($event)" spellcheck="false"></textarea>
+            <p class="lock-hint">SOUL.md is the safe edit surface — the agent reloads it on next turn</p>
+          } @else if (fileView() === 'config.yaml') {
             <textarea class="input soul" [ngModel]="configDraft()" (ngModelChange)="configDraft.set($event)" spellcheck="false"></textarea>
             <p class="lock-hint">platform tokens (<code>slack</code>, <code>whatsapp</code>, <code>honcho</code>, …) and model overrides (<code>model.default</code> / <code>model.base_url</code>) live here — invalid YAML is rejected by the backend</p>
           } @else {
             <pre class="file mono">{{ fileContent() }}</pre>
-            <p class="lock-hint">
-              @if (fileView() === 'SOUL.md') { editable in the <button class="linklike" (click)="tab.set('soul')">soul tab</button> }
-              @else { read-only — edit via <code>hermes -p {{ a.name }} setup</code> }
-            </p>
+            <p class="lock-hint">read-only — edit via <code>hermes -p {{ a.name }} setup</code></p>
           }
         </div>
       </div>
     }
+
+    @case ('sessions') {
+      <div class="panel" data-reveal>
+        <div class="panel-h">
+          SESSIONS
+          <span class="spacer"></span>
+          @if (sessionsLoading()) { <span class="faint">loading…</span> }
+          <button class="btn sm ghost" [disabled]="sessionsLoading()" (click)="loadSessions()">refresh</button>
+        </div>
+        <div class="panel-b">
+          @for (s of sessions() ?? []; track s.id) {
+            <div class="sess-row mono">
+              <mc-status [status]="s.status" label=" " />
+              <span class="title">{{ s.title }}</span>
+              <span class="faint">{{ s.platform }}</span>
+              <span class="faint">{{ s.messages }} msgs · {{ ago(s.startedAt) }}</span>
+              <span class="spacer"></span>
+              <button class="btn sm ghost" (click)="viewSession(s)">view</button>
+              <button class="btn sm ghost" (click)="downloadSession(s)">download</button>
+              <button class="btn sm danger ghost" (click)="deleteSession(s)">delete</button>
+            </div>
+          }
+          @if (sessions() !== null && !sessions()!.length) { <p class="dim">No sessions recorded for this agent.</p> }
+        </div>
+      </div>
+    }
+  }
+
+  @if (viewingSession(); as v) {
+    <div class="scrim" (click)="viewingSession.set(null)">
+      <div class="modal wide session-modal" (click)="$event.stopPropagation()">
+        <div class="panel-h">
+          SESSION · {{ v.title }}
+          <span class="chip off mono">{{ v.session.platform }}</span>
+          <span class="spacer"></span>
+          <button class="btn sm ghost" (click)="downloadSession(v.session)">download</button>
+          <button class="btn sm ghost" (click)="viewingSession.set(null)">close</button>
+        </div>
+
+        @if (!v.loading) {
+          <div class="session-toolbar">
+            <div class="seg mono">
+              <button [class.on]="sessionView() === 'chat'" (click)="setSessionView('chat')">chat</button>
+              <button [class.on]="sessionView() === 'json'" (click)="setSessionView('json')">json</button>
+            </div>
+            <div class="search">
+              <input class="input" [ngModel]="sessionSearch()" (ngModelChange)="onSessionSearch($event)"
+                     placeholder="search transcript…" spellcheck="false" />
+              @if (sessionSearch().trim()) {
+                <span class="count mono">{{ matchPos() }}/{{ matchCount() }}</span>
+                <button class="btn sm ghost" [disabled]="!matchCount()" (click)="gotoMatch(-1)">↑</button>
+                <button class="btn sm ghost" [disabled]="!matchCount()" (click)="gotoMatch(1)">↓</button>
+              }
+            </div>
+            @if (sessionRoles().length > 1) {
+              <div class="role-filter mono">
+                <span class="rf-label">show</span>
+                @for (r of sessionRoles(); track r) {
+                  <button class="rchip" [class.on]="roleVisible(r)" (click)="toggleRole(r)">{{ r }}</button>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <div class="modal-b session-body">
+          @if (v.loading) {
+            <p class="dim">loading chat history…</p>
+          } @else if (!v.messages.length) {
+            <p class="dim">No messages recorded for this session.</p>
+          } @else if (sessionView() === 'chat') {
+            <div class="term">
+              @for (m of renderedMessages(); track m.idx) {
+                <div class="trow trow-{{ m.role }}"
+                     [class.clamped]="m.long && !isMsgExpanded(m.idx) && !sessionSearch().trim()">
+                  <div class="thead">
+                    <span class="pr">{{ msgGlyph(m.role) }}</span>
+                    <span class="rname">{{ m.role }}</span>
+                    @if (m.toolName) { <span class="tname">{{ m.toolName }}</span> }
+                    <span class="spacer"></span>
+                    <span class="tts">{{ clock(m.ts) }}</span>
+                  </div>
+                  @if (m.contentHtml) { <div class="tbody" [innerHTML]="m.contentHtml"></div> }
+                  @if (m.reasoningHtml) {
+                    <details class="tx" [attr.open]="sessionSearch().trim() ? '' : null">
+                      <summary>reasoning</summary>
+                      <pre [innerHTML]="m.reasoningHtml"></pre>
+                    </details>
+                  }
+                  @if (m.toolCallsHtml) {
+                    <details class="tx" [attr.open]="sessionSearch().trim() ? '' : null">
+                      <summary>tool calls</summary>
+                      <pre [innerHTML]="m.toolCallsHtml"></pre>
+                    </details>
+                  }
+                  @if (m.long && !sessionSearch().trim()) {
+                    <button class="more" (click)="expandMsg(m.idx)">{{ isMsgExpanded(m.idx) ? '⋀ show less' : '⋁ show more' }}</button>
+                  }
+                </div>
+              }
+              @if (!renderedMessages().length) { <p class="dim">No messages match the role filter.</p> }
+            </div>
+          } @else {
+            <mc-json-tree [data]="visibleRawMessages()" [query]="sessionSearch()" />
+          }
+        </div>
+      </div>
+    </div>
   }
 
   @if (removing()) {
@@ -379,6 +518,25 @@
           <div class="modal-actions">
             <button class="btn ghost" (click)="removing.set(false)">cancel</button>
             <button class="btn danger" [disabled]="confirmText !== a.name" (click)="confirmRemove()">delete permanently</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (capturing()) {
+    <div class="scrim" (click)="capturing.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="panel-h">SAVE AS TEMPLATE</div>
+        <div class="modal-b">
+          <p class="dim">Snapshots <span class="mono">{{ a.name }}</span>'s soul, memory, skills, and MCP servers into a reusable profile. Key values aren't copied — only which keys are required.</p>
+          <div class="field">
+            <label>template name</label>
+            <input class="input" [(ngModel)]="captureName" [placeholder]="a.name + '-template'" />
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" (click)="capturing.set(false)">cancel</button>
+            <button class="btn primary" [disabled]="capturingBusy()" (click)="confirmCapture()">{{ capturingBusy() ? 'saving…' : 'save template' }}</button>
           </div>
         </div>
       </div>

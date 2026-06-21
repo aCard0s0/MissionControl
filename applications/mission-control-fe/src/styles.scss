@@ -181,11 +181,12 @@ a:hover { text-decoration: underline; }
   color: var(--dim);
   white-space: nowrap;
 
-  &.on    { color: var(--acc);   border-color: var(--acc-line);   background: var(--acc-soft); }
-  &.warn  { color: var(--amber); border-color: var(--amber-line); background: var(--amber-soft); }
-  &.crit  { color: var(--red);   border-color: var(--red-line);   background: var(--red-soft); }
-  &.info  { color: var(--cyan);  border-color: var(--cyan-line);  background: var(--cyan-soft); }
-  &.off   { color: var(--faint); }
+  &.on     { color: var(--acc);    border-color: var(--acc-line);   background: var(--acc-soft); }
+  &.warn   { color: var(--amber);  border-color: var(--amber-line); background: var(--amber-soft); }
+  &.crit   { color: var(--red);    border-color: var(--red-line);   background: var(--red-soft); }
+  &.info   { color: var(--cyan);   border-color: var(--cyan-line);  background: var(--cyan-soft); }
+  &.custom { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 45%, transparent); background: color-mix(in srgb, var(--violet) 14%, transparent); }
+  &.off    { color: var(--faint); }
 }
 
 .btn {
@@ -264,6 +265,8 @@ a:hover { text-decoration: underline; }
   font-size: 10px;
   color: var(--faint);
   code { color: var(--cyan); background: var(--cyan-soft); padding: 1px 5px; border-radius: 3px; }
+  &.ok   { color: var(--acc); }
+  &.warn { color: var(--amber); }
 }
 
 // log level colors
@@ -299,6 +302,16 @@ a:hover { text-decoration: underline; }
     overflow-y: auto;
   }
 }
+
+// search-match highlight — injected via [innerHTML], so it must be a global
+// rule (component-scoped styles don't reach innerHTML-rendered nodes).
+.jt-hit {
+  background: var(--amber);
+  color: #1a1205;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.jt-hit.current { background: var(--acc); outline: 1px solid var(--acc); }
 
 // CDK drag-drop ghosting
 .cdk-drag-preview {

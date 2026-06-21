@@ -6,5 +6,8 @@ public record McpServerDto(
     String transport,
     String status,
     int tools,
-    Long latencyMs) {
+    Long latencyMs,
+    String url,
+    String command,
+    String args) {
 }

@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HermesStore } from '../core/hermes-store';
+import { AgentProfile } from '../core/models';
 import { Sparkline } from '../shared/sparkline';
 import { Gauge } from '../shared/gauge';
 import { StatusDot } from '../shared/status-dot';
@@ -35,7 +36,46 @@ export class OverviewPage {
     };
   });
 
-  protected readonly recentLogs = computed(() => this.store.containerLogs().slice(0, 12));
+  /** aggregate skill + MCP-tool counts across the container's agents */
+  protected readonly skillToolCounts = computed(() => {
+    const as = this.store.containerAgents();
+    return {
+      skills: as.reduce((n, a) => n + a.skills.length, 0),
+      tools: as.reduce((n, a) => n + a.mcp.reduce((t, m) => t + m.tools, 0), 0),
+    };
+  });
+
+  /** per-agent skill / MCP / tool tallies for the row badges; `custom` counts
+   *  agent-authored skills (source 'user') so they stand out from bundled/hub */
+  protected agentMeta(a: AgentProfile) {
+    return {
+      skills: a.skills.length,
+      custom: a.skills.filter(s => s.source === 'user').length,
+      mcp: a.mcp.length,
+      tools: a.mcp.reduce((t, m) => t + m.tools, 0),
+    };
+  }
+
+  /** log-tail focus: agent id to filter the tail on, or null for all */
+  protected readonly logAgent = signal<string | null>(null);
+  /** quick level filter for the log tail */
+  protected readonly logLevel = signal<'all' | 'error' | 'warn'>('all');
+
+  protected readonly logAgentName = computed(() =>
+    this.store.containerAgents().find(a => a.id === this.logAgent())?.name ?? null);
+
+  protected toggleLogAgent(id: string): void {
+    this.logAgent.update(cur => cur === id ? null : id);
+  }
+
+  protected readonly recentLogs = computed(() => {
+    const agent = this.logAgent();
+    const level = this.logLevel();
+    return this.store.containerLogs()
+      .filter(l => (agent ? l.agentId === agent : true))
+      .filter(l => (level === 'all' ? true : l.level === level))
+      .slice(0, 40);
+  });
   protected readonly errorCount = computed(() =>
     this.store.containerLogs().filter(l => l.level === 'error').length);
 
