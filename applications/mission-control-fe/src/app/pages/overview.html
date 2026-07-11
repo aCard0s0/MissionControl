@@ -83,9 +83,8 @@
           </div>
           @for (a of store.containerAgents(); track a.id) {
             @let m = agentMeta(a);
-            <div class="agent-row" [class.active]="logAgent() === a.id">
-              <button class="agent-pick" (click)="toggleLogAgent(a.id)"
-                      [title]="logAgent() === a.id ? 'showing this agent’s logs — click to clear' : 'show this agent’s logs'">
+            <div class="agent-row">
+              <div class="agent-pick">
                 <mc-status [status]="a.state" label=" " [live]="a.state === 'active'" />
                 <span class="mono name">{{ a.name }}</span>
                 <span class="dim role">{{ a.role }}</span>
@@ -98,7 +97,7 @@
                   <span class="mc-badge" title="{{ m.tools }} MCP tools">{{ m.tools }} tl</span>
                 </span>
                 <span class="mono faint right">{{ a.model }} · {{ ago(a.lastActive) }}</span>
-              </button>
+              </div>
               <a class="details" [routerLink]="['/agents', a.id]" title="open agent details">details →</a>
             </div>
           }
@@ -143,6 +142,7 @@
           <div class="count-row mono">
             <span class="count on">{{ mcpStats().connected }} MCP connected</span>
             @if (mcpStats().errored > 0) { <span class="count crit">{{ mcpStats().errored }} MCP failing</span> }
+            @if (mcpStats().unknown > 0) { <span class="count info">{{ mcpStats().unknown }} MCP unchecked</span> }
           </div>
           <div class="chips">
             @for (i of comms(); track i.kind) {
@@ -159,12 +159,13 @@
     <!-- log tail — full width -->
     <div class="panel" data-reveal>
       <div class="panel-h">
-        LOG TAIL
-        @if (logAgentName(); as name) {
-          <span class="chip info">{{ name }} <button class="clear" (click)="logAgent.set(null)" title="clear agent filter">×</button></span>
-        }
+        CONTAINER LOG TAIL
+        <span class="faint">Docker output is not profile-attributed</span>
         <span class="spacer"></span>
-        @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }}</span> }
+        @if (store.logsUpdatedAt(); as updated) { <span class="faint">updated {{ ago(updated) }}</span> }
+        @if (store.logsLoading()) { <span class="faint">refreshing…</span> }
+        @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }} in tail</span> }
+        <button class="btn sm ghost" [disabled]="store.logsLoading()" (click)="store.refreshLogs()">refresh</button>
         <div class="log-filter mono">
           <button [class.on]="logLevel() === 'all'" (click)="logLevel.set('all')">all</button>
           <button [class.on]="logLevel() === 'error'" (click)="logLevel.set('error')">error</button>
@@ -172,7 +173,7 @@
         </div>
       </div>
       <div class="panel-b logs mono">
-        @for (l of recentLogs(); track $index) {
+        @for (l of recentLogs(); track logKey(l)) {
           <div class="log-line">
             <span class="faint">{{ clock(l.ts) }}</span>
             <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase().padEnd(5) }}</span>
@@ -180,7 +181,8 @@
             <span class="msg">{{ l.msg }}</span>
           </div>
         }
-        @if (!recentLogs().length) { <p class="dim">No log entries match this filter.</p> }
+        @if (store.logsError()) { <p class="dim">Log refresh failed — {{ store.logsError() }}</p> }
+        @else if (!recentLogs().length) { <p class="dim">{{ store.logsLoading() ? 'Loading container logs…' : 'No log entries match this filter.' }}</p> }
       </div>
     </div>
   }

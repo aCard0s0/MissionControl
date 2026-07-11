@@ -52,6 +52,8 @@ services:
     environment:
       MC_DATA_MODE: live
       MC_CONTAINER_FILTER: hermes
+      MC_SECRET_KEY: ${MC_SECRET_KEY:?set by ./mc}
+      MC_SECRET_KEY_PREVIOUS: ${MC_SECRET_KEY_PREVIOUS:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - mission-control-data:/data

@@ -107,6 +107,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   // concurrency caps — globalCount is the source of truth, not shells.size()
   private final AtomicInteger globalCount = new AtomicInteger();
   private final Map<String, AtomicInteger> perClientCount = new ConcurrentHashMap<>();
+  private final TerminalSessionLimiter globalSlots;
 
   // idle/heartbeat reaper — single daemon thread, mirrors ModelProviderService's executor pattern
   private final ScheduledExecutorService reaper = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -119,6 +120,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
     this.clients = clients;
     this.hosts = hosts;
     this.props = props;
+    this.globalSlots = new TerminalSessionLimiter(props.maxSessions());
   }
 
   @PostConstruct
@@ -156,14 +158,15 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
 
     // ── admission: global + per-client caps (atomic reserve, back out on per-client overflow) ──
     String clientKey = remoteKey(session);
-    if (globalCount.get() >= props.maxSessions()) {
+    if (!globalSlots.tryAcquire()) {
       log.warn("terminal session rejected — global cap {} reached", props.maxSessions());
       session.close(CloseStatus.SERVICE_OVERLOAD.withReason("terminal session limit reached"));
       return;
     }
     AtomicInteger perClient = perClientCount.computeIfAbsent(clientKey, k -> new AtomicInteger());
     if (perClient.incrementAndGet() > props.maxSessionsPerClient()) {
-      perClient.decrementAndGet();
+      perClientCount.computeIfPresent(clientKey, (k, c) -> c.decrementAndGet() <= 0 ? null : c);
+      globalSlots.release();
       log.warn("terminal session rejected — per-client cap {} reached for {}",
           props.maxSessionsPerClient(), clientKey);
       session.close(CloseStatus.SERVICE_OVERLOAD.withReason("per-client terminal limit reached"));
@@ -333,6 +336,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   private void releaseSlot(String clientKey) {
     globalCount.decrementAndGet();
     perClientCount.computeIfPresent(clientKey, (k, c) -> c.decrementAndGet() <= 0 ? null : c);
+    globalSlots.release();
   }
 
   private static String remoteKey(WebSocketSession session) {

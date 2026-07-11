@@ -19,14 +19,14 @@ Both ship in **one container**: Spring Boot serves the Angular build and the API
 
 ```bash
 ./mc start --build      # build combined image + deploy behind tailscale (default)
-./mc start --ts=off     # plain docker instead — http://localhost:8080
+./mc start --ts=off     # plain docker on loopback — http://127.0.0.1:8080
 ./mc start --ts=off --mock --port=9000   # demo mode with mock data, custom port
 ./mc status             # which flavor is running, where
 ./mc logs -f            # follow app logs
 ./mc ollama pull llama3.2   # pull a model into the stack's ollama service
 ```
 
-Both flavors mount `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
+Both flavors mount `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. `./mc` generates a persistent encryption key in the gitignored `.mission-control.env` on first start. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
 
 The stack also includes an **ollama** service (`./mc start` brings it up by default, `--ollama=off` opts out): a local model runtime on host port `11434` (override with `OLLAMA_PORT`), with models persisted in an `ollama-models` volume. Register it in the dashboard's Models page as `http://host.docker.internal:11434` (agent containers) or `http://localhost:11434` (this machine), and manage it with `./mc ollama …` (`list`, `pull`, `logs -f`, …).
 
@@ -38,7 +38,7 @@ The default `./mc start` flavor ([deploy/tailscale](deploy/tailscale)) runs the 
 
 ```bash
 # backend — http://localhost:8080
-cd applications/mission-control-server && mvn spring-boot:run
+cd applications/mission-control-server && MC_ALLOW_DEV_KEY=true mvn spring-boot:run
 
 # frontend — http://localhost:4300 (proxies /api and /health to :8080)
 cd applications/mission-control-fe && npm install && npm start
@@ -48,4 +48,4 @@ The frontend dev default is `dataMode: 'mock'` (no backend needed) — switch to
 
 ## Status
 
-Live mode today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, persisted ops board. Hermes profile introspection (SOUL.md, skills, MCP, cron) is mock-only until the hermes adapter lands — the UI states this explicitly.
+Live mode today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, persisted ops board, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP servers, integrations, and sessions. Calendar jobs and webhooks remain mock-only.

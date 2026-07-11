@@ -1,9 +1,17 @@
 package io.hermes.missioncontrol.hermes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.dockerjava.api.exception.ConflictException;
+import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.hermes.HermesProfiles.ConfigInfo;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -146,5 +154,72 @@ class HermesProfilesTest {
     assertEquals("model", plan.get(0)[0], "wipe first");
     assertEquals("", plan.get(0)[1]);
     assertEquals("model.default", plan.get(1)[0], "then promote back to a map with the default");
+  }
+
+  @Test
+  void mcpStartsUnknownCachesHandshakeFailureAndInvalidatesOnConfigChange() {
+    DockerExecService dockerExec = mock(DockerExecService.class);
+    HermesProfiles liveProfiles = new HermesProfiles(dockerExec, new ObjectMapper());
+    Map<String, Object> server = new LinkedHashMap<>(Map.of(
+        "url", "http://host.docker.internal:8050/mcp/sse",
+        "transport", "sse",
+        "enabled", true));
+    Map<String, Object> config = Map.of("mcp_servers", Map.of("tp", server));
+    String yaml = "mcp_servers:\n  tp:\n    url: http://host.docker.internal:8050/mcp/sse\n    transport: sse\n    enabled: true\n";
+    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+        anyBoolean(), any(Duration.class)))
+        .thenReturn(new DockerExecService.ExecResult(0, yaml, ""))
+        // Hermes currently exits 0 even when its protocol handshake fails.
+        .thenReturn(new DockerExecService.ExecResult(0, "✗ Connection failed", ""));
+
+    assertEquals("unknown", liveProfiles.listMcpServers("unix:///sock", "cid", "ops", config).get(0).status());
+    assertEquals("error", liveProfiles.testMcpServer("unix:///sock", "cid", "ops", "tp").status());
+    assertEquals("error", liveProfiles.listMcpServers("unix:///sock", "cid", "ops", config).get(0).status());
+
+    server.put("url", "http://host.docker.internal:9999/mcp");
+    assertEquals("unknown", liveProfiles.listMcpServers("unix:///sock", "cid", "ops", config).get(0).status());
+  }
+
+  @Test
+  void disabledMcpIsNeverReportedConnected() {
+    Map<String, Object> config = Map.of("mcp_servers", Map.of("off", Map.of(
+        "url", "http://example.test/mcp", "enabled", false)));
+    assertEquals("disabled", profiles.listMcpServers("unix:///sock", "cid", "ops", config).get(0).status());
+  }
+
+  @Test
+  void mcpToolCountParserUsesLargestDiscoveredCount() {
+    assertEquals(12, HermesProfiles.parseToolCount("Connected: 3 tools\nTools discovered: 12"));
+    assertEquals(true, HermesProfiles.mcpProbeSucceeded("  ✓ Connected (25ms)\n  ✓ Tools discovered: 12"));
+    assertEquals(false, HermesProfiles.mcpProbeSucceeded("  ✗ Connection failed (7000ms)"));
+  }
+
+  @Test
+  void gatewayLogParserPreservesTimeIdentityAndSeverity() {
+    String output = """
+        2026-07-11 10:24:39.656561717  gateway started
+        not a supervised gateway record
+        2026-07-11 10:24:40.000000000  \u001B[33mWARNING provider error is recoverable\u001B[0m
+        2026-07-11 10:24:41.123000000  PermissionError: denied
+        """;
+
+    var lines = HermesProfiles.parseGatewayLogs("trader-00", output);
+
+    assertEquals(3, lines.size());
+    assertEquals("trader-00", lines.get(0).source());
+    assertEquals("info", lines.get(0).level());
+    assertEquals(1783765479656L, lines.get(0).ts());
+    assertEquals("warn", lines.get(1).level(), "an explicit warning wins over 'error' in its message");
+    assertEquals("WARNING provider error is recoverable", lines.get(1).msg());
+    assertEquals("error", lines.get(2).level());
+  }
+
+  @Test
+  void stoppedContainerHasNoReadableProfileInventory() {
+    DockerExecService dockerExec = mock(DockerExecService.class);
+    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+        anyBoolean(), any(Duration.class))).thenThrow(new ConflictException("container is not running"));
+
+    assertEquals(List.of(), new HermesProfiles(dockerExec, new ObjectMapper()).list("unix:///sock", "stopped"));
   }
 }

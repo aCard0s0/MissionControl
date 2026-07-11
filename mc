@@ -15,6 +15,7 @@ IMAGE="${IMAGE:-hermes-mission-control}"
 TAG="${TAG:-latest}"
 NAME="${NAME:-mission-control}"
 PORT="${PORT:-8080}"
+BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
 MC_DATA_MODE="${MC_DATA_MODE:-live}"
 MC_CONTAINER_FILTER="${MC_CONTAINER_FILTER:-hermes}"
 DATA_VOLUME="${DATA_VOLUME:-mission-control-data}"
@@ -25,7 +26,9 @@ cd "$(dirname "$0")"
 
 COMPOSE_FILE="deploy/tailscale/docker-compose.yml"
 ENV_FILE="deploy/tailscale/.env"
+APP_ENV_FILE=".mission-control.env"
 COMPOSE=(docker compose -p mission-control -f "${COMPOSE_FILE}")
+MC_SECRET_KEY_VALUE=""
 
 usage() {
   cat <<EOF
@@ -61,7 +64,8 @@ Examples:
   ./mc logs -f
   ./mc down --volumes
 
-Env overrides: IMAGE TAG NAME PORT MC_DATA_MODE MC_CONTAINER_FILTER DATA_VOLUME
+Env overrides: IMAGE TAG NAME PORT BIND_ADDRESS MC_DATA_MODE MC_CONTAINER_FILTER DATA_VOLUME
+               BIND_ADDRESS defaults to 127.0.0.1; remote exposure has no app auth
                OLLAMA_PORT  (host port for the ollama service, default 11434)
                MC_NO_KEYCHAIN=1  (bypass macOS keychain creds in headless runs)
 EOF
@@ -117,7 +121,33 @@ json.dump(cfg, open(sys.argv[2], "w"))' "${src}" "${DOCKER_CONFIG_TEMP}/config.j
 # ${TS_AUTHKEY:?} interpolation a dummy value (never used to 'up' the
 # tailscale flavor; the ollama service has no required interpolations)
 compose_ro() {
-  TS_AUTHKEY="${TS_AUTHKEY:-unset}" OLLAMA_PORT="${OLLAMA_PORT}" "${COMPOSE[@]}" "$@"
+  TS_AUTHKEY="${TS_AUTHKEY:-unset}" MC_SECRET_KEY="${MC_SECRET_KEY_VALUE:-unset}" \
+    OLLAMA_PORT="${OLLAMA_PORT}" "${COMPOSE[@]}" "$@"
+}
+
+# Persist one application encryption key across both deployment flavors. The
+# file is gitignored and owner-readable only. Never print or pass the value as
+# a command-line argument; it enters containers through their environment.
+ensure_app_secret() {
+  if [[ ! -f "${APP_ENV_FILE}" ]]; then
+    command -v openssl >/dev/null || {
+      echo "error: openssl is required to generate ${APP_ENV_FILE}" >&2
+      exit 1
+    }
+    local generated old_umask
+    generated="$(openssl rand -hex 32)"
+    old_umask="$(umask)"
+    umask 077
+    printf 'MC_SECRET_KEY=%s\n' "${generated}" > "${APP_ENV_FILE}"
+    umask "${old_umask}"
+    echo "✓ generated persistent Mission Control encryption key in ${APP_ENV_FILE}"
+  fi
+  chmod 600 "${APP_ENV_FILE}"
+  MC_SECRET_KEY_VALUE="$(sed -n 's/^MC_SECRET_KEY=//p' "${APP_ENV_FILE}" | tail -n 1)"
+  if [[ ${#MC_SECRET_KEY_VALUE} -lt 32 ]]; then
+    echo "error: ${APP_ENV_FILE} must contain MC_SECRET_KEY with at least 32 characters" >&2
+    exit 1
+  fi
 }
 
 require_docker() {
@@ -170,7 +200,7 @@ start_ts() {  # $1 = --build flag value
   fi
   echo "→ bringing up the tailscale flavor"
   maybe_bypass_keychain
-  "${COMPOSE[@]}" up -d
+  "${COMPOSE[@]}" --env-file "${APP_ENV_FILE}" --env-file "${ENV_FILE}" up -d
   echo "✓ deployed — http://mission-control.<tailnet>.ts.net  (tailnet only, no host ports)"
   echo "  find the exact URL with './mc status', or:"
   echo "  docker compose -p mission-control -f ${COMPOSE_FILE} exec tailscale tailscale status"
@@ -195,17 +225,21 @@ start_plain() {  # $1 = --build flag, $2 = --mock flag, $3 = --no-socket flag
   fi
 
   echo "→ replacing container ${NAME}"
+  if [[ "${BIND_ADDRESS}" != "127.0.0.1" && "${BIND_ADDRESS}" != "localhost" && "${BIND_ADDRESS}" != "[::1]" ]]; then
+    echo "⚠ plain mode is unauthenticated and will be exposed on ${BIND_ADDRESS}:${PORT}" >&2
+  fi
   docker rm -f "${NAME}" >/dev/null 2>&1 || true
   docker run -d --name "${NAME}" \
-    -p "${PORT}:8080" \
+    -p "${BIND_ADDRESS}:${PORT}:8080" \
     ${socket_args[@]+"${socket_args[@]}"} \
     -v "${DATA_VOLUME}:/data" \
+    --env-file "${APP_ENV_FILE}" \
     -e MC_DATA_MODE="${mode}" \
     -e MC_CONTAINER_FILTER="${MC_CONTAINER_FILTER}" \
     --restart unless-stopped \
     "${IMAGE}:${TAG}" >/dev/null
 
-  echo "✓ deployed — http://localhost:${PORT}  (dataMode=${mode}, filter=${MC_CONTAINER_FILTER})"
+  echo "✓ deployed — http://${BIND_ADDRESS}:${PORT}  (dataMode=${mode}, filter=${MC_CONTAINER_FILTER})"
   if [[ -z "$3" ]]; then socket_note; fi
 }
 
@@ -257,6 +291,7 @@ cmd_start() {
   done
 
   require_docker
+  ensure_app_secret
   if [[ "${ts}" == "on" ]]; then
     if [[ -n "${mock}${no_socket}" ]]; then
       echo "→ note: --mock/--port/--no-socket only apply to --ts=off — ignored"

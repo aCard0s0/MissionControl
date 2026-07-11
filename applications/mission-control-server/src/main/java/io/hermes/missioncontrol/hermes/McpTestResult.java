@@ -6,5 +6,6 @@ public record McpTestResult(
     String status,
     int tools,
     Long latencyMs,
-    String error) {
+    String error,
+    long checkedAt) {
 }

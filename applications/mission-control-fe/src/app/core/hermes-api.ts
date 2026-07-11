@@ -65,9 +65,11 @@ export interface ApiMcpServer {
   id: string;
   name: string;
   transport: 'stdio' | 'http' | 'sse' | string;
-  status: 'connected' | 'error' | 'disabled' | string;
+  status: 'unknown' | 'connected' | 'error' | 'disabled' | string;
   tools: number;
   latencyMs: number | null;
+  error?: string | null;
+  checkedAt?: number | null;
   url?: string | null;
   command?: string | null;
   args?: string | null;
@@ -75,10 +77,11 @@ export interface ApiMcpServer {
 
 export interface ApiMcpTestResult {
   name: string;
-  status: 'connected' | 'error' | 'disabled' | string;
+  status: 'unknown' | 'connected' | 'error' | 'disabled' | string;
   tools: number;
   latencyMs: number | null;
   error: string | null;
+  checkedAt: number;
 }
 
 export interface ApiIntegration {
@@ -320,6 +323,10 @@ export class HermesApi {
     return this.req(`/api/agents?hostId=${encodeURIComponent(hostId)}&containerId=${encodeURIComponent(containerId)}`);
   }
 
+  agentLogs(hostId: string, containerId: string, name: string, tail = 100): Promise<ApiLogLine[]> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/logs?tail=${tail}`);
+  }
+
   createAgent(
     hostId: string,
     containerId: string,
@@ -464,15 +471,15 @@ export class HermesApi {
   }
 
   startContainer(hostId: string, id: string): Promise<void> {
-    return this.req(`/api/containers/${hostId}/${id}/start`, { method: 'POST' });
+    return this.req(`/api/containers/${encodeURIComponent(hostId)}/${encodeURIComponent(id)}/start`, { method: 'POST' });
   }
 
   stopContainer(hostId: string, id: string): Promise<void> {
-    return this.req(`/api/containers/${hostId}/${id}/stop`, { method: 'POST' });
+    return this.req(`/api/containers/${encodeURIComponent(hostId)}/${encodeURIComponent(id)}/stop`, { method: 'POST' });
   }
 
   removeContainer(hostId: string, id: string): Promise<void> {
-    return this.req(`/api/containers/${hostId}/${id}`, { method: 'DELETE' });
+    return this.req(`/api/containers/${encodeURIComponent(hostId)}/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   // ── profile templates (reusable agent blueprints) ──────────────────────────

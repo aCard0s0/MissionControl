@@ -8,6 +8,12 @@ import { Reveal } from '../shared/reveal';
 import { uptime } from '../core/format';
 import { HermesContainer } from '../core/models';
 
+export function normalizeSeedProfiles(value: string): string[] {
+  return Array.from(new Set(value.split(',')
+    .map(p => p.trim().toLowerCase().replace(/\s+/g, '-'))
+    .filter(p => !!p && p !== 'default')));
+}
+
 @Component({
   selector: 'mc-containers',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,12 +35,14 @@ export class ContainersPage {
   protected readonly deployTags = signal<string[]>([]);
   protected readonly tagsLoading = signal(false);
   protected readonly tagsError = signal<string | null>(null);
+  protected readonly deployBusy = signal(false);
 
   protected readonly addingHost = signal(false);
   protected hostName = '';
   protected hostUrl = 'tcp://';
 
   protected readonly removing = signal<HermesContainer | null>(null);
+  protected readonly removingBusy = signal(false);
   protected confirmText = '';
 
   protected readonly connectedHosts = computed(() =>
@@ -65,28 +73,33 @@ export class ContainersPage {
     this.router.navigate(['/overview']);
   }
 
-  protected deploy(): void {
+  protected async deploy(): Promise<void> {
     const name = this.deployName.trim();
     const host = this.store.hostById(this.deployHost);
-    if (!name || !host || host.status !== 'connected' || !this.deployVersion) return;
-    const profiles = this.deployProfiles.split(',').map(p => p.trim()).filter(Boolean);
-    const id = this.store.deployContainer(name, this.deployVersion, profiles, this.deployHost);
-    this.deployOpen.set(false);
-    this.deployName = this.deployProfiles = '';
-    this.deployTags.set([]);
+    if (!name || !host || host.status !== 'connected' || !this.deployVersion || this.deployBusy()) return;
+    const profiles = normalizeSeedProfiles(this.deployProfiles);
+    this.deployBusy.set(true);
+    const id = await this.store.deployContainer(name, this.deployVersion, profiles, this.deployHost);
+    this.deployBusy.set(false);
     if (id) {
-      // mock returns the id synchronously; live selects it after the daemon reports it
+      this.deployOpen.set(false);
+      this.deployName = this.deployProfiles = '';
+      this.deployTags.set([]);
       this.store.selectContainer(id);
       this.router.navigate(['/overview']);
     }
   }
 
-  protected confirmRemove(): void {
+  protected async confirmRemove(): Promise<void> {
     const c = this.removing();
-    if (!c || this.confirmText !== c.name) return;
-    this.store.removeContainer(c.id);
-    this.removing.set(null);
-    this.confirmText = '';
+    if (!c || this.confirmText !== c.name || this.removingBusy()) return;
+    this.removingBusy.set(true);
+    const removed = await this.store.removeContainer(c.id);
+    this.removingBusy.set(false);
+    if (removed) {
+      this.removing.set(null);
+      this.confirmText = '';
+    }
   }
 
   protected addHost(): void {

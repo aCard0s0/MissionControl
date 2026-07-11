@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.hermes;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
+import io.hermes.missioncontrol.docker.LogLineDto;
 import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,11 +43,9 @@ public class AgentsController {
     DockerHostDto host = connected(request.hostId());
     String templateId = request.fromTemplateId();
     if (templateId != null && !templateId.isBlank()) {
-      // base profile exists with the request's provider/model/key — layer the
-      // template's soul/memory/skills/mcp/secrets on top of it. applyExisting
-      // re-reads the profile afterwards, so create it without a read-back.
-      profiles.createProfileBare(host.url(), request);
-      return templates.applyExisting(templateId, host.url(), request.containerId(), request.name());
+      // Create the request-configured base and layer the template's
+      // soul/memory/skills/mcp/secrets as one owned, rollback-safe operation.
+      return templates.createFromTemplate(templateId, host.url(), request);
     }
     return profiles.create(host.url(), request);
   }
@@ -206,6 +205,16 @@ public class AgentsController {
       @PathVariable String name) {
     DockerHostDto host = connected(hostId);
     return profiles.integrations(host.url(), containerId, name);
+  }
+
+  @GetMapping("/{hostId}/{containerId}/{name}/logs")
+  public List<LogLineDto> logs(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @RequestParam(defaultValue = "100") int tail) {
+    DockerHostDto host = connected(hostId);
+    return profiles.logs(host.url(), containerId, name, tail);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/sessions")

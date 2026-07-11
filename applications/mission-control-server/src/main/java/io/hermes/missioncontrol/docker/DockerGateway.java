@@ -18,14 +18,17 @@ import com.github.dockerjava.core.InvocationBuilder;
 import com.github.dockerjava.api.async.ResultCallback;
 import io.hermes.missioncontrol.AppProperties;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import io.hermes.missioncontrol.web.ResourceConflictException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -37,10 +40,12 @@ public class DockerGateway {
 
   private final DockerClients clients;
   private final AppProperties props;
+  private final DockerExecService dockerExec;
 
-  public DockerGateway(DockerClients clients, AppProperties props) {
+  public DockerGateway(DockerClients clients, AppProperties props, DockerExecService dockerExec) {
     this.clients = clients;
     this.props = props;
+    this.dockerExec = dockerExec;
   }
 
   // ── daemon probing ───────────────────────────────────────────────────────
@@ -214,32 +219,44 @@ public class DockerGateway {
   public List<LogLineDto> logs(String url, String containerId, int tail) {
     DockerClient client = clients.forUrl(url);
     List<LogLineDto> lines = new ArrayList<>();
-    try {
+    try (ResultCallback.Adapter<Frame> callback = new ResultCallback.Adapter<>() {
+      @Override
+      public void onNext(Frame frame) {
+        List<LogLineDto> parsed = parseLogFrame(frame);
+        if (!parsed.isEmpty()) {
+          synchronized (lines) {
+            lines.addAll(parsed);
+          }
+        }
+      }
+    }) {
       client.logContainerCmd(containerId)
           .withStdOut(true)
           .withStdErr(true)
           .withTimestamps(true)
           .withTail(Math.min(Math.max(tail, 1), 500))
-          .exec(new ResultCallback.Adapter<Frame>() {
-            @Override
-            public void onNext(Frame frame) {
-              LogLineDto line = parseLogFrame(frame);
-              if (line != null) {
-                synchronized (lines) {
-                  lines.add(line);
-                }
-              }
-            }
-          })
-          .awaitCompletion(8, TimeUnit.SECONDS);
+          .exec(callback);
+      callback.awaitCompletion(8, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
+    } catch (Exception e) {
+      throw e instanceof RuntimeException runtime ? runtime
+          : new RuntimeException("logs failed: " + e.getMessage(), e);
     }
     return lines;
   }
 
-  private static LogLineDto parseLogFrame(Frame frame) {
-    String raw = new String(frame.getPayload(), StandardCharsets.UTF_8).stripTrailing();
+  static List<LogLineDto> parseLogFrame(Frame frame) {
+    String payload = new String(frame.getPayload(), StandardCharsets.UTF_8);
+    List<LogLineDto> parsed = new ArrayList<>();
+    for (String raw : payload.split("\\R", -1)) {
+      LogLineDto line = parseLogLine(frame, raw.stripTrailing());
+      if (line != null) parsed.add(line);
+    }
+    return parsed;
+  }
+
+  private static LogLineDto parseLogLine(Frame frame, String raw) {
     if (raw.isBlank()) return null;
 
     long ts = System.currentTimeMillis();
@@ -252,14 +269,28 @@ public class DockerGateway {
       } catch (Exception ignored) {
         // line without a leading docker timestamp — keep it whole
       }
+    } else {
+      // Docker prefixes even an empty application record with its timestamp.
+      // Treat that as an empty line instead of a new message stamped "now".
+      try {
+        Instant.parse(raw);
+        return null;
+      } catch (Exception ignored) { }
     }
 
-    // markers first — many daemons (nginx, java) write routine lines to stderr
-    String lower = msg.toLowerCase(Locale.ROOT);
+    if (msg.isBlank()) return null;
+
+    // Explicit severity wins over keywords inside the prose. In particular,
+    // "WARNING ... connection failed ... error" is still a warning.
+    String lower = msg.stripLeading().toLowerCase(Locale.ROOT);
     String level;
-    if (lower.contains("error") || lower.contains("fatal") || lower.contains("[emerg]")) level = "error";
-    else if (lower.contains("warn")) level = "warn";
-    else if (lower.contains("[notice]") || lower.contains("info") || lower.contains("debug")) level = "info";
+    if (lower.startsWith("warning") || lower.startsWith("warn") || lower.startsWith("[warn")) level = "warn";
+    else if (lower.startsWith("debug") || lower.startsWith("[debug")) level = "debug";
+    else if (lower.startsWith("error") || lower.startsWith("fatal") || lower.startsWith("[emerg]")
+        || lower.startsWith("traceback") || lower.contains("permissionerror:")
+        || lower.contains("exception:") || lower.contains("fatal error")) level = "error";
+    else if (lower.startsWith("info") || lower.startsWith("[notice]") || lower.startsWith("[info")
+        || lower.contains(": info:")) level = "info";
     else level = frame.getStreamType() == com.github.dockerjava.api.model.StreamType.STDERR ? "warn" : "info";
     return new LogLineDto(ts, level, "container", msg);
   }
@@ -329,36 +360,197 @@ public class DockerGateway {
     String tag = version == null || version.isBlank() ? "latest" : version;
     String image = props.hermesImage() + ":" + tag;
     String volumeName = "mc-hermes-" + name;
+    List<String> seedProfiles = normalizeProfiles(profiles);
+
+    try {
+      client.inspectVolumeCmd(volumeName).exec();
+      throw new ResourceConflictException(
+          "managed data volume already exists: " + volumeName + "; recover or remove it before redeploying");
+    } catch (NotFoundException expected) {
+      // no legacy data to attach accidentally
+    }
 
     Map<String, String> labels = Map.of(
         "mc.managed", "true",
-        "mc.profiles", profiles == null ? "" : String.join(",", profiles),
+        "mc.profiles", String.join(",", seedProfiles),
         "mc.dataVolume", volumeName);
 
-    client.createVolumeCmd().withName(volumeName).exec();
-    HostConfig hostConfig = HostConfig.newHostConfig()
-        .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw))
-        .withRestartPolicy(RestartPolicy.unlessStoppedRestart());
-
-    CreateContainerResponse created;
+    String containerId = null;
+    boolean volumeCreated = false;
     try {
-      created = client.createContainerCmd(image)
-          .withName(name)
-          .withLabels(labels)
-          .withHostConfig(hostConfig)
-          .withCmd("gateway", "run")
-          .exec();
-    } catch (NotFoundException missingImage) {
-      pull(client, props.hermesImage(), tag);
-      created = client.createContainerCmd(image)
-          .withName(name)
-          .withLabels(labels)
-          .withHostConfig(hostConfig)
-          .withCmd("gateway", "run")
-          .exec();
+      client.createVolumeCmd().withName(volumeName).exec();
+      volumeCreated = true;
+      HostConfig dataHostConfig = HostConfig.newHostConfig()
+          .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw));
+      // One-shot containers run the image's normal init hooks before their main
+      // command. This seeds the default profile and creates named profiles while
+      // the long-running gateway is still stopped, avoiding restart/exec races.
+      runOneShot(client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
+      for (String profile : seedProfiles) {
+        runOneShot(client, image, dataHostConfig,
+            List.of("profile", "create", profile, "--no-alias"),
+            "create seed profile " + profile);
+      }
+
+      HostConfig hostConfig = HostConfig.newHostConfig()
+          .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw))
+          .withRestartPolicy(RestartPolicy.unlessStoppedRestart());
+
+      CreateContainerResponse created;
+      try {
+        created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
+      } catch (NotFoundException missingImage) {
+        pull(client, props.hermesImage(), tag);
+        created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
+      }
+      containerId = created.getId();
+      client.startContainerCmd(containerId).exec();
+      validateDeployment(url, client, containerId, seedProfiles);
+      return containerId;
+    } catch (RuntimeException failure) {
+      rollbackDeployment(client, containerId, volumeCreated ? volumeName : null, failure);
+      throw failure;
     }
-    client.startContainerCmd(created.getId()).exec();
-    return created.getId();
+  }
+
+  private void validateDeployment(
+      String url, DockerClient client, String containerId, List<String> seedProfiles) {
+    var state = client.inspectContainerCmd(containerId).exec().getState();
+    if (state == null || !Boolean.TRUE.equals(state.getRunning())) {
+      throw new RuntimeException("Hermes container exited before readiness checks completed");
+    }
+
+    List<String> profiles = new ArrayList<>();
+    profiles.add("default");
+    profiles.addAll(seedProfiles);
+    String script = """
+        set -eu
+        for profile in "$@"; do
+          if [ "$profile" = default ]; then
+            dir=/opt/data
+            test -r "$dir/config.yaml" || { echo "profile config is unreadable: $profile" >&2; exit 1; }
+          else
+            dir="/opt/data/profiles/$profile"
+            test -d "$dir" || { echo "profile directory is missing: $profile" >&2; exit 1; }
+            if [ -e "$dir/config.yaml" ]; then
+              test -r "$dir/config.yaml" || { echo "profile config is unreadable: $profile" >&2; exit 1; }
+            fi
+          fi
+          if [ -e "$dir/.env" ]; then
+            test -r "$dir/.env" || { echo "profile environment is unreadable: $profile" >&2; exit 1; }
+          fi
+        done
+        hermes profile list >/dev/null 2>&1 || { echo "hermes profile list failed" >&2; exit 1; }
+        tries=0
+        while true; do
+          if detail="$(hermes gateway status 2>&1)" && printf '%s' "$detail" | grep -q 'Gateway is running'; then
+            break
+          fi
+          tries=$((tries + 1))
+          if [ "$tries" -ge 30 ]; then
+            echo "default gateway not ready: $(printf '%s' "$detail" | tail -n 1)" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+        """;
+    List<String> command = new ArrayList<>(List.of("sh", "-c", script, "_"));
+    command.addAll(profiles);
+    dockerExec.runAsUser(
+        url, containerId, "hermes", command, "Hermes deployment readiness",
+        true, false, Duration.ofSeconds(45));
+
+    state = client.inspectContainerCmd(containerId).exec().getState();
+    if (state == null || !Boolean.TRUE.equals(state.getRunning())) {
+      throw new RuntimeException("Hermes container stopped during readiness checks");
+    }
+  }
+
+  private static CreateContainerResponse createContainer(
+      DockerClient client, String image, String name, Map<String, String> labels,
+      HostConfig hostConfig, List<String> command) {
+    var create = client.createContainerCmd(image)
+        .withName(name)
+        .withLabels(labels)
+        .withHostConfig(hostConfig);
+    return create.withCmd(command).exec();
+  }
+
+  static List<String> normalizeProfiles(List<String> profiles) {
+    if (profiles == null || profiles.isEmpty()) return List.of();
+    Set<String> unique = new LinkedHashSet<>();
+    for (String profile : profiles) {
+      if (profile == null) continue;
+      String normalized = profile.trim();
+      if (!normalized.isEmpty() && !"default".equals(normalized)) unique.add(normalized);
+    }
+    return List.copyOf(unique);
+  }
+
+  void runOneShot(
+      DockerClient client, String image, HostConfig hostConfig, List<String> command, String operation) {
+    String helperId = null;
+    RuntimeException failure = null;
+    try {
+      CreateContainerResponse helper;
+      try {
+        helper = client.createContainerCmd(image)
+            .withLabels(Map.of("mc.bootstrap", "true"))
+            .withHostConfig(hostConfig)
+            .withCmd(command)
+            .exec();
+      } catch (NotFoundException missingImage) {
+        String[] parts = splitImage(image);
+        pull(client, parts[0], parts[1]);
+        helper = client.createContainerCmd(image)
+            .withLabels(Map.of("mc.bootstrap", "true"))
+            .withHostConfig(hostConfig)
+            .withCmd(command)
+            .exec();
+      }
+      helperId = helper.getId();
+      client.startContainerCmd(helperId).exec();
+      var callback = client.waitContainerCmd(helperId).start();
+      try {
+        Integer exitCode = callback.awaitStatusCode(90, TimeUnit.SECONDS);
+        if (exitCode == null) throw new RuntimeException(operation + " timed out");
+        if (exitCode != 0) throw new RuntimeException(operation + " failed with exit code " + exitCode);
+      } finally {
+        try {
+          callback.close();
+        } catch (Exception ignored) { }
+      }
+    } catch (RuntimeException e) {
+      failure = e;
+      throw e;
+    } finally {
+      if (helperId != null) {
+        try {
+          client.removeContainerCmd(helperId).withForce(true).exec();
+        } catch (RuntimeException cleanup) {
+          if (failure != null) failure.addSuppressed(cleanup);
+          else throw cleanup;
+        }
+      }
+    }
+  }
+
+  private void rollbackDeployment(
+      DockerClient client, String containerId, String volumeName, RuntimeException failure) {
+    if (containerId != null) {
+      try {
+        client.removeContainerCmd(containerId).withForce(true).exec();
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+    }
+    if (volumeName != null) {
+      try {
+        client.removeVolumeCmd(volumeName).exec();
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+    }
   }
 
   private static void pull(DockerClient client, String repository, String tag) {
@@ -386,6 +578,20 @@ public class DockerGateway {
   }
 
   public void remove(String url, String containerId) {
-    clients.forUrl(url).removeContainerCmd(containerId).withForce(true).exec();
+    DockerClient client = clients.forUrl(url);
+    var inspected = client.inspectContainerCmd(containerId).exec();
+    Map<String, String> labels = inspected.getConfig() == null || inspected.getConfig().getLabels() == null
+        ? Map.of() : inspected.getConfig().getLabels();
+    String volumeName = "true".equals(labels.get("mc.managed")) ? labels.get("mc.dataVolume") : null;
+    client.removeContainerCmd(containerId).withForce(true).exec();
+    if (volumeName == null || !volumeName.startsWith("mc-hermes-")) return;
+    try {
+      client.removeVolumeCmd(volumeName).exec();
+    } catch (NotFoundException ignored) {
+      // idempotent permanent removal
+    } catch (RuntimeException e) {
+      throw new RuntimeException(
+          "container removed but managed data volume could not be removed: " + volumeName, e);
+    }
   }
 }

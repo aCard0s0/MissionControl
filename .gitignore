@@ -40,3 +40,4 @@ Thumbs.db
 
 # Deployment secrets (tailscale auth key etc.)
 deploy/**/.env
+.mission-control.env

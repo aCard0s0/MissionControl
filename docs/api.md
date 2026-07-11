@@ -1,7 +1,7 @@
 # Mission Control — Backend API
 
 Base: same origin as the dashboard (combined image) or `MC_API_BASE_URL`.
-All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 502 (docker) / 503.
+All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 409 / 502 (docker) / 503.
 
 ## Meta
 
@@ -25,11 +25,11 @@ All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 502 
 |---|---|---|
 | `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts |
 | `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates |
-| `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | `{ ts, level, source, msg }`, level inferred from markers/stream |
-| `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version` (pulls if missing), runs `gateway run`, mounts a per-container volume at `/opt/data`, sets restart policy `unless-stopped`; profiles stored as `mc.profiles` label. Requires `/opt/data/.env` (run `nousresearch/hermes-agent setup` once). |
+| `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | container-scoped `{ ts, level, source, msg }`; multiline frames are split, empty records dropped, and explicit severity preserved |
+| `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. |
 | `POST /api/containers/{hostId}/{id}/start` | — | |
 | `POST /api/containers/{hostId}/{id}/stop` | — | 10s graceful timeout |
-| `DELETE /api/containers/{hostId}/{id}` | — | force remove |
+| `DELETE /api/containers/{hostId}/{id}` | — | force removes the container and its recorded Mission Control-managed volume; unowned/external mounts are preserved |
 
 Container DTO: `{ id, shortId, name, hostId, status, image, version, startedAt, sizeRootFsGb, profiles }`
 with `status ∈ running | stopped | unhealthy | unknown`.
@@ -41,14 +41,20 @@ with `status ∈ running | stopped | unhealthy | unknown`.
 | `GET /api/agents` | `?hostId=&containerId=` | one DTO per profile (`/opt/data` = `default`, plus `/opt/data/profiles/*`) |
 | `POST /api/agents` | `{ hostId, containerId, name, provider, model, apiKey?, cloneFrom? }` | `hermes profile create`, then sets model + provider API key |
 | `DELETE /api/agents/{hostId}/{containerId}/{name}` | — | `hermes profile delete --yes` |
+| `GET  …/{name}/logs` | `?tail=100` (max 500) | profile-scoped supervised gateway log from `/opt/data/logs/gateways/{name}`; returns `{ ts, level, source, msg }` |
 | `PUT  …/{name}/soul` | `{ soul }` | writes `SOUL.md` |
 | `PUT  …/{name}/skills/{skillName}` | `{ enabled }` | toggles `skills.platform_disabled.cli` in `config.yaml` |
 | `POST …/{name}/skills` | `{ name }` | `hermes skills install --force` |
 | `DELETE …/{name}/skills/{skillName}` | — | removes the skill directory (the CLI uninstall is interactive-only) |
 | `POST …/{name}/mcp` | `{ name, transport, url?, command?, args? }` | edits `mcp_servers` in `config.yaml` |
 | `DELETE …/{name}/mcp/{serverName}` | — | |
+| `POST …/{name}/mcp/{serverName}/test` | — | runs Hermes' MCP handshake; returns `{ status, tools, latencyMs, error, checkedAt }` |
 | `GET  …/{name}/integrations` | — | parsed from `gateway_state.json` |
 | `PUT  …/{name}/config` | `{ configYaml }` | full config.yaml replace — validated as a YAML mapping (400 otherwise); platform tokens (slack, whatsapp, honcho, …) and `model.default` / `model.base_url` overrides live here |
+
+Configured MCP servers report `unknown` until tested, then `connected` or
+`error`; disabled entries report `disabled`. Probe results remain cached only
+while the server definition is unchanged.
 
 Create (`POST /api/agents`) accepts optional `baseUrl`; when set, the profile's
 `model.default` + `model.base_url` are written directly (ollama / any
@@ -101,7 +107,7 @@ The exec ends when the socket closes (stdin EOF exits the shell).
 
 ## Roadmap (not implemented)
 
-- Hermes sessions, cron jobs, and webhooks introspection; would light up the
-  Calendar and Webhooks pages in live mode.
+- Hermes cron jobs and webhooks introspection; would light up the Calendar and
+  Webhooks pages in live mode.
 - SSE/WebSocket streaming for logs and stats (currently polled).
 - TLS for remote daemons; authentication for the dashboard itself.

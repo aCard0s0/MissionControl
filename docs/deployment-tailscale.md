@@ -23,12 +23,15 @@ cp deploy/tailscale/.env.example deploy/tailscale/.env
 
 # 2. build + bring it up (tailscale is ./mc's default flavor)
 ./mc start --build
+# On first start ./mc creates .mission-control.env (mode 0600) containing the
+# persistent application encryption key. Back it up with other deployment state.
 ```
 
 Subsequent deploys are just `./mc start` (add `--build` to pick up code
 changes); `./mc status` shows tailscale health and the exact URL. `./mc start
---ts=off` switches to a plain docker container with a published port instead —
-the two flavors never run side by side.
+--ts=off` switches to a plain docker container bound to `127.0.0.1` instead —
+the two flavors never run side by side. `BIND_ADDRESS=0.0.0.0` is an explicit,
+warned opt-in to remote exposure; the application has no built-in auth.
 
 `./mc start` also brings up the stack's **ollama** service (compose profile
 `ollama`, skip with `--ollama=off`). Unlike the dashboard it *does* publish a
@@ -91,6 +94,11 @@ docker compose -p mission-control -f deploy/tailscale/docker-compose.yml \
   or plan to re-auth. Revoke and re-mint the key if it leaks — the node state
   persists in the `tailscale-state` volume, so a rotated key is only needed
   on first start or after `tailscale logout`.
+- **Application encryption key.** `.mission-control.env` is generated once,
+  ignored by git, and read by both deployment flavors. Keep its permissions at
+  `0600` and back it up; losing it makes stored profile-template secrets
+  unrecoverable. During rotation, keep the old value as `MC_SECRET_KEY_PREVIOUS`
+  until templates have been resaved.
 - **Phone / iPad access.** Install the Tailscale app from the App Store /
   Play Store, sign in to the same tailnet, and open the
   `http://mission-control.<tailnet>.ts.net` URL — no VPN config, no port

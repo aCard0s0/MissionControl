@@ -100,7 +100,7 @@
 </p>
 
 @if (deployOpen()) {
-  <div class="scrim" (click)="deployOpen.set(false)">
+  <div class="scrim" (click)="deployBusy() ? null : deployOpen.set(false)">
     <div class="modal" (click)="$event.stopPropagation()">
       <div class="panel-h">DEPLOY HERMES CONTAINER</div>
       <div class="modal-b">
@@ -137,14 +137,14 @@
           <input class="input" [(ngModel)]="deployProfiles" placeholder="ops, research" />
         </div>
         <p class="lock-hint">
-          Hermes needs <code>/opt/data/.env</code>. Initialize a new volume once:
-          <code>docker run -it --rm -v mc-hermes-&lt;name&gt;:/opt/data nousresearch/hermes-agent setup</code>
+          The default profile is initialized automatically. Named profiles are created before deployment completes;
+          configure their model credentials from the Agents page afterwards.
         </p>
         <div class="modal-actions">
-          <button class="btn ghost" (click)="deployOpen.set(false)">cancel</button>
+          <button class="btn ghost" [disabled]="deployBusy()" (click)="deployOpen.set(false)">cancel</button>
           <button class="btn primary"
-                  [disabled]="!deployName.trim() || !deployTags().length || tagsLoading()"
-                  (click)="deploy()">deploy</button>
+                  [disabled]="!deployName.trim() || !deployTags().length || tagsLoading() || deployBusy()"
+                  (click)="deploy()">{{ deployBusy() ? 'deploying…' : 'deploy' }}</button>
         </div>
       </div>
     </div>
@@ -152,21 +152,23 @@
 }
 
 @if (removing(); as c) {
-  <div class="scrim" (click)="removing.set(null)">
+  <div class="scrim" (click)="removingBusy() ? null : removing.set(null)">
     <div class="modal" (click)="$event.stopPropagation()">
       <div class="panel-h crit-h">REMOVE CONTAINER</div>
       <div class="modal-b">
         <p class="dim">
-          This deletes <span class="mono">{{ c.name }}</span> and all
-          {{ profileCount(c.id) }} profile(s), jobs, and webhooks inside it. It cannot be undone.
+          This deletes <span class="mono">{{ c.name }}</span>, its Mission Control-managed data volume, and all
+          {{ profileCount(c.id) }} profile(s) inside it. External or unowned mounts are never deleted. It cannot be undone.
         </p>
         <div class="field">
           <label>type <span class="mono">{{ c.name }}</span> to confirm</label>
           <input class="input" [(ngModel)]="confirmText" [placeholder]="c.name" />
         </div>
         <div class="modal-actions">
-          <button class="btn ghost" (click)="removing.set(null)">cancel</button>
-          <button class="btn danger" [disabled]="confirmText !== c.name" (click)="confirmRemove()">remove permanently</button>
+          <button class="btn ghost" [disabled]="removingBusy()" (click)="removing.set(null)">cancel</button>
+          <button class="btn danger" [disabled]="confirmText !== c.name || removingBusy()" (click)="confirmRemove()">
+            {{ removingBusy() ? 'removing…' : 'remove permanently' }}
+          </button>
         </div>
       </div>
     </div>

@@ -116,6 +116,9 @@ export class HermesStore {
   /** Reusable agent blueprints — global, not scoped to a container. */
   readonly profileTemplates = signal<ProfileTemplate[]>(this.mock ? seedTemplates() : []);
   private readonly logsByContainer = signal<Record<string, LogEntry[]>>(this.mock ? seedLogs() : {});
+  readonly logsLoading = signal(false);
+  readonly logsUpdatedAt = signal<number | null>(null);
+  readonly logsError = signal<string | null>(null);
 
   readonly selectedContainerId = signal<string>(this.mock ? 'c-prod' : '');
 
@@ -212,6 +215,8 @@ export class HermesStore {
         status: m.status as any,
         tools: m.tools,
         latencyMs: m.latencyMs,
+        error: m.error ?? null,
+        checkedAt: m.checkedAt ?? null,
         url: m.url ?? undefined,
         command: m.command ?? undefined,
         args: m.args ?? undefined,
@@ -318,11 +323,26 @@ export class HermesStore {
         return;
       }
       const prev = this.agents();
-      const lists = await this.mapPool(containers, 6, c =>
-        this.api.agents(c.hostId, c.id)
-          .then(list => list.map(a => this.toAgentProfile(a)))
+      const lists = await this.mapPool(containers, 6, c => {
+        if (c.status === 'stopped') return Promise.resolve(prev.filter(a => a.containerId === c.id));
+        return this.api.agents(c.hostId, c.id)
+          .then(list => list.map(a => {
+            const fresh = this.toAgentProfile(a);
+            const old = prev.find(p => p.id === fresh.id);
+            if (!old) return fresh;
+            return {
+              ...fresh,
+              mcp: fresh.mcp.map(server => {
+                const prior = old.mcp.find(m => m.name === server.name);
+                return prior?.status === 'checking' && server.status === 'unknown'
+                  ? { ...server, status: 'checking' as const }
+                  : server;
+              }),
+            };
+          }))
           // transient per-container failure — keep its last known profiles
-          .catch(() => prev.filter(a => a.containerId === c.id)));
+          .catch(() => prev.filter(a => a.containerId === c.id));
+      });
       this.agents.set(lists.flat());
     } finally {
       this.agentsInFlight = false;
@@ -357,16 +377,32 @@ export class HermesStore {
     }
   }
 
+  private readonly logsInFlight = new Set<string>();
   private async pollLogs(): Promise<void> {
     const c = this.selectedContainer();
-    if (!c || c.status === 'stopped') return;
+    if (!c || c.status === 'stopped' || this.logsInFlight.has(c.id)) return;
+    this.logsInFlight.add(c.id);
+    if (this.selectedContainerId() === c.id) {
+      this.logsLoading.set(true);
+      this.logsError.set(null);
+    }
     try {
       const lines = await this.api.logs(c.hostId, c.id, 100);
       this.logsByContainer.update(m => ({
         ...m,
         [c.id]: lines.map(l => ({ ...l, agentId: null })),
       }));
-    } catch { /* tail is best-effort */ }
+      if (this.selectedContainerId() === c.id) this.logsUpdatedAt.set(Date.now());
+    } catch (e: any) {
+      if (this.selectedContainerId() === c.id) this.logsError.set(e?.message ?? 'log refresh failed');
+    } finally {
+      this.logsInFlight.delete(c.id);
+      if (this.selectedContainerId() === c.id) this.logsLoading.set(false);
+    }
+  }
+
+  refreshLogs(): void {
+    void this.pollLogs();
   }
 
   private async refreshBoard(): Promise<void> {
@@ -626,19 +662,25 @@ export class HermesStore {
   // ── container actions ──────────────────────────────────────────────────
   selectContainer(id: string): void {
     this.selectedContainerId.set(id);
+    this.logsLoading.set(false);
+    this.logsUpdatedAt.set(null);
+    this.logsError.set(null);
+    if (!this.mock) void this.pollLogs();
   }
 
-  /** Returns the new container id in mock mode; null in live mode (the
-   *  inventory refresh selects it once the daemon reports it). */
-  deployContainer(name: string, version: string, profileNames: string[], hostId = 'dh-local'): string | null {
+  /** Deploys a container and resolves only after refreshed inventory contains it. */
+  async deployContainer(name: string, version: string, profileNames: string[], hostId = 'dh-local'): Promise<string> {
     if (!this.mock) {
-      this.api.deploy(hostId, name, version, profileNames)
-        .then(r => setTimeout(async () => {
-          await this.refreshContainers();
-          this.selectedContainerId.set(r.id);
-        }, 600))
-        .catch(e => this.toast(`deploy failed: ${e.message}`));
-      return null;
+      try {
+        const r = await this.api.deploy(hostId, name, version, profileNames);
+        await new Promise(resolve => setTimeout(resolve, 600));
+        await this.refreshContainers();
+        this.selectContainer(r.id);
+        return r.id;
+      } catch (e: any) {
+        this.toast(`deploy failed: ${e.message}`);
+        return '';
+      }
     }
     const id = nid('c');
     const container: HermesContainer = {
@@ -686,17 +728,20 @@ export class HermesStore {
     }
   }
 
-  removeContainer(id: string): void {
+  async removeContainer(id: string): Promise<boolean> {
     if (!this.mock) {
       const container = this.containers().find(c => c.id === id);
-      if (!container) return;
-      this.api.removeContainer(container.hostId, id)
-        .then(() => {
-          if (this.selectedContainerId() === id) this.selectedContainerId.set('');
-          return this.refreshContainers();
-        })
-        .catch(e => this.toast(`remove failed: ${e.message}`));
-      return;
+      if (!container) return false;
+      try {
+        await this.api.removeContainer(container.hostId, id);
+        if (this.selectedContainerId() === id) this.selectedContainerId.set('');
+        await this.refreshContainers();
+        return true;
+      } catch (e: any) {
+        this.toast(`remove failed: ${e.message}`);
+        await this.refreshContainers(); // removal may have succeeded before volume cleanup failed
+        return false;
+      }
     }
     const agentIds = new Set(this.agents().filter(a => a.containerId === id).map(a => a.id));
     this.containers.update(cs => cs.filter(c => c.id !== id));
@@ -707,6 +752,7 @@ export class HermesStore {
     if (this.selectedContainerId() === id) {
       this.selectedContainerId.set(this.containers()[0]?.id ?? '');
     }
+    return true;
   }
 
   // ── agent actions ────────────────────────────────────────────────────
@@ -773,7 +819,7 @@ export class HermesStore {
       }));
       agent.mcp = tmpl.mcpServers.map(m => ({
         id: nid('m'), name: m.name, transport: m.transport,
-        status: m.enabled ? 'connected' as const : 'disabled' as const,
+        status: m.enabled ? 'unknown' as const : 'disabled' as const,
         tools: 0, latencyMs: null, url: m.url, command: m.command, args: m.args,
       }));
     }
@@ -783,6 +829,24 @@ export class HermesStore {
       msg: `profile "${name}" created${src ? ` (cloned from ${src.name})` : ''}`,
     });
     return id;
+  }
+
+  /** Profile-scoped supervised gateway log. Unlike Docker logs, these entries
+   * have an authoritative agent/profile identity. */
+  async agentLogTail(agentId: string, tail = 100): Promise<LogEntry[]> {
+    const agent = this.agentById(agentId);
+    if (!agent) return [];
+    if (this.mock) {
+      return this.containerLogs()
+        .filter(line => line.agentId === agentId)
+        .slice(0, tail);
+    }
+    const container = this.containers().find(c => c.id === agent.containerId);
+    if (!container) return [];
+    const lines = await this.api.agentLogs(container.hostId, agent.containerId, agent.name, tail);
+    return lines
+      .map(line => ({ ...line, agentId }))
+      .sort((a, b) => b.ts - a.ts);
   }
 
   removeAgent(id: string): void {
@@ -822,33 +886,44 @@ export class HermesStore {
       .catch(e => this.toast(`${label} failed: ${e.message}`));
   }
 
-  updateSoul(id: string, soul: string): void {
+  async updateSoul(id: string, soul: string): Promise<boolean> {
     const a = this.agentById(id);
-    if (!a) return;
+    if (!a) return false;
     if (!this.mock) {
       const container = this.containers().find(c => c.id === a.containerId);
-      if (!container) return;
-      this.api.updateSoul(container.hostId, a.containerId, a.name, soul)
-        .then(() => this.patchAgent(id, { soul }))
-        .catch(e => this.toast(`SOUL.md save failed: ${e.message}`));
-      return;
+      if (!container) return false;
+      try {
+        await this.api.updateSoul(container.hostId, a.containerId, a.name, soul);
+        if (this.agentById(id)) this.patchAgent(id, { soul });
+        return true;
+      } catch (e: any) {
+        this.toast(`SOUL.md save failed: ${e.message}`);
+        return false;
+      }
     }
     this.patchAgent(id, { soul });
     this.appendLog(a.containerId, { ts: Date.now(), level: 'info', source: 'system', agentId: id, msg: 'SOUL.md updated via dashboard' });
+    return true;
   }
 
-  updateAgentConfig(agentId: string, configYaml: string): void {
+  async updateAgentConfig(agentId: string, configYaml: string): Promise<boolean> {
     const a = this.agentById(agentId);
-    if (!a) return;
+    if (!a) return false;
     if (!this.mock) {
       const container = this.containers().find(c => c.id === a.containerId);
-      if (!container) return;
-      this.applyAgentCall(agentId, 'config save',
-        this.api.updateAgentConfig(container.hostId, a.containerId, a.name, configYaml));
-      return;
+      if (!container) return false;
+      try {
+        const updated = await this.api.updateAgentConfig(container.hostId, a.containerId, a.name, configYaml);
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`config save failed: ${e.message}`);
+        return false;
+      }
     }
     this.patchAgent(agentId, { configYaml });
     this.appendLog(a.containerId, { ts: Date.now(), level: 'info', source: 'system', agentId, msg: 'config.yaml updated via dashboard' });
+    return true;
   }
 
   toggleSkill(agentId: string, skillId: string): void {
@@ -956,31 +1031,36 @@ export class HermesStore {
     return `---\nname: ${skill.name}\ndescription: ${skill.description}\nversion: ${skill.version}\nsource: ${skill.source}\n---\n\n# ${skill.name}\n\n${skill.description}\n`;
   }
 
-  addMcp(
+  async addMcp(
     agentId: string,
     name: string,
     transport: McpServer['transport'],
     opts?: { url?: string; command?: string; args?: string },
-  ): void {
+  ): Promise<boolean> {
     const a = this.agentById(agentId);
-    if (!a) return;
+    if (!a) return false;
     if (!this.mock) {
       const container = this.containers().find(c => c.id === a.containerId);
-      if (!container) return;
-      this.applyAgentCall(agentId, 'mcp add',
-        this.api.addMcpServer(container.hostId, a.containerId, a.name, {
+      if (!container) return false;
+      try {
+        const updated = await this.api.addMcpServer(container.hostId, a.containerId, a.name, {
           name,
           transport,
           url: opts?.url,
           command: opts?.command,
           args: opts?.args,
-        }));
-      return;
+        });
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`mcp add failed: ${e.message}`);
+        return false;
+      }
     }
     // mock upsert: replace a same-named server (edit), else append
     const server: McpServer = {
-      id: nid('m'), name, transport, status: 'connected',
-      tools: 3 + Math.floor(Math.random() * 20), latencyMs: 30 + Math.floor(Math.random() * 200),
+      id: nid('m'), name, transport, status: 'unknown',
+      tools: 0, latencyMs: null, error: null, checkedAt: null,
       url: opts?.url, command: opts?.command, args: opts?.args,
     };
     this.agents.update(as => as.map(x => {
@@ -991,26 +1071,38 @@ export class HermesStore {
         : [...x.mcp, server];
       return { ...x, mcp };
     }));
+    return true;
   }
 
   /** Retest a single MCP server's reachability. */
-  async testMcp(agentId: string, serverName: string): Promise<void> {
+  async testMcp(agentId: string, serverName: string): Promise<boolean> {
     const a = this.agentById(agentId);
-    if (!a) return;
+    if (!a) return false;
+    this.agents.update(as => as.map(x => x.id !== agentId ? x : {
+      ...x, mcp: x.mcp.map(m => m.name === serverName && m.status !== 'disabled'
+        ? { ...m, status: 'checking' as const, error: null } : m),
+    }));
     if (!this.mock) {
       const container = this.containers().find(c => c.id === a.containerId);
-      if (!container) return;
+      if (!container) return false;
       try {
         const r = await this.api.testMcpServer(container.hostId, a.containerId, a.name, serverName);
-        this.patchAgent(agentId, {
-          mcp: a.mcp.map(m => m.name === serverName
-            ? { ...m, status: r.status as any, tools: r.tools, latencyMs: r.latencyMs } : m),
-        });
+        this.agents.update(as => as.map(x => x.id !== agentId ? x : ({
+          ...x, mcp: x.mcp.map(m => m.name === serverName
+            ? { ...m, status: r.status as any, tools: r.tools, latencyMs: r.latencyMs,
+                error: r.error, checkedAt: r.checkedAt } : m),
+        })));
         if (r.error) this.toast(`mcp ${serverName}: ${r.error}`);
+        return r.status === 'connected';
       } catch (e: any) {
         this.toast(`mcp test failed: ${e.message}`);
+        this.agents.update(as => as.map(x => x.id !== agentId ? x : ({
+          ...x, mcp: x.mcp.map(m => m.name === serverName
+            ? { ...m, status: 'error' as const, latencyMs: null,
+                error: e.message, checkedAt: Date.now() } : m),
+        })));
+        return false;
       }
-      return;
     }
     await new Promise(res => setTimeout(res, 700));
     const ok = Math.random() < 0.85;
@@ -1018,24 +1110,32 @@ export class HermesStore {
       ...x, mcp: x.mcp.map(m => m.name !== serverName ? m : {
         ...m, status: ok ? 'connected' : 'error',
         latencyMs: ok ? 30 + Math.floor(Math.random() * 200) : null,
+        error: ok ? null : 'simulated endpoint unreachable', checkedAt: Date.now(),
       }),
     }));
+    return ok;
   }
 
-  removeMcp(agentId: string, mcpId: string): void {
+  async removeMcp(agentId: string, mcpId: string): Promise<boolean> {
     const a = this.agentById(agentId);
-    if (!a) return;
+    if (!a) return false;
     if (!this.mock) {
       const container = this.containers().find(c => c.id === a.containerId);
       const server = a.mcp.find(m => m.id === mcpId);
-      if (!container || !server) return;
-      this.applyAgentCall(agentId, 'mcp remove',
-        this.api.removeMcpServer(container.hostId, a.containerId, a.name, server.name));
-      return;
+      if (!container || !server) return false;
+      try {
+        const updated = await this.api.removeMcpServer(container.hostId, a.containerId, a.name, server.name);
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`mcp remove failed: ${e.message}`);
+        return false;
+      }
     }
     this.agents.update(as => as.map(x => x.id !== agentId ? x : {
       ...x, mcp: x.mcp.filter(m => m.id !== mcpId),
     }));
+    return true;
   }
 
   /** Simulated connectivity check — resolves each integration after a beat. */

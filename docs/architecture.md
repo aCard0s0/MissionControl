@@ -55,13 +55,17 @@ MissionControl/
 - **live** — starts empty, health-checks the backend, then polls:
   containers every 10s, stats per running container every 3s (network rates
   derived client-side from cumulative counters), selected-container logs every
-  5s. Failures fail closed: missing/broken config lands in live (empty +
+  5s. Log requests are non-overlapping and container-scoped because Docker
+  stdout/stderr has no reliable profile identity. Failures fail closed:
+  missing/broken config lands in live (empty +
   banner), never silently in demo data.
 
-Hermes profile/agent introspection (SOUL.md, skills, MCP, sessions, cron) is
-**not wired in live mode yet** — the UI says so explicitly. That requires a
-hermes adapter in the backend (`docker exec hermes …` / profile file reads),
-which is the next roadmap step.
+Hermes profile/agent introspection is wired in live mode through bounded
+`docker exec` calls and profile-file reads. SOUL, config, setup, skills, MCP,
+integrations, and sessions are live. Each agent Activity tab polls its own
+supervised gateway log under `/opt/data/logs/gateways/{profile}` every five
+seconds; it does not reuse the container-wide Docker stream. Calendar jobs and
+webhooks remain mock-only.
 
 ## Terminal
 
@@ -94,6 +98,8 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
 | `MC_DB_PATH` | `/data/mission-control.db` | SQLite file |
 | `MC_API_BASE_URL` | `` (same origin) | only for split FE/BE deployments |
 | `MC_PORT` | `8080` | server port |
+| `MC_SECRET_KEY` | required | AES key for encrypted template secrets; `./mc` creates and reuses it automatically |
+| `MC_SECRET_KEY_PREVIOUS` | empty | prior key accepted temporarily during rotation |
 
 ### Container deploy defaults
 
@@ -101,8 +107,13 @@ Mission Control deploys Hermes containers with:
 - `gateway run` as the command
 - a per-container volume mounted at `/opt/data`
 - restart policy `unless-stopped`
+- bounded readiness checks followed by creation of requested named profiles
 
-New volumes must be initialized once with `nousresearch/hermes-agent setup` to create `/opt/data/.env`.
+The current Hermes image initializes the default profile on first boot. Mission
+Control waits for that initialization and rolls the container and volume back
+if readiness or named-profile creation fails. Permanent removal deletes only
+the recorded Mission Control-managed volume; external mounts are never guessed
+or deleted.
 
 ## Security notes
 
@@ -113,12 +124,14 @@ New volumes must be initialized once with `nousresearch/hermes-agent setup` to c
 - Remote hosts are plain `tcp://`; TLS daemon sockets are not implemented yet.
 - Destructive UI actions (remove container/host) require typed confirmation,
   and the backend refuses to delete the local socket host.
+- Plain `./mc start --ts=off` binds to `127.0.0.1`; setting `BIND_ADDRESS`
+  explicitly can expose the unauthenticated dashboard and prints a warning.
 
 ## Development
 
 ```bash
 # backend (terminal 1) — http://localhost:8080
-cd applications/mission-control-server && mvn spring-boot:run
+cd applications/mission-control-server && MC_ALLOW_DEV_KEY=true mvn spring-boot:run
 
 # frontend (terminal 2) — http://localhost:4300, proxies /api + /health to :8080
 cd applications/mission-control-fe && npm start

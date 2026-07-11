@@ -5,7 +5,7 @@ const TONE: Record<string, 'ok' | 'warn' | 'crit' | 'idle' | 'info'> = {
   idle: 'warn', degraded: 'warn', warn: 'warn',
   unhealthy: 'crit', error: 'crit', down: 'crit', fail: 'crit',
   stopped: 'idle', dormant: 'idle', off: 'idle', disabled: 'idle', closed: 'idle', disconnected: 'idle',
-  unknown: 'info', connecting: 'info',
+  unknown: 'info', checking: 'info', connecting: 'info',
 };
 
 /** Status is always dot + word — never color alone. */

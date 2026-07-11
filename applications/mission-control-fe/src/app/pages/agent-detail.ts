@@ -12,7 +12,7 @@ import { Reveal } from '../shared/reveal';
 import { JsonTree } from '../shared/json-tree';
 import { highlightHtml } from '../shared/highlight';
 import { ago, clock, until } from '../core/format';
-import { ChatMessage, McpServer, SessionInfo, SkillContent, SkillRef } from '../core/models';
+import { ChatMessage, LogEntry, McpServer, SessionInfo, SkillContent, SkillRef } from '../core/models';
 import { ApiAgentSetup } from '../core/hermes-api';
 
 type Tab = 'overview' | 'setup' | 'skills' | 'mcp' | 'jobs' | 'activity' | 'files' | 'sessions';
@@ -100,16 +100,21 @@ export class AgentDetailPage {
   protected soulDraft = signal('');
   protected readonly soulDirty = computed(() => this.soulDraft() !== (this.agent()?.soul ?? ''));
   protected readonly soulSaved = signal(false);
+  protected readonly soulSaving = signal(false);
 
   protected configDraft = signal('');
   protected readonly configDirty = computed(() => this.configDraft() !== (this.agent()?.configYaml ?? ''));
   protected readonly configSaved = signal(false);
+  protected readonly configSaving = signal(false);
 
   protected readonly agentJobs = computed(() =>
     this.store.containerJobs().filter(j => j.agentId === this.id()));
 
-  protected readonly agentLogs = computed(() =>
-    this.store.containerLogs().filter(l => l.agentId === this.id()).slice(0, 30));
+  protected readonly agentLogEntries = signal<LogEntry[]>([]);
+  protected readonly agentLogsLoading = signal(false);
+  protected readonly agentLogsError = signal<string | null>(null);
+  protected readonly agentLogsUpdatedAt = signal<number | null>(null);
+  private readonly agentLogsInFlight = new Set<string>();
 
   protected readonly pinging = signal(false);
   protected readonly removing = signal(false);
@@ -145,6 +150,7 @@ export class AgentDetailPage {
   protected readonly editingMcp = signal<string | null>(null);
   /** mcp server id with a retest in flight */
   protected readonly mcpTesting = signal<string | null>(null);
+  protected readonly mcpProbeBusy = signal(false);
   // skill add form
   protected skillName = '';
   protected skillSource: 'hub' | 'user' = 'hub';
@@ -186,10 +192,26 @@ export class AgentDetailPage {
         this.viewingSession.set(null);
         if (untracked(this.tab) === 'setup') untracked(() => void this.loadSetup());
         if (untracked(this.tab) === 'sessions') untracked(() => void this.loadSessions());
+        if (untracked(this.tab) === 'mcp') untracked(() => void this.probeMcpServers());
       }
       lastId = id;
       lastSoul = soul;
       lastConfig = config;
+    });
+
+    // Poll only while Activity is visible. The cleanup runs on tab/agent changes
+    // and component destruction, so hidden agent pages do not leak intervals.
+    effect(onCleanup => {
+      const a = this.agent();
+      if (!a || this.tab() !== 'activity') return;
+      untracked(() => {
+        this.agentLogEntries.set([]);
+        this.agentLogsError.set(null);
+        this.agentLogsUpdatedAt.set(null);
+        void this.loadAgentLogs();
+      });
+      const timer = setInterval(() => void this.loadAgentLogs(), 5_000);
+      onCleanup(() => clearInterval(timer));
     });
 
   }
@@ -198,6 +220,29 @@ export class AgentDetailPage {
     this.tab.set(t);
     if (t === 'setup' && !this.setup() && !this.setupLoading()) void this.loadSetup();
     if (t === 'sessions' && this.sessions() === null && !this.sessionsLoading()) void this.loadSessions();
+    if (t === 'mcp') void this.probeMcpServers();
+  }
+
+  protected async loadAgentLogs(): Promise<void> {
+    const a = this.agent();
+    if (!a || this.agentLogsInFlight.has(a.id)) return;
+    this.agentLogsInFlight.add(a.id);
+    this.agentLogsLoading.set(true);
+    this.agentLogsError.set(null);
+    try {
+      const lines = await this.store.agentLogTail(a.id, 100);
+      if (this.agent()?.id === a.id && this.tab() === 'activity') {
+        this.agentLogEntries.set(lines);
+        this.agentLogsUpdatedAt.set(Date.now());
+      }
+    } catch (e: any) {
+      if (this.agent()?.id === a.id && this.tab() === 'activity') {
+        this.agentLogsError.set(e?.message ?? 'agent log refresh failed');
+      }
+    } finally {
+      this.agentLogsInFlight.delete(a.id);
+      if (this.agent()?.id === a.id) this.agentLogsLoading.set(false);
+    }
   }
 
   protected async loadSetup(): Promise<void> {
@@ -492,18 +537,24 @@ export class AgentDetailPage {
     }
   }
 
-  protected saveSoul(): void {
+  protected async saveSoul(): Promise<void> {
     const a = this.agent();
-    if (!a || !this.soulDirty()) return;
-    this.store.updateSoul(a.id, this.soulDraft());
+    if (!a || !this.soulDirty() || this.soulSaving()) return;
+    this.soulSaving.set(true);
+    const saved = await this.store.updateSoul(a.id, this.soulDraft());
+    this.soulSaving.set(false);
+    if (!saved || this.agent()?.id !== a.id) return;
     this.soulSaved.set(true);
     setTimeout(() => this.soulSaved.set(false), 1800);
   }
 
-  protected saveConfig(): void {
+  protected async saveConfig(): Promise<void> {
     const a = this.agent();
-    if (!a || !this.configDirty()) return;
-    this.store.updateAgentConfig(a.id, this.configDraft());
+    if (!a || !this.configDirty() || this.configSaving()) return;
+    this.configSaving.set(true);
+    const saved = await this.store.updateAgentConfig(a.id, this.configDraft());
+    this.configSaving.set(false);
+    if (!saved || this.agent()?.id !== a.id) return;
     this.configSaved.set(true);
     setTimeout(() => this.configSaved.set(false), 1800);
   }
@@ -522,7 +573,7 @@ export class AgentDetailPage {
     return this.mcpTransport === 'stdio' ? !!this.mcpCommand.trim() : !!this.mcpUrl.trim();
   }
 
-  protected saveMcp(): void {
+  protected async saveMcp(): Promise<void> {
     const a = this.agent();
     const name = this.mcpName.trim();
     if (!a || !name) return;
@@ -535,10 +586,12 @@ export class AgentDetailPage {
     const editing = this.editingMcp();
     if (editing && editing !== name) {
       const old = a.mcp.find(m => m.name === editing);
-      if (old) this.store.removeMcp(a.id, old.id);
+      if (old && !(await this.store.removeMcp(a.id, old.id))) return;
     }
-    this.store.addMcp(a.id, name, this.mcpTransport, opts);   // backend upserts by name
+    if (!(await this.store.addMcp(a.id, name, this.mcpTransport, opts))) return;
     this.resetMcpForm();
+    const saved = this.agent()?.mcp.find(m => m.name === name);
+    if (saved && saved.status !== 'disabled') await this.runMcpTest(saved);
   }
 
   protected editMcp(m: McpServer): void {
@@ -560,10 +613,40 @@ export class AgentDetailPage {
   }
 
   protected testMcp(m: McpServer): void {
+    if (this.mcpTesting()) return;
+    void this.runMcpTest(m);
+  }
+
+  private async runMcpTest(m: McpServer): Promise<void> {
     const a = this.agent();
-    if (!a || this.mcpTesting()) return;
+    if (!a || m.status === 'disabled') return;
     this.mcpTesting.set(m.id);
-    void this.store.testMcp(a.id, m.name).finally(() => this.mcpTesting.set(null));
+    try {
+      await this.store.testMcp(a.id, m.name);
+    } finally {
+      if (this.mcpTesting() === m.id) this.mcpTesting.set(null);
+    }
+  }
+
+  private async probeMcpServers(): Promise<void> {
+    const a = this.agent();
+    if (!a || this.mcpProbeBusy()) return;
+    this.mcpProbeBusy.set(true);
+    try {
+      for (const server of a.mcp.filter(m => m.status !== 'disabled')) {
+        if (this.agent()?.id !== a.id || this.tab() !== 'mcp') break;
+        await this.runMcpTest(server);
+      }
+    } finally {
+      this.mcpProbeBusy.set(false);
+    }
+  }
+
+  protected mcpCount(a: { mcp: McpServer[] }, status: McpServer['status'] | 'unchecked'): number {
+    if (status === 'unchecked') {
+      return a.mcp.filter(m => m.status === 'unknown' || m.status === 'checking').length;
+    }
+    return a.mcp.filter(m => m.status === status).length;
   }
 
   protected addSkill(): void {

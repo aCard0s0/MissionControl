@@ -302,7 +302,12 @@
       </div>
 
       <div class="panel" data-reveal>
-        <div class="panel-h">MCP SERVERS <span class="spacer"></span><span class="faint">{{ a.mcp.length }} connected</span></div>
+        <div class="panel-h">
+          MCP SERVERS
+          <span class="spacer"></span>
+          @if (mcpProbeBusy()) { <span class="faint">checking configured servers…</span> }
+          <span class="faint">{{ mcpCount(a, 'connected') }} connected · {{ mcpCount(a, 'error') }} failing · {{ mcpCount(a, 'unchecked') }} unchecked</span>
+        </div>
         <div class="panel-b">
           @for (m of a.mcp; track m.id) {
             <div class="mcp-row mono">
@@ -311,15 +316,16 @@
               <span class="chip off">{{ m.transport }}</span>
               <span class="faint">{{ m.tools }} tools</span>
               <span class="faint">{{ m.latencyMs !== null ? m.latencyMs + 'ms' : '—' }}</span>
+              @if (m.error) { <span class="faint bad" [title]="m.error">{{ m.error }}</span> }
               <span class="spacer"></span>
-              <button class="btn sm ghost" [disabled]="mcpTesting() === m.id" (click)="testMcp(m)">
+              <button class="btn sm ghost" [disabled]="m.status === 'disabled' || mcpTesting() === m.id" (click)="testMcp(m)">
                 {{ mcpTesting() === m.id ? 'testing…' : 'retest' }}
               </button>
               <button class="btn sm ghost" (click)="editMcp(m)">edit</button>
               <button class="btn sm danger ghost" (click)="store.removeMcp(a.id, m.id)">disconnect</button>
             </div>
           }
-          @if (!a.mcp.length) { <p class="dim">No MCP servers connected.</p> }
+          @if (!a.mcp.length) { <p class="dim">No MCP servers configured.</p> }
         </div>
       </div>
     }
@@ -347,9 +353,16 @@
 
     @case ('activity') {
       <div class="panel" data-reveal>
-        <div class="panel-h">AGENT LOG TAIL</div>
+        <div class="panel-h">
+          AGENT GATEWAY LOG TAIL
+          <span class="faint">/opt/data/logs/gateways/{{ a.name }}</span>
+          <span class="spacer"></span>
+          @if (agentLogsUpdatedAt(); as updated) { <span class="faint">updated {{ ago(updated) }}</span> }
+          @if (agentLogsLoading()) { <span class="faint">refreshing…</span> }
+          <button class="btn sm ghost" [disabled]="agentLogsLoading()" (click)="loadAgentLogs()">refresh</button>
+        </div>
         <div class="panel-b logs mono">
-          @for (l of agentLogs(); track $index) {
+          @for (l of agentLogEntries(); track l.ts + ':' + l.level + ':' + l.source + ':' + l.msg) {
             <div class="log-line">
               <span class="faint">{{ clock(l.ts) }}</span>
               <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase() }}</span>
@@ -357,7 +370,8 @@
               <span class="msg">{{ l.msg }}</span>
             </div>
           }
-          @if (!agentLogs().length) { <p class="dim">No recent entries for this agent.</p> }
+          @if (agentLogsError()) { <p class="dim">Agent log refresh failed — {{ agentLogsError() }}</p> }
+          @else if (!agentLogEntries().length) { <p class="dim">{{ agentLogsLoading() ? 'Loading agent gateway logs…' : 'No gateway log entries for this agent.' }}</p> }
         </div>
       </div>
     }
@@ -372,12 +386,12 @@
           }
           @if (fileView() === 'SOUL.md') {
             @if (soulSaved()) { <span class="chip on">saved ✓</span> }
-            <button class="btn sm ghost" [disabled]="!soulDirty()" (click)="soulDraft.set(a.soul)">revert</button>
-            <button class="btn sm primary" [disabled]="!soulDirty()" (click)="saveSoul()">save</button>
+            <button class="btn sm ghost" [disabled]="!soulDirty() || soulSaving()" (click)="soulDraft.set(a.soul)">revert</button>
+            <button class="btn sm primary" [disabled]="!soulDirty() || soulSaving()" (click)="saveSoul()">{{ soulSaving() ? 'saving…' : 'save' }}</button>
           } @else if (fileView() === 'config.yaml') {
             @if (configSaved()) { <span class="chip on">saved ✓</span> }
-            <button class="btn sm ghost" [disabled]="!configDirty()" (click)="configDraft.set(a.configYaml)">revert</button>
-            <button class="btn sm primary" [disabled]="!configDirty()" (click)="saveConfig()">save</button>
+            <button class="btn sm ghost" [disabled]="!configDirty() || configSaving()" (click)="configDraft.set(a.configYaml)">revert</button>
+            <button class="btn sm primary" [disabled]="!configDirty() || configSaving()" (click)="saveConfig()">{{ configSaving() ? 'saving…' : 'save' }}</button>
           }
         </div>
         <div class="panel-b">

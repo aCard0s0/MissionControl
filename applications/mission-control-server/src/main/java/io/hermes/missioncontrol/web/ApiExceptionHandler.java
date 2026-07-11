@@ -35,6 +35,11 @@ public class ApiExceptionHandler {
     return error(HttpStatus.CONFLICT, "that change conflicts with an existing record");
   }
 
+  @ExceptionHandler(ResourceConflictException.class)
+  public ResponseEntity<Map<String, String>> conflict(ResourceConflictException e) {
+    return error(HttpStatus.CONFLICT, e.getMessage());
+  }
+
   @ExceptionHandler(DockerException.class)
   public ResponseEntity<Map<String, String>> dockerFailure(DockerException e) {
     log.warn("docker call failed: {}", e.getMessage());

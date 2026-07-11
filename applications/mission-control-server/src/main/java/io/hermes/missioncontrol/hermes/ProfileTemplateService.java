@@ -90,6 +90,24 @@ public class ProfileTemplateService {
     return applyTo(require(id), url, containerId, name, false);
   }
 
+  /** Create the caller-configured base profile and apply a template as one owned operation. */
+  public AgentProfileDto createFromTemplate(String id, String url, CreateAgentRequest request) {
+    ProfileTemplate template = require(id);
+    profiles.createProfileBare(url, request);
+    try {
+      return applyTo(template, url, request.containerId(), request.name(), false);
+    } catch (RuntimeException failure) {
+      try {
+        profiles.delete(url, request.containerId(), request.name());
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+        log.warn("rollback of partially-created profile '{}' failed: {}",
+            request.name(), cleanup.getMessage());
+      }
+      throw failure;
+    }
+  }
+
   private AgentProfileDto applyTo(
       ProfileTemplate t, String url, String containerId, String name, boolean create) {
     if (create) {

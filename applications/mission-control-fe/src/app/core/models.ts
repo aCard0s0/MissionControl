@@ -85,7 +85,7 @@ export interface SkillContent {
   files: string[];
 }
 
-export type McpStatus = 'connected' | 'error' | 'disabled';
+export type McpStatus = 'unknown' | 'checking' | 'connected' | 'error' | 'disabled';
 
 export interface McpServer {
   id: string;
@@ -94,6 +94,8 @@ export interface McpServer {
   status: McpStatus;
   tools: number;
   latencyMs: number | null;
+  error?: string | null;
+  checkedAt?: number | null;
   url?: string;                   // http/sse endpoint (for the edit form)
   command?: string;               // stdio command
   args?: string;                  // stdio args, space-joined

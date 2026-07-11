@@ -1,22 +1,26 @@
 package io.hermes.missioncontrol.hermes;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.ExecCreateCmdResponse;
-import com.github.dockerjava.api.async.ResultCallback;
-import com.github.dockerjava.api.model.Frame;
-import com.github.dockerjava.api.model.StreamType;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.hermes.missioncontrol.docker.DockerClients;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
+import com.github.dockerjava.api.exception.ConflictException;
+import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.LogLineDto;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.Yaml;
@@ -28,23 +32,40 @@ public class HermesProfiles {
   private static final String PROFILES_DIR = "/opt/data/profiles";
   private static final String PLATFORM_CLI = "cli";
   private static final Pattern PROFILE_NAME = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_.-]*");
+  private static final Pattern ANSI = Pattern.compile("\\u001B\\[[;\\d]*m");
+  private static final Pattern TOOL_COUNT = Pattern.compile("(?i)\\b(\\d+)\\s+tools?\\b");
+  private static final Pattern DISCOVERED_TOOL_COUNT = Pattern.compile("(?i)tools discovered:\\s*(\\d+)");
+  private static final Pattern MCP_CONNECTED = Pattern.compile("(?m)^\\s*[✓✔]\\s+Connected \\(");
+  private static final Pattern GATEWAY_LOG_LINE = Pattern.compile(
+      "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{1,9})\\s{2}(.*)$");
+  private static final DateTimeFormatter GATEWAY_LOG_TIME = new DateTimeFormatterBuilder()
+      .appendPattern("yyyy-MM-dd HH:mm:ss")
+      .appendFraction(ChronoField.NANO_OF_SECOND, 1, 9, true)
+      .toFormatter(Locale.ROOT);
 
-  private final DockerClients clients;
+  private final DockerExecService dockerExec;
   private final Yaml yaml = new Yaml();
   private final ObjectMapper objectMapper;
+  private final ConcurrentMap<McpCacheKey, CachedMcpProbe> mcpProbeCache = new ConcurrentHashMap<>();
 
-  public HermesProfiles(DockerClients clients, ObjectMapper objectMapper) {
-    this.clients = clients;
+  public HermesProfiles(DockerExecService dockerExec, ObjectMapper objectMapper) {
+    this.dockerExec = dockerExec;
     this.objectMapper = objectMapper;
   }
 
   public List<AgentProfileDto> list(String url, String containerId) {
-    List<String> names = listProfileNames(url, containerId);
-    List<AgentProfileDto> profiles = new ArrayList<>();
-    for (String name : names) {
-      profiles.add(readProfile(url, containerId, name));
+    try {
+      List<String> names = listProfileNames(url, containerId);
+      List<AgentProfileDto> profiles = new ArrayList<>();
+      for (String name : names) {
+        profiles.add(readProfile(url, containerId, name));
+      }
+      return profiles;
+    } catch (ConflictException stopped) {
+      // Docker returns 409 when a stale dashboard client asks to exec inside a
+      // stopped container. Inventory is simply unavailable until it restarts.
+      return List.of();
     }
-    return profiles;
   }
 
   public AgentProfileDto create(String url, CreateAgentRequest request) {
@@ -66,14 +87,27 @@ public class HermesProfiles {
     if (cloneFrom != null && !cloneFrom.isBlank()) {
       command.addAll(List.of("--clone", "--clone-from", cloneFrom));
     }
-    exec(url, request.containerId(), command);
-    writeModelConfig(url, request.containerId(), profileName, request.provider(), request.model(), request.baseUrl());
-    seedEnvIfMissing(url, request.containerId(), profileName);
-    String envKey = apiKeyVar(normalizeProvider(request.provider()));
-    if (envKey != null && request.apiKey() != null && !request.apiKey().isBlank()) {
-      writeEnvVar(url, request.containerId(), profileName, envKey, request.apiKey());
+    boolean created = false;
+    try {
+      exec(url, request.containerId(), command);
+      created = true;
+      writeModelConfig(url, request.containerId(), profileName, request.provider(), request.model(), request.baseUrl());
+      seedEnvIfMissing(url, request.containerId(), profileName);
+      String envKey = apiKeyVar(normalizeProvider(request.provider()));
+      if (envKey != null && request.apiKey() != null && !request.apiKey().isBlank()) {
+        writeEnvVar(url, request.containerId(), profileName, envKey, request.apiKey());
+      }
+      return profileName;
+    } catch (RuntimeException failure) {
+      if (created) {
+        try {
+          delete(url, request.containerId(), profileName);
+        } catch (RuntimeException cleanup) {
+          failure.addSuppressed(cleanup);
+        }
+      }
+      throw failure;
     }
-    return profileName;
   }
 
   public void delete(String url, String containerId, String name) {
@@ -93,6 +127,52 @@ public class HermesProfiles {
   /** Reads a single profile's current state (config, soul, memory, skills, mcp). */
   public AgentProfileDto get(String url, String containerId, String name) {
     return readProfile(url, containerId, name);
+  }
+
+  /** Reads the profile-specific s6 gateway log, including rotated files, rather
+   * than reusing Docker's container-wide stdout/stderr stream. */
+  public List<LogLineDto> logs(
+      String url, String containerId, String profileName, int tail) {
+    profileDir(profileName); // validates the URL-sourced profile name
+    int limit = Math.min(Math.max(tail, 1), 500);
+    String logDir = HERMES_HOME + "/logs/gateways/" + profileName;
+    String script = """
+        dir="$1"; limit="$2"
+        { for file in "$dir"/@*.u "$dir/current"; do
+            [ -f "$file" ] && cat "$file"
+          done
+        } | tail -n "$limit"
+        """;
+    ExecResult result = exec(
+        url, containerId, List.of("sh", "-c", script, "_", logDir, String.valueOf(limit)));
+    return parseGatewayLogs(profileName, result.stdout());
+  }
+
+  static List<LogLineDto> parseGatewayLogs(String profileName, String output) {
+    List<LogLineDto> lines = new ArrayList<>();
+    for (String raw : (output == null ? "" : output).split("\\R")) {
+      Matcher matcher = GATEWAY_LOG_LINE.matcher(raw);
+      if (!matcher.matches()) continue;
+      String message = ANSI.matcher(matcher.group(2)).replaceAll("").stripTrailing();
+      if (message.isBlank()) continue;
+      try {
+        long timestamp = LocalDateTime.parse(matcher.group(1), GATEWAY_LOG_TIME)
+            .toInstant(ZoneOffset.UTC).toEpochMilli();
+        lines.add(new LogLineDto(timestamp, gatewayLogLevel(message), profileName, message));
+      } catch (RuntimeException ignored) {
+        // A malformed line must not poison the rest of the tail.
+      }
+    }
+    return lines;
+  }
+
+  private static String gatewayLogLevel(String message) {
+    String lower = message.stripLeading().toLowerCase(Locale.ROOT);
+    if (lower.startsWith("warning") || lower.startsWith("warn") || lower.startsWith("[warn")) return "warn";
+    if (lower.startsWith("debug") || lower.startsWith("[debug")) return "debug";
+    if (lower.startsWith("error") || lower.startsWith("fatal") || lower.startsWith("traceback")
+        || lower.contains("permissionerror:") || lower.contains("exception:")) return "error";
+    return "info";
   }
 
   public AgentProfileDto updateConfig(String url, String containerId, String name, String configYaml) {
@@ -256,6 +336,7 @@ public class HermesProfiles {
     }
 
     servers.put(name, server);
+    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
     writeFile(url, containerId, configPath, yaml.dump(root));
     return readProfile(url, containerId, profileName);
   }
@@ -268,6 +349,7 @@ public class HermesProfiles {
     Map<Object, Object> servers = asMutableMap(root.get("mcp_servers"));
     servers.remove(serverName);
     root.put("mcp_servers", servers);
+    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, serverName));
     writeFile(url, containerId, configPath, yaml.dump(root));
     return readProfile(url, containerId, profileName);
   }
@@ -407,7 +489,7 @@ public class HermesProfiles {
     String state = "idle";
     long lastActive = System.currentTimeMillis();
     List<SkillDto> skills = listSkills(url, containerId, name, configMap);
-    List<McpServerDto> mcp = listMcpServers(configMap);
+    List<McpServerDto> mcp = listMcpServers(url, containerId, name, configMap);
     List<IntegrationDto> integrations = listIntegrations(url, containerId, name);
     return new AgentProfileDto(
         profileId(containerId, name),
@@ -543,7 +625,7 @@ public class HermesProfiles {
         "grep -v \"^${key}=\" \"$path\" > \"$path.tmp\" || true;",
         "printf '%s=%s\\n' \"$key\" \"$value\" >> \"$path.tmp\";",
         "mv \"$path.tmp\" \"$path\";");
-    exec(url, containerId, List.of("sh", "-lc", script, "_", path, key, value));
+    execSensitive(url, containerId, List.of("sh", "-lc", script, "_", path, key, value), "write profile environment");
   }
 
   void removeEnvVar(String url, String containerId, String name, String key) {
@@ -785,7 +867,8 @@ public class HermesProfiles {
     return new SkillMeta(fallbackName, "", "", "");
   }
 
-  private List<McpServerDto> listMcpServers(Map<?, ?> configMap) {
+  List<McpServerDto> listMcpServers(
+      String hostUrl, String containerId, String profileName, Map<?, ?> configMap) {
     Object mcpServers = configMap == null ? null : configMap.get("mcp_servers");
     if (!(mcpServers instanceof Map<?, ?> serversMap)) return List.of();
     List<McpServerDto> result = new ArrayList<>();
@@ -795,7 +878,9 @@ public class HermesProfiles {
       Object cfg = e.getValue();
       if (!(cfg instanceof Map<?, ?> server)) continue;
       boolean enabled = !"false".equalsIgnoreCase(stringValue(server.get("enabled")));
-      String transport = server.containsKey("command") ? "stdio" : "http";
+      String configuredTransport = stringValue(server.get("transport")).toLowerCase(Locale.ROOT);
+      String transport = server.containsKey("command") ? "stdio"
+          : ("sse".equals(configuredTransport) ? "sse" : "http");
       int tools = 0;
       Object toolsNode = server.get("tools");
       if (toolsNode instanceof Map<?, ?> toolsMap) {
@@ -804,11 +889,23 @@ public class HermesProfiles {
           tools = (int) list.stream().filter(x -> !stringValue(x).isBlank()).count();
         }
       }
-      String url = stringValue(server.get("url"));
+      String endpoint = stringValue(server.get("url"));
       String command = stringValue(server.get("command"));
       String args = joinArgs(server.get("args"));
-      result.add(new McpServerDto(name, name, transport, enabled ? "connected" : "disabled", tools, null,
-          url.isBlank() ? null : url, command.isBlank() ? null : command, args.isBlank() ? null : args));
+      String fingerprint = mcpFingerprint(transport, endpoint, command, args, enabled);
+      McpCacheKey cacheKey = new McpCacheKey(hostUrl, containerId, profileName, name);
+      CachedMcpProbe cached = mcpProbeCache.get(cacheKey);
+      if (cached != null && !cached.fingerprint().equals(fingerprint)) {
+        mcpProbeCache.remove(cacheKey, cached);
+        cached = null;
+      }
+      String status = enabled ? (cached == null ? "unknown" : cached.result().status()) : "disabled";
+      int effectiveTools = cached == null ? tools : cached.result().tools();
+      Long latencyMs = cached == null ? null : cached.result().latencyMs();
+      String error = cached == null ? null : cached.result().error();
+      Long checkedAt = cached == null ? null : cached.result().checkedAt();
+      result.add(new McpServerDto(name, name, transport, status, effectiveTools, latencyMs, error, checkedAt,
+          endpoint.isBlank() ? null : endpoint, command.isBlank() ? null : command, args.isBlank() ? null : args));
     }
     return result;
   }
@@ -826,45 +923,83 @@ public class HermesProfiles {
     return stringValue(node);
   }
 
-  /** Probes a single MCP server's reachability via docker exec, timing the call. */
+  /** Probes a single MCP server with Hermes' own MCP initialize handshake. */
   public McpTestResult testMcpServer(String url, String containerId, String profileName, String serverName) {
     if (serverName == null || serverName.isBlank()) throw new IllegalArgumentException("missing server name");
+    long checkedAt = System.currentTimeMillis();
     String configPath = profileDir(profileName) + "/config.yaml";
     Map<?, ?> configMap = parseYamlMap(readFile(url, containerId, configPath));
     Object serversNode = configMap.get("mcp_servers");
     if (!(serversNode instanceof Map<?, ?> servers) || !(servers.get(serverName) instanceof Map<?, ?> server)) {
-      return new McpTestResult(serverName, "error", 0, null, "server not found in config.yaml");
+      return new McpTestResult(serverName, "error", 0, null, "server not found in config.yaml", checkedAt);
     }
+    boolean enabled = !"false".equalsIgnoreCase(stringValue(server.get("enabled")));
     int tools = 0;
     Object toolsNode = server.get("tools");
     if (toolsNode instanceof Map<?, ?> toolsMap && toolsMap.get("include") instanceof List<?> list) {
       tools = (int) list.stream().filter(x -> !stringValue(x).isBlank()).count();
     }
-    boolean stdio = server.containsKey("command");
+    String configuredTransport = stringValue(server.get("transport")).toLowerCase(Locale.ROOT);
+    String transport = server.containsKey("command") ? "stdio"
+        : ("sse".equals(configuredTransport) ? "sse" : "http");
+    String endpoint = stringValue(server.get("url"));
+    String command = stringValue(server.get("command"));
+    String args = joinArgs(server.get("args"));
+    String fingerprint = mcpFingerprint(transport, endpoint, command, args, enabled);
+    McpCacheKey cacheKey = new McpCacheKey(url, containerId, profileName, serverName);
+    if (!enabled) {
+      McpTestResult disabled = new McpTestResult(serverName, "disabled", tools, null, null, checkedAt);
+      mcpProbeCache.put(cacheKey, new CachedMcpProbe(fingerprint, disabled));
+      return disabled;
+    }
+
     long start = System.nanoTime();
-    ExecResult probe;
-    if (stdio) {
-      String command = stringValue(server.get("command"));
-      if (command.isBlank()) return new McpTestResult(serverName, "error", tools, null, "missing command");
-      // Best-effort liveness for stdio: resolve the launcher binary on PATH. This
-      // is a presence check, not a protocol handshake — a binary that resolves but
-      // crashes on start (bad args/missing env) still reports healthy. A full
-      // MCP `initialize` would be more accurate but risks false negatives when a
-      // server legitimately needs env/keys we don't have at test time.
-      probe = exec(url, containerId, List.of("sh", "-lc", "command -v \"$1\" >/dev/null 2>&1", "_", command), false);
-    } else {
-      String endpoint = stringValue(server.get("url"));
-      if (endpoint.isBlank()) return new McpTestResult(serverName, "error", tools, null, "missing url");
-      // reachability check — any HTTP response (even 4xx) means the endpoint is up
-      probe = exec(url, containerId,
-          List.of("sh", "-lc", "curl -s -o /dev/null --max-time 5 \"$1\"", "_", endpoint), false);
-    }
+    List<String> probeCommand = "default".equals(profileName)
+        ? List.of("hermes", "mcp", "test", serverName)
+        : List.of("hermes", "-p", profileName, "mcp", "test", serverName);
+    ExecResult probe = exec(url, containerId, probeCommand, false);
     long latencyMs = (System.nanoTime() - start) / 1_000_000L;
-    if (probe.exitCode() == 0) {
-      return new McpTestResult(serverName, "connected", tools, latencyMs, null);
+    String probeOutput = probe.stdout() + "\n" + probe.stderr();
+    int discoveredTools = Math.max(tools, parseToolCount(probeOutput));
+    McpTestResult result;
+    if (probe.exitCode() == 0 && mcpProbeSucceeded(probeOutput)) {
+      result = new McpTestResult(serverName, "connected", discoveredTools, latencyMs, null, checkedAt);
+    } else {
+      result = new McpTestResult(
+          serverName, "error", discoveredTools, null, probeError(probe.stdout(), probe.stderr()), checkedAt);
     }
-    String detail = stdio ? "command not found on PATH" : "endpoint unreachable";
-    return new McpTestResult(serverName, "error", tools, null, detail);
+    mcpProbeCache.put(cacheKey, new CachedMcpProbe(fingerprint, result));
+    return result;
+  }
+
+  static int parseToolCount(String output) {
+    String text = output == null ? "" : output;
+    Matcher matcher = TOOL_COUNT.matcher(text);
+    int count = 0;
+    while (matcher.find()) count = Math.max(count, Integer.parseInt(matcher.group(1)));
+    matcher = DISCOVERED_TOOL_COUNT.matcher(text);
+    while (matcher.find()) count = Math.max(count, Integer.parseInt(matcher.group(1)));
+    return count;
+  }
+
+  static boolean mcpProbeSucceeded(String output) {
+    String clean = ANSI.matcher(output == null ? "" : output).replaceAll("");
+    return MCP_CONNECTED.matcher(clean).find();
+  }
+
+  private static String probeError(String stdout, String stderr) {
+    String text = stderr == null || stderr.isBlank() ? stdout : stderr;
+    String clean = ANSI.matcher(text == null ? "" : text).replaceAll("").trim();
+    if (clean.isBlank()) return "MCP handshake failed";
+    String[] lines = clean.split("\\R");
+    String detail = lines[lines.length - 1].trim();
+    if (detail.length() > 300) detail = detail.substring(0, 300);
+    return detail.isBlank() ? "MCP handshake failed" : detail;
+  }
+
+  private static String mcpFingerprint(
+      String transport, String endpoint, String command, String args, boolean enabled) {
+    return Integer.toHexString(Objects.hash(transport, endpoint, command, args, enabled));
   }
 
   private List<IntegrationDto> listIntegrations(String url, String containerId, String profileName) {
@@ -949,52 +1084,23 @@ public class HermesProfiles {
 
   /** check=false callers (e.g. dirExists) interpret the exit code themselves. */
   private ExecResult exec(String url, String containerId, List<String> command, boolean check) {
-    DockerClient client = clients.forUrl(url);
-    ExecCreateCmdResponse exec = client.execCreateCmd(containerId)
-        .withAttachStdout(true)
-        .withAttachStderr(true)
-        .withCmd(command.toArray(new String[0]))
-        .exec();
+    var result = dockerExec.runAsUser(
+        url, containerId, "hermes", command, "Hermes command", check, false, Duration.ofSeconds(30));
+    return new ExecResult(result.exitCode(), result.stdout(), result.stderr());
+  }
 
-    ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-    ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-    ResultCallback.Adapter<Frame> callback = new ResultCallback.Adapter<>() {
-      @Override
-      public void onNext(Frame frame) {
-        if (frame.getPayload() == null) return;
-        if (frame.getStreamType() == StreamType.STDERR) {
-          stderr.writeBytes(frame.getPayload());
-        } else {
-          stdout.writeBytes(frame.getPayload());
-        }
-      }
-    };
-    boolean finished;
-    try {
-      finished = client.execStartCmd(exec.getId()).exec(callback).awaitCompletion(30, TimeUnit.SECONDS);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("command interrupted: " + String.join(" ", command), e);
-    } finally {
-      try {
-        callback.close();
-      } catch (Exception ignored) { }
-    }
-    if (!finished) {
-      throw new RuntimeException("command timed out: " + String.join(" ", command));
-    }
-    Integer exit = client.inspectExecCmd(exec.getId()).exec().getExitCode();
-    int exitCode = exit == null ? 0 : exit;
-    if (check && exitCode != 0) {
-      String message = stderr.toString(StandardCharsets.UTF_8).trim();
-      if (message.isEmpty()) message = stdout.toString(StandardCharsets.UTF_8).trim();
-      if (message.isEmpty()) message = "command failed with exit code " + exitCode;
-      throw new RuntimeException(message);
-    }
-    return new ExecResult(exitCode, stdout.toString(StandardCharsets.UTF_8), stderr.toString(StandardCharsets.UTF_8));
+  private ExecResult execSensitive(
+      String url, String containerId, List<String> command, String operation) {
+    var result = dockerExec.runAsUser(
+        url, containerId, "hermes", command, operation, true, true, Duration.ofSeconds(30));
+    return new ExecResult(result.exitCode(), result.stdout(), result.stderr());
   }
 
   record ExecResult(int exitCode, String stdout, String stderr) {}
+
+  private record McpCacheKey(String url, String containerId, String profileName, String serverName) {}
+
+  private record CachedMcpProbe(String fingerprint, McpTestResult result) {}
 
   record ConfigInfo(String provider, String model, String cwd) {}
 

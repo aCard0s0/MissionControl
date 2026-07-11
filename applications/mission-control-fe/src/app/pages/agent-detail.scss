@@ -246,7 +246,7 @@ textarea.soul {
   max-height: 420px; overflow-y: auto;
   .log-line { display: flex; gap: 8px; white-space: nowrap;
     .lvl { width: 44px; flex: none; }
-    .src { width: 64px; flex: none; }
+    .src { width: 88px; flex: none; }
     .msg { overflow: hidden; text-overflow: ellipsis; color: var(--dim); } }
 }
 

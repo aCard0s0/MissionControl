@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,5 +71,27 @@ class ProfileTemplateServiceTest {
     // SecretRef exposes only key/set/recoverable — there is no field that could
     // carry the raw value or a suffix of it back to the client.
     assertFalse(ref.toString().contains("sk-ant"), "no secret material in the DTO");
+  }
+
+  @Test
+  void createFromTemplateRollsBackProfileWhenBlueprintFails() {
+    HermesProfiles profiles = Mockito.mock(HermesProfiles.class);
+    HermesSetup setup = Mockito.mock(HermesSetup.class);
+    ProfileTemplateService ownedService =
+        new ProfileTemplateService(repository, cipher, profiles, setup);
+    ProfileTemplate template = new ProfileTemplate(
+        "pt-1", "ops", "", "anthropic", "model", "", "", "soul", "",
+        List.of(), List.of(), List.of(), 1L, 1L);
+    when(repository.findById("pt-1")).thenReturn(Optional.of(template));
+    CreateAgentRequest create = new CreateAgentRequest(
+        "dh-local", "cid", "ops", "anthropic", "model", null, null, null, "pt-1");
+    doThrow(new RuntimeException("soul write failed"))
+        .when(profiles).updateSoul("unix:///sock", "cid", "ops", "soul");
+
+    assertThrows(RuntimeException.class,
+        () -> ownedService.createFromTemplate("pt-1", "unix:///sock", create));
+
+    verify(profiles).createProfileBare("unix:///sock", create);
+    verify(profiles).delete("unix:///sock", "cid", "ops");
   }
 }

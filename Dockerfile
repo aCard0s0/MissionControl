@@ -7,7 +7,7 @@ WORKDIR /fe
 COPY applications/mission-control-fe/package.json applications/mission-control-fe/package-lock.json ./
 RUN npm ci
 COPY applications/mission-control-fe/ ./
-RUN npx ng build
+RUN npm test -- --watch=false && npx ng build
 
 # ── backend build (bundles the frontend into classpath:/static) ─────────────
 FROM maven:3.9-eclipse-temurin-24 AS be-build
@@ -17,7 +17,7 @@ RUN mvn -q -B dependency:go-offline
 COPY applications/mission-control-server/src ./src
 COPY --from=fe-build /fe/dist/MissionControl/browser ./src/main/resources/static
 # the static config.js is a dev artifact — /config.js is served dynamically
-RUN rm -f ./src/main/resources/static/config.js && mvn -q -B -DskipTests package
+RUN rm -f ./src/main/resources/static/config.js && mvn -q -B package
 
 # ── runtime ──────────────────────────────────────────────────────────────────
 FROM eclipse-temurin:24-jre-alpine
