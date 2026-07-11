@@ -34,6 +34,36 @@ All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 409 
 Container DTO: `{ id, shortId, name, hostId, status, image, version, startedAt, sizeRootFsGb, profiles }`
 with `status ∈ running | stopped | unhealthy | unknown`.
 
+## MCP server catalog — SQLite definitions + managed Compose lifecycle
+
+Managed entries belong to one immutable Docker host and are rendered into that
+daemon's `mission-control-mcp` Compose project. External HTTP/SSE and stdio
+entries are registry-only and therefore have no container lifecycle or logs.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions |
+| `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201 |
+| `PUT /api/mcp-servers/{id}` | complete structured definition | Kind and managed `hostId` are immutable; running deployment changes remain pending until Apply |
+| `DELETE /api/mcp-servers/{id}` | — | Disables/unlinks Agent copies first; managed deletion returns 202 and preserves named volumes |
+| `POST …/{id}/start` | — | 202; applies pending config and starts the main/support services |
+| `POST …/{id}/stop` | — | 202; stops the main/support services without deleting them |
+| `POST …/{id}/apply` | — | 202; recreates a running service or refreshes its stopped container |
+| `POST …/{id}/check` | — | Bounded, no-redirect HTTP reachability check for external entries only |
+| `GET …/{id}/logs` | `?tail=200` (max 500 per container) | Merged Docker tail for a managed server and its private support services |
+| `GET /api/mcp-servers/retained-resources` | — | Named volumes preserved by catalog deletion |
+| `DELETE …/retained-resources/{id}` | — | Permanently purges one retained Mission Control-owned volume |
+
+Catalog input uses `kind ∈ managed | external | stdio`. Managed fields include
+`hostId`, `image`, optional `platform`, list-form `entrypoint`/`command`,
+`internalPort`, optional `publishedPort`, `path`, optional `crossHostUrl`,
+environment/headers, named volumes, healthcheck, and private support services.
+External entries use `transport + url + headers`; stdio entries use
+`stdioCommand + args + environment`. Configuration values have
+`{ key, value?, secret, clear? }`; secret values are never returned, only
+`set/recoverable` flags. Raw Compose YAML, bind mounts, Docker socket mounts,
+host networking, privileged mode, devices, and capabilities are not accepted.
+
 ## Agents — Hermes profiles read through `docker exec`
 
 | Method & path | Body / params | Notes |
@@ -46,15 +76,23 @@ with `status ∈ running | stopped | unhealthy | unknown`.
 | `PUT  …/{name}/skills/{skillName}` | `{ enabled }` | toggles `skills.platform_disabled.cli` in `config.yaml` |
 | `POST …/{name}/skills` | `{ name }` | `hermes skills install --force` |
 | `DELETE …/{name}/skills/{skillName}` | — | removes the skill directory (the CLI uninstall is interactive-only) |
-| `POST …/{name}/mcp` | `{ name, transport, url?, command?, args? }` | edits `mcp_servers` in `config.yaml` |
-| `DELETE …/{name}/mcp/{serverName}` | — | |
+| `POST …/{name}/mcp` | `{ name, transport, url?, command?, args?, enabled?, headers?, environment? }` | adds/upserts one `mcp_servers` entry; persists explicit SSE transport and per-server stdio env |
+| `PUT …/{name}/mcp/{serverName}` | same as POST | atomically updates or renames the saved entry; `headers: {}` explicitly clears headers |
+| `PUT …/{name}/mcp/{serverName}/enabled` | `{ enabled }` | non-destructive disconnect/reconnect; preserves all connection configuration |
+| `DELETE …/{name}/mcp/{serverName}` | — | permanently forgets the saved entry |
 | `POST …/{name}/mcp/{serverName}/test` | — | runs Hermes' MCP handshake; returns `{ status, tools, latencyMs, error, checkedAt }` |
+| `POST …/{name}/mcp/catalog` | `{ serverId, alias }` | materializes a catalog definition; same-host managed entries attach the Agent container to the MCP network |
+| `POST …/{name}/mcp/{serverName}/sync` | — | manually applies the current catalog revision while preserving enabled state |
+| `DELETE …/{name}/mcp/{serverName}/link` | — | converts a linked entry into an Agent-local custom definition without deleting config |
 | `GET  …/{name}/integrations` | — | parsed from `gateway_state.json` |
 | `PUT  …/{name}/config` | `{ configYaml }` | full config.yaml replace — validated as a YAML mapping (400 otherwise); platform tokens (slack, whatsapp, honcho, …) and `model.default` / `model.base_url` overrides live here |
 
 Configured MCP servers report `unknown` until tested, then `connected` or
-`error`; disabled entries report `disabled`. Probe results remain cached only
-while the server definition is unchanged.
+`error`; disabled entries report `disabled`. Every server DTO also carries an
+explicit `enabled` boolean so clients do not need to derive persistence state
+from probe status. Catalog-linked entries also expose catalog/synced revisions
+and `updateAvailable`. Probe results remain cached only while the server
+definition is unchanged.
 
 Create (`POST /api/agents`) accepts optional `baseUrl`; when set, the profile's
 `model.default` + `model.base_url` are written directly (ollama / any

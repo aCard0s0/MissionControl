@@ -26,6 +26,9 @@ mc:
   docker-socket: ${MC_DOCKER_SOCKET:unix:///var/run/docker.sock}
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
   container-filter: ${MC_CONTAINER_FILTER:hermes}
+  # Generated, non-secret Compose definitions for the managed MCP project.
+  # The combined image overrides this to its persisted /data volume.
+  mcp-stack-dir: ${MC_MCP_STACK_DIR:./data/mcp-stacks}
   version: 0.1.0
   # AES key material for encrypting profile-template secrets at rest. Required: the
   # app fails to start when unset unless allow-dev-key is true (local dev only).

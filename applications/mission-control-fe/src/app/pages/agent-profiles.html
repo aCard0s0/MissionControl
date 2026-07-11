@@ -125,6 +125,30 @@
             </div>
           }
           @if (!mcpServers().length) { <span class="faint mono empty-note">no mcp servers</span> }
+
+          <div class="catalog-mcp">
+            <div class="catalog-copy">
+              <span class="mono">add from MCP Servers</span>
+              <span class="faint">Creates a detached snapshot. Later catalog edits will not change this profile.</span>
+            </div>
+            <select class="select" [ngModel]="mcpCatalogId" (ngModelChange)="selectCatalogMcp($event)">
+              <option value="">select a server…</option>
+              @for (server of store.mcpServers(); track server.id) {
+                <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
+              }
+            </select>
+            <input class="input" [(ngModel)]="mcpCatalogAlias" placeholder="agent alias" />
+            <button class="btn sm" type="button"
+                    [disabled]="!mcpCatalogId || !mcpCatalogAlias.trim()"
+                    (click)="addCatalogMcp()">add snapshot</button>
+            @if (store.mcpServerById(mcpCatalogId); as selected) {
+              @if (selected.kind === 'managed' && !selected.crossHostUrl) {
+                <span class="catalog-warning">Uses the stack-internal URL. It will only work for Agents that can reach the source host's MCP network.</span>
+              }
+            }
+          </div>
+
+          <div class="or mono faint"><span>or add a custom definition</span></div>
           <div class="add-mcp">
             <input class="input" [(ngModel)]="mcpName" placeholder="server name" />
             <select class="select" [(ngModel)]="mcpTransport">

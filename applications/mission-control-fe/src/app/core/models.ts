@@ -91,6 +91,12 @@ export interface McpServer {
   id: string;
   name: string;
   transport: 'stdio' | 'http' | 'sse';
+  enabled: boolean;
+  origin: 'custom' | 'catalog';
+  catalogServerId: string | null;
+  syncedRevision: number | null;
+  catalogRevision: number | null;
+  updateAvailable: boolean;
   status: McpStatus;
   tools: number;
   latencyMs: number | null;
@@ -99,6 +105,131 @@ export interface McpServer {
   url?: string;                   // http/sse endpoint (for the edit form)
   command?: string;               // stdio command
   args?: string;                  // stdio args, space-joined
+}
+
+// ── global MCP server catalog ──────────────────────────────────────────────
+
+export type McpCatalogKind = 'managed' | 'external' | 'stdio';
+export type McpTransport = 'stdio' | 'http' | 'sse';
+export type McpDesiredState = 'running' | 'stopped';
+export type McpRuntimeState = 'running' | 'stopped' | 'missing' | 'unknown' | 'error';
+export type McpCheckStatus = 'unknown' | 'checking' | 'connected' | 'error';
+
+/** A redacted environment variable or HTTP header. The backend never returns
+ *  `value` for a secret; blank values in update requests retain a stored value. */
+export interface McpConfigEntry {
+  key: string;
+  value?: string | null;
+  secret: boolean;
+  set?: boolean;
+  recoverable?: boolean;
+  clear?: boolean;
+}
+
+/** Named volumes only. Host paths and bind mounts are intentionally not
+ *  representable by the UI or API model. */
+export interface McpNamedVolume {
+  name: string;
+  target: string;
+}
+
+export interface McpHealthcheck {
+  test: string[];
+  interval?: string | null;
+  timeout?: string | null;
+  retries?: number | null;
+  startPeriod?: string | null;
+}
+
+/** Support services are rendered by the backend into the managed stack. The
+ *  first UI version preserves this structured data when editing a server. */
+export interface McpSupportService {
+  name: string;
+  image: string;
+  platform?: string | null;
+  entrypoint?: string[];
+  command?: string[];
+  environment?: McpConfigEntry[];
+  volumes?: McpNamedVolume[];
+  healthcheck?: McpHealthcheck | null;
+}
+
+export interface McpCatalogServer {
+  id: string;
+  name: string;
+  description: string;
+  kind: McpCatalogKind;
+  hostId: string | null;
+  transport: McpTransport;
+  url: string | null;
+  image: string | null;
+  platform: string | null;
+  entrypoint: string[];
+  /** List-form command override for managed Compose services. */
+  command: string[];
+  stdioCommand: string | null;
+  args: string[];
+  internalPort: number | null;
+  publishedPort: number | null;
+  path: string | null;
+  crossHostUrl: string | null;
+  /** Computed usable endpoint returned by the backend. */
+  connectionUrl: string | null;
+  headers: McpConfigEntry[];
+  environment: McpConfigEntry[];
+  volumes: McpNamedVolume[];
+  healthcheck: McpHealthcheck | null;
+  supportServices: McpSupportService[];
+  desiredState: McpDesiredState;
+  runtimeState: McpRuntimeState;
+  operationState: string;
+  operationError: string | null;
+  checkStatus: McpCheckStatus;
+  checkError: string | null;
+  checkedAt: number | null;
+  latencyMs: number | null;
+  revision: number;
+  appliedRevision: number;
+  pendingChanges: boolean;
+  serviceKey: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Editable catalog fields accepted by POST and PUT. Host assignment is
+ *  immutable after create; the backend enforces that invariant. */
+export interface McpCatalogServerInput {
+  name: string;
+  description: string;
+  kind: McpCatalogKind;
+  hostId: string | null;
+  transport: McpTransport;
+  url: string | null;
+  image: string | null;
+  platform: string | null;
+  entrypoint: string[];
+  command: string[];
+  stdioCommand: string | null;
+  args: string[];
+  internalPort: number | null;
+  publishedPort: number | null;
+  path: string | null;
+  crossHostUrl: string | null;
+  headers: McpConfigEntry[];
+  environment: McpConfigEntry[];
+  volumes: McpNamedVolume[];
+  healthcheck: McpHealthcheck | null;
+  supportServices: McpSupportService[];
+}
+
+export interface McpRetainedResource {
+  id: string;
+  serverId: string | null;
+  serverName: string;
+  hostId: string;
+  type: 'volume' | string;
+  name: string;
+  createdAt: number;
 }
 
 export type IntegrationKind =

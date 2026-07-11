@@ -13,10 +13,12 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.CreateVolumeCmd;
+import com.github.dockerjava.api.command.ConnectToNetworkCmd;
 import com.github.dockerjava.api.command.InspectContainerCmd;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.InspectContainerResponse.ContainerState;
 import com.github.dockerjava.api.command.InspectVolumeCmd;
+import com.github.dockerjava.api.command.ListNetworksCmd;
 import com.github.dockerjava.api.command.InspectVolumeResponse;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.RemoveVolumeCmd;
@@ -27,6 +29,8 @@ import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ContainerConfig;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.Network;
+import com.github.dockerjava.api.model.NetworkSettings;
 import com.github.dockerjava.api.model.StreamType;
 import io.hermes.missioncontrol.AppProperties;
 import io.hermes.missioncontrol.web.ResourceConflictException;
@@ -182,6 +186,32 @@ class DockerGatewayTest {
 
     verify(removeContainer).exec();
     verify(removeVolume).exec();
+  }
+
+  @Test
+  void connectsAnAgentContainerToTheManagedMcpNetwork() {
+    InspectContainerCmd inspect = mock(InspectContainerCmd.class);
+    InspectContainerResponse inspected = mock(InspectContainerResponse.class);
+    NetworkSettings settings = mock(NetworkSettings.class);
+    when(client.inspectContainerCmd("agent-id")).thenReturn(inspect);
+    when(inspect.exec()).thenReturn(inspected);
+    when(inspected.getNetworkSettings()).thenReturn(settings);
+    when(settings.getNetworks()).thenReturn(Map.of());
+
+    ListNetworksCmd listNetworks = mock(ListNetworksCmd.class, Answers.RETURNS_SELF);
+    Network network = mock(Network.class);
+    when(network.getName()).thenReturn("mission-control-mcp-net");
+    when(network.getId()).thenReturn("network-id");
+    when(client.listNetworksCmd()).thenReturn(listNetworks);
+    when(listNetworks.exec()).thenReturn(List.of(network));
+    ConnectToNetworkCmd connect = mock(ConnectToNetworkCmd.class, Answers.RETURNS_SELF);
+    when(client.connectToNetworkCmd()).thenReturn(connect);
+
+    gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net");
+
+    verify(connect).withContainerId("agent-id");
+    verify(connect).withNetworkId("network-id");
+    verify(connect).exec();
   }
 
   private void stubMissingVolume(String name) {

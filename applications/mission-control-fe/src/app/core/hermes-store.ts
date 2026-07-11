@@ -1,14 +1,19 @@
 import { Injectable, computed, signal } from '@angular/core';
 import {
   AgentProfile, BoardColumn, BoardTask, ChatMessage, ContainerStatus, CronJob, DockerHost,
-  HermesContainer, Integration, LogEntry, McpServer, ModelProvider, OllamaModel, ProfileTemplate,
+  HermesContainer, Integration, LogEntry, McpCatalogServer, McpCatalogServerInput,
+  McpRetainedResource, McpServer, ModelProvider, OllamaModel, ProfileTemplate,
   ProfileTemplateInput, SessionInfo, SkillContent, SkillRef, Webhook,
 } from './models';
 import {
-  buildMockChat, seedAgents, seedContainers, seedDockerHosts, seedJobs, seedLogs, seedSkillBodies, seedTasks, seedTemplates, seedWebhooks,
+  buildMockChat, seedAgents, seedContainers, seedDockerHosts, seedJobs, seedLogs,
+  seedMcpCatalogServers, seedSkillBodies, seedTasks, seedTemplates, seedWebhooks,
 } from './mock-data';
 import { runtimeConfig } from './app-config';
-import { ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiModelProvider, ApiProfileTemplate, ApiPullState, ApiSetupAuthProvider, HermesApi } from './hermes-api';
+import {
+  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer, ApiModelProvider,
+  ApiProfileTemplate, ApiPullState, ApiSetupAuthProvider, HermesApi,
+} from './hermes-api';
 import { maskTail } from '../shared/secret';
 
 let uid = 0;
@@ -115,6 +120,10 @@ export class HermesStore {
   readonly webhooks = signal<Webhook[]>(this.mock ? seedWebhooks() : []);
   /** Reusable agent blueprints — global, not scoped to a container. */
   readonly profileTemplates = signal<ProfileTemplate[]>(this.mock ? seedTemplates() : []);
+  /** Reusable global MCP definitions, including managed Compose services. */
+  readonly mcpServers = signal<McpCatalogServer[]>(this.mock ? seedMcpCatalogServers() : []);
+  readonly mcpServersLoading = signal(false);
+  readonly retainedMcpResources = signal<McpRetainedResource[]>([]);
   private readonly logsByContainer = signal<Record<string, LogEntry[]>>(this.mock ? seedLogs() : {});
   readonly logsLoading = signal(false);
   readonly logsUpdatedAt = signal<number | null>(null);
@@ -186,6 +195,8 @@ export class HermesStore {
 
   templateById = (id: string | null) => this.profileTemplates().find(t => t.id === id) ?? null;
 
+  mcpServerById = (id: string | null) => this.mcpServers().find(s => s.id === id) ?? null;
+
   private toAgentProfile(api: ApiAgentProfile): AgentProfile {
     return {
       id: api.id,
@@ -212,6 +223,12 @@ export class HermesStore {
         id: m.id,
         name: m.name,
         transport: m.transport as any,
+        enabled: m.enabled !== false,
+        origin: m.origin === 'catalog' ? 'catalog' : 'custom',
+        catalogServerId: m.catalogServerId ?? null,
+        syncedRevision: m.syncedRevision ?? null,
+        catalogRevision: m.catalogRevision ?? null,
+        updateAvailable: !!m.updateAvailable,
         status: m.status as any,
         tools: m.tools,
         latencyMs: m.latencyMs,
@@ -252,7 +269,11 @@ export class HermesStore {
   private async initLive(): Promise<void> {
     if (this.livePollersStarted) return;
     this.livePollersStarted = true;
-    await Promise.all([this.refreshHosts(), this.refreshModelProviders(), this.refreshProviderRegistry(), this.refreshContainers(), this.refreshBoard(), this.refreshTemplates()]);
+    await Promise.all([
+      this.refreshHosts(), this.refreshModelProviders(), this.refreshProviderRegistry(),
+      this.refreshContainers(), this.refreshBoard(), this.refreshTemplates(),
+      this.refreshMcpServers(), this.refreshRetainedMcpResources(),
+    ]);
     await this.refreshAgents();   // needs the container list
     setInterval(() => this.refreshContainers(), 10_000);
     setInterval(() => this.refreshAgents(), 12_000);
@@ -518,6 +539,292 @@ export class HermesStore {
               note: 'connection refused — check the daemon address and TLS setup' };
       }));
     }, 800);
+  }
+
+  // ── global MCP server catalog ──────────────────────────────────────────
+
+  /** Keeps tolerance for additive backend fields and older rows in one place. */
+  private toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
+    const runtime = String(api.runtimeState ?? 'unknown').toLowerCase();
+    const check = String(api.checkStatus ?? 'unknown').toLowerCase();
+    return {
+      ...api,
+      name: api.name ?? '',
+      description: api.description ?? '',
+      kind: api.kind ?? 'external',
+      hostId: api.hostId || null,
+      transport: api.transport ?? (api.kind === 'stdio' ? 'stdio' : 'http'),
+      url: api.url || null,
+      image: api.image || null,
+      platform: api.platform || null,
+      entrypoint: api.entrypoint ?? [],
+      command: api.command ?? [],
+      stdioCommand: api.stdioCommand || null,
+      args: api.args ?? [],
+      internalPort: api.internalPort ?? null,
+      publishedPort: api.publishedPort ?? null,
+      path: api.path || null,
+      crossHostUrl: api.crossHostUrl || null,
+      connectionUrl: api.connectionUrl || null,
+      headers: (api.headers ?? []).map(e => ({ ...e, secret: !!e.secret })),
+      environment: (api.environment ?? []).map(e => ({ ...e, secret: !!e.secret })),
+      volumes: api.volumes ?? [],
+      healthcheck: api.healthcheck ?? null,
+      supportServices: api.supportServices ?? [],
+      desiredState: String(api.desiredState).toLowerCase() === 'running' ? 'running' : 'stopped',
+      runtimeState: (['running', 'stopped', 'missing', 'error'].includes(runtime) ? runtime : 'unknown') as McpCatalogServer['runtimeState'],
+      operationState: String(api.operationState ?? 'idle').toLowerCase(),
+      operationError: api.operationError ?? null,
+      checkStatus: (['checking', 'connected', 'error'].includes(check) ? check : 'unknown') as McpCatalogServer['checkStatus'],
+      checkError: api.checkError ?? null,
+      checkedAt: api.checkedAt ?? null,
+      latencyMs: api.latencyMs ?? null,
+      revision: api.revision ?? 1,
+      appliedRevision: api.appliedRevision ?? 0,
+      pendingChanges: !!api.pendingChanges,
+      serviceKey: api.serviceKey || null,
+      createdAt: api.createdAt ?? Date.now(),
+      updatedAt: api.updatedAt ?? Date.now(),
+    };
+  }
+
+  private upsertMcpCatalogServer(server: McpCatalogServer): void {
+    this.mcpServers.update(servers => [
+      server,
+      ...servers.filter(item => item.id !== server.id),
+    ]);
+  }
+
+  async refreshMcpServers(silent = false): Promise<void> {
+    if (this.mock) return;
+    if (!silent) this.mcpServersLoading.set(true);
+    try {
+      this.mcpServers.set((await this.api.mcpServers()).map(server => this.toMcpCatalogServer(server)));
+    } catch (e: any) {
+      if (!silent) this.toast(`MCP server refresh failed: ${e.message}`);
+    } finally {
+      if (!silent) this.mcpServersLoading.set(false);
+    }
+  }
+
+  async refreshRetainedMcpResources(): Promise<void> {
+    if (this.mock) return;
+    try {
+      this.retainedMcpResources.set(await this.api.retainedMcpResources());
+    } catch { /* retained data inventory is non-critical */ }
+  }
+
+  /** Create or update a catalog entry. Returns its id, or an empty string. */
+  async saveCatalogMcpServer(input: McpCatalogServerInput, id?: string): Promise<string> {
+    const duplicate = this.mcpServers().find(server =>
+      server.id !== id && server.name.toLowerCase() === input.name.toLowerCase());
+    if (duplicate) {
+      this.toast(`MCP server name already exists: ${duplicate.name}`);
+      return '';
+    }
+    if (!this.mock) {
+      try {
+        const saved = id
+          ? await this.api.updateMcpServer(id, input)
+          : await this.api.createMcpServer(input);
+        const server = this.toMcpCatalogServer(saved);
+        this.upsertMcpCatalogServer(server);
+        if (this.mcpOperationActive(server.operationState)) void this.pollMcpOperation(server.id);
+        return server.id;
+      } catch (e: any) {
+        this.toast(`MCP server save failed: ${e.message}`);
+        return '';
+      }
+    }
+
+    const existing = id ? this.mcpServerById(id) : null;
+    const now = Date.now();
+    const revision = (existing?.revision ?? 0) + 1;
+    const serviceKey = existing?.serviceKey ?? (
+      input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || nid('mcp-service')
+    );
+    const running = existing?.runtimeState === 'running';
+    const connectionUrl = input.kind === 'managed'
+      ? (input.crossHostUrl || `http://${serviceKey}:${input.internalPort}${input.path ?? ''}`)
+      : input.kind === 'external' ? input.url : null;
+    const server: McpCatalogServer = {
+      ...input,
+      id: existing?.id ?? nid('mcp'),
+      connectionUrl,
+      desiredState: existing?.desiredState ?? 'stopped',
+      runtimeState: existing?.runtimeState ?? (input.kind === 'managed' ? 'stopped' : 'unknown'),
+      operationState: 'idle', operationError: null,
+      checkStatus: existing?.checkStatus ?? 'unknown',
+      checkError: existing?.checkError ?? null,
+      checkedAt: existing?.checkedAt ?? null,
+      latencyMs: existing?.latencyMs ?? null,
+      revision,
+      appliedRevision: running ? (existing?.appliedRevision ?? 0) : revision,
+      pendingChanges: running,
+      serviceKey: input.kind === 'managed' ? serviceKey : null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    this.upsertMcpCatalogServer(server);
+    return server.id;
+  }
+
+  async deleteCatalogMcpServer(id: string): Promise<boolean> {
+    const server = this.mcpServerById(id);
+    if (!server) return false;
+    if (!this.mock) {
+      try {
+        const response = await this.api.deleteMcpServer(id);
+        if (response) this.upsertMcpCatalogServer(this.toMcpCatalogServer(response));
+        await this.refreshMcpServers(true);
+        void this.pollMcpOperation(id, true);
+        return true;
+      } catch (e: any) {
+        this.toast(`MCP server delete failed: ${e.message}`);
+        return false;
+      }
+    }
+
+    const seen = new Set<string>();
+    const volumes = [...server.volumes, ...server.supportServices.flatMap(service => service.volumes ?? [])]
+      .filter(volume => !seen.has(volume.name) && seen.add(volume.name));
+    this.retainedMcpResources.update(resources => [
+      ...volumes.map((volume): McpRetainedResource => ({
+        id: nid('mcp-volume'), serverId: server.id, serverName: server.name,
+        hostId: server.hostId ?? 'dh-local', type: 'volume', name: volume.name,
+        createdAt: Date.now(),
+      })),
+      ...resources,
+    ]);
+    this.mcpServers.update(servers => servers.filter(item => item.id !== id));
+    return true;
+  }
+
+  async startCatalogMcpServer(id: string): Promise<boolean> {
+    return this.runMcpOperation(id, 'start');
+  }
+
+  async stopCatalogMcpServer(id: string): Promise<boolean> {
+    return this.runMcpOperation(id, 'stop');
+  }
+
+  async applyCatalogMcpServer(id: string): Promise<boolean> {
+    return this.runMcpOperation(id, 'apply');
+  }
+
+  async checkCatalogMcpServer(id: string): Promise<boolean> {
+    return this.runMcpOperation(id, 'check');
+  }
+
+  private async runMcpOperation(id: string, operation: 'start' | 'stop' | 'apply' | 'check'): Promise<boolean> {
+    const server = this.mcpServerById(id);
+    if (!server) return false;
+    this.mcpServers.update(servers => servers.map(item => item.id === id ? {
+      ...item,
+      operationState: operation === 'check' ? item.operationState : ({
+        start: 'starting', stop: 'stopping', apply: 'applying',
+      } as const)[operation],
+      operationError: null,
+      ...(operation === 'check' ? { checkStatus: 'checking' as const, checkError: null } : {}),
+    } : item));
+
+    if (!this.mock) {
+      try {
+        const response = operation === 'start' ? await this.api.startMcpServer(id)
+          : operation === 'stop' ? await this.api.stopMcpServer(id)
+          : operation === 'apply' ? await this.api.applyMcpServer(id)
+          : await this.api.checkMcpServer(id);
+        if (response) this.upsertMcpCatalogServer(this.toMcpCatalogServer(response));
+        else await this.refreshMcpServers(true);
+        if (operation !== 'check') void this.pollMcpOperation(id);
+        return operation !== 'check' || this.mcpServerById(id)?.checkStatus === 'connected';
+      } catch (e: any) {
+        this.mcpServers.update(servers => servers.map(item => item.id === id ? {
+          ...item,
+          operationState: operation === 'check' ? item.operationState : 'error',
+          operationError: operation === 'check' ? item.operationError : e.message,
+          ...(operation === 'check'
+            ? { checkStatus: 'error' as const, checkError: e.message, checkedAt: Date.now(), latencyMs: null }
+            : {}),
+        } : item));
+        this.toast(`MCP server ${operation} failed: ${e.message}`);
+        return false;
+      }
+    }
+
+    await Promise.resolve();
+    this.mcpServers.update(servers => servers.map(item => {
+      if (item.id !== id) return item;
+      if (operation === 'check') return {
+        ...item, checkStatus: 'connected' as const, checkError: null,
+        checkedAt: Date.now(), latencyMs: 24,
+      };
+      if (operation === 'stop') return {
+        ...item, desiredState: 'stopped' as const, runtimeState: 'stopped' as const,
+        operationState: 'idle', operationError: null,
+      };
+      return {
+        ...item, desiredState: 'running' as const, runtimeState: 'running' as const,
+        operationState: 'idle', operationError: null,
+        appliedRevision: item.revision, pendingChanges: false,
+      };
+    }));
+    return true;
+  }
+
+  private readonly mcpOperationPolls = new Set<string>();
+
+  private mcpOperationActive(state: string): boolean {
+    return !['', 'idle', 'none', 'error', 'failed', 'complete', 'completed'].includes(state.toLowerCase());
+  }
+
+  /** Polls only while a lifecycle operation is active. Delete polling stops
+   *  once the entry disappears from the catalog. */
+  private async pollMcpOperation(id: string, deleting = false): Promise<void> {
+    if (this.mock || this.mcpOperationPolls.has(id)) return;
+    this.mcpOperationPolls.add(id);
+    try {
+      // Image pulls (notably Playwright) can take several minutes on a cold
+      // host. Keep polling through the backend's ten-minute Compose timeout.
+      for (let attempt = 0; attempt < 420; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1_500));
+        await this.refreshMcpServers(true);
+        const server = this.mcpServerById(id);
+        if (!server || !this.mcpOperationActive(server.operationState)) break;
+      }
+      if (deleting) await this.refreshRetainedMcpResources();
+    } finally {
+      this.mcpOperationPolls.delete(id);
+    }
+  }
+
+  async mcpServerLogTail(id: string, tail = 100): Promise<LogEntry[]> {
+    const server = this.mcpServerById(id);
+    if (!server || server.kind !== 'managed') return [];
+    if (this.mock) {
+      const now = Date.now();
+      return [
+        { ts: now - 3_000, level: 'info' as const, source: server.serviceKey ?? server.name, agentId: null,
+          msg: server.runtimeState === 'running' ? `MCP endpoint ready at ${server.connectionUrl}` : 'container is stopped' },
+        { ts: now - 8_000, level: 'debug' as const, source: 'compose', agentId: null,
+          msg: `project mission-control-mcp · revision ${server.appliedRevision}` },
+      ].slice(0, tail);
+    }
+    const lines = await this.api.mcpServerLogs(id, tail);
+    return lines.map(line => ({ ...line, agentId: null })).sort((a, b) => b.ts - a.ts);
+  }
+
+  async purgeRetainedMcpResource(id: string): Promise<boolean> {
+    if (!this.mock) {
+      try {
+        await this.api.purgeRetainedMcpResource(id);
+      } catch (e: any) {
+        this.toast(`retained resource purge failed: ${e.message}`);
+        return false;
+      }
+    }
+    this.retainedMcpResources.update(resources => resources.filter(resource => resource.id !== id));
+    return true;
   }
 
   // ── image tags ───────────────────────────────────────────────────────
@@ -819,6 +1126,8 @@ export class HermesStore {
       }));
       agent.mcp = tmpl.mcpServers.map(m => ({
         id: nid('m'), name: m.name, transport: m.transport,
+        enabled: m.enabled, origin: 'custom' as const, catalogServerId: null,
+        syncedRevision: null, catalogRevision: null, updateAvailable: false,
         status: m.enabled ? 'unknown' as const : 'disabled' as const,
         tools: 0, latencyMs: null, url: m.url, command: m.command, args: m.args,
       }));
@@ -1059,7 +1368,8 @@ export class HermesStore {
     }
     // mock upsert: replace a same-named server (edit), else append
     const server: McpServer = {
-      id: nid('m'), name, transport, status: 'unknown',
+      id: nid('m'), name, transport, enabled: true, origin: 'custom', catalogServerId: null,
+      syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'unknown',
       tools: 0, latencyMs: null, error: null, checkedAt: null,
       url: opts?.url, command: opts?.command, args: opts?.args,
     };
@@ -1072,6 +1382,200 @@ export class HermesStore {
       return { ...x, mcp };
     }));
     return true;
+  }
+
+  /** Atomic direct-server edit/rename. Catalog-linked servers must be unlinked
+   *  by the caller first, which keeps registry synchronization explicit. */
+  async updateMcp(
+    agentId: string,
+    oldName: string,
+    name: string,
+    transport: McpServer['transport'],
+    opts?: { url?: string; command?: string; args?: string },
+  ): Promise<boolean> {
+    const agent = this.agentById(agentId);
+    const existing = agent?.mcp.find(server => server.name === oldName);
+    if (!agent || !existing) return false;
+    if (oldName !== name && agent.mcp.some(server => server.name === name)) {
+      this.toast(`MCP alias already exists: ${name}`);
+      return false;
+    }
+    if (!this.mock) {
+      const container = this.containers().find(item => item.id === agent.containerId);
+      if (!container) return false;
+      try {
+        const updated = await this.api.updateAgentMcpServer(
+          container.hostId, agent.containerId, agent.name, oldName,
+          { name, transport, url: opts?.url, command: opts?.command, args: opts?.args, enabled: existing.enabled },
+        );
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`MCP update failed: ${e.message}`);
+        return false;
+      }
+    }
+    this.agents.update(agents => agents.map(item => item.id !== agentId ? item : ({
+      ...item,
+      mcp: item.mcp.map(server => server.name !== oldName ? server : ({
+        ...server, name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
+        status: server.enabled ? 'unknown' as const : 'disabled' as const,
+        tools: 0, latencyMs: null, error: null, checkedAt: null,
+      })),
+    })));
+    return true;
+  }
+
+  async setMcpEnabled(agentId: string, serverName: string, enabled: boolean): Promise<boolean> {
+    const agent = this.agentById(agentId);
+    if (!agent?.mcp.some(server => server.name === serverName)) return false;
+    if (!this.mock) {
+      const container = this.containers().find(item => item.id === agent.containerId);
+      if (!container) return false;
+      try {
+        const updated = await this.api.setAgentMcpEnabled(
+          container.hostId, agent.containerId, agent.name, serverName, enabled,
+        );
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`MCP ${enabled ? 'connect' : 'disconnect'} failed: ${e.message}`);
+        return false;
+      }
+    }
+    this.agents.update(agents => agents.map(item => item.id !== agentId ? item : ({
+      ...item,
+      mcp: item.mcp.map(server => server.name !== serverName ? server : ({
+        ...server, enabled, status: enabled ? 'unknown' as const : 'disabled' as const,
+        ...(enabled ? { error: null } : {}),
+      })),
+    })));
+    return true;
+  }
+
+  /** Starts a stopped managed catalog server and waits for the real runtime
+   *  state before writing any Agent configuration. */
+  async connectCatalogMcp(agentId: string, serverId: string, alias: string): Promise<boolean> {
+    const agent = this.agentById(agentId);
+    let catalog = this.mcpServerById(serverId);
+    if (!agent || !catalog || !alias.trim()) return false;
+    const agentContainer = this.containers().find(item => item.id === agent.containerId);
+    if (!agentContainer) return false;
+    if (agent.mcp.some(server => server.name === alias)) {
+      this.toast(`MCP alias already exists: ${alias}`);
+      return false;
+    }
+    if (catalog.kind === 'managed' && catalog.hostId !== agentContainer.hostId && !catalog.crossHostUrl) {
+      this.toast(`MCP server ${catalog.name} needs an explicit cross-host URL for this Agent`);
+      return false;
+    }
+
+    if (catalog.kind === 'managed' && catalog.runtimeState !== 'running') {
+      if (!(await this.startCatalogMcpServer(serverId))) return false;
+      if (!this.mock) {
+        const deadline = Date.now() + 10 * 60_000;
+        while (Date.now() < deadline) {
+          await this.refreshMcpServers(true);
+          catalog = this.mcpServerById(serverId);
+          if (!catalog) return false;
+          if (catalog.runtimeState === 'running') break;
+          if (catalog.runtimeState === 'error' || catalog.operationState === 'error' || catalog.operationError) {
+            this.toast(`MCP server start failed: ${catalog.operationError ?? catalog.runtimeState}`);
+            return false;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1_500));
+        }
+        if (catalog.runtimeState !== 'running') {
+          this.toast(`MCP server start timed out: ${catalog.name}`);
+          return false;
+        }
+      }
+    }
+
+    if (!this.mock) {
+      try {
+        const updated = await this.api.connectAgentCatalogMcp(
+          agentContainer.hostId, agent.containerId, agent.name, serverId, alias.trim(),
+        );
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`MCP catalog connect failed: ${e.message}`);
+        return false;
+      }
+    }
+
+    const linked = this.catalogMcpDefinition(catalog, alias.trim(), true);
+    this.agents.update(agents => agents.map(item => item.id === agentId
+      ? { ...item, mcp: [...item.mcp, linked] }
+      : item));
+    return true;
+  }
+
+  async syncCatalogMcp(agentId: string, alias: string): Promise<boolean> {
+    const agent = this.agentById(agentId);
+    const linked = agent?.mcp.find(server => server.name === alias && server.catalogServerId);
+    if (!agent || !linked?.catalogServerId) return false;
+    if (!this.mock) {
+      const container = this.containers().find(item => item.id === agent.containerId);
+      if (!container) return false;
+      try {
+        const updated = await this.api.syncAgentCatalogMcp(container.hostId, agent.containerId, agent.name, alias);
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`MCP sync failed: ${e.message}`);
+        return false;
+      }
+    }
+    const catalog = this.mcpServerById(linked.catalogServerId);
+    if (!catalog) return false;
+    const synced = this.catalogMcpDefinition(catalog, alias, linked.enabled, linked.id);
+    this.agents.update(agents => agents.map(item => item.id !== agentId ? item : ({
+      ...item, mcp: item.mcp.map(server => server.name === alias ? synced : server),
+    })));
+    return true;
+  }
+
+  async unlinkCatalogMcp(agentId: string, alias: string): Promise<boolean> {
+    const agent = this.agentById(agentId);
+    const linked = agent?.mcp.find(server => server.name === alias);
+    if (!agent || !linked) return false;
+    if (!this.mock) {
+      const container = this.containers().find(item => item.id === agent.containerId);
+      if (!container) return false;
+      try {
+        const updated = await this.api.unlinkAgentCatalogMcp(container.hostId, agent.containerId, agent.name, alias);
+        if (this.agentById(agentId)) this.patchAgent(agentId, this.toAgentProfile(updated));
+        return true;
+      } catch (e: any) {
+        this.toast(`MCP customize failed: ${e.message}`);
+        return false;
+      }
+    }
+    this.agents.update(agents => agents.map(item => item.id !== agentId ? item : ({
+      ...item,
+      mcp: item.mcp.map(server => server.name !== alias ? server : ({
+        ...server, origin: 'custom' as const, catalogServerId: null,
+        syncedRevision: null, catalogRevision: null, updateAvailable: false,
+      })),
+    })));
+    return true;
+  }
+
+  private catalogMcpDefinition(
+    catalog: McpCatalogServer, alias: string, enabled: boolean, id = nid('m'),
+  ): McpServer {
+    return {
+      id, name: alias, transport: catalog.transport, enabled, origin: 'catalog',
+      catalogServerId: catalog.id, syncedRevision: catalog.revision,
+      catalogRevision: catalog.revision, updateAvailable: false,
+      status: enabled ? 'unknown' : 'disabled', tools: 0, latencyMs: null,
+      error: null, checkedAt: null,
+      url: catalog.kind === 'stdio' ? undefined : (catalog.connectionUrl ?? catalog.url ?? undefined),
+      command: catalog.kind === 'stdio' ? (catalog.stdioCommand ?? undefined) : undefined,
+      args: catalog.kind === 'stdio' && catalog.args.length ? catalog.args.join(' ') : undefined,
+    };
   }
 
   /** Retest a single MCP server's reachability. */

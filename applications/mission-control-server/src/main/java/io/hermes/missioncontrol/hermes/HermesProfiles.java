@@ -5,11 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.exception.ConflictException;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.LogLineDto;
+import io.hermes.missioncontrol.web.ResourceConflictException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.time.Duration;
@@ -298,24 +300,148 @@ public class HermesProfiles {
   }
 
   public AgentProfileDto addMcpServer(String url, String containerId, String profileName, AddMcpServerRequest request) {
-    String name = request.name();
-    if (name == null || name.isBlank()) throw new IllegalArgumentException("missing server name");
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> servers = asMutableMap(root.get("mcp_servers"));
-    root.put("mcp_servers", servers);
-    Map<Object, Object> server = asMutableMap(servers.get(name));
+    String name = mcpServerName(request.name());
+    String updatedConfig = addMcpServerConfig(configYaml, configPath, request);
+    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
+    writeFileAtomically(url, containerId, configPath, updatedConfig);
+    return readProfile(url, containerId, profileName);
+  }
 
-    String transport = request.transport() == null ? "" : request.transport().trim().toLowerCase(Locale.ROOT);
+  /** Updates (and optionally renames) an existing MCP entry with a single
+   * atomic config-file replacement. A rename collision is rejected before any
+   * container write, so the original definition is never lost. */
+  public AgentProfileDto updateMcpServer(
+      String url,
+      String containerId,
+      String profileName,
+      String serverName,
+      AddMcpServerRequest request) {
+    String currentName = mcpServerName(serverName);
+    String newName = mcpServerName(request.name());
+    String configPath = profileDir(profileName) + "/config.yaml";
+    String configYaml = readFile(url, containerId, configPath);
+    String updatedConfig = updateMcpServerConfig(configYaml, configPath, currentName, request);
+    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, currentName));
+    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, newName));
+    writeFileAtomically(url, containerId, configPath, updatedConfig);
+    return readProfile(url, containerId, profileName);
+  }
+
+  /** Toggles only {@code enabled}; URL, command, args, headers, tool filters,
+   * and any keys unknown to Mission Control are retained in the YAML data
+   * model. */
+  public AgentProfileDto setMcpServerEnabled(
+      String url,
+      String containerId,
+      String profileName,
+      String serverName,
+      boolean enabled) {
+    String name = mcpServerName(serverName);
+    String configPath = profileDir(profileName) + "/config.yaml";
+    String configYaml = readFile(url, containerId, configPath);
+    String updatedConfig = setMcpServerEnabledConfig(configYaml, configPath, name, enabled);
+    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
+    writeFileAtomically(url, containerId, configPath, updatedConfig);
+    return readProfile(url, containerId, profileName);
+  }
+
+  /** Pure config transformation used by the create/upsert endpoint and tests. */
+  String addMcpServerConfig(
+      String configYaml, String configPath, AddMcpServerRequest request) {
+    String name = mcpServerName(request.name());
+    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
+    Map<Object, Object> servers = mcpServersForEdit(root);
+    Object existing = servers.get(name);
+    if (existing != null && !(existing instanceof Map<?, ?>)) {
+      throw new IllegalStateException("refusing to overwrite malformed MCP server: " + name);
+    }
+    Map<Object, Object> server = asMutableMap(existing);
+    applyMcpDefinition(server, request);
+    servers.put(name, server);
+    root.put("mcp_servers", servers);
+    return yaml.dump(root);
+  }
+
+  /** Pure one-step update/rename transformation used to prove collision
+   * behavior without relying on a live Docker container. */
+  String updateMcpServerConfig(
+      String configYaml,
+      String configPath,
+      String serverName,
+      AddMcpServerRequest request) {
+    String currentName = mcpServerName(serverName);
+    String newName = mcpServerName(request.name());
+    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
+    Map<Object, Object> servers = mcpServersForEdit(root);
+    if (!servers.containsKey(currentName)) {
+      throw new NoSuchElementException("unknown MCP server: " + currentName);
+    }
+    if (!currentName.equals(newName) && servers.containsKey(newName)) {
+      throw new ResourceConflictException("an MCP server named '" + newName + "' already exists");
+    }
+    Object existing = servers.get(currentName);
+    if (!(existing instanceof Map<?, ?>)) {
+      throw new IllegalStateException("refusing to rewrite malformed MCP server: " + currentName);
+    }
+    Map<Object, Object> server = asMutableMap(existing);
+    applyMcpDefinition(server, request);
+    if (!currentName.equals(newName)) servers.remove(currentName);
+    servers.put(newName, server);
+    root.put("mcp_servers", servers);
+    return yaml.dump(root);
+  }
+
+  String setMcpServerEnabledConfig(
+      String configYaml, String configPath, String serverName, boolean enabled) {
+    String name = mcpServerName(serverName);
+    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
+    Map<Object, Object> servers = mcpServersForEdit(root);
+    Object existing = servers.get(name);
+    if (!(existing instanceof Map<?, ?>)) {
+      if (existing == null) throw new NoSuchElementException("unknown MCP server: " + name);
+      throw new IllegalStateException("refusing to rewrite malformed MCP server: " + name);
+    }
+    Map<Object, Object> server = asMutableMap(existing);
+    server.put("enabled", enabled);
+    servers.put(name, server);
+    root.put("mcp_servers", servers);
+    return yaml.dump(root);
+  }
+
+  private Map<Object, Object> mcpServersForEdit(Map<Object, Object> root) {
+    Object node = root.get("mcp_servers");
+    if (node != null && !(node instanceof Map<?, ?>)) {
+      throw new IllegalStateException("refusing to rewrite malformed mcp_servers config");
+    }
+    return asMutableMap(node);
+  }
+
+  private void applyMcpDefinition(
+      Map<Object, Object> server, AddMcpServerRequest request) {
+    String transport = request.transport() == null
+        ? ""
+        : request.transport().trim().toLowerCase(Locale.ROOT);
+    // Persist the explicit value. In particular, SSE cannot be inferred from a
+    // URL and previously came back from the API incorrectly as HTTP.
+    server.put("transport", transport);
     if ("stdio".equals(transport)) {
       String command = request.command();
       if (command == null || command.isBlank()) throw new IllegalArgumentException("missing command");
       server.put("command", command.trim());
       String args = request.args();
-      if (args != null && !args.isBlank()) {
+      if (args == null || args.isBlank()) {
+        server.remove("args");
+      } else {
         server.put("args", splitArgs(args.trim()));
       }
+      if (request.environment() != null) {
+        Map<String, String> environment = validatedMcpEnvironment(request.environment());
+        if (environment.isEmpty()) server.remove("env"); else server.put("env", environment);
+      }
+      // These keys belong to network transports. Clearing them avoids reviving
+      // stale endpoints or credentials after a later transport change.
       server.remove("url");
       server.remove("headers");
     } else if ("http".equals(transport) || "sse".equals(transport)) {
@@ -324,6 +450,14 @@ public class HermesProfiles {
       server.put("url", urlValue.trim());
       server.remove("command");
       server.remove("args");
+      server.remove("env");
+      // An omitted header map means the caller did not edit this advanced
+      // field. An explicit empty map clears it without disturbing other,
+      // genuinely unmodeled Hermes options.
+      if (request.headers() != null) {
+        Map<String, String> headers = validatedMcpHeaders(request.headers());
+        if (headers.isEmpty()) server.remove("headers"); else server.put("headers", headers);
+      }
     } else {
       throw new IllegalArgumentException("invalid transport");
     }
@@ -334,23 +468,56 @@ public class HermesProfiles {
     } else if (!server.containsKey("enabled")) {
       server.put("enabled", true);
     }
+  }
 
-    servers.put(name, server);
-    mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
-    writeFile(url, containerId, configPath, yaml.dump(root));
-    return readProfile(url, containerId, profileName);
+  private String mcpServerName(String value) {
+    if (value == null || value.isBlank()) throw new IllegalArgumentException("missing server name");
+    return value.trim();
+  }
+
+  private Map<String, String> validatedMcpHeaders(Map<String, String> input) {
+    Map<String, String> result = new java.util.LinkedHashMap<>();
+    for (Map.Entry<String, String> entry : input.entrySet()) {
+      String name = entry.getKey() == null ? "" : entry.getKey().trim();
+      String value = entry.getValue();
+      if (name.isBlank()) throw new IllegalArgumentException("MCP header name must not be blank");
+      if (value == null) throw new IllegalArgumentException("missing value for MCP header: " + name);
+      if (name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0
+          || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+        throw new IllegalArgumentException("MCP headers must not contain line breaks");
+      }
+      result.put(name, value);
+    }
+    return result;
+  }
+
+  private Map<String, String> validatedMcpEnvironment(Map<String, String> input) {
+    Map<String, String> result = new java.util.LinkedHashMap<>();
+    for (Map.Entry<String, String> entry : input.entrySet()) {
+      String name = entry.getKey() == null ? "" : entry.getKey().trim();
+      String value = entry.getValue();
+      if (!name.matches("[A-Za-z_][A-Za-z0-9_]{0,127}")) {
+        throw new IllegalArgumentException("invalid MCP environment key: " + name);
+      }
+      if (value == null) throw new IllegalArgumentException("missing value for MCP environment: " + name);
+      if (value.indexOf('\0') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+        throw new IllegalArgumentException("MCP environment values must not contain NUL or line breaks");
+      }
+      result.put(name, value);
+    }
+    return result;
   }
 
   public AgentProfileDto removeMcpServer(String url, String containerId, String profileName, String serverName) {
-    if (serverName == null || serverName.isBlank()) throw new IllegalArgumentException("missing server name");
+    serverName = mcpServerName(serverName);
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
     Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> servers = asMutableMap(root.get("mcp_servers"));
+    Map<Object, Object> servers = mcpServersForEdit(root);
     servers.remove(serverName);
     root.put("mcp_servers", servers);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, serverName));
-    writeFile(url, containerId, configPath, yaml.dump(root));
+    writeFileAtomically(url, containerId, configPath, yaml.dump(root));
     return readProfile(url, containerId, profileName);
   }
 
@@ -653,6 +820,28 @@ public class HermesProfiles {
     exec(url, containerId, List.of("sh", "-lc", script, "_", path, content));
   }
 
+  /** Writes a complete config through a sibling temp file and atomic rename, so
+   * readers can observe either the old definition or the new one, never the
+   * delete half of a rename or a partially-written YAML document. */
+  private void writeFileAtomically(
+      String url, String containerId, String path, String content) {
+    String script = String.join(" ",
+        "path=\"$1\"; content=\"$2\";",
+        "mkdir -p \"$(dirname \"$path\")\";",
+        "tmp=\"${path}.mission-control.$$\";",
+        "trap 'rm -f \"$tmp\"' 0 1 2 15;",
+        "printf '%s' \"$content\" > \"$tmp\";",
+        "mv -f \"$tmp\" \"$path\";",
+        "trap - 0 1 2 15;");
+    // The complete YAML may carry authentication headers, so do not include
+    // argv in Docker execution errors/logs.
+    execSensitive(
+        url,
+        containerId,
+        List.of("sh", "-lc", script, "_", path, content),
+        "write MCP configuration");
+  }
+
   String readFile(String url, String containerId, String path) {
     ExecResult result = exec(url, containerId, List.of("sh", "-lc", "cat \"$1\" 2>/dev/null || true", "_", path));
     return result.stdout();
@@ -904,7 +1093,7 @@ public class HermesProfiles {
       Long latencyMs = cached == null ? null : cached.result().latencyMs();
       String error = cached == null ? null : cached.result().error();
       Long checkedAt = cached == null ? null : cached.result().checkedAt();
-      result.add(new McpServerDto(name, name, transport, status, effectiveTools, latencyMs, error, checkedAt,
+      result.add(new McpServerDto(name, name, transport, enabled, status, effectiveTools, latencyMs, error, checkedAt,
           endpoint.isBlank() ? null : endpoint, command.isBlank() ? null : command, args.isBlank() ? null : args));
     }
     return result;

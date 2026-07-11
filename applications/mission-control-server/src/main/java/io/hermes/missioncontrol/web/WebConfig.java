@@ -39,6 +39,6 @@ public class WebConfig implements WebMvcConfigurer {
     // dev only: ng serve runs on its own origin; the combined image is same-origin
     registry.addMapping("/**")
         .allowedOrigins("http://localhost:4200", "http://localhost:4300")
-        .allowedMethods("GET", "POST", "PATCH", "DELETE");
+        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE");
   }
 }
