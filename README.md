@@ -26,9 +26,17 @@ Both ship in **one container**: Spring Boot serves the Angular build and the API
 ./mc ollama pull llama3.2   # pull a model into the stack's ollama service
 ```
 
-Both flavors mount `/var/run/docker.sock` so the dashboard can see and manage Hermes containers on the host, and a `mission-control-data` volume for the SQLite file. `./mc` generates a persistent encryption key in the gitignored `.mission-control.env` on first start. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
+Both flavors mount `/var/run/docker.sock` so the dashboard can manage Hermes containers and its dedicated `mission-control-mcp` Compose project, plus a `mission-control-data` volume for SQLite and generated Compose state. `./mc` generates a persistent encryption key in the gitignored `.mission-control.env` on first start. Mounting the socket grants daemon-level access — see the security notes in [docs/architecture.md](docs/architecture.md).
 
 The stack also includes an **ollama** service (`./mc start` brings it up by default, `--ollama=off` opts out): a local model runtime on host port `11434` (override with `OLLAMA_PORT`), with models persisted in an `ollama-models` volume. Register it in the dashboard's Models page as `http://host.docker.internal:11434` (agent containers) or `http://localhost:11434` (this machine), and manage it with `./mc ollama …` (`list`, `pull`, `logs -f`, …).
+
+The **MCP Servers** page owns a separate Compose project named
+`mission-control-mcp` on each registered Docker host. On the first run it seeds
+Playwright, Context7, Sequential Thinking, and Postgres MCP on the local daemon,
+pulling/creating their containers in the stopped state. Seed ports are internal
+to `mission-control-mcp-net`; publish a port and configure an explicit
+cross-host URL only when Agents on another daemon must reach it. Mission Control
+never adopts or changes a pre-existing project named `mcp`.
 
 ## Remote access (tailscale)
 
@@ -48,4 +56,4 @@ The frontend dev default is `dataMode: 'mock'` (no backend needed) — switch to
 
 ## Status
 
-Live mode today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, persisted ops board, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP servers, integrations, and sessions. Calendar jobs and webhooks remain mock-only.
+Live mode today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, a persisted MCP server catalog with managed Compose services and external endpoints, a persisted ops board, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP connections, integrations, and sessions. Calendar jobs and webhooks remain mock-only.

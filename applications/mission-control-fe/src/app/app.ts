@@ -11,6 +11,7 @@ const NAV = [
   { path: '/agents', label: 'Agents', exact: false },
   { path: '/profiles', label: 'Profiles', exact: false },
   { path: '/models', label: 'Models', exact: false },
+  { path: '/mcp-servers', label: 'MCP Servers', exact: false },
   { path: '/board', label: 'Ops Board', exact: false },
   { path: '/calendar', label: 'Calendar', exact: false },
   { path: '/webhooks', label: 'Webhooks', exact: false },

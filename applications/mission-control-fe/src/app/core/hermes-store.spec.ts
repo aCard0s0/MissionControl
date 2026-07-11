@@ -104,4 +104,47 @@ describe('HermesStore mutation results', () => {
     expect(lines.map(line => line.msg)).toEqual(['newer', 'older']);
     expect(lines.every(line => line.agentId === agent.id)).toBe(true);
   });
+
+  it('disconnects and reconnects MCP entries without forgetting their configuration', async () => {
+    const store = new HermesStore();
+    const agent = store.agents().find(item => item.mcp.length)!;
+    const server = agent.mcp[0];
+
+    expect(await store.setMcpEnabled(agent.id, server.name, false)).toBe(true);
+    expect(store.agentById(agent.id)?.mcp.find(item => item.id === server.id)).toMatchObject({
+      enabled: false, status: 'disabled', url: server.url,
+    });
+
+    expect(await store.setMcpEnabled(agent.id, server.name, true)).toBe(true);
+    expect(store.agentById(agent.id)?.mcp.find(item => item.id === server.id)).toMatchObject({
+      enabled: true, status: 'unknown', url: server.url,
+    });
+  });
+
+  it('starts and connects a managed catalog server without overwriting an alias', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const catalog = store.mcpServers().find(server => server.kind === 'managed')!;
+
+    expect(await store.connectCatalogMcp(agent.id, catalog.id, 'browser-tools')).toBe(true);
+    expect(store.mcpServerById(catalog.id)?.runtimeState).toBe('running');
+    expect(store.agentById(agent.id)?.mcp.find(server => server.name === 'browser-tools')).toMatchObject({
+      enabled: true, origin: 'catalog', catalogServerId: catalog.id,
+      syncedRevision: catalog.revision, updateAvailable: false,
+    });
+
+    expect(await store.connectCatalogMcp(agent.id, catalog.id, 'browser-tools')).toBe(false);
+    expect(store.agentById(agent.id)?.mcp.filter(server => server.name === 'browser-tools')).toHaveLength(1);
+  });
+
+  it('preserves named volumes as retained data when a managed server is removed', async () => {
+    const store = new HermesStore();
+    const postgres = store.mcpServers().find(server => server.id === 'mcp-postgres')!;
+
+    expect(await store.deleteCatalogMcpServer(postgres.id)).toBe(true);
+    expect(store.mcpServerById(postgres.id)).toBeNull();
+    expect(store.retainedMcpResources()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ serverId: postgres.id, type: 'volume', name: 'postgres-data' }),
+    ]));
+  });
 });

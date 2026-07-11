@@ -1,6 +1,6 @@
 import {
   AgentProfile, BoardTask, ChatMessage, CronJob, DockerHost, HermesContainer, LogEntry,
-  ProfileTemplate, SessionInfo, Webhook,
+  McpCatalogServer, ProfileTemplate, SessionInfo, Webhook,
 } from './models';
 
 const NOW = Date.now();
@@ -81,6 +81,64 @@ export const seedDockerHosts = (localSocket: string): DockerHost[] => [
     status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 2, note: null,
   },
 ];
+
+/** The same one-time defaults seeded by the live registry backend. Mock mode
+ *  starts them stopped so the complete lifecycle can be exercised safely. */
+export const seedMcpCatalogServers = (): McpCatalogServer[] => {
+  const base = (
+    id: string,
+    name: string,
+    description: string,
+    image: string,
+    serviceKey: string,
+    transport: 'http' | 'sse',
+    internalPort: number,
+    path: string,
+  ): McpCatalogServer => ({
+    id, name, description, kind: 'managed', hostId: 'dh-local', transport,
+    url: null, image, platform: null, entrypoint: [], command: [], stdioCommand: null, args: [],
+    internalPort, publishedPort: null, path, crossHostUrl: null, connectionUrl: `http://${serviceKey}:${internalPort}${path}`,
+    headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
+    desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle',
+    operationError: null, checkStatus: 'unknown', checkError: null,
+    checkedAt: null, latencyMs: null, revision: 1, appliedRevision: 1,
+    pendingChanges: false, serviceKey, createdAt: NOW, updatedAt: NOW,
+  });
+
+  const postgres = base(
+    'mcp-postgres', 'Postgres MCP', 'Query a private PostgreSQL database through MCP.',
+    'openmcpserver/mcp-postgres:latest', 'postgres-mcp', 'sse', 1103, '/sse',
+  );
+  postgres.environment = [
+    { key: 'DATABASE_URL', secret: true, set: true, recoverable: true },
+  ];
+  postgres.volumes = [{ name: 'postgres-data', target: '/var/lib/postgresql/data' }];
+  postgres.supportServices = [{
+    name: 'postgres-db', image: 'postgres:16-alpine',
+    environment: [
+      { key: 'POSTGRES_USER', secret: false, value: 'mcp' },
+      { key: 'POSTGRES_PASSWORD', secret: true, set: true, recoverable: true },
+      { key: 'POSTGRES_DB', secret: false, value: 'mcp' },
+    ],
+    volumes: [{ name: 'postgres-data', target: '/var/lib/postgresql/data' }],
+  }];
+
+  return [
+    base(
+      'mcp-playwright', 'Playwright', 'Browser automation and page inspection.',
+      'mcp/playwright:latest', 'playwright', 'http', 1100, '/mcp',
+    ),
+    base(
+      'mcp-context7', 'Context7', 'Up-to-date library documentation and examples.',
+      'mcp/context7:latest', 'context7', 'http', 1101, '/mcp',
+    ),
+    base(
+      'mcp-sequential-thinking', 'Sequential Thinking', 'Structured reasoning tools for complex tasks.',
+      'mcp/sequentialthinking:latest', 'sequential-thinking', 'http', 1102, '/mcp',
+    ),
+    postgres,
+  ];
+};
 
 export const seedContainers = (): HermesContainer[] => [
   {
@@ -201,9 +259,9 @@ export const seedAgents = (): AgentProfile[] => [
       { id: 's4', name: 'pdf-tools', source: 'bundled', version: '2.1.0', description: 'Read and assemble PDF reports', enabled: false },
     ],
     mcp: [
-      { id: 'm1', name: 'github', transport: 'http', status: 'connected', tools: 24, latencyMs: 88, url: 'https://mcp.github.com/sse' },
-      { id: 'm2', name: 'grafana', transport: 'sse', status: 'connected', tools: 9, latencyMs: 41, url: 'https://grafana.internal/mcp' },
-      { id: 'm3', name: 'postgres-ro', transport: 'stdio', status: 'error', tools: 0, latencyMs: null, command: 'npx', args: '@modelcontextprotocol/server-postgres' },
+      { id: 'm1', name: 'github', transport: 'http', enabled: true, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'connected', tools: 24, latencyMs: 88, url: 'https://mcp.github.com/sse' },
+      { id: 'm2', name: 'grafana', transport: 'sse', enabled: true, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'connected', tools: 9, latencyMs: 41, url: 'https://grafana.internal/mcp' },
+      { id: 'm3', name: 'postgres-ro', transport: 'stdio', enabled: true, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'error', tools: 0, latencyMs: null, command: 'npx', args: '@modelcontextprotocol/server-postgres' },
     ],
     integrations: [
       { kind: 'slack', status: 'up', detail: '@atlas-ops · #ops-alerts · up 14d' },
@@ -231,8 +289,8 @@ export const seedAgents = (): AgentProfile[] => [
       { id: 's7', name: 'citation-check', source: 'user', version: '0.3.0', description: 'Verify quotes against sources', enabled: true },
     ],
     mcp: [
-      { id: 'm4', name: 'notion', transport: 'http', status: 'connected', tools: 12, latencyMs: 130 },
-      { id: 'm5', name: 'readwise', transport: 'http', status: 'disabled', tools: 6, latencyMs: null },
+      { id: 'm4', name: 'notion', transport: 'http', enabled: true, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'connected', tools: 12, latencyMs: 130 },
+      { id: 'm5', name: 'readwise', transport: 'http', enabled: false, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'disabled', tools: 6, latencyMs: null },
     ],
     integrations: [
       { kind: 'slack', status: 'up', detail: '@scribe · #research · up 9d' },
@@ -256,7 +314,7 @@ export const seedAgents = (): AgentProfile[] => [
       { id: 's9', name: 'tone-match', source: 'hub', version: '0.5.0', description: 'Match reply tone to sender history', enabled: false },
     ],
     mcp: [
-      { id: 'm6', name: 'gmail', transport: 'http', status: 'connected', tools: 8, latencyMs: 210 },
+      { id: 'm6', name: 'gmail', transport: 'http', enabled: true, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'connected', tools: 8, latencyMs: 210 },
     ],
     integrations: [
       { kind: 'slack', status: 'up', detail: '@courier · DM relay · up 6d' },
@@ -280,7 +338,7 @@ export const seedAgents = (): AgentProfile[] => [
       { id: 's11', name: 'incident-log', source: 'user', version: '1.0.0', description: 'Append-only incident journal', enabled: true },
     ],
     mcp: [
-      { id: 'm7', name: 'statuspage', transport: 'http', status: 'error', tools: 0, latencyMs: null },
+      { id: 'm7', name: 'statuspage', transport: 'http', enabled: true, origin: 'custom', catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'error', tools: 0, latencyMs: null },
     ],
     integrations: [
       { kind: 'discord', status: 'up', detail: '#uptime · up 2d' },

@@ -1,4 +1,7 @@
-import { BoardColumn, ChatMessage, DockerHost, ModelProvider, OllamaModel, ProfileTemplateInput, SkillContent, TemplateMcp } from './models';
+import {
+  BoardColumn, ChatMessage, DockerHost, McpCatalogServer, McpCatalogServerInput,
+  McpRetainedResource, ModelProvider, OllamaModel, ProfileTemplateInput, SkillContent, TemplateMcp,
+} from './models';
 
 // Typed client for mission-control-server. apiBaseUrl '' = same origin
 // (the combined image); a non-empty base supports split deployments.
@@ -65,6 +68,12 @@ export interface ApiMcpServer {
   id: string;
   name: string;
   transport: 'stdio' | 'http' | 'sse' | string;
+  enabled?: boolean;
+  origin?: 'custom' | 'catalog' | string;
+  catalogServerId?: string | null;
+  syncedRevision?: number | null;
+  catalogRevision?: number | null;
+  updateAvailable?: boolean;
   status: 'unknown' | 'connected' | 'error' | 'disabled' | string;
   tools: number;
   latencyMs: number | null;
@@ -83,6 +92,11 @@ export interface ApiMcpTestResult {
   error: string | null;
   checkedAt: number;
 }
+
+/** Catalog wire models are deliberately aliases of the domain contracts. All
+ *  normalization of optional/legacy backend fields lives in HermesStore. */
+export type ApiMcpCatalogServer = McpCatalogServer;
+export type ApiMcpRetainedResource = McpRetainedResource;
 
 export interface ApiIntegration {
   kind: string;
@@ -247,6 +261,57 @@ export class HermesApi {
     return this.req(`/api/hosts/${id}`, { method: 'DELETE' });
   }
 
+  // ── global MCP server catalog ────────────────────────────────────────────
+  mcpServers(): Promise<ApiMcpCatalogServer[]> {
+    return this.req('/api/mcp-servers');
+  }
+
+  createMcpServer(input: McpCatalogServerInput): Promise<ApiMcpCatalogServer> {
+    return this.req('/api/mcp-servers', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  updateMcpServer(id: string, input: McpCatalogServerInput): Promise<ApiMcpCatalogServer> {
+    return this.req(`/api/mcp-servers/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify(input),
+    });
+  }
+
+  deleteMcpServer(id: string): Promise<ApiMcpCatalogServer | undefined> {
+    return this.req(`/api/mcp-servers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  startMcpServer(id: string): Promise<ApiMcpCatalogServer | undefined> {
+    return this.mcpServerOperation(id, 'start');
+  }
+
+  stopMcpServer(id: string): Promise<ApiMcpCatalogServer | undefined> {
+    return this.mcpServerOperation(id, 'stop');
+  }
+
+  applyMcpServer(id: string): Promise<ApiMcpCatalogServer | undefined> {
+    return this.mcpServerOperation(id, 'apply');
+  }
+
+  checkMcpServer(id: string): Promise<ApiMcpCatalogServer | undefined> {
+    return this.mcpServerOperation(id, 'check');
+  }
+
+  private mcpServerOperation(id: string, operation: string): Promise<ApiMcpCatalogServer | undefined> {
+    return this.req(`/api/mcp-servers/${encodeURIComponent(id)}/${operation}`, { method: 'POST' });
+  }
+
+  mcpServerLogs(id: string, tail = 100): Promise<ApiLogLine[]> {
+    return this.req(`/api/mcp-servers/${encodeURIComponent(id)}/logs?tail=${encodeURIComponent(tail)}`);
+  }
+
+  retainedMcpResources(): Promise<ApiMcpRetainedResource[]> {
+    return this.req('/api/mcp-servers/retained-resources');
+  }
+
+  purgeRetainedMcpResource(id: string): Promise<void> {
+    return this.req(`/api/mcp-servers/retained-resources/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   modelCatalog(provider: string): Promise<ApiModelCatalog> {
     return this.req(`/api/models/${encodeURIComponent(provider)}`);
   }
@@ -398,6 +463,50 @@ export class HermesApi {
     return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp`, {
       method: 'POST',
       body: JSON.stringify(request),
+    });
+  }
+
+  updateAgentMcpServer(
+    hostId: string,
+    containerId: string,
+    name: string,
+    oldServerName: string,
+    request: { name: string; transport: string; url?: string; command?: string; args?: string; enabled?: boolean; headers?: Record<string, string> },
+  ): Promise<ApiAgentProfile> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp/${encodeURIComponent(oldServerName)}`, {
+      method: 'PUT', body: JSON.stringify(request),
+    });
+  }
+
+  setAgentMcpEnabled(
+    hostId: string, containerId: string, name: string, serverName: string, enabled: boolean,
+  ): Promise<ApiAgentProfile> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp/${encodeURIComponent(serverName)}/enabled`, {
+      method: 'PUT', body: JSON.stringify({ enabled }),
+    });
+  }
+
+  connectAgentCatalogMcp(
+    hostId: string, containerId: string, name: string, serverId: string, alias: string,
+  ): Promise<ApiAgentProfile> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp/catalog`, {
+      method: 'POST', body: JSON.stringify({ serverId, alias }),
+    });
+  }
+
+  syncAgentCatalogMcp(
+    hostId: string, containerId: string, name: string, alias: string,
+  ): Promise<ApiAgentProfile> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp/${encodeURIComponent(alias)}/sync`, {
+      method: 'POST',
+    });
+  }
+
+  unlinkAgentCatalogMcp(
+    hostId: string, containerId: string, name: string, alias: string,
+  ): Promise<ApiAgentProfile> {
+    return this.req(`/api/agents/${encodeURIComponent(hostId)}/${encodeURIComponent(containerId)}/${encodeURIComponent(name)}/mcp/${encodeURIComponent(alias)}/link`, {
+      method: 'DELETE',
     });
   }
 

@@ -8,6 +8,7 @@ export const routes: Routes = [
   { path: 'agents/:id', loadComponent: () => import('./pages/agent-detail').then(m => m.AgentDetailPage), title: 'Agent · Mission Control' },
   { path: 'profiles', loadComponent: () => import('./pages/agent-profiles').then(m => m.AgentProfilesPage), title: 'Agent Profiles · Mission Control' },
   { path: 'models', loadComponent: () => import('./pages/models').then(m => m.ModelsPage), title: 'Models · Mission Control' },
+  { path: 'mcp-servers', loadComponent: () => import('./pages/mcp-servers').then(m => m.McpServersPage), title: 'MCP Servers · Mission Control' },
   { path: 'board', loadComponent: () => import('./pages/board').then(m => m.BoardPage), title: 'Ops Board · Mission Control' },
   { path: 'calendar', loadComponent: () => import('./pages/calendar').then(m => m.CalendarPage), title: 'Calendar · Mission Control' },
   { path: 'webhooks', loadComponent: () => import('./pages/webhooks').then(m => m.WebhooksPage), title: 'Webhooks · Mission Control' },

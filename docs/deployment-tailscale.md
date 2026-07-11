@@ -12,6 +12,11 @@ Files live in [deploy/tailscale](../deploy/tailscale).
 - A [tailscale](https://tailscale.com) account with MagicDNS enabled (admin console → DNS).
 - Docker with the compose plugin on the host that runs your Hermes containers.
 
+The Mission Control image also contains the Docker CLI and Compose plugin used
+to control `mission-control-mcp`. The host only needs the Engine/socket already
+required by the dashboard; generated stack files and catalog state persist in
+the `mission-control-data` volume.
+
 ## Deploy
 
 ```bash
@@ -87,8 +92,10 @@ docker compose -p mission-control -f deploy/tailscale/docker-compose.yml \
 
 - **docker.sock is root-equivalent.** The compose file mounts
   `/var/run/docker.sock`, so anyone who reaches the dashboard can manage the
-  host's daemon. Treat the ACL above as mandatory, or front the socket with a
-  restricted proxy (see [architecture.md](architecture.md)).
+  host's daemon, including creating the dedicated MCP Compose project. Treat
+  the ACL above as mandatory, or front the socket with a restricted proxy that
+  exposes every Engine operation Mission Control needs (see
+  [architecture.md](architecture.md)).
 - **Key hygiene.** Use a tagged auth key (tagged nodes don't expire); if you
   use an untagged key, disable key expiry for the node in the admin console
   or plan to re-auth. Revoke and re-mint the key if it leaks — the node state
@@ -96,9 +103,9 @@ docker compose -p mission-control -f deploy/tailscale/docker-compose.yml \
   on first start or after `tailscale logout`.
 - **Application encryption key.** `.mission-control.env` is generated once,
   ignored by git, and read by both deployment flavors. Keep its permissions at
-  `0600` and back it up; losing it makes stored profile-template secrets
-  unrecoverable. During rotation, keep the old value as `MC_SECRET_KEY_PREVIOUS`
-  until templates have been resaved.
+  `0600` and back it up; losing it makes stored profile-template and MCP-server
+  secrets unrecoverable. During rotation, keep the old value as
+  `MC_SECRET_KEY_PREVIOUS` until stored secrets have been resaved.
 - **Phone / iPad access.** Install the Tailscale app from the App Store /
   Play Store, sign in to the same tailnet, and open the
   `http://mission-control.<tailnet>.ts.net` URL — no VPN config, no port

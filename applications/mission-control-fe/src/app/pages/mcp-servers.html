@@ -1,0 +1,464 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">GLOBAL REGISTRY</div>
+    <h2>MCP Servers</h2>
+  </div>
+  <div class="head-actions">
+    <button class="btn" (click)="openCreate('stdio')">+ stdio</button>
+    <button class="btn" (click)="openCreate('external')">+ external</button>
+    <button class="btn primary" (click)="openCreate('managed')">+ managed server</button>
+  </div>
+</div>
+
+<div class="stack-note panel" data-reveal>
+  <div class="panel-b">
+    <span class="chip on">mission-control-mcp</span>
+    <span class="mono dim">Managed services are isolated in a dedicated Compose project on each Docker host.</span>
+    <span class="spacer"></span>
+    <button class="btn sm ghost" [disabled]="store.mcpServersLoading()" (click)="store.refreshMcpServers()">
+      {{ store.mcpServersLoading() ? 'refreshing…' : 'refresh' }}
+    </button>
+  </div>
+</div>
+
+@if (store.mcpServersLoading() && !store.mcpServers().length) {
+  <div class="panel empty" data-reveal><p class="mono dim">Loading MCP server registry…</p></div>
+} @else {
+  @for (group of serverGroups(); track group.key) {
+    <section class="panel server-group" data-reveal>
+      <div class="panel-h">
+        {{ group.label }}
+        <span class="group-detail">{{ group.detail }}</span>
+        <span class="spacer"></span>
+        <span class="chip off">{{ group.servers.length }} server{{ group.servers.length === 1 ? '' : 's' }}</span>
+      </div>
+      <div class="panel-b server-list">
+        @for (server of group.servers; track server.id) {
+          <article class="server-row" [class.has-error]="!!server.operationError || !!server.checkError">
+            <div class="server-state">
+              @if (server.kind === 'managed') {
+                <mc-status [status]="server.runtimeState" [live]="server.runtimeState === 'running'" />
+              } @else if (server.kind === 'external') {
+                <mc-status [status]="server.checkStatus" />
+              } @else {
+                <mc-status status="off" label="definition" />
+              }
+            </div>
+            <div class="server-main">
+              <div class="server-title">
+                <strong>{{ server.name }}</strong>
+                <span class="chip info">{{ server.transport }}</span>
+                @if (server.pendingChanges) { <span class="chip warn">apply required</span> }
+                @if (operationActive(server.operationState)) {
+                  <span class="chip info">{{ server.operationState }}…</span>
+                }
+              </div>
+              @if (server.description) { <p class="description dim">{{ server.description }}</p> }
+              <div class="endpoint mono" [title]="displayEndpoint(server)">{{ displayEndpoint(server) }}</div>
+              <div class="meta mono faint">
+                @if (server.kind === 'managed') {
+                  <span>{{ server.image }}</span>
+                  <span>rev {{ server.appliedRevision }}/{{ server.revision }}</span>
+                  @if (server.publishedPort) { <span>published :{{ server.publishedPort }}</span> }
+                  @else { <span>internal only</span> }
+                } @else if (server.kind === 'external' && server.checkedAt) {
+                  <span>checked {{ logTime(server.checkedAt) }}</span>
+                  @if (server.latencyMs !== null) { <span>{{ server.latencyMs }}ms</span> }
+                } @else if (server.kind === 'stdio') {
+                  <span>{{ server.args.length }} argument{{ server.args.length === 1 ? '' : 's' }}</span>
+                }
+              </div>
+              @if (server.operationError || server.checkError) {
+                <p class="error mono">{{ server.operationError || server.checkError }}</p>
+              }
+            </div>
+            <div class="server-actions">
+              @if (server.kind === 'managed') {
+                @if (server.runtimeState === 'running') {
+                  <button class="btn sm" [disabled]="isBusy(server)" (click)="run(server, 'stop')">stop</button>
+                } @else {
+                  <button class="btn sm primary" [disabled]="isBusy(server)" (click)="run(server, 'start')">start</button>
+                }
+                @if (server.pendingChanges && server.runtimeState === 'running') {
+                  <button class="btn sm" [disabled]="isBusy(server)" (click)="run(server, 'apply')">apply & restart</button>
+                }
+                <button class="btn sm ghost" (click)="openLogs(server)">logs</button>
+              } @else if (server.kind === 'external') {
+                <button class="btn sm" [disabled]="server.checkStatus === 'checking'" (click)="run(server, 'check')">
+                  {{ server.checkStatus === 'checking' ? 'checking…' : 'check' }}
+                </button>
+              }
+              <button class="btn sm ghost" (click)="openEdit(server, true)">duplicate</button>
+              <button class="btn sm ghost" (click)="openEdit(server)">edit</button>
+              <button class="btn sm danger ghost" [disabled]="isBusy(server)" (click)="beginRemove(server)">remove</button>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  } @empty {
+    <div class="panel empty" data-reveal>
+      <p class="mono dim">No MCP servers registered.</p>
+      <p class="lock-hint">Add a managed service, external endpoint, or reusable stdio definition.</p>
+    </div>
+  }
+}
+
+<section class="panel retained" data-reveal>
+  <div class="panel-h">
+    RETAINED DATA
+    <span class="spacer"></span>
+    <button class="btn sm ghost" (click)="store.refreshRetainedMcpResources()">refresh</button>
+  </div>
+  <div class="panel-b">
+    @for (resource of store.retainedMcpResources(); track resource.id) {
+      <div class="resource-row mono">
+        <span class="chip warn">{{ resource.type }}</span>
+        <strong>{{ resource.name }}</strong>
+        <span class="faint">from {{ resource.serverName }} · {{ resource.hostId }}</span>
+        <span class="spacer"></span>
+        <button class="btn sm danger ghost" (click)="beginPurge(resource)">purge</button>
+      </div>
+    } @empty {
+      <p class="mono faint">No retained named volumes. Removing a managed server never purges its data automatically.</p>
+    }
+  </div>
+</section>
+
+@if (draft; as form) {
+  <div class="scrim" (click)="saveBusy() ? null : draft = null">
+    <div class="modal editor-modal" (click)="$event.stopPropagation()">
+      <div class="panel-h">
+        {{ form.id ? 'EDIT MCP SERVER' : 'ADD MCP SERVER' }}
+        <span class="spacer"></span>
+        <span class="chip info">safe structured config</span>
+      </div>
+      <div class="modal-b">
+        <div class="form-grid two">
+          <div class="field">
+            <label>display name</label>
+            <input class="input" [(ngModel)]="form.name" placeholder="Playwright" autofocus />
+          </div>
+          <div class="field">
+            <label>type</label>
+            <select class="select" [(ngModel)]="form.kind" [disabled]="!!form.id" (ngModelChange)="kindChanged()">
+              <option value="managed">managed container</option>
+              <option value="external">external HTTP/SSE</option>
+              <option value="stdio">stdio definition</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>description</label>
+          <input class="input" [(ngModel)]="form.description" placeholder="What this server provides" />
+        </div>
+
+        @if (form.kind === 'managed') {
+          <div class="section-label mono">CONTAINER</div>
+          <div class="form-grid two">
+            <div class="field">
+              <label>Docker host</label>
+              <select class="select" [(ngModel)]="form.hostId" [disabled]="form.hostLocked">
+                @for (host of store.dockerHosts(); track host.id) {
+                  <option [value]="host.id">{{ host.name }} — {{ host.status }}</option>
+                }
+              </select>
+              @if (form.hostLocked) { <span class="field-note">duplicate this server to change host</span> }
+            </div>
+            <div class="field">
+              <label>image</label>
+              <input class="input" [(ngModel)]="form.image" placeholder="mcp/playwright:latest" />
+            </div>
+            <div class="field">
+              <label>platform — optional</label>
+              <input class="input" [(ngModel)]="form.platform" placeholder="linux/amd64" />
+            </div>
+            <div class="field">
+              <label>transport</label>
+              <select class="select" [(ngModel)]="form.transport">
+                <option value="http">HTTP</option>
+                <option value="sse">SSE</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>internal port</label>
+              <input class="input" type="number" min="1" max="65535" [(ngModel)]="form.internalPort" />
+            </div>
+            <div class="field">
+              <label>endpoint path</label>
+              <input class="input" [(ngModel)]="form.path" placeholder="/mcp" />
+            </div>
+            <div class="field">
+              <label>published port — optional</label>
+              <input class="input" type="number" min="1" max="65535" [(ngModel)]="form.publishedPort" placeholder="internal only" />
+            </div>
+            <div class="field">
+              <label>cross-host URL — optional</label>
+              <input class="input" [(ngModel)]="form.crossHostUrl" placeholder="https://mcp.example.net/mcp" />
+            </div>
+          </div>
+          <div class="form-grid two">
+            <div class="field">
+              <label>entrypoint — one item per line</label>
+              <textarea class="input code-list" rows="3" [(ngModel)]="form.entrypoint" placeholder="node"></textarea>
+            </div>
+            <div class="field">
+              <label>command — one item per line</label>
+              <textarea class="input code-list" rows="3" [(ngModel)]="form.command" placeholder="server.js&#10;--port&#10;1100"></textarea>
+            </div>
+          </div>
+        } @else if (form.kind === 'external') {
+          <div class="section-label mono">ENDPOINT</div>
+          <div class="form-grid transport-url">
+            <div class="field">
+              <label>transport</label>
+              <select class="select" [(ngModel)]="form.transport">
+                <option value="http">HTTP</option>
+                <option value="sse">SSE</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>URL</label>
+              <input class="input" [(ngModel)]="form.url" placeholder="https://mcp.example.net/mcp" />
+            </div>
+          </div>
+        } @else {
+          <div class="section-label mono">STDIO COMMAND</div>
+          <div class="form-grid two">
+            <div class="field">
+              <label>executable</label>
+              <input class="input" [(ngModel)]="form.stdioCommand" placeholder="npx" />
+            </div>
+            <div class="field">
+              <label>arguments — one per line</label>
+              <textarea class="input code-list" rows="3" [(ngModel)]="form.args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem"></textarea>
+            </div>
+          </div>
+        }
+
+        @if (form.kind !== 'external') {
+          <div class="kv-head">
+            <span class="section-label mono">ENVIRONMENT</span>
+            <button class="btn sm ghost" (click)="addEntry('environment')">+ variable</button>
+          </div>
+          @for (entry of form.environment; track $index; let i = $index) {
+            <div class="kv-row">
+              <input class="input" [(ngModel)]="entry.key" placeholder="VARIABLE_NAME" />
+              <input class="input" [type]="entry.secret ? 'password' : 'text'" [(ngModel)]="entry.value"
+                     [placeholder]="entry.set ? 'stored — blank keeps current value' : 'value'" />
+              <label class="secret-toggle mono"><input type="checkbox" [(ngModel)]="entry.secret" /> secret</label>
+              <button class="btn sm danger ghost" (click)="removeEntry('environment', i)">remove</button>
+            </div>
+          }
+        }
+
+        @if (form.kind !== 'stdio') {
+          <div class="kv-head">
+            <span class="section-label mono">CONNECTION HEADERS</span>
+            <button class="btn sm ghost" (click)="addEntry('headers')">+ header</button>
+          </div>
+          @for (entry of form.headers; track $index; let i = $index) {
+            <div class="kv-row">
+              <input class="input" [(ngModel)]="entry.key" placeholder="Authorization" />
+              <input class="input" [type]="entry.secret ? 'password' : 'text'" [(ngModel)]="entry.value"
+                     [placeholder]="entry.set ? 'stored — blank keeps current value' : 'value'" />
+              <label class="secret-toggle mono"><input type="checkbox" [(ngModel)]="entry.secret" /> secret</label>
+              <button class="btn sm danger ghost" (click)="removeEntry('headers', i)">remove</button>
+            </div>
+          }
+        }
+
+        @if (form.kind === 'managed') {
+          <div class="kv-head">
+            <span class="section-label mono">NAMED VOLUMES</span>
+            <button class="btn sm ghost" (click)="addVolume()">+ volume</button>
+          </div>
+          @for (volume of form.volumes; track $index; let i = $index) {
+            <div class="volume-row">
+              <input class="input" [(ngModel)]="volume.name" placeholder="server-data" />
+              <input class="input" [(ngModel)]="volume.target" placeholder="/data" />
+              <button class="btn sm danger ghost" (click)="removeVolume(i)">remove</button>
+            </div>
+          }
+
+          <div class="kv-head">
+            <span class="section-label mono">HEALTH CHECK</span>
+            <button class="btn sm ghost" (click)="toggleHealthcheck(form)">
+              {{ form.healthcheck ? 'remove health check' : '+ health check' }}
+            </button>
+          </div>
+          @if (form.healthcheck; as health) {
+            <div class="health-grid">
+              <div class="field health-command">
+                <label>test — one item per line; first is CMD, CMD-SHELL, or NONE</label>
+                <textarea class="input code-list" rows="3" [ngModel]="health.test.join('\n')"
+                          (ngModelChange)="health.test = splitLines($event)"></textarea>
+              </div>
+              <div class="field"><label>interval</label><input class="input" [(ngModel)]="health.interval" placeholder="30s" /></div>
+              <div class="field"><label>timeout</label><input class="input" [(ngModel)]="health.timeout" placeholder="5s" /></div>
+              <div class="field"><label>retries</label><input class="input" type="number" min="1" max="100" [(ngModel)]="health.retries" /></div>
+              <div class="field"><label>start period</label><input class="input" [(ngModel)]="health.startPeriod" placeholder="5s" /></div>
+            </div>
+          }
+
+          <div class="kv-head">
+            <span class="section-label mono">PRIVATE SUPPORT SERVICES</span>
+            <button class="btn sm ghost" (click)="addSupportService()">+ dependency</button>
+          </div>
+          @for (service of form.supportServices; track $index; let serviceIndex = $index) {
+            <div class="support-editor">
+              <div class="support-head">
+                <strong class="mono">{{ service.name || 'new dependency' }}</strong>
+                <span class="spacer"></span>
+                <button class="btn sm danger ghost" (click)="removeSupportService(serviceIndex)">remove service</button>
+              </div>
+              <div class="form-grid two">
+                <div class="field"><label>service name</label><input class="input" [(ngModel)]="service.name" placeholder="database" /></div>
+                <div class="field"><label>image</label><input class="input" [(ngModel)]="service.image" placeholder="postgres:16-alpine" /></div>
+                <div class="field"><label>platform — optional</label><input class="input" [(ngModel)]="service.platform" placeholder="linux/amd64" /></div>
+              </div>
+              <div class="form-grid two">
+                <div class="field">
+                  <label>entrypoint — one item per line</label>
+                  <textarea class="input code-list" rows="2" [ngModel]="(service.entrypoint ?? []).join('\n')"
+                            (ngModelChange)="service.entrypoint = splitLines($event)"></textarea>
+                </div>
+                <div class="field">
+                  <label>command — one item per line</label>
+                  <textarea class="input code-list" rows="2" [ngModel]="(service.command ?? []).join('\n')"
+                            (ngModelChange)="service.command = splitLines($event)"></textarea>
+                </div>
+              </div>
+              <div class="kv-head nested">
+                <span class="mono faint">ENVIRONMENT</span>
+                <button class="btn sm ghost" (click)="addSupportEnvironment(service)">+ variable</button>
+              </div>
+              @for (entry of service.environment ?? []; track $index; let envIndex = $index) {
+                <div class="kv-row">
+                  <input class="input" [(ngModel)]="entry.key" placeholder="VARIABLE_NAME" />
+                  <input class="input" [type]="entry.secret ? 'password' : 'text'" [(ngModel)]="entry.value"
+                         [placeholder]="entry.set ? 'stored — blank keeps current value' : 'value'" />
+                  <label class="secret-toggle mono"><input type="checkbox" [(ngModel)]="entry.secret" /> secret</label>
+                  <button class="btn sm danger ghost" (click)="removeSupportEnvironment(service, envIndex)">remove</button>
+                </div>
+              }
+              <div class="kv-head nested">
+                <span class="mono faint">NAMED VOLUMES</span>
+                <button class="btn sm ghost" (click)="addSupportVolume(service)">+ volume</button>
+              </div>
+              @for (volume of service.volumes ?? []; track $index; let volumeIndex = $index) {
+                <div class="volume-row">
+                  <input class="input" [(ngModel)]="volume.name" placeholder="data" />
+                  <input class="input" [(ngModel)]="volume.target" placeholder="/var/lib/data" />
+                  <button class="btn sm danger ghost" (click)="removeSupportVolume(service, volumeIndex)">remove</button>
+                </div>
+              }
+              <div class="kv-head nested">
+                <span class="mono faint">HEALTH CHECK</span>
+                <button class="btn sm ghost" (click)="toggleHealthcheck(service)">
+                  {{ service.healthcheck ? 'remove' : '+ health check' }}
+                </button>
+              </div>
+              @if (service.healthcheck; as supportHealth) {
+                <div class="health-grid">
+                  <div class="field health-command">
+                    <label>test — one item per line</label>
+                    <textarea class="input code-list" rows="2" [ngModel]="supportHealth.test.join('\n')"
+                              (ngModelChange)="supportHealth.test = splitLines($event)"></textarea>
+                  </div>
+                  <div class="field"><label>interval</label><input class="input" [(ngModel)]="supportHealth.interval" /></div>
+                  <div class="field"><label>timeout</label><input class="input" [(ngModel)]="supportHealth.timeout" /></div>
+                  <div class="field"><label>retries</label><input class="input" type="number" min="1" max="100" [(ngModel)]="supportHealth.retries" /></div>
+                  <div class="field"><label>start period</label><input class="input" [(ngModel)]="supportHealth.startPeriod" /></div>
+                </div>
+              }
+            </div>
+          }
+          <p class="lock-hint">Host bind mounts, Docker socket access, privileged mode, host networking, devices, and capabilities are not accepted.</p>
+        }
+
+        @if (form.id === null && (form.environment.length || form.headers.length)) {
+          <p class="lock-hint warn">Secret values must be entered when unset; redacted values are never sent back by the API.</p>
+        }
+        <div class="modal-actions">
+          <button class="btn ghost" [disabled]="saveBusy()" (click)="draft = null">cancel</button>
+          <button class="btn primary" [disabled]="!draftValid() || saveBusy()" (click)="save()">
+            {{ saveBusy() ? 'saving…' : (form.id ? 'save changes' : 'add server') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (removing(); as server) {
+  <div class="scrim" (click)="removeBusy() ? null : removing.set(null)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h crit-h">REMOVE MCP SERVER</div>
+      <div class="modal-b">
+        <p class="dim">
+          Linked Agent entries will be disabled and unlinked first. Managed containers will be removed, while named volumes remain in Retained Data.
+        </p>
+        <div class="field">
+          <label>type <span class="mono">{{ server.name }}</span> to confirm</label>
+          <input class="input" [(ngModel)]="removeConfirm" [placeholder]="server.name" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" [disabled]="removeBusy()" (click)="removing.set(null)">cancel</button>
+          <button class="btn danger" [disabled]="removeConfirm !== server.name || removeBusy()" (click)="confirmRemove()">
+            {{ removeBusy() ? 'removing…' : 'remove server' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (purging(); as resource) {
+  <div class="scrim" (click)="purgeBusy() ? null : purging.set(null)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h crit-h">PURGE RETAINED DATA</div>
+      <div class="modal-b">
+        <p class="dim">This permanently deletes named volume <span class="mono">{{ resource.name }}</span>. This cannot be undone.</p>
+        <div class="field">
+          <label>type <span class="mono">{{ resource.name }}</span> to confirm</label>
+          <input class="input" [(ngModel)]="purgeConfirm" [placeholder]="resource.name" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" [disabled]="purgeBusy()" (click)="purging.set(null)">cancel</button>
+          <button class="btn danger" [disabled]="purgeConfirm !== resource.name || purgeBusy()" (click)="confirmPurge()">
+            {{ purgeBusy() ? 'purging…' : 'purge permanently' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (logServer(); as server) {
+  <div class="scrim" (click)="closeLogs()">
+    <div class="modal log-modal" (click)="$event.stopPropagation()">
+      <div class="panel-h">
+        LOGS — {{ server.name }}
+        <span class="spacer"></span>
+        @if (logsLoading()) { <span class="chip info">polling</span> }
+        <button class="btn sm ghost" (click)="closeLogs()">close</button>
+      </div>
+      <div class="log-body mono">
+        @if (logsError()) {
+          <p class="error">{{ logsError() }}</p>
+        }
+        @for (line of logLines(); track line.ts + '-' + $index) {
+          <div class="log-line">
+            <span class="faint">{{ logTime(line.ts) }}</span>
+            <span [class]="'lvl-' + line.level">{{ line.level }}</span>
+            <span class="source">{{ line.source }}</span>
+            <span>{{ line.msg }}</span>
+          </div>
+        } @empty {
+          <p class="faint">{{ logsLoading() ? 'loading logs…' : 'No log lines returned.' }}</p>
+        }
+      </div>
+    </div>
+  </div>
+}

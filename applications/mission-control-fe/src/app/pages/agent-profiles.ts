@@ -2,13 +2,66 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { HermesStore } from '../core/hermes-store';
-import { ProfileTemplate, ProfileTemplateInput, TemplateMcp } from '../core/models';
+import { McpCatalogServer, ProfileTemplate, ProfileTemplateInput, TemplateMcp } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
 import { OLLAMA_PREFIX, ollamaOptionForBaseUrl } from '../shared/provider-resolve';
 
 interface SecretRow { key: string; value: string; set: boolean; recoverable: boolean; }
+
+/** The source id exists only in an editor request. The backend resolves it to a
+ * detached, encrypted template snapshot and never persists the catalog link. */
+export interface EditorTemplateMcp extends TemplateMcp {
+  sourceServerId?: string;
+}
+
+/** Builds the request preview for a one-time catalog snapshot. The backend
+ * resolves the source id again and owns the authoritative secret copy. */
+export function catalogTemplateSnapshot(
+  server: McpCatalogServer, alias: string,
+): EditorTemplateMcp | null {
+  if (server.kind === 'stdio') {
+    if (!server.stdioCommand) return null;
+    return {
+      name: alias,
+      transport: 'stdio',
+      command: server.stdioCommand,
+      args: server.args.length ? server.args.map(quoteMcpArg).join(' ') : undefined,
+      enabled: true,
+      sourceServerId: server.id,
+    };
+  }
+  const url = server.crossHostUrl || server.connectionUrl || server.url;
+  if (!url) return null;
+  return {
+    name: alias,
+    transport: server.transport,
+    url,
+    enabled: true,
+    sourceServerId: server.id,
+  };
+}
+
+/** Mirrors the backend's shell-style argument tokenizer for an accurate
+ * pre-save preview; the backend still materializes the authoritative list. */
+export function quoteMcpArg(value: string): string {
+  if (value && !/[\s'\"]/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+/** Copy only the durable template fields, deliberately dropping request-only
+ * catalog metadata from an editor row after a successful save. */
+export function detachedTemplateMcp(m: TemplateMcp): EditorTemplateMcp {
+  return {
+    name: m.name,
+    transport: m.transport,
+    url: m.url,
+    command: m.command,
+    args: m.args,
+    enabled: m.enabled,
+  };
+}
 
 /** Skill ids / env keys the backend accepts — mirror PROFILE_NAME / ENV_KEY there
  *  (ENV_KEY caps at 64 chars to match the server, so the editor rejects what a
@@ -66,7 +119,7 @@ export class AgentProfilesPage {
   protected memory = '';
 
   protected readonly skills = signal<string[]>([]);
-  protected readonly mcpServers = signal<TemplateMcp[]>([]);
+  protected readonly mcpServers = signal<EditorTemplateMcp[]>([]);
   protected readonly secrets = signal<SecretRow[]>([]);
 
   // add-row scratch fields
@@ -76,6 +129,8 @@ export class AgentProfilesPage {
   protected mcpUrl = '';
   protected mcpCommand = '';
   protected mcpArgs = '';
+  protected mcpCatalogId = '';
+  protected mcpCatalogAlias = '';
   protected secretKey = '';
   protected secretValue = '';
 
@@ -153,7 +208,7 @@ export class AgentProfilesPage {
     this.soul = t.soul;
     this.memory = t.memory;
     this.skills.set([...t.skills]);
-    this.mcpServers.set(t.mcpServers.map(m => ({ ...m })));
+    this.mcpServers.set(t.mcpServers.map(detachedTemplateMcp));
     this.secrets.set(t.secrets.map(s => ({ key: s.key, value: '', set: s.set, recoverable: s.recoverable })));
     this.resetScratch();
     this.open.set(true);
@@ -211,6 +266,29 @@ export class AgentProfilesPage {
     this.mcpServers.update(list => list.filter(m => m.name !== name));
   }
 
+  protected selectCatalogMcp(id: string): void {
+    this.mcpCatalogId = id;
+    const server = this.store.mcpServerById(id);
+    if (server) this.mcpCatalogAlias = server.name;
+  }
+
+  protected addCatalogMcp(): void {
+    const server = this.store.mcpServerById(this.mcpCatalogId);
+    const alias = this.mcpCatalogAlias.trim();
+    if (!server || !alias) return;
+    if (this.mcpServers().some(item => item.name === alias)) {
+      this.store.toast(`an MCP server named "${alias}" is already in this template`);
+      return;
+    }
+    const snapshot = catalogTemplateSnapshot(server, alias);
+    if (!snapshot) {
+      this.store.toast(`${server.name} does not have a usable connection definition`);
+      return;
+    }
+    this.mcpServers.update(list => [...list, snapshot]);
+    this.mcpCatalogId = this.mcpCatalogAlias = '';
+  }
+
   // ── secrets ───────────────────────────────────────────────────────────────────
   protected addSecret(): void {
     const key = this.secretKey.trim().toUpperCase();
@@ -257,12 +335,26 @@ export class AgentProfilesPage {
     this.saving.set(true);
     const id = await this.store.saveTemplate(input, this.editingId() ?? undefined);
     this.saving.set(false);
-    if (id) this.editingId.set(id);
+    if (id) {
+      this.editingId.set(id);
+      // The source id is request-only. Reload the backend-materialized shape so
+      // a second save in the same open editor cannot re-read a changed catalog
+      // record. Mock mode may retain structural extras, so copy only public
+      // TemplateMcp fields explicitly.
+      const saved = this.store.templateById(id);
+      if (saved) {
+        this.mcpServers.set(saved.mcpServers.map(detachedTemplateMcp));
+      } else {
+        this.mcpServers.update(servers => servers.map(detachedTemplateMcp));
+      }
+    }
   }
 
   private resetScratch(): void {
     this.newSkill = this.mcpName = this.mcpUrl = this.mcpCommand = this.mcpArgs = '';
+    this.mcpCatalogId = this.mcpCatalogAlias = '';
     this.secretKey = this.secretValue = '';
     this.mcpTransport = 'stdio';
   }
+
 }

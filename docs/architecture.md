@@ -29,6 +29,7 @@ MissionControl/
 │  ├── GET /health         liveness + docker connectivity              │
 │  ├── /api/hosts          docker host registry (SQLite) + live probes │
 │  ├── /api/containers     inventory / stats / logs / lifecycle        │
+│  ├── /api/mcp-servers    MCP registry + Compose lifecycle             │
 │  ├── /api/board/tasks    kanban state (SQLite)                       │
 │  └── /ws/terminal        xterm.js ↔ docker exec (multi-tab shells)   │
 │            │                                                         │
@@ -43,8 +44,33 @@ MissionControl/
   The backend is read-through for all of that; nothing daemon-owned is cached
   or persisted.
 - **SQLite** (file at `MC_DB_PATH`, volume `/data`) holds only dashboard-owned
-  concepts that have no Hermes home: the remote docker-host registry and ops
-  board tasks. Single-connection pool; no database server.
+  concepts that have no Hermes home: Docker hosts, MCP catalog definitions and
+  agent links, profile templates, model providers, retained MCP volume metadata,
+  and ops board tasks. Single-connection pool; no database server.
+
+## MCP server catalog and Compose projects
+
+The MCP Servers page is global rather than scoped to the active Hermes
+container. Catalog entries are either a managed container, an external HTTP/SSE
+endpoint, or a reusable stdio definition. Managed entries belong to one Docker
+host and are rendered into a real Compose project named
+`mission-control-mcp` on that daemon. The existing/user-owned project named
+`mcp` is unrelated and is never adopted or modified.
+
+Each host's generated Compose file lives below `/data/mcp-stacks`; SQLite is
+the source of truth and the file can be regenerated. Compose operations are
+serialized per host and run without a shell. Managed services use the shared
+`mission-control-mcp-net` network and stable service aliases. Same-host Hermes
+containers are attached to that network when a catalog entry is connected;
+cross-host connections require an explicit agent-reachable URL.
+
+Container configuration is allowlisted (image, list-form command, environment,
+ports, support services and named volumes). Host binds, host networking,
+privileged mode, devices, capabilities and Docker-socket mounts are rejected.
+Secret environment/header values use the same encrypted-at-rest key as profile
+templates and are passed to Compose at execution time rather than written into
+the generated YAML. As with all container environment variables, their runtime
+values remain visible to principals with Docker-daemon access.
 
 ## Frontend data modes
 
@@ -96,6 +122,7 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
 | `MC_CONTAINER_FILTER` | `hermes` | substring marking Hermes-related containers (`?all=true` bypasses) |
 | `MC_HERMES_IMAGE` | `nousresearch/hermes-agent` | image used by deploys |
 | `MC_DB_PATH` | `/data/mission-control.db` | SQLite file |
+| `MC_MCP_STACK_DIR` | `/data/mcp-stacks` in the image | generated non-secret per-host Compose files |
 | `MC_API_BASE_URL` | `` (same origin) | only for split FE/BE deployments |
 | `MC_PORT` | `8080` | server port |
 | `MC_SECRET_KEY` | required | AES key for encrypted template secrets; `./mc` creates and reuses it automatically |
@@ -122,6 +149,9 @@ or deleted.
   docker-socket-proxy allowing only the endpoints used here) and add
   authentication in front of the dashboard — there is none built in yet.
 - Remote hosts are plain `tcp://`; TLS daemon sockets are not implemented yet.
+- Managed MCP lifecycle uses the Docker CLI Compose plugin inside the Mission
+  Control image. Only the `mission-control-mcp` project is owned; project-label
+  collisions fail closed instead of deleting unknown containers.
 - Destructive UI actions (remove container/host) require typed confirmation,
   and the backend refuses to delete the local socket host.
 - Plain `./mc start --ts=off` binds to `127.0.0.1`; setting `BIND_ADDRESS`

@@ -48,3 +48,70 @@ CREATE TABLE IF NOT EXISTS profile_templates (
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
+
+-- Reusable MCP server catalog. Deployment details remain structured JSON; secret
+-- values inside it are AES-GCM envelopes produced by SecretCipher.
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description      TEXT,
+  kind             TEXT NOT NULL CHECK (kind IN ('managed', 'external', 'stdio')),
+  host_id          TEXT,
+  service_key      TEXT UNIQUE,
+  config_json      TEXT NOT NULL,
+  desired_state    TEXT NOT NULL,
+  runtime_state    TEXT NOT NULL,
+  operation_state  TEXT NOT NULL,
+  operation_error  TEXT,
+  revision         INTEGER NOT NULL,
+  applied_revision INTEGER NOT NULL,
+  seed_key         TEXT UNIQUE,
+  check_status     TEXT,
+  check_error      TEXT,
+  checked_at       INTEGER,
+  latency_ms       INTEGER,
+  created_at       INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL,
+  CHECK ((kind = 'managed' AND host_id IS NOT NULL AND service_key IS NOT NULL)
+      OR (kind <> 'managed' AND host_id IS NULL AND service_key IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_host ON mcp_servers (host_id);
+
+-- Records that prevent deleted managed-server data volumes from becoming
+-- invisible/orphaned. Purging is an explicit, separately confirmed API action.
+CREATE TABLE IF NOT EXISTS mcp_retained_resources (
+  id          TEXT PRIMARY KEY,
+  server_id   TEXT NOT NULL,
+  server_name TEXT NOT NULL,
+  host_id     TEXT NOT NULL,
+  type        TEXT NOT NULL CHECK (type IN ('volume')),
+  name        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  UNIQUE (host_id, type, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_retained_server ON mcp_retained_resources (server_id);
+
+CREATE TABLE IF NOT EXISTS mcp_registry_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- A catalog link augments, but never replaces, the Agent's own materialized MCP
+-- configuration. Disabling an Agent entry therefore leaves this row and its
+-- connection details available for a later reconnect.
+CREATE TABLE IF NOT EXISTS mcp_agent_links (
+  host_id         TEXT NOT NULL,
+  container_id    TEXT NOT NULL,
+  profile         TEXT NOT NULL,
+  alias           TEXT NOT NULL,
+  server_id       TEXT NOT NULL,
+  synced_revision INTEGER NOT NULL,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  PRIMARY KEY (host_id, container_id, profile, alias),
+  FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_agent_links_server ON mcp_agent_links (server_id);

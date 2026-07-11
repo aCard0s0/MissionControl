@@ -1,0 +1,43 @@
+package io.hermes.missioncontrol.mcp;
+
+import java.util.List;
+
+/** Redacted catalog record returned to the UI and Agent integration layer. */
+public record McpServerDto(
+    String id,
+    String name,
+    String description,
+    String kind,
+    String hostId,
+    String serviceKey,
+    String transport,
+    String url,
+    String connectionUrl,
+    String image,
+    String platform,
+    List<String> entrypoint,
+    List<String> command,
+    String stdioCommand,
+    List<String> args,
+    Integer internalPort,
+    Integer publishedPort,
+    String path,
+    String crossHostUrl,
+    List<ConfigValueDto> environment,
+    List<ConfigValueDto> headers,
+    List<VolumeSpec> volumes,
+    HealthcheckSpec healthcheck,
+    List<SupportServiceDto> supportServices,
+    String desiredState,
+    String runtimeState,
+    String operationState,
+    String operationError,
+    long revision,
+    long appliedRevision,
+    boolean pendingChanges,
+    String checkStatus,
+    String checkError,
+    Long checkedAt,
+    Long latencyMs,
+    long createdAt,
+    long updatedAt) {}

@@ -23,19 +23,27 @@ public class AgentsController {
   private final HermesSetup setup;
   private final HostService hosts;
   private final ProfileTemplateService templates;
+  private final AgentMcpCatalogService mcpCatalog;
 
   public AgentsController(
-      HermesProfiles profiles, HermesSetup setup, HostService hosts, ProfileTemplateService templates) {
+      HermesProfiles profiles,
+      HermesSetup setup,
+      HostService hosts,
+      ProfileTemplateService templates,
+      AgentMcpCatalogService mcpCatalog) {
     this.profiles = profiles;
     this.setup = setup;
     this.hosts = hosts;
     this.templates = templates;
+    this.mcpCatalog = mcpCatalog;
   }
 
   @GetMapping
   public List<AgentProfileDto> list(@RequestParam String hostId, @RequestParam String containerId) {
     DockerHostDto host = connected(hostId);
-    return profiles.list(host.url(), containerId);
+    return profiles.list(host.url(), containerId).stream()
+        .map(profile -> mcpCatalog.enrich(hostId, profile))
+        .toList();
   }
 
   @PostMapping
@@ -45,15 +53,16 @@ public class AgentsController {
     if (templateId != null && !templateId.isBlank()) {
       // Create the request-configured base and layer the template's
       // soul/memory/skills/mcp/secrets as one owned, rollback-safe operation.
-      return templates.createFromTemplate(templateId, host.url(), request);
+      return linked(request.hostId(), templates.createFromTemplate(templateId, host.url(), request));
     }
-    return profiles.create(host.url(), request);
+    return linked(request.hostId(), profiles.create(host.url(), request));
   }
 
   @DeleteMapping("/{hostId}/{containerId}/{name}")
   public void delete(@PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
     DockerHostDto host = connected(hostId);
     profiles.delete(host.url(), containerId, name);
+    mcpCatalog.deleteAgentLinks(hostId, containerId, name);
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/soul")
@@ -73,7 +82,7 @@ public class AgentsController {
       @PathVariable String name,
       @RequestBody UpdateConfigRequest request) {
     DockerHostDto host = connected(hostId);
-    return profiles.updateConfig(host.url(), containerId, name, request.configYaml());
+    return linked(hostId, profiles.updateConfig(host.url(), containerId, name, request.configYaml()));
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/skills/{skillName}")
@@ -84,7 +93,7 @@ public class AgentsController {
       @PathVariable String skillName,
       @RequestBody SetSkillEnabledRequest request) {
     DockerHostDto host = connected(hostId);
-    return profiles.setSkillEnabled(host.url(), containerId, name, skillName, request.enabled());
+    return linked(hostId, profiles.setSkillEnabled(host.url(), containerId, name, skillName, request.enabled()));
   }
 
   @PostMapping("/{hostId}/{containerId}/{name}/skills")
@@ -94,7 +103,7 @@ public class AgentsController {
       @PathVariable String name,
       @Valid @RequestBody AddSkillRequest request) {
     DockerHostDto host = connected(hostId);
-    return profiles.installSkill(host.url(), containerId, name, request.name());
+    return linked(hostId, profiles.installSkill(host.url(), containerId, name, request.name()));
   }
 
   @DeleteMapping("/{hostId}/{containerId}/{name}/skills/{skillName}")
@@ -104,7 +113,7 @@ public class AgentsController {
       @PathVariable String name,
       @PathVariable String skillName) {
     DockerHostDto host = connected(hostId);
-    return profiles.uninstallSkill(host.url(), containerId, name, skillName);
+    return linked(hostId, profiles.uninstallSkill(host.url(), containerId, name, skillName));
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/skills/{skillName}/content")
@@ -125,7 +134,7 @@ public class AgentsController {
       @PathVariable String skillName,
       @RequestBody UpdateSkillContentRequest request) {
     DockerHostDto host = connected(hostId);
-    return profiles.updateSkillContent(host.url(), containerId, name, skillName, request.body());
+    return linked(hostId, profiles.updateSkillContent(host.url(), containerId, name, skillName, request.body()));
   }
 
   @PostMapping("/{hostId}/{containerId}/{name}/mcp")
@@ -135,9 +144,40 @@ public class AgentsController {
       @PathVariable String name,
       @Valid @RequestBody AddMcpServerRequest request) {
     DockerHostDto host = connected(hostId);
-    return profiles.addMcpServer(host.url(), containerId, name, request);
+    mcpCatalog.assertCustom(hostId, containerId, name, request.name());
+    return linked(hostId, profiles.addMcpServer(host.url(), containerId, name, request));
   }
 
+  /** Replaces a custom MCP definition in one config write. The body name may
+   * differ from {@code serverName}, in which case this is an atomic rename. */
+  @PutMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}")
+  public AgentProfileDto updateMcp(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String serverName,
+      @Valid @RequestBody AddMcpServerRequest request) {
+    DockerHostDto host = connected(hostId);
+    mcpCatalog.assertCustom(hostId, containerId, name, serverName);
+    return linked(hostId, profiles.updateMcpServer(host.url(), containerId, name, serverName, request));
+  }
+
+  /** Disconnect/reconnect is deliberately separate from permanent deletion so
+   * every transport-specific setting remains available for a later reconnect. */
+  @PutMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}/enabled")
+  public AgentProfileDto setMcpEnabled(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String serverName,
+      @Valid @RequestBody SetMcpServerEnabledRequest request) {
+    DockerHostDto host = connected(hostId);
+    return linked(hostId, profiles.setMcpServerEnabled(
+        host.url(), containerId, name, serverName, request.enabled()));
+  }
+
+  /** Permanently forgets the saved definition. Use the enabled endpoint for a
+   * non-destructive disconnect. */
   @DeleteMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}")
   public AgentProfileDto removeMcp(
       @PathVariable String hostId,
@@ -145,7 +185,39 @@ public class AgentsController {
       @PathVariable String name,
       @PathVariable String serverName) {
     DockerHostDto host = connected(hostId);
-    return profiles.removeMcpServer(host.url(), containerId, name, serverName);
+    AgentProfileDto updated = profiles.removeMcpServer(host.url(), containerId, name, serverName);
+    mcpCatalog.forgetLink(hostId, containerId, name, serverName);
+    return linked(hostId, updated);
+  }
+
+  @PostMapping("/{hostId}/{containerId}/{name}/mcp/catalog")
+  public AgentProfileDto connectCatalogMcp(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @Valid @RequestBody ConnectCatalogMcpRequest request) {
+    connected(hostId);
+    return mcpCatalog.connect(hostId, containerId, name, request);
+  }
+
+  @PostMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}/sync")
+  public AgentProfileDto syncCatalogMcp(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String serverName) {
+    connected(hostId);
+    return mcpCatalog.sync(hostId, containerId, name, serverName);
+  }
+
+  @DeleteMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}/link")
+  public AgentProfileDto unlinkCatalogMcp(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable String serverName) {
+    connected(hostId);
+    return mcpCatalog.unlink(hostId, containerId, name, serverName);
   }
 
   @PostMapping("/{hostId}/{containerId}/{name}/mcp/{serverName}/test")
@@ -254,5 +326,9 @@ public class AgentsController {
       throw new IllegalStateException("docker host not connected");
     }
     return host;
+  }
+
+  private AgentProfileDto linked(String hostId, AgentProfileDto profile) {
+    return mcpCatalog.enrich(hostId, profile);
   }
 }

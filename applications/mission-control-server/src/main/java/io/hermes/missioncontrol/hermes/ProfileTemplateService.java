@@ -1,14 +1,19 @@
 package io.hermes.missioncontrol.hermes;
 
+import io.hermes.missioncontrol.mcp.McpRegistryService;
+import io.hermes.missioncontrol.mcp.McpServerDto;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,16 +35,29 @@ public class ProfileTemplateService {
   private final SecretCipher cipher;
   private final HermesProfiles profiles;
   private final HermesSetup setup;
+  private final McpRegistryService mcpRegistry;
 
+  @Autowired
   public ProfileTemplateService(
       ProfileTemplateRepository repository,
       SecretCipher cipher,
       HermesProfiles profiles,
-      HermesSetup setup) {
+      HermesSetup setup,
+      McpRegistryService mcpRegistry) {
     this.repository = repository;
     this.cipher = cipher;
     this.profiles = profiles;
     this.setup = setup;
+    this.mcpRegistry = mcpRegistry;
+  }
+
+  /** Narrow constructor retained for CRUD-focused unit tests. */
+  ProfileTemplateService(
+      ProfileTemplateRepository repository,
+      SecretCipher cipher,
+      HermesProfiles profiles,
+      HermesSetup setup) {
+    this(repository, cipher, profiles, setup, null);
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -134,8 +152,13 @@ public class ProfileTemplateService {
         if (m == null || m.name() == null || m.name().isBlank()) {
           continue;
         }
+        Map<String, String> headers = decryptValues(m.headers());
+        Map<String, String> mcpEnvironment = "stdio".equalsIgnoreCase(m.transport())
+            ? decryptValues(m.environment()) : Map.of();
         profiles.addMcpServer(url, containerId, name,
-            new AddMcpServerRequest(m.name(), m.transport(), m.url(), m.command(), m.args(), m.enabled()));
+            new AddMcpServerRequest(
+                m.name(), m.transport(), m.url(), m.command(), m.args(), m.enabled(),
+                headers, mcpEnvironment));
       }
       List<EnvEntry> env = new ArrayList<>();
       for (StoredSecret s : t.secrets()) {
@@ -229,10 +252,11 @@ public class ProfileTemplateService {
         secrets.add(new StoredSecret(key, cipher.encrypt(value)));
       }
     }
+    List<McpServerSpec> mcpServers = materializeMcpSnapshots(r.mcpServers(), existing);
     return new ProfileTemplate(
         id, r.name(), nz(r.description()), nz(r.provider()), nz(r.model()),
         nz(r.baseUrl()), nz(r.cwd()), nz(r.soul()), nz(r.memory()),
-        nz(r.skills()), nz(r.mcpServers()), secrets, created, updated);
+        nz(r.skills()), mcpServers, secrets, created, updated);
   }
 
   private ProfileTemplateDto toDto(ProfileTemplate t) {
@@ -245,9 +269,144 @@ public class ProfileTemplateService {
           return new SecretRef(s.key(), set, recoverable);
         })
         .toList();
+    List<McpServerSpec> mcp = t.mcpServers().stream().map(this::redactedMcp).toList();
     return new ProfileTemplateDto(
         t.id(), t.name(), t.description(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
-        t.soul(), t.memory(), t.skills(), t.mcpServers(), refs, t.createdAt(), t.updatedAt());
+        t.soul(), t.memory(), t.skills(), mcp, refs, t.createdAt(), t.updatedAt());
+  }
+
+  /** Resolve input-only catalog ids and persist independent encrypted copies. */
+  private List<McpServerSpec> materializeMcpSnapshots(
+      List<McpServerSpec> input, ProfileTemplate existing) {
+    Map<String, McpServerSpec> priorByName = new HashMap<>();
+    if (existing != null) {
+      for (McpServerSpec prior : nz(existing.mcpServers())) {
+        if (prior != null && prior.name() != null) priorByName.put(prior.name(), prior);
+      }
+    }
+
+    List<McpServerSpec> result = new ArrayList<>();
+    for (McpServerSpec requested : nz(input)) {
+      if (requested == null) continue;
+      if (requested.sourceServerId() != null && !requested.sourceServerId().isBlank()) {
+        result.add(snapshotFromCatalog(requested));
+        continue;
+      }
+
+      // The ordinary template editor intentionally does not receive encrypted
+      // values. Preserve a prior snapshot only while its connection definition
+      // remains unchanged; replacing an entry with a different custom server
+      // must not accidentally carry the old credentials forward.
+      McpServerSpec prior = priorByName.get(requested.name());
+      boolean unchanged = prior != null && sameConnection(prior, requested);
+      result.add(new McpServerSpec(
+          requested.name(), requested.transport(), requested.url(), requested.command(),
+          requested.args(), requested.enabled(), null,
+          unchanged ? reencryptValues(prior.environment()) : null,
+          unchanged ? reencryptValues(prior.headers()) : null));
+    }
+    return List.copyOf(result);
+  }
+
+  private McpServerSpec snapshotFromCatalog(McpServerSpec requested) {
+    if (mcpRegistry == null) {
+      throw new IllegalStateException("MCP registry is unavailable");
+    }
+    String sourceId = requested.sourceServerId().trim();
+    McpServerDto source = mcpRegistry.require(sourceId);
+    String alias = requested.name() == null || requested.name().isBlank()
+        ? source.name() : requested.name().trim();
+    boolean enabled = requested.enabled() == null || requested.enabled();
+
+    if ("stdio".equalsIgnoreCase(source.kind())) {
+      if (source.stdioCommand() == null || source.stdioCommand().isBlank()) {
+        throw new IllegalArgumentException("catalog stdio server has no command: " + source.name());
+      }
+      Map<String, String> environment = mcpRegistry.materializedEnvironment(sourceId);
+      return new McpServerSpec(
+          alias, "stdio", null, source.stdioCommand(), joinArgs(source.args()), enabled,
+          null, encryptValues(environment), List.of());
+    }
+
+    String url = firstNonBlank(source.crossHostUrl(), source.connectionUrl(), source.url());
+    if (url == null) {
+      throw new IllegalArgumentException("catalog server has no usable connection URL: " + source.name());
+    }
+    return new McpServerSpec(
+        alias, source.transport(), url, null, null, enabled, null, List.of(),
+        encryptValues(mcpRegistry.materializedHeaders(sourceId)));
+  }
+
+  private List<TemplateMcpConfigValue> encryptValues(Map<String, String> values) {
+    if (values == null || values.isEmpty()) return List.of();
+    return values.entrySet().stream()
+        .filter(entry -> entry.getKey() != null && entry.getValue() != null)
+        .map(entry -> new TemplateMcpConfigValue(entry.getKey(), cipher.encrypt(entry.getValue())))
+        .toList();
+  }
+
+  private Map<String, String> decryptValues(List<TemplateMcpConfigValue> values) {
+    Map<String, String> result = new LinkedHashMap<>();
+    for (TemplateMcpConfigValue value : nz(values)) {
+      if (value == null || value.key() == null || value.key().isBlank()) continue;
+      String clear = safeDecrypt(value.encryptedValue());
+      if (clear != null) result.put(value.key(), clear);
+    }
+    return result;
+  }
+
+  /** A normal template save is also the key-rotation opportunity for MCP
+   * snapshot values, matching the behavior of template-owned API keys. */
+  private List<TemplateMcpConfigValue> reencryptValues(List<TemplateMcpConfigValue> values) {
+    return nz(values).stream()
+        .filter(Objects::nonNull)
+        .map(value -> {
+          String clear = safeDecrypt(value.encryptedValue());
+          return clear == null
+              ? value
+              : new TemplateMcpConfigValue(value.key(), cipher.encrypt(clear));
+        })
+        .toList();
+  }
+
+  private McpServerSpec redactedMcp(McpServerSpec value) {
+    return new McpServerSpec(
+        value.name(), value.transport(), value.url(), value.command(), value.args(), value.enabled(),
+        null, redactValues(value.environment()), redactValues(value.headers()));
+  }
+
+  private List<TemplateMcpConfigValue> redactValues(List<TemplateMcpConfigValue> values) {
+    return nz(values).stream()
+        .filter(Objects::nonNull)
+        .map(value -> new TemplateMcpConfigValue(value.key(), null))
+        .toList();
+  }
+
+  private static boolean sameConnection(McpServerSpec left, McpServerSpec right) {
+    return Objects.equals(left.transport(), right.transport())
+        && Objects.equals(left.url(), right.url())
+        && Objects.equals(left.command(), right.command())
+        && Objects.equals(left.args(), right.args());
+  }
+
+  private static String joinArgs(List<String> args) {
+    if (args == null || args.isEmpty()) return null;
+    return args.stream().map(ProfileTemplateService::quoteArg).reduce((a, b) -> a + " " + b).orElse(null);
+  }
+
+  private static String quoteArg(String value) {
+    if (value == null) return "''";
+    if (!value.isEmpty() && value.chars().noneMatch(ch -> Character.isWhitespace(ch) || ch == '\'' || ch == '"')) {
+      return value;
+    }
+    return "'" + value.replace("'", "'\"'\"'") + "'";
+  }
+
+  private static String firstNonBlank(String... values) {
+    for (String value : values) {
+      if (value != null && !value.isBlank()) return value;
+    }
+    return null;
   }
 
   private ProfileTemplate require(String id) {

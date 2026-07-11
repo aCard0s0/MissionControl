@@ -246,6 +246,40 @@ public class DockerGateway {
     return lines;
   }
 
+  /**
+   * Attaches an existing container to a named Docker network. The operation is
+   * idempotent, including when another request wins the connect race between
+   * our inspection and the Engine call.
+   */
+  public void connectNetwork(String url, String containerId, String networkName) {
+    if (networkName == null || networkName.isBlank()) {
+      throw new IllegalArgumentException("missing network name");
+    }
+    DockerClient client = clients.forUrl(url);
+    if (containerUsesNetwork(client, containerId, networkName)) return;
+    String networkId = client.listNetworksCmd().withNameFilter(networkName).exec().stream()
+        .filter(network -> networkName.equals(network.getName()))
+        .map(com.github.dockerjava.api.model.Network::getId)
+        .findFirst()
+        .orElseThrow(() -> new NotFoundException("network not found: " + networkName));
+    try {
+      client.connectToNetworkCmd()
+          .withContainerId(containerId)
+          .withNetworkId(networkId)
+          .exec();
+    } catch (RuntimeException race) {
+      if (!containerUsesNetwork(client, containerId, networkName)) throw race;
+    }
+  }
+
+  private static boolean containerUsesNetwork(
+      DockerClient client, String containerId, String networkName) {
+    var inspected = client.inspectContainerCmd(containerId).exec();
+    var settings = inspected.getNetworkSettings();
+    return settings != null && settings.getNetworks() != null
+        && settings.getNetworks().containsKey(networkName);
+  }
+
   static List<LogLineDto> parseLogFrame(Frame frame) {
     String payload = new String(frame.getPayload(), StandardCharsets.UTF_8);
     List<LogLineDto> parsed = new ArrayList<>();

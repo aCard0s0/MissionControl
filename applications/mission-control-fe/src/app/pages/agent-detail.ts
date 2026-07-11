@@ -12,7 +12,9 @@ import { Reveal } from '../shared/reveal';
 import { JsonTree } from '../shared/json-tree';
 import { highlightHtml } from '../shared/highlight';
 import { ago, clock, until } from '../core/format';
-import { ChatMessage, LogEntry, McpServer, SessionInfo, SkillContent, SkillRef } from '../core/models';
+import {
+  ChatMessage, LogEntry, McpCatalogServer, McpServer, SessionInfo, SkillContent, SkillRef,
+} from '../core/models';
 import { ApiAgentSetup } from '../core/hermes-api';
 
 type Tab = 'overview' | 'setup' | 'skills' | 'mcp' | 'jobs' | 'activity' | 'files' | 'sessions';
@@ -146,8 +148,13 @@ export class AgentDetailPage {
   protected mcpUrl = '';
   protected mcpCommand = '';
   protected mcpArgs = '';
+  protected catalogServerId = '';
+  protected catalogAlias = '';
+  protected readonly catalogConnecting = signal(false);
   /** original server name when editing an existing server, else null */
   protected readonly editingMcp = signal<string | null>(null);
+  protected readonly customizingMcp = signal<string | null>(null);
+  protected readonly forgettingMcp = signal<string | null>(null);
   /** mcp server id with a retest in flight */
   protected readonly mcpTesting = signal<string | null>(null);
   protected readonly mcpProbeBusy = signal(false);
@@ -582,13 +589,11 @@ export class AgentDetailPage {
       : { url: this.mcpUrl.trim() };
     if (this.mcpTransport === 'stdio' ? !opts.command : !opts.url) return;
 
-    // editing with a rename: drop the old server, then add the renamed one.
     const editing = this.editingMcp();
-    if (editing && editing !== name) {
-      const old = a.mcp.find(m => m.name === editing);
-      if (old && !(await this.store.removeMcp(a.id, old.id))) return;
-    }
-    if (!(await this.store.addMcp(a.id, name, this.mcpTransport, opts))) return;
+    const savedOk = editing
+      ? await this.store.updateMcp(a.id, editing, name, this.mcpTransport, opts)
+      : await this.store.addMcp(a.id, name, this.mcpTransport, opts);
+    if (!savedOk) return;
     this.resetMcpForm();
     const saved = this.agent()?.mcp.find(m => m.name === name);
     if (saved && saved.status !== 'disabled') await this.runMcpTest(saved);
@@ -601,6 +606,78 @@ export class AgentDetailPage {
     this.mcpUrl = m.url ?? '';
     this.mcpCommand = m.command ?? '';
     this.mcpArgs = m.args ?? '';
+  }
+
+  protected selectedCatalogServer(): McpCatalogServer | null {
+    return this.store.mcpServerById(this.catalogServerId);
+  }
+
+  protected selectCatalogServer(id: string): void {
+    this.catalogServerId = id;
+    const selected = this.store.mcpServerById(id);
+    this.catalogAlias = selected?.name ?? '';
+  }
+
+  protected catalogConnectLabel(): string {
+    const server = this.selectedCatalogServer();
+    return server?.kind === 'managed' && server.runtimeState !== 'running'
+      ? 'start & connect'
+      : 'connect';
+  }
+
+  protected async connectCatalogMcp(): Promise<void> {
+    const a = this.agent();
+    const serverId = this.catalogServerId;
+    const alias = this.catalogAlias.trim();
+    if (!a || !serverId || !alias || this.catalogConnecting()) return;
+    this.catalogConnecting.set(true);
+    try {
+      if (await this.store.connectCatalogMcp(a.id, serverId, alias)) {
+        const connected = this.agent()?.mcp.find(server => server.name === alias);
+        if (connected?.enabled) await this.runMcpTest(connected);
+        this.catalogServerId = '';
+        this.catalogAlias = '';
+      }
+    } finally {
+      this.catalogConnecting.set(false);
+    }
+  }
+
+  protected async setMcpConnected(m: McpServer, enabled: boolean): Promise<void> {
+    const a = this.agent();
+    if (!a) return;
+    const saved = await this.store.setMcpEnabled(a.id, m.name, enabled);
+    if (saved && enabled) {
+      const refreshed = this.agent()?.mcp.find(server => server.name === m.name);
+      if (refreshed) await this.runMcpTest(refreshed);
+    }
+  }
+
+  protected async syncMcp(m: McpServer): Promise<void> {
+    const a = this.agent();
+    if (!a || !m.catalogServerId) return;
+    if (await this.store.syncCatalogMcp(a.id, m.name) && m.enabled) {
+      const refreshed = this.agent()?.mcp.find(server => server.name === m.name);
+      if (refreshed) await this.runMcpTest(refreshed);
+    }
+  }
+
+  protected async customizeMcp(m: McpServer): Promise<void> {
+    const a = this.agent();
+    if (!a) return;
+    if (!(await this.store.unlinkCatalogMcp(a.id, m.name))) return;
+    this.customizingMcp.set(null);
+    const refreshed = this.agent()?.mcp.find(server => server.name === m.name) ?? m;
+    this.editMcp(refreshed);
+  }
+
+  protected async forgetMcp(m: McpServer): Promise<void> {
+    const a = this.agent();
+    if (!a) return;
+    if (await this.store.removeMcp(a.id, m.id)) {
+      this.forgettingMcp.set(null);
+      if (this.editingMcp() === m.name) this.resetMcpForm();
+    }
   }
 
   protected resetMcpForm(): void {
