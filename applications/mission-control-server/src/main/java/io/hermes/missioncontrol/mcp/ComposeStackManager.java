@@ -159,9 +159,11 @@ class ComposeStackManager {
   }
 
   private String inspectOwner(String hostId, String type, String name) {
+    // containers expose their labels under .Config.Labels; networks and volumes at the top level
+    String labels = "container".equals(type) ? ".Config.Labels" : ".Labels";
     List<String> command = List.of(
         "docker", "--host", hosts.urlOf(hostId), type, "inspect",
-        "--format", "{{ index .Labels \"io.hermes.mission-control.owner\" }}", name);
+        "--format", "{{ index " + labels + " \"io.hermes.mission-control.owner\" }}", name);
     try {
       return run(command, Map.of(), Duration.ofSeconds(20)).trim();
     } catch (RuntimeException e) {
