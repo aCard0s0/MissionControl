@@ -1,7 +1,9 @@
 package io.hermes.missioncontrol.web;
 
+import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.exception.NotFoundException;
+import com.github.dockerjava.api.exception.NotModifiedException;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.slf4j.Logger;
@@ -9,9 +11,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -47,6 +52,24 @@ public class ApiExceptionHandler {
     return error(HttpStatus.BAD_GATEWAY, "docker daemon error: " + brief(e.getMessage()));
   }
 
+  @ExceptionHandler({ConflictException.class, NotModifiedException.class})
+  public ResponseEntity<Map<String, String>> dockerConflict(DockerException e) {
+    return error(HttpStatus.CONFLICT, brief(e.getMessage()));
+  }
+
+  @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+  public ResponseEntity<Map<String, String>> unreadableRequest(Exception e) {
+    String detail = e instanceof MethodArgumentTypeMismatchException mismatch
+        ? mismatch.getName() + " is not a valid " + expectedType(mismatch)
+        : "request body is not readable";
+    return error(HttpStatus.BAD_REQUEST, detail);
+  }
+
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  public ResponseEntity<Map<String, String>> missingParameter(MissingServletRequestParameterException e) {
+    return error(HttpStatus.BAD_REQUEST, e.getParameterName() + " is required");
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<Map<String, String>> invalidBody(MethodArgumentNotValidException e) {
     // without this the advice never sees bean-validation failures at all — they are not
@@ -75,6 +98,11 @@ public class ApiExceptionHandler {
   private static ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
     return ResponseEntity.status(status)
         .body(Map.of("error", message == null ? "request failed" : message));
+  }
+
+  private static String expectedType(MethodArgumentTypeMismatchException e) {
+    Class<?> required = e.getRequiredType();
+    return required == null ? "value" : required.getSimpleName().toLowerCase(java.util.Locale.ROOT);
   }
 
   private static String brief(String message) {
