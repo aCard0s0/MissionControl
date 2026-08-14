@@ -34,6 +34,7 @@ import com.github.dockerjava.api.command.StopContainerCmd;
 import com.github.dockerjava.api.command.WaitContainerCmd;
 import com.github.dockerjava.api.command.WaitContainerResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
+import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.ContainerConfig;
@@ -378,6 +379,72 @@ class DockerGatewayTest {
     verify(client, never()).startContainerCmd("new-id");
     verify(client, never()).stopContainerCmd(anyString());
     verifyNoInteractions(dockerExec);
+  }
+
+  @Test
+  void aRenameFailureRestoresTheStoppedContainer() {
+    stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    stubStop("cid");
+    RenameContainerCmd rename = mock(RenameContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.renameContainerCmd("cid")).thenReturn(rename);
+    // a leftover name from an earlier crashed upgrade is the realistic cause; the
+    // rollback's rename-back then succeeds
+    org.mockito.Mockito.doThrow(new RuntimeException("name already in use"))
+        .doNothing()
+        .when(rename).exec();
+    StartContainerCmd restartOld = mock(StartContainerCmd.class);
+    when(client.startContainerCmd("cid")).thenReturn(restartOld);
+
+    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+
+    // the container was stopped before the rename was attempted, so failing there must
+    // still put it back — otherwise the Agent stays down with nothing scheduled to fix it
+    verify(restartOld).exec();
+    verify(client, never()).removeContainerCmd("cid");
+    verify(client, never()).removeVolumeCmd(anyString());
+  }
+
+  @Test
+  void aTransientRemovalFailureDoesNotDestroyTheValidatedReplacement() {
+    stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    stubRename("cid");
+    stubStop("cid");
+    stubCreate("hermes/image:v2026.8.3", "new-id");
+    stubStartAndReady("new-id");
+    RemoveContainerCmd removeOld = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("cid")).thenReturn(removeOld);
+    when(removeOld.exec()).thenThrow(new RuntimeException("removal already in progress"));
+    RemoveContainerCmd removeNew = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("new-id")).thenReturn(removeNew);
+
+    // the replacement is created, started and validated by this point: the upgrade
+    // succeeded, and clearing away the parked original is only cleanup
+    DockerGateway.UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+
+    assertEquals("new-id", result.newContainerId());
+    verify(removeNew, never()).exec();
+    verify(client, never()).startContainerCmd("cid");
+  }
+
+  @Test
+  void anAlreadyStoppedContainerDoesNotAbortTheUpgrade() {
+    stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    stubRename("cid");
+    StopContainerCmd stop = mock(StopContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.stopContainerCmd("cid")).thenReturn(stop);
+    // raced with a manual stop: the desired state is already the actual one
+    when(stop.exec()).thenThrow(new NotModifiedException("container already stopped"));
+    stubCreate("hermes/image:v2026.8.3", "new-id");
+    stubStartAndReady("new-id");
+    when(client.removeContainerCmd("cid")).thenReturn(mock(RemoveContainerCmd.class, Answers.RETURNS_SELF));
+
+    DockerGateway.UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+
+    assertEquals("new-id", result.newContainerId());
+    assertTrue(result.running());
   }
 
   @Test

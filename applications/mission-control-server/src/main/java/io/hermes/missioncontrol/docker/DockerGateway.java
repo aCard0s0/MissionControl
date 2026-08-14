@@ -633,10 +633,15 @@ public class DockerGateway {
     }
 
     String parkedName = spec.name() + UPGRADE_SUFFIX + shortToken(spec.id());
-    client.renameContainerCmd(spec.id()).withName(parkedName).exec();
 
     String newContainerId = null;
+    UpgradeResult result;
     try {
+      // inside the rollback guard: the container is already stopped by this point, so a
+      // rename that fails (a leftover name from an earlier crashed upgrade, a daemon blip)
+      // would otherwise leave the Agent down with nothing putting it back
+      client.renameContainerCmd(spec.id()).withName(parkedName).exec();
+
       HostConfig hostConfig = HostConfig.newHostConfig().withBinds(spec.binds().toArray(new Bind[0]));
       if (spec.restartPolicy() != null) hostConfig.withRestartPolicy(spec.restartPolicy());
       if (spec.primaryNetwork() != null) hostConfig.withNetworkMode(spec.primaryNetwork());
@@ -660,21 +665,29 @@ public class DockerGateway {
 
       if (!spec.wasRunning()) {
         // a container someone deliberately parked comes back parked
-        client.removeContainerCmd(spec.id()).withForce(true).exec();
-        return new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, false);
+        result = new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, false);
+      } else {
+        client.startContainerCmd(newContainerId).exec();
+        // no seed profiles: they already exist in the reattached volume, and the
+        // mc.profiles label is a stale record of the original deploy
+        validateDeployment(url, client, newContainerId, List.of());
+        result = new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, true);
       }
-
-      client.startContainerCmd(newContainerId).exec();
-      // no seed profiles: they already exist in the reattached volume, and the
-      // mc.profiles label is a stale record of the original deploy
-      validateDeployment(url, client, newContainerId, List.of());
-
-      client.removeContainerCmd(spec.id()).withForce(true).exec();
-      return new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, true);
     } catch (RuntimeException failure) {
       rollbackUpgrade(client, spec, newContainerId, failure);
       throw failure;
     }
+
+    // Outside the guard: the replacement is created, started and validated, so the upgrade
+    // has succeeded. Removing the parked original is cleanup — if it fails transiently,
+    // rolling back would destroy a working new container and restart the old image.
+    try {
+      client.removeContainerCmd(spec.id()).withForce(true).exec();
+    } catch (RuntimeException leftover) {
+      log.warn("upgraded {} but could not remove the parked container {}: {}",
+          spec.name(), parkedName, leftover.getMessage());
+    }
+    return result;
   }
 
   /** Restores the parked container after a failed upgrade. Best effort — never masks the cause. */
