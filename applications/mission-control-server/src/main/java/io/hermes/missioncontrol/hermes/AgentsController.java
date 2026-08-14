@@ -256,7 +256,7 @@ public class AgentsController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
-      @RequestBody SetEnvRequest request) {
+      @Valid @RequestBody SetEnvRequest request) {
     DockerHostDto host = connected(hostId);
     return setup.putEnv(host.url(), containerId, name, request.entries());
   }

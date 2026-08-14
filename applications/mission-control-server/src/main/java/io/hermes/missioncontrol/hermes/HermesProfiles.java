@@ -144,13 +144,29 @@ public class HermesProfiles {
   }
 
   public void updateSoul(String url, String containerId, String name, String soul) {
-    String path = profileDir(name) + "/SOUL.md";
+    String path = requireProfileDir(url, containerId, name) + "/SOUL.md";
     writeFile(url, containerId, path, soul == null ? "" : soul);
   }
 
   public void updateMemory(String url, String containerId, String name, String memory) {
-    String path = profileDir(name) + "/MEMORY.md";
+    String path = requireProfileDir(url, containerId, name) + "/MEMORY.md";
     writeFile(url, containerId, path, memory == null ? "" : memory);
+  }
+
+  /**
+   * The profile's directory, or a 404 when there is no such profile.
+   *
+   * <p>{@link #writeFile} runs {@code mkdir -p} on the parent, which a skill subdirectory
+   * needs. Without this guard that also means a PUT against a mistyped profile name mints
+   * the directory, and the phantom profile then appears in {@link #list} — indistinguishable
+   * from a real one, and holding only whatever the typo'd request wrote.
+   */
+  private String requireProfileDir(String url, String containerId, String name) {
+    String dir = profileDir(name);
+    if (!dirExists(url, containerId, dir)) {
+      throw new NoSuchElementException("unknown agent profile: " + name);
+    }
+    return dir;
   }
 
   /** Reads a single profile's current state (config, soul, memory, skills, mcp). */
@@ -218,7 +234,7 @@ public class HermesProfiles {
     } catch (Exception e) {
       throw new IllegalArgumentException("config.yaml must be a YAML mapping", e);
     }
-    writeFile(url, containerId, profileDir(name) + "/config.yaml", configYaml);
+    writeFile(url, containerId, requireProfileDir(url, containerId, name) + "/config.yaml", configYaml);
     return readProfile(url, containerId, name);
   }
 
@@ -226,7 +242,7 @@ public class HermesProfiles {
     if (skillName == null || skillName.isBlank()) {
       throw new IllegalArgumentException("missing skill name");
     }
-    String configPath = profileDir(profileName) + "/config.yaml";
+    String configPath = requireProfileDir(url, containerId, profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
     Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
     Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
@@ -327,7 +343,7 @@ public class HermesProfiles {
   }
 
   public AgentProfileDto addMcpServer(String url, String containerId, String profileName, AddMcpServerRequest request) {
-    String configPath = profileDir(profileName) + "/config.yaml";
+    String configPath = requireProfileDir(url, containerId, profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
     String name = config.serverName(request.name());
     String updatedConfig = config.addMcpServer(configYaml, configPath, request);
@@ -347,7 +363,7 @@ public class HermesProfiles {
       AddMcpServerRequest request) {
     String currentName = config.serverName(serverName);
     String newName = config.serverName(request.name());
-    String configPath = profileDir(profileName) + "/config.yaml";
+    String configPath = requireProfileDir(url, containerId, profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
     String updatedConfig = config.updateMcpServer(configYaml, configPath, currentName, request);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, currentName));
@@ -366,7 +382,7 @@ public class HermesProfiles {
       String serverName,
       boolean enabled) {
     String name = config.serverName(serverName);
-    String configPath = profileDir(profileName) + "/config.yaml";
+    String configPath = requireProfileDir(url, containerId, profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
     String updatedConfig = config.setMcpServerEnabled(configYaml, configPath, name, enabled);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
@@ -376,7 +392,7 @@ public class HermesProfiles {
 
   public AgentProfileDto removeMcpServer(String url, String containerId, String profileName, String serverName) {
     serverName = config.serverName(serverName);
-    String configPath = profileDir(profileName) + "/config.yaml";
+    String configPath = requireProfileDir(url, containerId, profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
     String updatedConfig = config.removeMcpServer(configYaml, configPath, serverName);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, serverName));
@@ -745,7 +761,7 @@ public class HermesProfiles {
   }
 
   void writeEnvVar(String url, String containerId, String name, String key, String value) {
-    String path = profileDir(name) + "/.env";
+    String path = requireProfileDir(url, containerId, name) + "/.env";
     String script = String.join(" ",
         "path=\"$1\"; key=\"$2\"; value=\"$3\";",
         "touch \"$path\";",
@@ -756,7 +772,7 @@ public class HermesProfiles {
   }
 
   void removeEnvVar(String url, String containerId, String name, String key) {
-    String path = profileDir(name) + "/.env";
+    String path = requireProfileDir(url, containerId, name) + "/.env";
     String script = String.join(" ",
         "path=\"$1\"; key=\"$2\";",
         "[ -f \"$path\" ] || exit 0;",
@@ -767,7 +783,7 @@ public class HermesProfiles {
 
   /** Writes the documented commented-out .env template; no-op when .env exists. */
   void seedEnvIfMissing(String url, String containerId, String name) {
-    String path = profileDir(name) + "/.env";
+    String path = requireProfileDir(url, containerId, name) + "/.env";
     if (fileExists(url, containerId, path)) return;
     writeFile(url, containerId, path, HermesSetup.envTemplate());
   }
@@ -802,6 +818,14 @@ public class HermesProfiles {
         "write MCP configuration");
   }
 
+  /**
+   * KNOWN GAP: {@code cat … || true} cannot tell an empty file from an absent one, so a
+   * read of a profile that does not exist yields an empty profile rather than a 404. Most
+   * callers rely on that tolerance (a profile legitimately has no MEMORY.md, no .env, no
+   * gateway_state.json), so separating the two needs a per-call decision rather than a
+   * change here. The write paths are guarded by {@link #requireProfileDir} instead, which
+   * is what stopped a mistyped name from creating a profile.
+   */
   String readFile(String url, String containerId, String path) {
     ExecResult result = exec(url, containerId, List.of("sh", "-lc", "cat \"$1\" 2>/dev/null || true", "_", path));
     return result.stdout();
@@ -1179,9 +1203,7 @@ public class HermesProfiles {
     if (key == null) return "";
     for (String line : env.split("\\R")) {
       if (line.startsWith(key + "=")) {
-        String value = line.substring(key.length() + 1).trim();
-        if (value.length() <= 4) return "..." + value;
-        return "..." + value.substring(value.length() - 4);
+        return Secrets.mask(line.substring(key.length() + 1));
       }
     }
     return "";

@@ -124,6 +124,15 @@ public class HermesSetup {
       if (entry == null || entry.key() == null || !ENV_KEY.matcher(entry.key()).matches()) {
         throw new IllegalArgumentException("invalid env key: " + (entry == null ? null : entry.key()));
       }
+      // The value is written as a whole `.env` line. A newline in it appends further
+      // lines that removeEnvVar can never match and therefore never delete — including a
+      // second definition of a key this request appears not to touch.
+      String value = entry.value();
+      if (value != null
+          && (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\0') >= 0)) {
+        throw new IllegalArgumentException(
+            "env values must not contain NUL or line breaks: " + entry.key());
+      }
     }
     for (EnvEntry entry : toApply) {
       if (entry.value() == null || entry.value().isBlank()) {
@@ -234,8 +243,7 @@ public class HermesSetup {
   }
 
   private String mask(String value) {
-    if (value.length() <= 4) return "..." + value;
-    return "..." + value.substring(value.length() - 4);
+    return Secrets.mask(value);
   }
 
   private String hint(String status) {
