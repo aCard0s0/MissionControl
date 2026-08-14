@@ -235,6 +235,19 @@ public class McpRegistryService {
   }
 
   /**
+   * Every reason this record could refuse to be deleted, except for the links that the
+   * caller is about to remove itself.
+   *
+   * <p>Exists so the Agent integration layer can be asked for permission before it starts
+   * disabling and unlinking Agent copies. That step rewrites {@code config.yaml} on every
+   * Agent holding the server and drops the link rows, none of which is undone if
+   * {@link #delete} then refuses — so it must not run before the refusal is ruled out.
+   */
+  public void assertDeletable(String id) {
+    ensureIdle(requireRow(id));
+  }
+
+  /**
    * Starts managed deletion asynchronously. Linked Agent entries must first be
    * disabled and unlinked by the Agent integration layer, preventing silent loss.
    */

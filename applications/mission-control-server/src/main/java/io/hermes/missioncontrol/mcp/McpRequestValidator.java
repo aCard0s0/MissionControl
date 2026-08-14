@@ -57,8 +57,8 @@ final class McpRequestValidator {
     String url = optional(request.url(), "url", 2_048);
     String image = optional(request.image(), "image", 500);
     String platform = optional(request.platform(), "platform", 128);
-    List<String> entrypoint = stringList(request.entrypoint(), "entrypoint", 100, 2_048);
-    List<String> command = stringList(request.command(), "command", 100, 2_048);
+    List<String> entrypoint = composeList(request.entrypoint(), "entrypoint", 100, 2_048);
+    List<String> command = composeList(request.command(), "command", 100, 2_048);
     String stdioCommand = optional(request.stdioCommand(), "stdioCommand", 2_048);
     List<String> args = stringList(request.args(), "args", 100, 2_048);
     String path = optional(request.path(), "path", 512);
@@ -210,7 +210,7 @@ final class McpRequestValidator {
 
   private static HealthcheckSpec healthcheck(HealthcheckSpec input) {
     if (input == null) return null;
-    List<String> test = stringList(input.test(), "healthcheck.test", 20, 2_048);
+    List<String> test = composeList(input.test(), "healthcheck.test", 20, 2_048);
     if (test.isEmpty() || !Set.of("CMD", "CMD-SHELL", "NONE").contains(test.getFirst())) {
       throw new IllegalArgumentException("healthcheck.test must begin with CMD, CMD-SHELL, or NONE");
     }
@@ -242,8 +242,8 @@ final class McpRequestValidator {
       String platform = optional(item.platform(), "support service platform", 128);
       if (platform != null && !PLATFORM.matcher(platform).matches()) throw new IllegalArgumentException("invalid support service platform");
       out.add(new SupportServiceRequest(name, image, platform,
-          stringList(item.entrypoint(), "support entrypoint", 100, 2_048),
-          stringList(item.command(), "support command", 100, 2_048),
+          composeList(item.entrypoint(), "support entrypoint", 100, 2_048),
+          composeList(item.command(), "support command", 100, 2_048),
           values(item.environment(), false), volumes(item.volumes()), healthcheck(item.healthcheck())));
     }
     return List.copyOf(out);
@@ -263,6 +263,40 @@ final class McpRequestValidator {
     List<String> out = new ArrayList<>();
     for (String item : input) out.add(scalar(item, field, maxLen));
     return List.copyOf(out);
+  }
+
+  /**
+   * Like {@link #stringList}, for the fields written verbatim into the generated Compose
+   * file: {@code entrypoint}, {@code command}, and {@code healthcheck.test}, on the main
+   * service and on every support service.
+   */
+  private static List<String> composeList(List<String> input, String field, int maxItems, int maxLen) {
+    if (input == null) return List.of();
+    if (input.size() > maxItems) throw new IllegalArgumentException(field + " has too many entries");
+    List<String> out = new ArrayList<>();
+    for (String item : input) out.add(composeLiteral(item, field, maxLen));
+    return List.copyOf(out);
+  }
+
+  /**
+   * A scalar that will appear literally in the Compose file, so it must not contain '$'.
+   *
+   * <p>Compose interpolates {@code ${VAR}} in values it parses, and YAML single quotes do
+   * not prevent it. The Compose process environment carries the decrypted secrets of
+   * <em>every</em> managed server in the stack, under names derived from values the API
+   * hands back — so a '$' here lets one server's command read another server's
+   * credentials and print them to its own log.
+   *
+   * <p>Deliberately not folded into {@link #scalar}: that also guards configuration
+   * <em>values</em>, where a '$' in a password is legitimate and safe, because those
+   * reach the file only as a {@code ${MC_MCP_…:-}} reference, never as literal text.
+   */
+  private static String composeLiteral(String value, String field, int maxLen) {
+    String result = scalar(value, field, maxLen);
+    if (result.indexOf('$') >= 0) {
+      throw new IllegalArgumentException(field + " cannot contain '$'");
+    }
+    return result;
   }
 
   private static String required(String value, String field, int maxLen) {

@@ -52,6 +52,10 @@ public class McpServersController {
 
   @DeleteMapping("/{id}")
   public ResponseEntity<McpServerDto> delete(@PathVariable String id) {
+    // Unlinking is destructive and irreversible — it disables the server on every Agent
+    // holding it and drops the link rows. Ask the registry whether the deletion can go
+    // ahead at all first, so a refused DELETE leaves the caller's Agents untouched.
+    registry.assertDeletable(id);
     agentCatalog.disableAndUnlinkForDeletion(id);
     McpServerDto result = registry.delete(id);
     return "managed".equals(result.kind()) ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
