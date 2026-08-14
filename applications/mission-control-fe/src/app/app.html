@@ -21,7 +21,7 @@
     <mc-status [status]="store.fleetHealth()" [label]="'fleet ' + store.fleetHealth()" [live]="true" />
     <mc-status [status]="store.dockerOverall()" [label]="'docker ' + store.dockerOverall()" />
     <span>{{ store.containers().length }} containers · {{ store.agents().length }} profiles</span>
-    <span>hermes-agent v0.16.0</span>
+    <span>{{ imageLine() }}</span>
   </div>
 </aside>
 

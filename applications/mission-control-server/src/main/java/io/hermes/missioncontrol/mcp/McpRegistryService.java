@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.mcp;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.AppProperties;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.LogLineDto;
@@ -16,6 +17,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -29,11 +33,15 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /** Global MCP catalog and managed Compose lifecycle. */
@@ -43,7 +51,32 @@ public class McpRegistryService {
   private static final Logger log = LoggerFactory.getLogger(McpRegistryService.class);
   private static final String SEED_META = "default-seed-version";
   private static final String SEED_VERSION = "1";
+  private static final String SEED_REPAIR_META = "seed-repair-version";
+  private static final String SEED_REPAIR_VERSION = "1";
   private static final Duration COMPOSE_TIMEOUT = Duration.ofMinutes(10);
+  private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(5);
+  private static final Pattern CONTAINER_ID = Pattern.compile("/containers/([0-9a-f]{64})");
+  private static final String MCP_INITIALIZE = "{\"jsonrpc\":\"2.0\",\"id\":1,"
+      + "\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\","
+      + "\"capabilities\":{},\"clientInfo\":{\"name\":\"mission-control\",\"version\":\"1\"}}}";
+
+  private static final String POSTGRES_IMAGE = "openmcpserver/mcp-postgres:latest";
+
+  /**
+   * The Postgres MCP image hardcodes port 8080 and never passes TransportSecuritySettings, so
+   * the MCP SDK's default loopback-only Host allow-list rejects every request addressed to the
+   * Compose service name with 421. Neither is reachable through configuration — the SDK has no
+   * environment override — so the entrypoint boots the server module itself instead.
+   *
+   * <p>Constraints: one line with no control characters (the validator rejects them), no {@code
+   * $} (Compose interpolates the rendered YAML), and single quotes only, which the renderer
+   * escapes as {@code ''}. {@code sse_app()} is called after the settings are relaxed so the
+   * transport is built from them.
+   */
+  private static final String POSTGRES_BOOT = "import os,uvicorn,server;"
+      + "from mcp.server.transport_security import TransportSecuritySettings as T;"
+      + "server.mcp.settings.transport_security=T(enable_dns_rebinding_protection=False);"
+      + "uvicorn.run(server.mcp.sse_app(),host='0.0.0.0',port=int(os.environ.get('PORT','1103')))";
 
   private final McpServerRepository repository;
   private final RetainedResourceRepository retained;
@@ -54,15 +87,15 @@ public class McpRegistryService {
   private final ObjectMapper json;
   private final ComposeStackRenderer renderer;
   private final ComposeStackManager compose;
-  private final ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
+  private final ExecutorService operations;
   private final HttpClient http = HttpClient.newBuilder()
       .connectTimeout(Duration.ofSeconds(3))
       .followRedirects(HttpClient.Redirect.NEVER)
       .build();
 
-  @Value("${mc.data-mode:live}")
-  private String dataMode = "live";
+  private final String dataMode;
 
+  @Autowired
   public McpRegistryService(
       McpServerRepository repository,
       RetainedResourceRepository retained,
@@ -71,7 +104,29 @@ public class McpRegistryService {
       DockerGateway docker,
       SecretCipher cipher,
       ObjectMapper json,
-      ComposeStackManager compose) {
+      ComposeStackManager compose,
+      AppProperties props) {
+    this(repository, retained, links, hosts, docker, cipher, json, compose, props,
+        Executors.newVirtualThreadPerTaskExecutor());
+  }
+
+  /**
+   * Test seam: a caller-supplied executor. Passing a same-thread executor makes the
+   * compose lifecycle — desired state, {@code operation_state}, {@code applied_revision},
+   * the recorded failure — observable, which an async task offers no way to await.
+   */
+  McpRegistryService(
+      McpServerRepository repository,
+      RetainedResourceRepository retained,
+      AgentMcpLinkRepository links,
+      HostService hosts,
+      DockerGateway docker,
+      SecretCipher cipher,
+      ObjectMapper json,
+      ComposeStackManager compose,
+      AppProperties props,
+      ExecutorService operations) {
+    this.operations = operations;
     this.repository = repository;
     this.retained = retained;
     this.links = links;
@@ -80,6 +135,7 @@ public class McpRegistryService {
     this.cipher = cipher;
     this.json = json;
     this.compose = compose;
+    this.dataMode = props.dataMode();
     this.renderer = new ComposeStackRenderer();
   }
 
@@ -200,9 +256,10 @@ public class McpRegistryService {
 
   public McpServerDto check(String id) {
     ServerRow row = requireRow(id);
-    if (!"external".equals(row.kind())) {
-      throw new IllegalArgumentException("reachability checks apply only to external MCP servers");
+    if ("stdio".equals(row.kind())) {
+      throw new IllegalArgumentException("reachability checks do not apply to stdio MCP servers");
     }
+    if ("managed".equals(row.kind())) return checkManaged(row);
     StoredConfig config = read(row);
     long started = System.nanoTime();
     long checkedAt = System.currentTimeMillis();
@@ -223,6 +280,146 @@ public class McpRegistryService {
       repository.updateCheck(id, "error", e.getMessage(), checkedAt, null);
     }
     return require(id);
+  }
+
+  /**
+   * Probes a managed server exactly the way an Agent reaches it — by Compose service name, over
+   * the MCP network. Addressing it any other way (its own loopback, a published port) would
+   * accept images whose MCP transport rejects the service name as a Host header, which is the
+   * failure this check exists to surface.
+   */
+  private McpServerDto checkManaged(ServerRow row) {
+    String id = row.id();
+    StoredConfig config = read(row);
+    long checkedAt = System.currentTimeMillis();
+    if (!"running".equals(row.runtimeState())) {
+      repository.updateCheck(id, "error", "server is not running", checkedAt, null);
+      return require(id);
+    }
+    String target;
+    try {
+      target = probeTarget(row, config);
+    } catch (RuntimeException unreachable) {
+      repository.updateCheck(id, "error", unreachable.getMessage(), checkedAt, null);
+      return require(id);
+    }
+
+    long started = System.nanoTime();
+    try {
+      HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(target))
+          .timeout(PROBE_TIMEOUT)
+          .header("Accept", "application/json, text/event-stream");
+      if ("sse".equals(config.transport())) {
+        // The legacy SSE transport opens its stream on GET and answers POST with 405.
+        request.GET();
+      } else {
+        request.header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(MCP_INITIALIZE));
+      }
+      for (Map.Entry<String, String> header : materialize(config.headers()).entrySet()) {
+        request.header(header.getKey(), header.getValue());
+      }
+      HttpResponse<Flow.Publisher<List<ByteBuffer>>> response = http
+          .sendAsync(request.build(), HttpResponse.BodyHandlers.ofPublisher())
+          .get(PROBE_TIMEOUT.toSeconds() + 1, TimeUnit.SECONDS);
+      // Both transports answer with an event stream that stays open, so the probe reads the
+      // response head and drops the subscription instead of waiting for a body that never ends.
+      response.body().subscribe(new CancellingSubscriber());
+
+      long latency = Math.max(0, (System.nanoTime() - started) / 1_000_000);
+      String contentType = response.headers().firstValue("content-type").orElse("");
+      String failure = probeFailure(response.statusCode(), contentType, config, target);
+      if (failure == null) repository.updateCheck(id, "connected", null, checkedAt, latency);
+      else repository.updateCheck(id, "error", failure, checkedAt, null);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      repository.updateCheck(id, "error", "reachability check interrupted", checkedAt, null);
+    } catch (Exception e) {
+      repository.updateCheck(id, "error", target + " — " + rootMessage(e), checkedAt, null);
+    }
+    return require(id);
+  }
+
+  /** Null when the response is a healthy MCP endpoint, otherwise the operator-facing reason. */
+  static String probeFailure(
+      int status, String contentType, StoredConfig config, String target) {
+    if (status == 421) {
+      return "HTTP 421 from " + target + " — the image rejects the Compose service name as a Host "
+          + "header. Its MCP transport accepts loopback hosts only, so no Agent can reach it.";
+    }
+    if (status == 404 || status == 405) {
+      return "HTTP " + status + " from " + target + " — no MCP endpoint on that path.";
+    }
+    if (status / 100 != 2) return "HTTP " + status + " from " + target;
+    if ("sse".equals(config.transport()) && !contentType.startsWith("text/event-stream")) {
+      return target + " answered with '" + contentType + "' rather than an SSE stream.";
+    }
+    return null;
+  }
+
+  private String probeTarget(ServerRow row, StoredConfig config) {
+    if (HostService.LOCAL_HOST_ID.equals(row.hostId())) {
+      attachMcpNetwork(row.hostId());
+      return connectionUrl(row, config);
+    }
+    String crossHost = config.crossHostUrl();
+    if (crossHost == null || crossHost.isBlank()) {
+      throw new IllegalStateException(
+          "a managed server on a remote Docker host can only be checked through a cross-host URL");
+    }
+    return crossHost;
+  }
+
+  /** Joins the MCP network so service names resolve. Idempotent, and cheap once attached. */
+  private void attachMcpNetwork(String hostId) {
+    String container = ownNetworkContainerId();
+    if (container == null) {
+      throw new IllegalStateException(
+          "cannot reach the MCP network: Mission Control is not running inside a container");
+    }
+    docker.connectNetwork(hosts.urlOf(hostId), container, ComposeStackRenderer.NETWORK);
+  }
+
+  /**
+   * The container owning this process' network namespace. Docker bind-mounts the network files
+   * (/etc/hosts, /etc/resolv.conf) out of that container's directory, so its id is the one that
+   * shows up in mountinfo — this container normally, and the namespace owner when the deployment
+   * shares one, as the Tailscale compose file does with {@code network_mode: service:tailscale}.
+   * That is exactly the container a network has to be attached to for this process to use it.
+   */
+  private static String ownNetworkContainerId() {
+    try {
+      return containerIdFrom(Files.readAllLines(Path.of("/proc/self/mountinfo")));
+    } catch (Exception notContainerized) {
+      return null;
+    }
+  }
+
+  /**
+   * The container id in the first mountinfo line that carries one, or null when this
+   * process is not in a container. Split out from the file read so the rule that decides
+   * <em>which</em> line wins is reachable without a container to run inside.
+   */
+  static String containerIdFrom(List<String> mountinfoLines) {
+    for (String line : mountinfoLines) {
+      Matcher matcher = CONTAINER_ID.matcher(line);
+      if (matcher.find()) return matcher.group(1);
+    }
+    return null;
+  }
+
+  private static String rootMessage(Throwable e) {
+    Throwable cause = e;
+    while (cause.getCause() != null && cause.getMessage() == null) cause = cause.getCause();
+    return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
+  }
+
+  /** Reads the response head and releases the connection without draining the stream. */
+  private static final class CancellingSubscriber implements Flow.Subscriber<List<ByteBuffer>> {
+    @Override public void onSubscribe(Flow.Subscription subscription) { subscription.cancel(); }
+    @Override public void onNext(List<ByteBuffer> item) { }
+    @Override public void onError(Throwable throwable) { }
+    @Override public void onComplete() { }
   }
 
   public List<LogLineDto> logs(String id, int tail) {
@@ -274,6 +471,13 @@ public class McpRegistryService {
       seedDefaults();
       repository.putMeta(SEED_META, SEED_VERSION);
     }
+    // Seeding only ever inserts, so a corrected default never reaches a catalog that was
+    // seeded by an earlier version. Repair runs before the reconcile loop below, which then
+    // applies the rewritten definition as part of its normal startup pass.
+    if (!repository.meta(SEED_REPAIR_META).map(SEED_REPAIR_VERSION::equals).orElse(false)) {
+      repairSeeds();
+      repository.putMeta(SEED_REPAIR_META, SEED_REPAIR_VERSION);
+    }
     // Reconcile persisted desired state after a dashboard restart. Per-host locks
     // serialize this with any seed provisioning already queued above.
     for (ServerRow row : repository.findAll()) {
@@ -295,7 +499,7 @@ public class McpRegistryService {
     operations.shutdownNow();
   }
 
-  private void seedDefaults() {
+  void seedDefaults() {
     createSeed("playwright", "Playwright", "playwright", new McpServerRequest(
         "Playwright", "Browser automation through Playwright MCP", "managed", HostService.LOCAL_HOST_ID,
         "http", null, "mcp/playwright:latest", null, List.of(),
@@ -333,13 +537,44 @@ public class McpRegistryService {
         List.of(new VolumeSpec("data", "/var/lib/postgresql/data")), pgHealth);
     createSeed("postgres", "Postgres MCP", "postgres-mcp", new McpServerRequest(
         "Postgres MCP", "Read-only PostgreSQL MCP server with a private database", "managed",
-        HostService.LOCAL_HOST_ID, "sse", null, "openmcpserver/mcp-postgres:latest", null,
-        List.of(), List.of(), null, List.of(), 1103, null, "/sse", null,
+        HostService.LOCAL_HOST_ID, "sse", null, POSTGRES_IMAGE, null,
+        List.of("python", "-c"), List.of(POSTGRES_BOOT), null, List.of(), 1103, null, "/sse", null,
         List.of(new ConfigValueInput("PORT", "1103", false, false),
             new ConfigValueInput("DATABASE_URL",
                 "postgres://mcp:" + password + "@postgres-mcp-database:5432/mcp", true, false),
             new ConfigValueInput("POSTGRES_READ_ONLY", "true", false, false)),
         List.of(), List.of(), null, List.of(postgres)));
+  }
+
+  /**
+   * Rewrites default catalog entries that an earlier version seeded with a definition that
+   * cannot work. Each repair is guarded on the exact broken shape, so an entry the operator has
+   * since customized is left untouched rather than silently reverted.
+   */
+  void repairSeeds() {
+    repository.findBySeedKey("postgres").ifPresent(row -> {
+      StoredConfig config = read(row);
+      boolean untouched = config.entrypoint().isEmpty() && config.command().isEmpty()
+          && POSTGRES_IMAGE.equals(config.image())
+          && Integer.valueOf(1103).equals(config.internalPort());
+      if (!untouched) {
+        log.debug("leaving the seeded Postgres MCP entry alone: already correct or customized");
+        return;
+      }
+      // Everything but the boot command is carried over verbatim — in particular the already
+      // encrypted DATABASE_URL envelope, which cannot be rebuilt from here.
+      StoredConfig repaired = new StoredConfig(
+          config.transport(), config.url(), config.image(), config.platform(),
+          List.of("python", "-c"), List.of(POSTGRES_BOOT), config.stdioCommand(), config.args(),
+          config.internalPort(), config.publishedPort(), config.path(), config.crossHostUrl(),
+          config.environment(), config.headers(), config.volumes(), config.healthcheck(),
+          config.supportServices());
+      repository.updateDefinition(row.id(), row.name(), row.description(), write(repaired),
+          row.revision() + 1, row.appliedRevision(), row.operationState());
+      log.info("repaired the seeded Postgres MCP entry: the image ignores PORT and rejects the "
+          + "Compose service name as a Host header, so it is now booted through an explicit "
+          + "entrypoint");
+    });
   }
 
   private void createSeed(String seedKey, String expectedName, String serviceKey, McpServerRequest request) {

@@ -66,10 +66,6 @@ public class ProfileTemplatesController {
   }
 
   private DockerHostDto connected(String hostId) {
-    DockerHostDto host = hosts.check(hostId);
-    if (!"connected".equals(host.status())) {
-      throw new IllegalStateException("docker host not connected");
-    }
-    return host;
+    return hosts.requireConnected(hostId);
   }
 }

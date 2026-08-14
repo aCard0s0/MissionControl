@@ -8,7 +8,7 @@ Guiding principle (see [mission_control_guidelines.md](mission_control_guideline
 ## Modules
 
 ```
-MissionControl/
+mission-control/
 ├── applications/
 │   ├── mission-control-fe/        Angular 22 dashboard (zoneless, signals, GSAP)
 │   └── mission-control-server/    Spring Boot 3.5 backend (Java 24)
@@ -111,6 +111,13 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   (`mc-terminal-tabs`) and is restored on reload; the exec sessions themselves always restart
   on reconnect, since a shell is bound to its connection. Background tabs keep their socket
   open, so their output keeps streaming while another tab is on screen.
+- **Agent shortcut.** `shell →` on an agent card (`/agents`) opens a tab pinned to that agent's
+  container and types `hermes -p <profile>` into it, so one click lands in a session with that
+  agent. `HermesStore.openTerminal()` carries the target; the command is sent as ordinary stdin
+  once the first output frame proves the exec is wired (the WebSocket opens before the backend
+  registers the shell, so anything sent on `open` would be dropped). Clicking the same agent
+  again focuses the tab it already made; re-pointing that tab at another container clears the
+  command, so `hermes -p <profile>` never runs where the profile does not exist.
 - **Live only.** The panel needs the live backend — it is disabled in mock mode.
 
 ## Environment variables (combined image)
@@ -121,6 +128,7 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
 | `MC_DOCKER_SOCKET` | `unix:///var/run/docker.sock` | local daemon endpoint |
 | `MC_CONTAINER_FILTER` | `hermes` | substring marking Hermes-related containers (`?all=true` bypasses) |
 | `MC_HERMES_IMAGE` | `nousresearch/hermes-agent` | image used by deploys |
+| `MC_REGISTRY_TAGS` | `true` | look up published tags on Docker Hub; set `false` for air-gapped installs (tag listing then shows only pulled images) |
 | `MC_DB_PATH` | `/data/mission-control.db` | SQLite file |
 | `MC_MCP_STACK_DIR` | `/data/mcp-stacks` in the image | generated non-secret per-host Compose files |
 | `MC_API_BASE_URL` | `` (same origin) | only for split FE/BE deployments |
@@ -141,6 +149,33 @@ Control waits for that initialization and rolls the container and volume back
 if readiness or named-profile creation fails. Permanent removal deletes only
 the recorded Mission Control-managed volume; external mounts are never guessed
 or deleted.
+
+### Container image updates
+
+Docker cannot swap the image of a running container, so moving an Agent onto a
+newer tag means replacing the container. Mission Control does that without
+touching the Agent's data:
+
+- The target tag is **pulled first**, before anything is stopped, so a bad tag
+  or an unreachable registry costs no downtime.
+- The old container is **renamed aside**, not removed. The replacement is created
+  under the original name with the same labels, binds, restart policy, command
+  and user-defined networks — notably the managed MCP network, which is attached
+  after deploy and would otherwise be silently lost. Only once the replacement
+  passes readiness is the parked original removed; any failure restores it.
+- The `mc-hermes-<name>` volume is **reattached, never recreated or deleted**, so
+  profiles, souls, memory, skills, sessions and credentials carry over. No
+  bootstrap one-shots run — the profiles already exist, and the `mc.profiles`
+  label records only what the original deploy seeded, not what exists now.
+- A container that was **stopped stays stopped**; an operator parked it on purpose.
+- Recreating mints a new container id, so `board_tasks` and `mcp_agent_links`
+  rows are repointed at it in one transaction. A failed remap is logged but does
+  not undo a healthy update.
+- Containers left behind by an interrupted update keep a `-mc-upgrade-<hex>`
+  suffix. They are hidden from the fleet listing and reachable via `?all=true`.
+
+Host-config customizations applied out of band (`docker update`, CPU or memory
+limits) are outside the copied set and are not preserved.
 
 ## Security notes
 

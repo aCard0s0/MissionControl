@@ -46,9 +46,19 @@ export interface ApiBoardTask {
   createdAt: number;
 }
 
+export interface ApiImageTag {
+  tag: string;
+  pulled: boolean;
+  remote: boolean;
+}
+
 export interface ApiImageTags {
   repository: string;
-  tags: string[];
+  tags: string[];                      // every known tag, newest first
+  entries?: ApiImageTag[];             // same order, with local-store presence
+  newest?: string | null;              // newest pinned release, floating tags excluded
+  registryStatus?: string;             // ok | cached | unavailable | unsupported | disabled
+  registryDetail?: string | null;
 }
 
 export interface ApiSkillRef {
@@ -123,6 +133,17 @@ export interface ApiPullState {
   model: string;
   status: 'pulling' | 'done' | 'error';
   detail: string | null;
+}
+
+/** Optional override for the model hermes' auxiliary side tasks run on
+ *  (compression, summarization, memory flush, …). Omitted entirely when the side
+ *  tasks should follow the main model, which is the default. A blank `provider`
+ *  means "same provider, different model" and inherits the main endpoint. */
+export interface ApiAuxiliaryModel {
+  provider?: string;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string;
 }
 
 export interface ApiAgentProfile {
@@ -221,12 +242,12 @@ export class HermesApi {
     this.base = apiBaseUrl.replace(/\/+$/, '');
   }
 
-  private async req<T>(path: string, init?: RequestInit): Promise<T> {
+  private async req<T>(path: string, init?: RequestInit, timeoutMs = 15_000): Promise<T> {
     const res = await fetch(this.base + path, {
       headers: { 'Content-Type': 'application/json' },
       // abort a hung request so the pollers can't pile up pending fetches across
       // ticks when the backend is slow; callers override with their own signal
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
       ...init,
     });
     if (!res.ok) {
@@ -402,10 +423,14 @@ export class HermesApi {
     cloneFrom?: string,
     baseUrl?: string,
     fromTemplateId?: string,
+    auxiliary?: ApiAuxiliaryModel,
   ): Promise<ApiAgentProfile> {
     return this.req('/api/agents', {
       method: 'POST',
-      body: JSON.stringify({ hostId, containerId, name, provider, model, apiKey, cloneFrom, baseUrl, fromTemplateId }),
+      body: JSON.stringify({
+        hostId, containerId, name, provider, model, apiKey, cloneFrom, baseUrl, fromTemplateId,
+        auxiliary,
+      }),
     });
   }
 
@@ -589,6 +614,18 @@ export class HermesApi {
 
   removeContainer(hostId: string, id: string): Promise<void> {
     return this.req(`/api/containers/${encodeURIComponent(hostId)}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  /**
+   * Recreates the container on `version`, reusing its data volume, and resolves
+   * to the replacement's id. Allowed far longer than the default budget: a cold
+   * host pulls the image first, then the new container has to pass readiness.
+   */
+  updateContainer(hostId: string, id: string, version: string): Promise<{ id: string }> {
+    return this.req(
+      `/api/containers/${encodeURIComponent(hostId)}/${encodeURIComponent(id)}/update`,
+      { method: 'POST', body: JSON.stringify({ version }) },
+      300_000);
   }
 
   // ── profile templates (reusable agent blueprints) ──────────────────────────

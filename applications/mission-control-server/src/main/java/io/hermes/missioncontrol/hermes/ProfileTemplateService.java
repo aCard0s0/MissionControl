@@ -11,6 +11,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -133,7 +134,7 @@ public class ProfileTemplateService {
           null, containerId, name,
           blankTo(t.provider(), "nous"),
           blankTo(t.model(), "Hermes-4-405B"),
-          null, null, blankToNull(t.baseUrl()), null);
+          null, null, blankToNull(t.baseUrl()), null, null);
       profiles.create(url, req);
     }
     try {
@@ -310,7 +311,7 @@ public class ProfileTemplateService {
 
   private McpServerSpec snapshotFromCatalog(McpServerSpec requested) {
     if (mcpRegistry == null) {
-      throw new IllegalStateException("MCP registry is unavailable");
+      throw new UpstreamUnavailableException("MCP registry is unavailable");
     }
     String sourceId = requested.sourceServerId().trim();
     McpServerDto source = mcpRegistry.require(sourceId);

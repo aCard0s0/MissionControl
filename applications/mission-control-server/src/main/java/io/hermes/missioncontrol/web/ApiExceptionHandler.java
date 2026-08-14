@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -46,10 +47,29 @@ public class ApiExceptionHandler {
     return error(HttpStatus.BAD_GATEWAY, "docker daemon error: " + brief(e.getMessage()));
   }
 
-  @ExceptionHandler(RuntimeException.class)
-  public ResponseEntity<Map<String, String>> unavailable(RuntimeException e) {
-    log.warn("request failed: {}", e.toString());
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  public ResponseEntity<Map<String, String>> invalidBody(MethodArgumentNotValidException e) {
+    // without this the advice never sees bean-validation failures at all — they are not
+    // RuntimeExceptions, so Spring's default resolver answers with its own body shape
+    // and the client loses the {"error": ...} contract every other failure honours
+    String detail = e.getBindingResult().getFieldErrors().stream()
+        .map(field -> field.getField() + " " + field.getDefaultMessage())
+        .findFirst()
+        .orElse("request body is invalid");
+    return error(HttpStatus.BAD_REQUEST, detail);
+  }
+
+  @ExceptionHandler(UpstreamUnavailableException.class)
+  public ResponseEntity<Map<String, String>> unavailable(UpstreamUnavailableException e) {
+    log.warn("upstream unavailable: {}", e.getMessage());
     return error(HttpStatus.SERVICE_UNAVAILABLE, brief(e.getMessage()));
+  }
+
+  @ExceptionHandler(RuntimeException.class)
+  public ResponseEntity<Map<String, String>> unexpected(RuntimeException e) {
+    // a genuine defect, not a dependency being down — log the trace, answer 500
+    log.error("unexpected failure handling request", e);
+    return error(HttpStatus.INTERNAL_SERVER_ERROR, brief(e.getMessage()));
   }
 
   private static ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {

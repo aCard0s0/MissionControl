@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.hosts;
 import io.hermes.missioncontrol.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -50,6 +51,19 @@ public class HostService {
   public DockerHostDto check(String id) {
     HostRow row = require(id);
     return toDto(row, probe(row, true));
+  }
+
+  /**
+   * Probes the host and returns it only if the daemon answered. Callers that are about to
+   * talk to a container need this rather than {@link #check}, so that a dead daemon is
+   * reported as such instead of surfacing later as an obscure Docker error.
+   */
+  public DockerHostDto requireConnected(String id) {
+    DockerHostDto host = check(id);
+    if (!"connected".equals(host.status())) {
+      throw new UpstreamUnavailableException("docker host not connected");
+    }
+    return host;
   }
 
   public DockerHostDto add(String name, String url) {

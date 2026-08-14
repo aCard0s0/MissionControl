@@ -8,6 +8,7 @@
 #   ./mc start                  # deploy behind tailscale (default flavor)
 #   ./mc start --build          # rebuild the image first
 #   ./mc start --ts=off         # plain docker on http://localhost:8080
+#   ./mc start --ollama=on      # also run the optional local model runtime
 #   ./mc help                   # full usage
 set -euo pipefail
 
@@ -40,13 +41,14 @@ Commands:
   start [--build] [--ts=on|off] [--ollama=on|off] [--mock] [--port=N] [--no-socket] [--no-keychain]
                      deploy — default --ts=on (behind tailscale, tailnet-only);
                      --ts=off runs plain docker with a published port;
-                     --ollama=on (default) also runs the ollama service on
-                     port ${OLLAMA_PORT}, --ollama=off takes it down
+                     the ollama service is NOT started by default — --ollama=on
+                     brings it up on port ${OLLAMA_PORT}, --ollama=off takes it down
   stop               stop whichever flavor is running (incl. the ollama service)
   restart [...]      stop + start (same flags as start)
   status             which flavor is running, container states, port/URL, ollama
   logs [-f] [-n N]   app container logs (default: last 100 lines)
   shell              interactive sh in the app container
+  ollama up|down     start / remove the optional ollama service on its own
   ollama [args...]   ollama CLI inside the service container (no args: list);
                      './mc ollama logs [-f] [-n N]' shows the service logs
   build              build the image only
@@ -58,6 +60,8 @@ Examples:
   ./mc start --build          # rebuild the image, then deploy
   ./mc start --ts=off         # plain docker — http://localhost:${PORT}
   ./mc start --ts=off --mock --port=9000   # demo mode on a custom port
+  ./mc start --ollama=on      # deploy + local model runtime on port ${OLLAMA_PORT}
+  ./mc ollama up              # add the ollama service to a running deploy
   ./mc ollama pull llama3.2   # pull a model into the ollama service
   ./mc ollama list            # models available to the agents
   ./mc ollama logs -f
@@ -267,14 +271,18 @@ start_ollama() {
 
 stop_ollama() {
   if ollama_exists; then
-    echo "→ removing the ollama service (--ollama=off)"
+    echo "→ removing the ollama service"
     compose_ro rm -sf ollama
     echo "✓ ollama removed (models kept in the ollama-models volume)"
+  else
+    echo "→ ollama service not deployed — nothing to remove"
   fi
 }
 
 cmd_start() {
-  local ts="on" build="" mock="" no_socket="" ollama="on" arg
+  # ollama is opt-in: empty means "leave whatever is there alone", so a plain
+  # './mc start' neither deploys nor tears down the local model runtime
+  local ts="on" build="" mock="" no_socket="" ollama="" arg
   for arg in "$@"; do
     case "${arg}" in
       --build)     build=1 ;;
@@ -300,11 +308,13 @@ cmd_start() {
   else
     start_plain "${build}" "${mock}" "${no_socket}"
   fi
-  if [[ "${ollama}" == "on" ]]; then
-    start_ollama
-  else
-    stop_ollama
-  fi
+  case "${ollama}" in
+    on)  start_ollama ;;
+    off) stop_ollama ;;
+    *)   if ! ollama_running; then
+           echo "→ ollama: not started (opt in with --ollama=on or './mc ollama up')"
+         fi ;;
+  esac
 }
 
 cmd_stop() {
@@ -373,9 +383,9 @@ cmd_status() {
     echo "  register: http://host.docker.internal:${oport} (containers) / http://localhost:${oport} (host)"
   elif ollama_exists; then
     found=1
-    echo "→ ollama: stopped — './mc start' brings it back"
+    echo "→ ollama: stopped — './mc ollama up' brings it back"
   else
-    echo "→ ollama: absent — './mc start' deploys it (or --ollama=off to keep it off)"
+    echo "→ ollama: absent (opt-in) — './mc ollama up' or './mc start --ollama=on' deploys it"
   fi
   if [[ -z "${found}" ]]; then echo "→ nothing deployed"; fi
 }
@@ -418,6 +428,19 @@ cmd_shell() {
 cmd_ollama() {
   require_docker
 
+  # 'up'/'down' are ours, not ollama CLI verbs — manage the service itself
+  # without redeploying the dashboard
+  if [[ "${1:-}" == "up" ]]; then
+    [[ $# -eq 1 ]] || { echo "error: './mc ollama up' takes no arguments" >&2; exit 1; }
+    start_ollama
+    return
+  fi
+  if [[ "${1:-}" == "down" ]]; then
+    [[ $# -eq 1 ]] || { echo "error: './mc ollama down' takes no arguments" >&2; exit 1; }
+    stop_ollama
+    return
+  fi
+
   if [[ "${1:-}" == "logs" ]]; then
     shift
     local follow="" tail=100
@@ -431,7 +454,7 @@ cmd_ollama() {
       shift
     done
     if ! ollama_exists; then
-      echo "error: ollama service not deployed — './mc start' (or './mc start --ollama=on') first" >&2
+      echo "error: ollama service not deployed — './mc ollama up' first" >&2
       exit 1
     fi
     compose_ro logs ${follow:+-f} --tail "${tail}" ollama
@@ -439,7 +462,7 @@ cmd_ollama() {
   fi
 
   if ! ollama_running; then
-    echo "error: ollama service not running — './mc start' (or './mc start --ollama=on') first" >&2
+    echo "error: ollama service not running — './mc ollama up' first" >&2
     exit 1
   fi
   if [[ $# -eq 0 ]]; then

@@ -55,7 +55,12 @@
       </div>
       <div class="panel-b">
         <h3 class="mono">{{ c.name }}</h3>
-        <div class="meta mono faint">{{ c.image }}:{{ c.version }} · on {{ hostName_(c.hostId) }}</div>
+        <div class="meta mono faint">
+          {{ c.image }}:{{ c.version }} · on {{ hostName_(c.hostId) }}
+          @if (updates().get(c.id); as target) {
+            <span class="chip warn" [title]="updateHint(c, target)">update {{ target.tag }}</span>
+          }
+        </div>
         <div class="stats mono">
           <div><span class="faint">uptime</span><span>{{ uptime(c.startedAt) }}</span></div>
           <div><span class="faint">profiles</span><span>{{ profileCount(c.id) }}</span></div>
@@ -71,12 +76,21 @@
         <div class="actions">
           <button class="btn sm primary" (click)="open(c.id)">select</button>
           @if (c.status === 'stopped') {
-            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'running'); $event.stopPropagation()">start</button>
+            <button class="btn sm" [disabled]="isUpdating(c.id)"
+                    (click)="store.setContainerStatus(c.id, 'running'); $event.stopPropagation()">start</button>
           } @else {
-            <button class="btn sm" (click)="store.setContainerStatus(c.id, 'stopped'); $event.stopPropagation()">stop</button>
+            <button class="btn sm" [disabled]="isUpdating(c.id)"
+                    (click)="store.setContainerStatus(c.id, 'stopped'); $event.stopPropagation()">stop</button>
+          }
+          @if (updates().get(c.id); as target) {
+            <button class="btn sm upd" [disabled]="isUpdating(c.id)" [title]="updateHint(c, target)"
+                    (click)="beginUpdate(c); $event.stopPropagation()">
+              {{ isUpdating(c.id) ? 'updating…' : 'update' }}
+            </button>
           }
           <span class="spacer"></span>
-          <button class="btn sm danger ghost" (click)="removing.set(c); $event.stopPropagation()">remove</button>
+          <button class="btn sm danger ghost" [disabled]="isUpdating(c.id)"
+                  (click)="removing.set(c); $event.stopPropagation()">remove</button>
         </div>
       </div>
     </div>
@@ -145,6 +159,43 @@
           <button class="btn primary"
                   [disabled]="!deployName.trim() || !deployTags().length || tagsLoading() || deployBusy()"
                   (click)="deploy()">{{ deployBusy() ? 'deploying…' : 'deploy' }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (updating(); as c) {
+  <div class="scrim" (click)="cancelUpdate()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h">UPDATE IMAGE — {{ c.name }}</div>
+      <div class="modal-b">
+        <p class="dim">
+          <span class="mono">{{ c.name }}</span> runs <span class="mono">{{ c.image }}:{{ c.version }}</span>.
+          Mission Control stops it, replaces the container, and starts it again on the tag below with the
+          same name, profiles and managed data volume.
+        </p>
+        <div class="field">
+          <label>target version</label>
+          <select class="select" [(ngModel)]="updateVersion" [disabled]="updatingBusy()">
+            @for (t of updateTargets(); track t.tag) {
+              <option [value]="t.tag">{{ t.tag }}{{ t.pulled ? '' : ' — not pulled' }}</option>
+            }
+          </select>
+        </div>
+        <p class="lock-hint">profiles, SOUL and memory files, skills and sessions live in the data volume and are kept</p>
+        <p class="lock-hint">the container name is kept — its container id and short id change</p>
+        @if (c.status === 'stopped') {
+          <p class="lock-hint">this container is stopped — it stays stopped after the update</p>
+        }
+        <p class="lock-hint warn">
+          brief downtime while it restarts{{ targetPulled() ? '' : ' — the image is pulled first, which can take a few minutes on a cold host' }}
+        </p>
+        <div class="modal-actions">
+          <button class="btn ghost" [disabled]="updatingBusy()" (click)="cancelUpdate()">cancel</button>
+          <button class="btn primary" [disabled]="!updateVersion || updatingBusy()" (click)="confirmUpdate()">
+            {{ updatingBusy() ? (targetPulled() ? 'recreating…' : 'pulling & recreating…') : 'update to ' + updateVersion }}
+          </button>
         </div>
       </div>
     </div>

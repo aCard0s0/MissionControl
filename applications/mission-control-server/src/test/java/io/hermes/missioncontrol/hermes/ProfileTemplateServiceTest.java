@@ -90,7 +90,7 @@ class ProfileTemplateServiceTest {
         List.of(), List.of(), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(template));
     CreateAgentRequest create = new CreateAgentRequest(
-        "dh-local", "cid", "ops", "anthropic", "model", null, null, null, "pt-1");
+        "dh-local", "cid", "ops", "anthropic", "model", null, null, null, "pt-1", null);
     doThrow(new RuntimeException("soul write failed"))
         .when(profiles).updateSoul("unix:///sock", "cid", "ops", "soul");
 

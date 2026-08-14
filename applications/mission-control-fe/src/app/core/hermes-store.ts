@@ -1,18 +1,18 @@
 import { Injectable, computed, signal } from '@angular/core';
 import {
   AgentProfile, BoardColumn, BoardTask, ChatMessage, ContainerStatus, CronJob, DockerHost,
-  HermesContainer, Integration, LogEntry, McpCatalogServer, McpCatalogServerInput,
+  HermesContainer, ImageCatalog, Integration, LogEntry, McpCatalogServer, McpCatalogServerInput,
   McpRetainedResource, McpServer, ModelProvider, OllamaModel, ProfileTemplate,
   ProfileTemplateInput, SessionInfo, SkillContent, SkillRef, Webhook,
 } from './models';
 import {
-  buildMockChat, seedAgents, seedContainers, seedDockerHosts, seedJobs, seedLogs,
+  buildMockChat, seedAgents, seedContainers, seedDockerHosts, seedImageTags, seedJobs, seedLogs,
   seedMcpCatalogServers, seedSkillBodies, seedTasks, seedTemplates, seedWebhooks,
 } from './mock-data';
 import { runtimeConfig } from './app-config';
 import {
-  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer, ApiModelProvider,
-  ApiProfileTemplate, ApiPullState, ApiSetupAuthProvider, HermesApi,
+  ApiAgentProfile, ApiAgentSetup, ApiAuxiliaryModel, ApiImageTags, ApiMcpCatalogServer,
+  ApiModelProvider, ApiProfileTemplate, ApiPullState, ApiSetupAuthProvider, HermesApi,
 } from './hermes-api';
 import { maskTail } from '../shared/secret';
 
@@ -67,6 +67,24 @@ const MOCK_SETUP_MESSAGING: Array<[string, string, string | null]> = [
 ];
 
 /**
+ * A request to open the bottom terminal panel. Everything past `seq` is
+ * optional: an empty request just opens the panel, while a targeted one (from
+ * the agent shortcut) pins the tab to a container and runs a command in it.
+ */
+export interface TerminalRequest {
+  /** monotonic — the panel acts once per new value, even for an identical target */
+  seq: number;
+  hostId?: string;
+  containerId?: string;
+  /** tab label; the profile name for an agent shortcut */
+  label?: string;
+  /** AgentProfile.id — lets a repeat click focus the tab it already opened */
+  agentKey?: string;
+  /** typed into the shell once it is live */
+  command?: string;
+}
+
+/**
  * Hermes data store. In `mock` data mode (the dev default, see
  * public/config.js) it seeds demo data and simulates telemetry; in `live`
  * mode it starts empty and is meant to be fed by a backend adapter hitting
@@ -88,11 +106,20 @@ export class HermesStore {
   /** Transient error toast for failed live actions. */
   readonly liveError = signal<string | null>(null);
 
-  /** Bumped by pages that want the bottom terminal panel opened. */
-  readonly terminalRequest = signal(0);
+  /** Set by pages that want the bottom terminal panel opened. Null until the
+   *  first request; `seq` is what makes a repeat request with an identical
+   *  target still register as a new one. */
+  readonly terminalRequest = signal<TerminalRequest | null>(null);
+  private termSeq = 0;
 
-  openTerminal(): void {
-    this.terminalRequest.update(n => n + 1);
+  /**
+   * Open the bottom terminal panel. With no target it behaves as it always
+   * has — the panel seeds a tab on the globally selected container. With one,
+   * the panel opens (or focuses) a tab bound to that container and types
+   * `command` into it once the shell is live.
+   */
+  openTerminal(target?: Omit<TerminalRequest, 'seq'>): void {
+    this.terminalRequest.set({ ...target, seq: ++this.termSeq });
   }
 
   readonly dockerHosts = signal<DockerHost[]>(
@@ -275,8 +302,12 @@ export class HermesStore {
       this.refreshMcpServers(), this.refreshRetainedMcpResources(),
     ]);
     await this.refreshAgents();   // needs the container list
+    void this.refreshImageCatalogs();
     setInterval(() => this.refreshContainers(), 10_000);
     setInterval(() => this.refreshAgents(), 12_000);
+    // published tags change on the order of days, and each lookup probes the
+    // daemon — deliberately far slower than the container poll
+    setInterval(() => this.refreshImageCatalogs(), 300_000);
     setInterval(() => this.pollStats(), 3_000);
     setInterval(() => this.pollLogs(), 5_000);
     this.pollStats();
@@ -327,7 +358,10 @@ export class HermesStore {
           };
         });
       });
-      if (!this.selectedContainerId() && list.length) {
+      // the selected id can also go stale — an updated container is recreated
+      // under a new id, and out-of-band removals happen too. Never clear on a
+      // transient empty inventory.
+      if (list.length && !list.some(c => c.id === this.selectedContainerId())) {
         this.selectedContainerId.set(list[0].id);
       }
     } catch { /* keep last inventory */ }
@@ -831,12 +865,70 @@ export class HermesStore {
 
   imageTags(hostId: string): Promise<ApiImageTags> {
     if (this.mock) {
-      const repo = this.containers()[0]?.image ?? 'nousresearch/hermes-agent';
-      const tags = Array.from(new Set(this.containers().map(c => c.version).filter(Boolean)));
-      tags.sort((a, b) => b.localeCompare(a));
-      return Promise.resolve({ repository: repo, tags });
+      const catalog = this.mockImageCatalog(hostId);
+      return Promise.resolve({
+        repository: catalog.repository,
+        tags: catalog.tags.map(t => t.tag),
+        entries: catalog.tags.map(t => ({ tag: t.tag, pulled: t.pulled, remote: true })),
+      });
     }
     return this.api.imageTags(hostId);
+  }
+
+  /**
+   * Merged registry + local tags per docker host. Advisory data: a failed
+   * refresh keeps the last catalog and never toasts.
+   */
+  readonly imageCatalog = signal<Record<string, ImageCatalog>>({});
+
+  private readonly catalogInFlight = new Set<string>();
+  private static readonly CATALOG_TTL = 300_000;
+
+  async refreshImageCatalog(hostId: string, force = false): Promise<void> {
+    if (!hostId || this.catalogInFlight.has(hostId)) return;
+    const known = this.imageCatalog()[hostId];
+    if (!force && known && Date.now() - known.fetchedAt < HermesStore.CATALOG_TTL) return;
+    this.catalogInFlight.add(hostId);
+    try {
+      const catalog = this.mock
+        ? this.mockImageCatalog(hostId)
+        : this.toImageCatalog(await this.api.imageTags(hostId));
+      this.imageCatalog.update(m => ({ ...m, [hostId]: catalog }));
+    } catch {
+      /* registry or daemon hiccup — keep the last catalog */
+    } finally {
+      this.catalogInFlight.delete(hostId);
+    }
+  }
+
+  /** Refreshes every connected host that actually runs containers. */
+  async refreshImageCatalogs(force = false): Promise<void> {
+    const hosted = new Set(this.containers().map(c => c.hostId));
+    const ids = this.dockerHosts()
+      .filter(h => h.status === 'connected' && hosted.has(h.id))
+      .map(h => h.id);
+    await this.mapPool(ids, 4, id => this.refreshImageCatalog(id, force));
+  }
+
+  private toImageCatalog(r: ApiImageTags): ImageCatalog {
+    // a backend without `entries` only ever reported local tags, so treat them as pulled
+    const pulled = new Set(r.entries?.filter(e => e.pulled).map(e => e.tag) ?? r.tags);
+    return {
+      repository: r.repository,
+      tags: (r.entries?.map(e => e.tag) ?? r.tags).map(tag => ({ tag, pulled: pulled.has(tag) })),
+      registryStatus: r.registryStatus ?? 'unavailable',
+      fetchedAt: Date.now(),
+    };
+  }
+
+  private mockImageCatalog(hostId: string): ImageCatalog {
+    const running = new Set(this.containers().filter(c => c.hostId === hostId).map(c => c.version));
+    return {
+      repository: this.containers()[0]?.image ?? 'nousresearch/hermes-agent',
+      tags: seedImageTags().map(tag => ({ tag, pulled: tag === 'latest' || running.has(tag) })),
+      registryStatus: 'ok',
+      fetchedAt: Date.now(),
+    };
   }
 
   // ── model provider actions (ollama registry) ───────────────────────────
@@ -1035,6 +1127,58 @@ export class HermesStore {
     }
   }
 
+  /**
+   * Recreates `id` on `version`. The backend pulls the tag if needed, then
+   * replaces the container against the same data volume, so profiles, souls,
+   * skills and credentials survive. **The container id changes** — callers
+   * holding an id must re-read it. Resolves to the new id, or '' on failure.
+   */
+  async updateContainer(id: string, version: string): Promise<string> {
+    const container = this.containers().find(c => c.id === id);
+    if (!container || !version || version === container.version) return '';
+    const wasSelected = this.selectedContainerId() === id;
+
+    if (!this.mock) {
+      try {
+        const r = await this.api.updateContainer(container.hostId, id, version);
+        await this.refreshContainers();
+        if (wasSelected) this.selectContainer(r.id);
+        void this.refreshImageCatalog(container.hostId, true);   // the tag is pulled now
+        return r.id;
+      } catch (e: any) {
+        this.toast(`update failed: ${e.message}`);
+        await this.refreshContainers();   // the recreate may have half-landed
+        return '';
+      }
+    }
+
+    const newId = nid('c');
+    const priorLogs = this.logsByContainer()[id] ?? [];
+    this.containers.update(cs => cs.map(c => c.id !== id ? c : {
+      ...c, id: newId, shortId: Math.random().toString(16).slice(2, 9),
+      version, status: 'running', startedAt: Date.now(),
+      cpuHist: [], ramHist: [], netHist: [],   // fresh container, no telemetry history
+    }));
+    // everything keyed by container id follows the new identity; agent ids are
+    // stable because the profiles live in the volume that was reattached
+    this.agents.update(as => as.map(a => a.containerId === id
+      ? { ...a, containerId: newId, state: a.state === 'dormant' ? 'idle' : a.state } : a));
+    this.jobs.update(js => js.map(j => j.containerId === id ? { ...j, containerId: newId } : j));
+    this.tasks.update(ts => ts.map(t => t.containerId === id ? { ...t, containerId: newId } : t));
+    this.logsByContainer.update(m => {
+      const next = { ...m };
+      delete next[id];
+      next[newId] = priorLogs;
+      return next;
+    });
+    this.appendLog(newId, {
+      ts: Date.now(), level: 'info', source: 'system', agentId: null,
+      msg: `container recreated on ${version} — data volume reattached`,
+    });
+    if (wasSelected) this.selectContainer(newId);
+    return newId;
+  }
+
   async removeContainer(id: string): Promise<boolean> {
     if (!this.mock) {
       const container = this.containers().find(c => c.id === id);
@@ -1072,6 +1216,7 @@ export class HermesStore {
     cloneFromId?: string,
     baseUrl?: string,
     templateId?: string,
+    auxiliary?: ApiAuxiliaryModel,
   ): Promise<string> {
     if (!this.mock) {
       const container = this.containers().find(c => c.id === containerId);
@@ -1088,6 +1233,7 @@ export class HermesStore {
           cloneFromName,
           baseUrl,
           templateId || undefined,
+          auxiliary,
         );
         const agent = this.toAgentProfile(created);
         this.agents.update(as => [...as.filter(a => a.id !== agent.id), agent]);

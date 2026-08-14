@@ -32,7 +32,11 @@ import org.yaml.snakeyaml.Yaml;
 class HermesProfilesTest {
 
   // construction touches no Docker client, so null is safe for the pure methods
-  private final HermesProfiles profiles = new HermesProfiles(null, new ObjectMapper());
+  /** Config-file editing needs no container at all now that it lives in its own class. */
+  private static final HermesConfigEditor EDITOR = new HermesConfigEditor();
+
+  private final HermesProfiles profiles =
+      new HermesProfiles(null, new ObjectMapper(), EDITOR);
 
   private static Map<String, String> entries(String provider, String model, String baseUrl) {
     Map<String, String> out = new LinkedHashMap<>();
@@ -91,6 +95,115 @@ class HermesProfilesTest {
       assertEquals("", plan.get(0)[1]);
       assertEquals("model.default", plan.get(1)[0], "default written right after the wipe");
     }
+  }
+
+  // ── write planner: auxiliaryConfigEntries ──────────────────────────────────
+
+  private static Map<String, String> auxEntries(String provider, String model, String baseUrl) {
+    Map<String, String> out = new LinkedHashMap<>();
+    for (String[] kv : HermesProfiles.auxiliaryConfigEntries(provider, model, baseUrl)) {
+      out.put(kv[0], kv[1]);
+    }
+    return out;
+  }
+
+  @Test
+  void auxiliaryTasksArePinnedToTheProfilesOwnProviderAndModel() {
+    // auto resolves through the main model, so an unpinned task dies with the
+    // model map — compression/summarization/memory flush are the visible casualties
+    Map<String, String> e = auxEntries("nous", "Hermes-4-405B", null);
+    assertEquals("nous", e.get("auxiliary.compression.provider"));
+    assertEquals("Hermes-4-405B", e.get("auxiliary.compression.model"));
+    assertEquals("nous", e.get("auxiliary.curator.provider"));
+    assertEquals("Hermes-4-405B", e.get("auxiliary.curator.model"));
+  }
+
+  @Test
+  void visionIsLeftOnAutoSoItsFallbackChainStillApplies() {
+    Map<String, String> e = auxEntries("openai-codex", "gpt-5.5", null);
+    assertFalse(e.containsKey("auxiliary.vision.provider"), "vision must keep its own fallback chain");
+    assertFalse(e.containsKey("auxiliary.vision.model"));
+  }
+
+  @Test
+  void openrouterAuxiliaryModelIdKeptVerbatim() {
+    Map<String, String> e = auxEntries("openrouter", "anthropic/claude-sonnet-4", null);
+    assertEquals("anthropic/claude-sonnet-4", e.get("auxiliary.compression.model"));
+    assertEquals("openrouter", e.get("auxiliary.compression.provider"));
+  }
+
+  @Test
+  void customEndpointPinsCustomProviderAndBaseUrl() {
+    Map<String, String> e = auxEntries("ollama", "qwen3:8b", "http://host.docker.internal:11434/v1");
+    assertEquals("custom", e.get("auxiliary.compression.provider"));
+    assertEquals("qwen3:8b", e.get("auxiliary.compression.model"));
+    assertEquals("http://host.docker.internal:11434/v1", e.get("auxiliary.compression.base_url"));
+  }
+
+  @Test
+  void nothingConcreteToPinLeavesEveryTaskOnAuto() {
+    // pinning at a provider that does not resolve is worse than the auto chain
+    assertTrue(auxEntries("nous", "", null).isEmpty(), "blank model");
+    assertTrue(auxEntries("nous", null, null).isEmpty(), "null model");
+    assertTrue(auxEntries("auto", "some-model", null).isEmpty(), "auto provider, no endpoint");
+    assertTrue(auxEntries(null, "some-model", null).isEmpty(), "null provider, no endpoint");
+  }
+
+  @Test
+  void auxiliaryPinUsesTheSameProviderNormalizationAsTheModelWrite() {
+    // "nousresearch" -> "nous" on both halves, or the aux tasks point at a
+    // provider id hermes' resolver does not know
+    Map<String, String> model = entries("nousresearch", "Hermes-4-405B", null);
+    Map<String, String> aux = auxEntries("nousresearch", "Hermes-4-405B", null);
+    assertEquals(model.get("model.provider"), aux.get("auxiliary.compression.provider"));
+  }
+
+  // ── override resolver: auxiliaryTarget ─────────────────────────────────────
+
+  @Test
+  void noOverrideRunsSideTasksOnTheMainModel() {
+    for (AuxiliaryModelSpec spec : new AuxiliaryModelSpec[] {
+        null,
+        new AuxiliaryModelSpec(null, null, null, null),
+        new AuxiliaryModelSpec("openrouter", "", null, null)}) {   // provider alone pins nothing
+      HermesProfiles.ModelTarget t =
+          HermesProfiles.auxiliaryTarget("nous", "Hermes-4-405B", null, spec);
+      assertEquals("nous", t.provider());
+      assertEquals("Hermes-4-405B", t.model());
+    }
+  }
+
+  @Test
+  void overrideSendsSideTasksToItsOwnProviderAndModel() {
+    HermesProfiles.ModelTarget t = HermesProfiles.auxiliaryTarget(
+        "anthropic", "claude-opus-4-8", null,
+        new AuxiliaryModelSpec("openrouter", "anthropic/claude-haiku-4-5", null, "sk-or-x"));
+    assertEquals("openrouter", t.provider());
+    assertEquals("anthropic/claude-haiku-4-5", t.model());
+    assertEquals(null, t.baseUrl(), "an override with its own provider carries its own endpoint");
+  }
+
+  @Test
+  void modelOnlyOverrideKeepsTheMainProviderAndEndpoint() {
+    // "same local ollama, smaller model" must not need the URL repeated
+    HermesProfiles.ModelTarget t = HermesProfiles.auxiliaryTarget(
+        "ollama", "qwen3:32b", "http://host.docker.internal:11434/v1",
+        new AuxiliaryModelSpec("", "qwen3:8b", null, null));
+    assertEquals("ollama", t.provider());
+    assertEquals("qwen3:8b", t.model());
+    assertEquals("http://host.docker.internal:11434/v1", t.baseUrl());
+  }
+
+  @Test
+  void overrideFlowsIntoTheAuxiliaryWritePlan() {
+    HermesProfiles.ModelTarget t = HermesProfiles.auxiliaryTarget(
+        "anthropic", "claude-opus-4-8", null,
+        new AuxiliaryModelSpec("openrouter", "anthropic/claude-haiku-4-5", null, null));
+    Map<String, String> e = auxEntries(t.provider(), t.model(), t.baseUrl());
+    assertEquals("openrouter", e.get("auxiliary.compression.provider"));
+    assertEquals("anthropic/claude-haiku-4-5", e.get("auxiliary.compression.model"));
+    // and the main model is untouched by the override
+    assertEquals("claude-opus-4-8", entries("anthropic", "claude-opus-4-8", null).get("model.default"));
   }
 
   // ── read-back parser: parseConfig ──────────────────────────────────────────
@@ -166,7 +279,7 @@ class HermesProfilesTest {
   @Test
   void mcpStartsUnknownCachesHandshakeFailureAndInvalidatesOnConfigChange() {
     DockerExecService dockerExec = mock(DockerExecService.class);
-    HermesProfiles liveProfiles = new HermesProfiles(dockerExec, new ObjectMapper());
+    HermesProfiles liveProfiles = new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor());
     Map<String, Object> server = new LinkedHashMap<>(Map.of(
         "url", "http://host.docker.internal:8050/mcp/sse",
         "transport", "sse",
@@ -212,7 +325,7 @@ class HermesProfilesTest {
             enabled: true
         """;
 
-    String disabled = profiles.setMcpServerEnabledConfig(
+    String disabled = EDITOR.setMcpServerEnabled(
         original, "/opt/data/profiles/ops/config.yaml", "reports", false);
     Map<String, Object> disabledServer = mcpServer(disabled, "reports");
     assertEquals(false, disabledServer.get("enabled"));
@@ -223,7 +336,7 @@ class HermesProfilesTest {
     assertEquals("retained", disabledServer.get("vendor_option"));
     assertEquals(false, yamlMap(disabled).get("telemetry"));
 
-    String reenabled = profiles.setMcpServerEnabledConfig(
+    String reenabled = EDITOR.setMcpServerEnabled(
         disabled, "/opt/data/profiles/ops/config.yaml", "reports", true);
     Map<String, Object> reenabledServer = mcpServer(reenabled, "reports");
     assertEquals(true, reenabledServer.get("enabled"));
@@ -237,7 +350,7 @@ class HermesProfilesTest {
   void sseTransportIsPersistedAndReadBackAsSse() {
     AddMcpServerRequest request = new AddMcpServerRequest(
         "events", "sse", "https://mcp.example.test/sse", null, null, true);
-    String config = profiles.addMcpServerConfig(
+    String config = EDITOR.addMcpServer(
         "model: nous/Hermes-4-405B\n", "/opt/data/config.yaml", request);
 
     Map<String, Object> root = yamlMap(config);
@@ -258,7 +371,7 @@ class HermesProfilesTest {
             enabled: false
             vendor_option: retained
         """;
-    String argsCleared = profiles.updateMcpServerConfig(
+    String argsCleared = EDITOR.updateMcpServer(
         stdio, "/opt/data/config.yaml", "tools",
         new AddMcpServerRequest("tools", "stdio", null, "uvx", "  ", null));
     Map<String, Object> cleared = mcpServer(argsCleared, "tools");
@@ -266,7 +379,7 @@ class HermesProfilesTest {
     assertEquals(false, cleared.get("enabled"), "an omitted enabled value preserves current state");
     assertEquals("retained", cleared.get("vendor_option"));
 
-    String switchedToSse = profiles.updateMcpServerConfig(
+    String switchedToSse = EDITOR.updateMcpServer(
         argsCleared, "/opt/data/config.yaml", "tools",
         new AddMcpServerRequest(
             "tools", "sse", "https://mcp.example.test/sse", null, null, null));
@@ -279,7 +392,7 @@ class HermesProfilesTest {
 
     network.put("headers", Map.of("Authorization", "Bearer secret"));
     String networkWithHeader = new Yaml().dump(yamlMapWithServer(switchedToSse, "tools", network));
-    String headersCleared = profiles.updateMcpServerConfig(
+    String headersCleared = EDITOR.updateMcpServer(
         networkWithHeader, "/opt/data/config.yaml", "tools",
         new AddMcpServerRequest(
             "tools", "sse", "https://mcp.example.test/sse", null, null, null, Map.of()));
@@ -289,7 +402,7 @@ class HermesProfilesTest {
 
     // Simulate an HTTP-only header configured outside Mission Control. Moving
     // to stdio must clear both the network endpoint and its credentials.
-    String switchedToStdio = profiles.updateMcpServerConfig(
+    String switchedToStdio = EDITOR.updateMcpServer(
         networkWithHeader, "/opt/data/config.yaml", "tools",
         new AddMcpServerRequest("tools", "stdio", null, "node", "server.js", null));
     Map<String, Object> command = mcpServer(switchedToStdio, "tools");
@@ -312,7 +425,7 @@ class HermesProfilesTest {
             transport: stdio
             command: occupied-command
         """;
-    String renamed = profiles.updateMcpServerConfig(
+    String renamed = EDITOR.updateMcpServer(
         config, "/opt/data/config.yaml", "old-name",
         new AddMcpServerRequest(
             "new-name", "http", "https://new.example.test/mcp", null, null, null));
@@ -323,7 +436,7 @@ class HermesProfilesTest {
     assertEquals("retained", mcpServer(renamed, "new-name").get("vendor_option"));
 
     DockerExecService dockerExec = mock(DockerExecService.class);
-    HermesProfiles liveProfiles = new HermesProfiles(dockerExec, new ObjectMapper());
+    HermesProfiles liveProfiles = new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor());
     when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, config, ""));
@@ -371,7 +484,7 @@ class HermesProfilesTest {
     when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class))).thenThrow(new ConflictException("container is not running"));
 
-    assertEquals(List.of(), new HermesProfiles(dockerExec, new ObjectMapper()).list("unix:///sock", "stopped"));
+    assertEquals(List.of(), new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor()).list("unix:///sock", "stopped"));
   }
 
   @SuppressWarnings("unchecked")

@@ -1,0 +1,18 @@
+# Context-test profile: no Docker daemon, no registry lookups, throwaway database.
+spring:
+  datasource:
+    url: jdbc:sqlite:file:context-test?mode=memory&cache=shared
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+  sql:
+    init:
+      mode: always
+
+mc:
+  data-mode: mock
+  registry-tags: false
+  docker-socket: unix:///var/run/docker.sock
+  mcp-stack-dir: ./target/test-mcp-stacks
+  secret-key: context-test-secret
+  allow-dev-key: true

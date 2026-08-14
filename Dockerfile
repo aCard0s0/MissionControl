@@ -15,7 +15,7 @@ WORKDIR /srv
 COPY applications/mission-control-server/pom.xml ./
 RUN mvn -q -B dependency:go-offline
 COPY applications/mission-control-server/src ./src
-COPY --from=fe-build /fe/dist/MissionControl/browser ./src/main/resources/static
+COPY --from=fe-build /fe/dist/mission-control/browser ./src/main/resources/static
 # the static config.js is a dev artifact — /config.js is served dynamically
 RUN rm -f ./src/main/resources/static/config.js && mvn -q -B package
 

@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.modelproviders;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.modelproviders.ModelProviderRepository.ProviderRow;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -35,7 +36,7 @@ public class ModelProviderService {
   private record Probe(String status, String version, String detail, long at) {}
 
   private final ModelProviderRepository repository;
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper;
   private final HttpClient http = HttpClient.newBuilder().connectTimeout(PROBE_TIMEOUT).build();
   private final Map<String, Probe> probeCache = new ConcurrentHashMap<>();
   // providerId -> model -> status; pulls survive only for the lifetime of the process
@@ -46,8 +47,9 @@ public class ModelProviderService {
     return thread;
   });
 
-  public ModelProviderService(ModelProviderRepository repository) {
+  public ModelProviderService(ModelProviderRepository repository, ObjectMapper objectMapper) {
     this.repository = repository;
+    this.objectMapper = objectMapper;
   }
 
   @jakarta.annotation.PreDestroy
@@ -65,13 +67,7 @@ public class ModelProviderService {
   }
 
   public ModelProviderDto add(String name, String url) {
-    String normalized = url.trim();
-    if (!normalized.matches("^https?://.+")) {
-      throw new IllegalArgumentException("provider url must look like http://host:port");
-    }
-    while (normalized.endsWith("/")) {
-      normalized = normalized.substring(0, normalized.length() - 1);
-    }
+    String normalized = normalizeProviderUrl(url);
     if (repository.urlExists(normalized)) {
       throw new IllegalArgumentException("a provider with this url already exists");
     }
@@ -90,19 +86,42 @@ public class ModelProviderService {
   public List<OllamaModelDto> models(String id) {
     ProviderRow row = require(id);
     String body = ollama(() -> get(row.url() + "/api/tags", TAGS_TIMEOUT));
-    List<OllamaModelDto> models = new ArrayList<>();
     try {
-      for (JsonNode node : objectMapper.readTree(body).path("models")) {
-        JsonNode details = node.path("details");
-        models.add(new OllamaModelDto(
-            node.path("name").asText(),
-            node.has("size") ? node.path("size").asLong() : null,
-            details.path("family").asText(null),
-            details.path("parameter_size").asText(null),
-            epochMs(node.path("modified_at").asText(null))));
-      }
+      return parseTags(objectMapper.readTree(body));
     } catch (Exception e) {
-      throw new RuntimeException("unexpected response from ollama /api/tags");
+      throw new UpstreamUnavailableException("unexpected response from ollama /api/tags");
+    }
+  }
+
+  /**
+   * The provider url as stored: scheme-checked and stripped of trailing slashes, so the
+   * same host typed two ways is one row rather than two.
+   *
+   * <p>Keeps throwing {@link IllegalArgumentException} — the exception handler maps that
+   * to 400, and a different type here would turn a typo into a server error.
+   */
+  static String normalizeProviderUrl(String url) {
+    String normalized = url.trim();
+    if (!normalized.matches("^https?://.+")) {
+      throw new IllegalArgumentException("provider url must look like http://host:port");
+    }
+    while (normalized.endsWith("/")) {
+      normalized = normalized.substring(0, normalized.length() - 1);
+    }
+    return normalized;
+  }
+
+  /** Ollama's {@code /api/tags} body. Every field but the name is optional. */
+  static List<OllamaModelDto> parseTags(JsonNode body) {
+    List<OllamaModelDto> models = new ArrayList<>();
+    for (JsonNode node : body.path("models")) {
+      JsonNode details = node.path("details");
+      models.add(new OllamaModelDto(
+          node.path("name").asText(),
+          node.has("size") ? node.path("size").asLong() : null,
+          details.path("family").asText(null),
+          details.path("parameter_size").asText(null),
+          epochMs(node.path("modified_at").asText(null))));
     }
     return models;
   }
@@ -171,7 +190,7 @@ public class ModelProviderService {
     try {
       HttpResponse<String> response = get(row.url() + "/api/version", PROBE_TIMEOUT);
       if (response.statusCode() != 200) {
-        throw new RuntimeException("ollama returned HTTP " + response.statusCode());
+        throw new UpstreamUnavailableException("ollama returned HTTP " + response.statusCode());
       }
       JsonNode body = objectMapper.readTree(response.body());
       fresh = new Probe("connected", body.path("version").asText(null), null, System.currentTimeMillis());
@@ -194,19 +213,20 @@ public class ModelProviderService {
     HttpResponse<String> send() throws Exception;
   }
 
-  /** Synchronous ollama calls surface as a short RuntimeException (503 via handler). */
+  /** An unreachable or unhappy ollama is a dependency failure, not a Mission Control bug: 503. */
   private String ollama(OllamaCall call) {
     HttpResponse<String> response;
     try {
       response = call.send();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new RuntimeException("ollama call interrupted");
+      throw new UpstreamUnavailableException("ollama call interrupted");
     } catch (Exception e) {
-      throw new RuntimeException("ollama not reachable: " + brief(e.getMessage()));
+      throw new UpstreamUnavailableException("ollama not reachable: " + brief(e.getMessage()));
     }
     if (response.statusCode() != 200) {
-      throw new RuntimeException("ollama returned HTTP " + response.statusCode() + ": " + brief(response.body()));
+      throw new UpstreamUnavailableException(
+          "ollama returned HTTP " + response.statusCode() + ": " + brief(response.body()));
     }
     return response.body();
   }
@@ -217,7 +237,7 @@ public class ModelProviderService {
     return firstLine.length() > 200 ? firstLine.substring(0, 200) : firstLine;
   }
 
-  private static Long epochMs(String modifiedAt) {
+  static Long epochMs(String modifiedAt) {
     if (modifiedAt == null || modifiedAt.isBlank()) return null;
     try {
       return OffsetDateTime.parse(modifiedAt).toInstant().toEpochMilli();

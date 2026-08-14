@@ -137,6 +137,30 @@ describe('HermesStore mutation results', () => {
     expect(store.agentById(agent.id)?.mcp.filter(server => server.name === 'browser-tools')).toHaveLength(1);
   });
 
+  it('opens the terminal with no target, as the setup hints have always done', () => {
+    const store = new HermesStore();
+
+    expect(store.terminalRequest()).toBeNull();
+    store.openTerminal();
+    expect(store.terminalRequest()).toEqual({ seq: 1 });
+  });
+
+  it('carries an agent target through to the panel, with a fresh seq each click', () => {
+    const store = new HermesStore();
+    const target = {
+      hostId: 'dh-local', containerId: 'c-prod', label: 'ops-bot',
+      agentKey: 'c-prod--ops-bot', command: 'hermes -p ops-bot',
+    };
+
+    store.openTerminal(target);
+    expect(store.terminalRequest()).toEqual({ ...target, seq: 1 });
+
+    // a repeat click on the same agent must still read as a new request, or the
+    // panel's seq guard would swallow it and never focus the tab
+    store.openTerminal(target);
+    expect(store.terminalRequest()).toEqual({ ...target, seq: 2 });
+  });
+
   it('preserves named volumes as retained data when a managed server is removed', async () => {
     const store = new HermesStore();
     const postgres = store.mcpServers().find(server => server.id === 'mcp-postgres')!;
@@ -146,5 +170,104 @@ describe('HermesStore mutation results', () => {
     expect(store.retainedMcpResources()).toEqual(expect.arrayContaining([
       expect.objectContaining({ serverId: postgres.id, type: 'volume', name: 'postgres-data' }),
     ]));
+  });
+
+  it('follows the selection onto the id a container update mints', async () => {
+    const store = new HermesStore();
+    const target = store.containers()[0];
+    store.selectContainer(target.id);
+    (store as any).mock = false;
+    (store as any).api = {
+      updateContainer: vi.fn().mockResolvedValue({ id: 'c-updated' }),
+      containers: vi.fn().mockResolvedValue([{
+        id: 'c-updated', shortId: 'aa11bb2', name: target.name, hostId: target.hostId,
+        status: 'running', image: target.image, version: 'v2026.8.3',
+        startedAt: 1, sizeRootFsGb: 1, profiles: [],
+      }]),
+      logs: vi.fn().mockResolvedValue([]),        // selectContainer polls logs in live mode
+      imageTags: vi.fn().mockResolvedValue({ repository: target.image, tags: [] }),
+    };
+
+    expect(await store.updateContainer(target.id, 'v2026.8.3')).toBe('c-updated');
+    expect((store as any).api.updateContainer)
+      .toHaveBeenCalledWith(target.hostId, target.id, 'v2026.8.3');
+    expect(store.selectedContainerId()).toBe('c-updated');
+    expect(store.selectedContainer()?.version).toBe('v2026.8.3');
+  });
+
+  it('reports a failed update and keeps the container it could not replace', async () => {
+    const store = new HermesStore();
+    const target = store.containers()[0];
+    store.selectContainer(target.id);
+    (store as any).mock = false;
+    (store as any).api = {
+      updateContainer: vi.fn().mockRejectedValue(new Error('image pull timed out')),
+      containers: vi.fn().mockRejectedValue(new Error('offline')),
+    };
+
+    expect(await store.updateContainer(target.id, 'v2026.8.3')).toBe('');
+    expect(store.containers().some(c => c.id === target.id)).toBe(true);
+    expect(store.selectedContainerId()).toBe(target.id);
+    expect(store.liveError()).toBe('update failed: image pull timed out');
+  });
+
+  it('carries profiles and the selection across the id change in mock mode', async () => {
+    const store = new HermesStore();
+    const target = store.containers()[0];
+    store.selectContainer(target.id);
+    const profiles = store.containerAgents().length;
+
+    const newId = await store.updateContainer(target.id, 'v2026.8.3');
+
+    expect(newId).not.toBe(target.id);
+    expect(store.containers()).toHaveLength(3);
+    expect(store.containers().find(c => c.id === newId)).toMatchObject({
+      name: target.name, version: 'v2026.8.3', status: 'running',
+    });
+    expect(store.selectedContainerId()).toBe(newId);
+    expect(store.containerAgents()).toHaveLength(profiles);
+  });
+
+  it('refuses to update a container onto the tag it already runs', async () => {
+    const store = new HermesStore();
+    const target = store.containers()[0];
+
+    expect(await store.updateContainer(target.id, target.version)).toBe('');
+    expect(store.containers().some(c => c.id === target.id)).toBe(true);
+  });
+
+  it('caches the image catalog per host and refetches only when forced', async () => {
+    const store = new HermesStore();
+    const imageTags = vi.fn().mockResolvedValue({
+      repository: 'nousresearch/hermes-agent',
+      tags: ['v2026.8.3', 'v2026.7.20'],
+      entries: [{ tag: 'v2026.8.3', pulled: false }, { tag: 'v2026.7.20', pulled: true }],
+      registryStatus: 'ok',
+    });
+    (store as any).mock = false;
+    (store as any).api = { imageTags };
+
+    await store.refreshImageCatalog('dh-local');
+    await store.refreshImageCatalog('dh-local');
+    expect(imageTags).toHaveBeenCalledTimes(1);
+    expect(store.imageCatalog()['dh-local'].tags).toEqual([
+      { tag: 'v2026.8.3', pulled: false }, { tag: 'v2026.7.20', pulled: true },
+    ]);
+
+    await store.refreshImageCatalog('dh-local', true);
+    expect(imageTags).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a backend without entries as reporting only pulled tags', async () => {
+    const store = new HermesStore();
+    (store as any).mock = false;
+    (store as any).api = {
+      imageTags: vi.fn().mockResolvedValue({
+        repository: 'nousresearch/hermes-agent', tags: ['v2026.7.20'],
+      }),
+    };
+
+    await store.refreshImageCatalog('dh-local');
+    expect(store.imageCatalog()['dh-local'].tags).toEqual([{ tag: 'v2026.7.20', pulled: true }]);
   });
 });

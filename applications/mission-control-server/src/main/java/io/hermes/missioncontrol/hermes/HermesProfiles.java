@@ -24,15 +24,34 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.Yaml;
 
 @Service
 public class HermesProfiles {
 
+  private static final Logger log = LoggerFactory.getLogger(HermesProfiles.class);
+
   private static final String HERMES_HOME = "/opt/data";
   private static final String PROFILES_DIR = "/opt/data/profiles";
   private static final String PLATFORM_CLI = "cli";
+  /** The auxiliary side-task slots hermes seeds into {@code config.yaml}. Each one
+   *  ships as {@code provider: auto}, and hermes' auto chain resolves that to the
+   *  profile's own {@code model.provider} / {@code model.default} before it tries
+   *  OpenRouter, Nous or a custom endpoint — so on a profile whose model map is
+   *  empty, every task falls through to "no provider available" and compression,
+   *  summarization and memory flush stop working. Pinning them to the same
+   *  provider/model the profile already uses keeps them resolvable on their own.
+   *
+   *  <p>{@code vision} is deliberately excluded: its chain skips a main model that
+   *  is known to be text-only and falls back to OpenRouter/Nous, so pinning would
+   *  aim image payloads at a model that may reject them. */
+  private static final List<String> AUXILIARY_TASKS = List.of(
+      "approval", "compression", "curator", "kanban_decomposer", "mcp", "monitor",
+      "profile_describer", "skills_hub", "title_generation", "triage_specifier",
+      "tts_audio_tags", "web_extract");
   private static final Pattern PROFILE_NAME = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_.-]*");
   private static final Pattern ANSI = Pattern.compile("\\u001B\\[[;\\d]*m");
   private static final Pattern TOOL_COUNT = Pattern.compile("(?i)\\b(\\d+)\\s+tools?\\b");
@@ -48,11 +67,14 @@ public class HermesProfiles {
   private final DockerExecService dockerExec;
   private final Yaml yaml = new Yaml();
   private final ObjectMapper objectMapper;
+  private final HermesConfigEditor config;
   private final ConcurrentMap<McpCacheKey, CachedMcpProbe> mcpProbeCache = new ConcurrentHashMap<>();
 
-  public HermesProfiles(DockerExecService dockerExec, ObjectMapper objectMapper) {
+  public HermesProfiles(
+      DockerExecService dockerExec, ObjectMapper objectMapper, HermesConfigEditor config) {
     this.dockerExec = dockerExec;
     this.objectMapper = objectMapper;
+    this.config = config;
   }
 
   public List<AgentProfileDto> list(String url, String containerId) {
@@ -93,12 +115,17 @@ public class HermesProfiles {
     try {
       exec(url, request.containerId(), command);
       created = true;
-      writeModelConfig(url, request.containerId(), profileName, request.provider(), request.model(), request.baseUrl());
+      ModelTarget auxiliary = auxiliaryTarget(
+          request.provider(), request.model(), request.baseUrl(), request.auxiliary());
+      writeModelConfig(url, request.containerId(), profileName,
+          request.provider(), request.model(), request.baseUrl(), auxiliary);
+      assertModelConfigured(url, request.containerId(), profileName);
       seedEnvIfMissing(url, request.containerId(), profileName);
       String envKey = apiKeyVar(normalizeProvider(request.provider()));
       if (envKey != null && request.apiKey() != null && !request.apiKey().isBlank()) {
         writeEnvVar(url, request.containerId(), profileName, envKey, request.apiKey());
       }
+      writeAuxiliaryApiKey(url, request.containerId(), profileName, auxiliary, request.auxiliary());
       return profileName;
     } catch (RuntimeException failure) {
       if (created) {
@@ -201,10 +228,10 @@ public class HermesProfiles {
     }
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> skills = asMutableMap(root.get("skills"));
+    Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
+    Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
     root.put("skills", skills);
-    Map<Object, Object> platformDisabled = asMutableMap(skills.get("platform_disabled"));
+    Map<Object, Object> platformDisabled = config.asMutableMap(skills.get("platform_disabled"));
     skills.put("platform_disabled", platformDisabled);
     List<Object> cliDisabled = asMutableList(platformDisabled.get(PLATFORM_CLI));
     platformDisabled.put(PLATFORM_CLI, cliDisabled);
@@ -302,8 +329,8 @@ public class HermesProfiles {
   public AgentProfileDto addMcpServer(String url, String containerId, String profileName, AddMcpServerRequest request) {
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
-    String name = mcpServerName(request.name());
-    String updatedConfig = addMcpServerConfig(configYaml, configPath, request);
+    String name = config.serverName(request.name());
+    String updatedConfig = config.addMcpServer(configYaml, configPath, request);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
     writeFileAtomically(url, containerId, configPath, updatedConfig);
     return readProfile(url, containerId, profileName);
@@ -318,11 +345,11 @@ public class HermesProfiles {
       String profileName,
       String serverName,
       AddMcpServerRequest request) {
-    String currentName = mcpServerName(serverName);
-    String newName = mcpServerName(request.name());
+    String currentName = config.serverName(serverName);
+    String newName = config.serverName(request.name());
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
-    String updatedConfig = updateMcpServerConfig(configYaml, configPath, currentName, request);
+    String updatedConfig = config.updateMcpServer(configYaml, configPath, currentName, request);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, currentName));
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, newName));
     writeFileAtomically(url, containerId, configPath, updatedConfig);
@@ -338,186 +365,22 @@ public class HermesProfiles {
       String profileName,
       String serverName,
       boolean enabled) {
-    String name = mcpServerName(serverName);
+    String name = config.serverName(serverName);
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
-    String updatedConfig = setMcpServerEnabledConfig(configYaml, configPath, name, enabled);
+    String updatedConfig = config.setMcpServerEnabled(configYaml, configPath, name, enabled);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, name));
     writeFileAtomically(url, containerId, configPath, updatedConfig);
     return readProfile(url, containerId, profileName);
   }
 
-  /** Pure config transformation used by the create/upsert endpoint and tests. */
-  String addMcpServerConfig(
-      String configYaml, String configPath, AddMcpServerRequest request) {
-    String name = mcpServerName(request.name());
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> servers = mcpServersForEdit(root);
-    Object existing = servers.get(name);
-    if (existing != null && !(existing instanceof Map<?, ?>)) {
-      throw new IllegalStateException("refusing to overwrite malformed MCP server: " + name);
-    }
-    Map<Object, Object> server = asMutableMap(existing);
-    applyMcpDefinition(server, request);
-    servers.put(name, server);
-    root.put("mcp_servers", servers);
-    return yaml.dump(root);
-  }
-
-  /** Pure one-step update/rename transformation used to prove collision
-   * behavior without relying on a live Docker container. */
-  String updateMcpServerConfig(
-      String configYaml,
-      String configPath,
-      String serverName,
-      AddMcpServerRequest request) {
-    String currentName = mcpServerName(serverName);
-    String newName = mcpServerName(request.name());
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> servers = mcpServersForEdit(root);
-    if (!servers.containsKey(currentName)) {
-      throw new NoSuchElementException("unknown MCP server: " + currentName);
-    }
-    if (!currentName.equals(newName) && servers.containsKey(newName)) {
-      throw new ResourceConflictException("an MCP server named '" + newName + "' already exists");
-    }
-    Object existing = servers.get(currentName);
-    if (!(existing instanceof Map<?, ?>)) {
-      throw new IllegalStateException("refusing to rewrite malformed MCP server: " + currentName);
-    }
-    Map<Object, Object> server = asMutableMap(existing);
-    applyMcpDefinition(server, request);
-    if (!currentName.equals(newName)) servers.remove(currentName);
-    servers.put(newName, server);
-    root.put("mcp_servers", servers);
-    return yaml.dump(root);
-  }
-
-  String setMcpServerEnabledConfig(
-      String configYaml, String configPath, String serverName, boolean enabled) {
-    String name = mcpServerName(serverName);
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> servers = mcpServersForEdit(root);
-    Object existing = servers.get(name);
-    if (!(existing instanceof Map<?, ?>)) {
-      if (existing == null) throw new NoSuchElementException("unknown MCP server: " + name);
-      throw new IllegalStateException("refusing to rewrite malformed MCP server: " + name);
-    }
-    Map<Object, Object> server = asMutableMap(existing);
-    server.put("enabled", enabled);
-    servers.put(name, server);
-    root.put("mcp_servers", servers);
-    return yaml.dump(root);
-  }
-
-  private Map<Object, Object> mcpServersForEdit(Map<Object, Object> root) {
-    Object node = root.get("mcp_servers");
-    if (node != null && !(node instanceof Map<?, ?>)) {
-      throw new IllegalStateException("refusing to rewrite malformed mcp_servers config");
-    }
-    return asMutableMap(node);
-  }
-
-  private void applyMcpDefinition(
-      Map<Object, Object> server, AddMcpServerRequest request) {
-    String transport = request.transport() == null
-        ? ""
-        : request.transport().trim().toLowerCase(Locale.ROOT);
-    // Persist the explicit value. In particular, SSE cannot be inferred from a
-    // URL and previously came back from the API incorrectly as HTTP.
-    server.put("transport", transport);
-    if ("stdio".equals(transport)) {
-      String command = request.command();
-      if (command == null || command.isBlank()) throw new IllegalArgumentException("missing command");
-      server.put("command", command.trim());
-      String args = request.args();
-      if (args == null || args.isBlank()) {
-        server.remove("args");
-      } else {
-        server.put("args", splitArgs(args.trim()));
-      }
-      if (request.environment() != null) {
-        Map<String, String> environment = validatedMcpEnvironment(request.environment());
-        if (environment.isEmpty()) server.remove("env"); else server.put("env", environment);
-      }
-      // These keys belong to network transports. Clearing them avoids reviving
-      // stale endpoints or credentials after a later transport change.
-      server.remove("url");
-      server.remove("headers");
-    } else if ("http".equals(transport) || "sse".equals(transport)) {
-      String urlValue = request.url();
-      if (urlValue == null || urlValue.isBlank()) throw new IllegalArgumentException("missing url");
-      server.put("url", urlValue.trim());
-      server.remove("command");
-      server.remove("args");
-      server.remove("env");
-      // An omitted header map means the caller did not edit this advanced
-      // field. An explicit empty map clears it without disturbing other,
-      // genuinely unmodeled Hermes options.
-      if (request.headers() != null) {
-        Map<String, String> headers = validatedMcpHeaders(request.headers());
-        if (headers.isEmpty()) server.remove("headers"); else server.put("headers", headers);
-      }
-    } else {
-      throw new IllegalArgumentException("invalid transport");
-    }
-
-    Boolean enabled = request.enabled();
-    if (enabled != null) {
-      server.put("enabled", enabled);
-    } else if (!server.containsKey("enabled")) {
-      server.put("enabled", true);
-    }
-  }
-
-  private String mcpServerName(String value) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException("missing server name");
-    return value.trim();
-  }
-
-  private Map<String, String> validatedMcpHeaders(Map<String, String> input) {
-    Map<String, String> result = new java.util.LinkedHashMap<>();
-    for (Map.Entry<String, String> entry : input.entrySet()) {
-      String name = entry.getKey() == null ? "" : entry.getKey().trim();
-      String value = entry.getValue();
-      if (name.isBlank()) throw new IllegalArgumentException("MCP header name must not be blank");
-      if (value == null) throw new IllegalArgumentException("missing value for MCP header: " + name);
-      if (name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0
-          || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
-        throw new IllegalArgumentException("MCP headers must not contain line breaks");
-      }
-      result.put(name, value);
-    }
-    return result;
-  }
-
-  private Map<String, String> validatedMcpEnvironment(Map<String, String> input) {
-    Map<String, String> result = new java.util.LinkedHashMap<>();
-    for (Map.Entry<String, String> entry : input.entrySet()) {
-      String name = entry.getKey() == null ? "" : entry.getKey().trim();
-      String value = entry.getValue();
-      if (!name.matches("[A-Za-z_][A-Za-z0-9_]{0,127}")) {
-        throw new IllegalArgumentException("invalid MCP environment key: " + name);
-      }
-      if (value == null) throw new IllegalArgumentException("missing value for MCP environment: " + name);
-      if (value.indexOf('\0') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
-        throw new IllegalArgumentException("MCP environment values must not contain NUL or line breaks");
-      }
-      result.put(name, value);
-    }
-    return result;
-  }
-
   public AgentProfileDto removeMcpServer(String url, String containerId, String profileName, String serverName) {
-    serverName = mcpServerName(serverName);
+    serverName = config.serverName(serverName);
     String configPath = profileDir(profileName) + "/config.yaml";
     String configYaml = readFile(url, containerId, configPath);
-    Map<Object, Object> root = parseConfigForEdit(configYaml, configPath);
-    Map<Object, Object> servers = mcpServersForEdit(root);
-    servers.remove(serverName);
-    root.put("mcp_servers", servers);
+    String updatedConfig = config.removeMcpServer(configYaml, configPath, serverName);
     mcpProbeCache.remove(new McpCacheKey(url, containerId, profileName, serverName));
-    writeFileAtomically(url, containerId, configPath, yaml.dump(root));
+    writeFileAtomically(url, containerId, configPath, updatedConfig);
     return readProfile(url, containerId, profileName);
   }
 
@@ -627,6 +490,8 @@ public class HermesProfiles {
       }
       return out;
     } catch (Exception e) {
+      // an empty session list and an unreadable one look identical to the operator
+      log.warn("could not parse the session rows returned by the profile state db: {}", e.toString());
       return List.of();
     }
   }
@@ -737,9 +602,104 @@ public class HermesProfiles {
    *  (`hermes config set` mutates one key and preserves the rest of the map, so a
    *  full reset is the only way to guarantee no leak.) */
   private void writeModelConfig(
-      String url, String containerId, String name, String provider, String model, String baseUrl) {
+      String url, String containerId, String name,
+      String provider, String model, String baseUrl, ModelTarget auxiliary) {
     for (String[] kv : modelConfigEntries(provider, model, baseUrl)) {
       setConfig(url, containerId, name, kv[0], kv[1]);
+    }
+    for (String[] kv : auxiliaryConfigEntries(
+        auxiliary.provider(), auxiliary.model(), auxiliary.baseUrl())) {
+      setConfig(url, containerId, name, kv[0], kv[1]);
+    }
+  }
+
+  /** A provider/model/endpoint triple — what {@code model.*} and each
+   *  {@code auxiliary.<task>.*} block each resolve to. */
+  record ModelTarget(String provider, String model, String baseUrl) {}
+
+  /** Resolves which backend the auxiliary tasks get pinned to.
+   *
+   *  <p>The default is the profile's own main model: side tasks that silently ran
+   *  on a different model than the conversation would be a surprise, and hermes'
+   *  own {@code auto} means exactly this. An override is honoured only when it
+   *  names a model — a spec carrying just a provider has nothing to pin to.
+   *
+   *  <p>The endpoint follows the provider: an override that names its own provider
+   *  brings its own {@code base_url} (or none), while one that only swaps the model
+   *  inherits the main endpoint, so "same local ollama, smaller model" needs no
+   *  repeated URL. */
+  static ModelTarget auxiliaryTarget(
+      String provider, String model, String baseUrl, AuxiliaryModelSpec spec) {
+    if (spec == null || isBlank(spec.model())) {
+      return new ModelTarget(provider, model, baseUrl);
+    }
+    boolean ownProvider = !isBlank(spec.provider());
+    String auxProvider = ownProvider ? spec.provider() : provider;
+    String auxBaseUrl = !isBlank(spec.baseUrl()) ? spec.baseUrl() : (ownProvider ? null : baseUrl);
+    return new ModelTarget(auxProvider, spec.model().trim(), auxBaseUrl);
+  }
+
+  private static boolean isBlank(String value) {
+    return value == null || value.isBlank();
+  }
+
+  /** Writes the override provider's API key into the profile's .env. Only runs when
+   *  the override actually introduces a provider — a same-provider model swap is
+   *  already covered by the main key, and re-writing it would let a blank field in
+   *  the create form clobber a working one. */
+  private void writeAuxiliaryApiKey(
+      String url, String containerId, String name, ModelTarget auxiliary, AuxiliaryModelSpec spec) {
+    if (spec == null || isBlank(spec.apiKey()) || isBlank(spec.provider())) return;
+    String envKey = apiKeyVar(normalizeProvider(auxiliary.provider()));
+    if (envKey == null) return;
+    writeEnvVar(url, containerId, name, envKey, spec.apiKey());
+  }
+
+  /** Pure planner for the {@code auxiliary.*} half of {@link #writeModelConfig}: the
+   *  {@code (key, value)} sets that pin every task in {@link #AUXILIARY_TASKS} to the
+   *  same backend the profile's main model uses. Written from the same seam as
+   *  {@code model.*} so the two can never drift — a model change rewrites both.
+   *
+   *  <p>Returns an empty plan when there is nothing concrete to pin to (blank model,
+   *  or a blank/auto provider with no custom endpoint); leaving those tasks on
+   *  {@code auto} is strictly better than pinning them at a provider that does not
+   *  resolve. A custom endpoint pins {@code provider: custom} plus its
+   *  {@code base_url}, matching how hermes rewrites aliased providers to custom when
+   *  a task carries an endpoint of its own. */
+  static List<String[]> auxiliaryConfigEntries(String provider, String model, String baseUrl) {
+    List<String[]> entries = new ArrayList<>();
+    String pinnedModel = model == null ? "" : model.trim();
+    if (pinnedModel.isBlank()) return entries;
+    boolean custom = baseUrl != null && !baseUrl.isBlank();
+    String pinnedProvider = custom ? "custom" : normalizeProvider(provider);
+    if (!custom && (pinnedProvider.isBlank() || "auto".equals(pinnedProvider))) return entries;
+    for (String task : AUXILIARY_TASKS) {
+      String prefix = "auxiliary." + task + ".";
+      entries.add(new String[] {prefix + "provider", pinnedProvider});
+      entries.add(new String[] {prefix + "model", pinnedModel});
+      if (custom) entries.add(new String[] {prefix + "base_url", baseUrl});
+    }
+    return entries;
+  }
+
+  /** Fails the create when the profile ended up without a usable model.
+   *
+   *  <p>{@code hermes profile create} never seeds {@code config.yaml} — it bootstraps
+   *  dirs, {@code .env} and {@code SOUL.md}, and only copies a config under
+   *  {@code --clone}. The file exists at all because the {@code config set} calls above
+   *  bring it into existence, so a write that silently no-ops leaves a profile whose
+   *  auxiliary chain has nothing to resolve to and whose gateway logs
+   *  "no provider available ... compression, summarization, and memory flush will not
+   *  work". Throwing here lets the caller's rollback drop the half-built profile
+   *  instead of handing back an agent that degrades on first long session. */
+  private void assertModelConfigured(String url, String containerId, String name) {
+    String configPath = profileDir(name) + "/config.yaml";
+    ConfigInfo info = parseConfig(parseYamlMap(readFile(url, containerId, configPath)));
+    if (info.model().isBlank()) {
+      throw new IllegalStateException(
+          "profile '" + name + "' has no model in " + configPath
+              + " — auxiliary tasks (compression, summarization, memory flush)"
+              + " would have no provider to resolve to");
     }
   }
 
@@ -855,19 +815,6 @@ public class HermesProfiles {
     } catch (Exception ignored) {
       return Map.of();
     }
-  }
-
-  /** Read-for-edit variant: a config we cannot parse must abort the edit —
-   *  falling back to an empty map would rewrite the file and wipe it. */
-  private Map<Object, Object> parseConfigForEdit(String yamlText, String configPath) {
-    if (yamlText == null || yamlText.isBlank()) return new java.util.LinkedHashMap<>();
-    try {
-      Object loaded = yaml.load(yamlText);
-      if (loaded instanceof Map<?, ?> map) return new java.util.LinkedHashMap<>(map);
-    } catch (Exception e) {
-      throw new IllegalStateException("refusing to rewrite unparseable " + configPath, e);
-    }
-    throw new IllegalStateException("refusing to rewrite unparseable " + configPath);
   }
 
   ConfigInfo parseConfig(Map<?, ?> map) {
@@ -997,34 +944,6 @@ public class HermesProfiles {
         if (!s.isBlank()) out.add(s);
       }
     }
-  }
-
-  private Map<Object, Object> asMutableMap(Object node) {
-    if (node instanceof Map<?, ?> m) {
-      return new java.util.LinkedHashMap<>(m);
-    }
-    return new java.util.LinkedHashMap<>();
-  }
-
-  /** Shell-style tokenizer so quoted MCP args keep their internal spaces. */
-  private List<String> splitArgs(String args) {
-    List<String> out = new ArrayList<>();
-    StringBuilder cur = new StringBuilder();
-    char quote = 0;
-    for (int i = 0; i < args.length(); i++) {
-      char c = args.charAt(i);
-      if (quote != 0) {
-        if (c == quote) quote = 0; else cur.append(c);
-      } else if (c == '\'' || c == '"') {
-        quote = c;
-      } else if (Character.isWhitespace(c)) {
-        if (cur.length() > 0) { out.add(cur.toString()); cur.setLength(0); }
-      } else {
-        cur.append(c);
-      }
-    }
-    if (cur.length() > 0) out.add(cur.toString());
-    return out;
   }
 
   private List<Object> asMutableList(Object node) {
@@ -1213,7 +1132,8 @@ public class HermesProfiles {
         result.add(new IntegrationDto(kind, status, detail));
       }
       return result;
-    } catch (Exception ignored) {
+    } catch (Exception e) {
+      log.warn("could not read gateway integrations: {}", e.toString());
       return List.of();
     }
   }

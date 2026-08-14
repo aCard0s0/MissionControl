@@ -105,9 +105,9 @@ public class AgentMcpCatalogService {
   }
 
   public void deleteAgentLinks(String hostId, String containerId, String profile) {
-    for (AgentMcpLink link : links.list(hostId, containerId, profile)) {
-      links.delete(hostId, containerId, profile, link.alias());
-    }
+    // one statement rather than one per alias: a failure partway through the old loop
+    // left the profile holding some of its links and not others
+    links.deleteByAgent(hostId, containerId, profile);
   }
 
   /**

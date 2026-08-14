@@ -281,14 +281,10 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   /** Reaper tick: ping each live session and reap the stale ones. */
   private void sweep() {
     long now = System.currentTimeMillis();
-    long idle = props.idleTimeout().toMillis();
-    long life = props.sessionMaxLifetime().toMillis();
-    long pong = props.pongTimeout().toMillis();
     for (Shell shell : shells.values()) {   // ConcurrentHashMap iterator is weakly consistent — safe
       try {
-        if (now - shell.createdAtMs > life) { reap(shell, "max-lifetime"); continue; }
-        if (now - shell.lastActivityMs > idle) { reap(shell, "idle"); continue; }
-        if (now - shell.lastPongMs > pong) { reap(shell, "pong-timeout"); continue; }
+        String reason = reapReason(now, shell.createdAtMs, shell.lastActivityMs, shell.lastPongMs, props);
+        if (reason != null) { reap(shell, reason); continue; }
         shell.sender.sendMessage(new PingMessage());   // serialized by the decorator
       } catch (Exception e) {
         reap(shell, "ping-failed");   // send threw → socket is gone
@@ -297,6 +293,23 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
     if (log.isDebugEnabled()) {
       log.debug("terminal sweep: {} live session(s), global slot count {}", shells.size(), globalCount.get());
     }
+  }
+
+  /**
+   * Why this session should be reaped, or null to keep it. Pulled out of {@link #sweep} so
+   * the policy can be checked without a scheduler, a live clock and a websocket: an
+   * off-by-one on any of these bounds leaks the exec threads the limits exist to contain.
+   *
+   * <p>Order matters — the ceiling wins over idleness, and idleness over a missing pong —
+   * so the close reason the client sees names the actual cause. {@code "ping-failed"} is
+   * not decided here; it is only known once the send throws.
+   */
+  static String reapReason(
+      long now, long createdAtMs, long lastActivityMs, long lastPongMs, TerminalProperties props) {
+    if (now - createdAtMs > props.sessionMaxLifetime().toMillis()) return "max-lifetime";
+    if (now - lastActivityMs > props.idleTimeout().toMillis()) return "idle";
+    if (now - lastPongMs > props.pongTimeout().toMillis()) return "pong-timeout";
+    return null;
   }
 
   private void reap(Shell shell, String reason) {

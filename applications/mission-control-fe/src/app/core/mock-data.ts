@@ -140,10 +140,20 @@ export const seedMcpCatalogServers = (): McpCatalogServer[] => {
   ];
 };
 
+/**
+ * Registry view of the Hermes image in mock mode. Deliberately ahead of the
+ * seeded containers so the update affordance is demonstrable without a daemon.
+ * v2026.8.4-rc1 is here on purpose: pre-releases are never offered as targets.
+ */
+export const seedImageTags = (): string[] => [
+  'latest', 'main', 'v2026.8.4-rc1', 'v2026.8.3', 'v2026.7.30',
+  'v2026.7.20', 'v2026.7.7.2', 'v2026.7.7', 'v2026.7.1',
+];
+
 export const seedContainers = (): HermesContainer[] => [
   {
     id: 'c-prod', name: 'hermes-prod', shortId: 'f3a91c2', hostId: 'dh-local', status: 'running',
-    image: 'nousresearch/hermes-agent', version: 'v0.16.0',
+    image: 'nousresearch/hermes-agent', version: 'v2026.7.20',
     startedAt: NOW - 14 * DAY - 6 * HOUR,
     cpu: 23, ram: 1843, ramTotal: 4096, disk: 18.4, diskTotal: 60,
     netIn: 42, netOut: 18,
@@ -151,7 +161,7 @@ export const seedContainers = (): HermesContainer[] => [
   },
   {
     id: 'c-edge', name: 'hermes-edge', shortId: '7b04e9d', hostId: 'dh-local', status: 'unhealthy',
-    image: 'nousresearch/hermes-agent', version: 'v0.15.2',
+    image: 'nousresearch/hermes-agent', version: 'v2026.7.7.2',
     startedAt: NOW - 2 * DAY - 3 * HOUR,
     cpu: 87, ram: 3712, ramTotal: 4096, disk: 31.2, diskTotal: 40,
     netIn: 8, netOut: 3,
@@ -159,7 +169,7 @@ export const seedContainers = (): HermesContainer[] => [
   },
   {
     id: 'c-lab', name: 'hermes-lab', shortId: 'a1c5570', hostId: 'dh-local', status: 'stopped',
-    image: 'nousresearch/hermes-agent', version: 'v0.16.0',
+    image: 'nousresearch/hermes-agent', version: 'v2026.7.20',
     startedAt: null,
     cpu: 0, ram: 0, ramTotal: 2048, disk: 6.1, diskTotal: 20,
     netIn: 0, netOut: 0,

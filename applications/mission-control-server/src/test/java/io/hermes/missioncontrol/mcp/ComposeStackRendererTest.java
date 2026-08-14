@@ -45,6 +45,21 @@ class ComposeStackRendererTest {
   }
 
   @Test
+  void entrypointAndCommandRenderAsListsWithQuotesEscaped() {
+    StoredConfig config = new StoredConfig(
+        "sse", null, "example/mcp:latest", null,
+        List.of("python", "-c"), List.of("uvicorn.run(host='0.0.0.0')"), null, List.of(),
+        1103, null, "/sse", null, List.of(), List.of(), List.of(), null, List.of());
+
+    String yaml = new ComposeStackRenderer().render(List.of(new ComposeStackRenderer.Deployment(
+        "mcp-1", "postgres-mcp", config, Map.of(), Map.of()))).yaml();
+
+    assertTrue(yaml.contains("    entrypoint:\n      - 'python'\n      - '-c'\n"));
+    // Single quotes inside the boot command must survive as the YAML '' escape.
+    assertTrue(yaml.contains("    command:\n      - 'uvicorn.run(host=''0.0.0.0'')'\n"));
+  }
+
+  @Test
   void emptyStackIsStillValidStructuredYaml() {
     String yaml = new ComposeStackRenderer().render(List.of()).yaml();
     assertTrue(yaml.startsWith("services: {}"));

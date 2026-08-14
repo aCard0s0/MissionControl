@@ -25,33 +25,44 @@
 
 <div class="grid" data-reveal>
   @for (a of store.containerAgents(); track a.id) {
-    <a class="panel card" [routerLink]="['/agents', a.id]">
-      <div class="panel-h">
-        <mc-status [status]="a.state" [live]="a.state === 'active'" />
-        <span class="spacer"></span>
-        <span class="faint">{{ ago(a.lastActive) }}</span>
-      </div>
-      <div class="panel-b">
-        <div class="glyph mono" [class.dim-glyph]="a.state === 'dormant'">{{ a.name.slice(0, 2).toUpperCase() }}</div>
-        <h3 class="mono">{{ a.name }}</h3>
-        <div class="role dim">{{ a.role }}</div>
-        <div class="model mono faint">{{ a.provider }} / {{ a.model }}</div>
-
-        <div class="stat-row mono">
-          <div><span class="v">{{ a.msgsToday }}</span><span class="k faint">msgs</span></div>
-          <div><span class="v">{{ a.tokensToday }}k</span><span class="k faint">tokens</span></div>
-          <div><span class="v" [class.bad]="a.errorRate > 2">{{ a.errorRate.toFixed(1) }}%</span><span class="k faint">errors</span></div>
-          <div><span class="v">{{ a.skills.length }}</span><span class="k faint">skills</span></div>
+    <!-- the shell button is a sibling of the card link, not a child: a <button>
+         nested inside an <a> is invalid, and hoisting it keeps the card a real
+         link (ctrl/middle-click still opens the agent in a new tab) -->
+    <div class="card-wrap">
+      <a class="panel card" [routerLink]="['/agents', a.id]">
+        <div class="panel-h">
+          <mc-status [status]="a.state" [live]="a.state === 'active'" />
+          <span class="spacer"></span>
+          <span class="faint">{{ ago(a.lastActive) }}</span>
         </div>
+        <div class="panel-b">
+          <div class="glyph mono" [class.dim-glyph]="a.state === 'dormant'">{{ a.name.slice(0, 2).toUpperCase() }}</div>
+          <h3 class="mono">{{ a.name }}</h3>
+          <div class="role dim">{{ a.role }}</div>
+          <div class="model mono faint">{{ a.provider }} / {{ a.model }}</div>
 
-        <div class="chips">
-          @for (kind of upIntegrations(a.id); track kind) {
-            <span class="chip on">{{ kind }}</span>
-          }
-          @if (a.mcp.length) { <span class="chip info">{{ a.mcp.length }} mcp</span> }
+          <div class="stat-row mono">
+            <div><span class="v">{{ a.msgsToday }}</span><span class="k faint">msgs</span></div>
+            <div><span class="v">{{ a.tokensToday }}k</span><span class="k faint">tokens</span></div>
+            <div><span class="v" [class.bad]="a.errorRate > 2">{{ a.errorRate.toFixed(1) }}%</span><span class="k faint">errors</span></div>
+            <div><span class="v">{{ a.skills.length }}</span><span class="k faint">skills</span></div>
+          </div>
+
+          <div class="chips">
+            @for (kind of upIntegrations(a.id); track kind) {
+              <span class="chip on">{{ kind }}</span>
+            }
+            @if (a.mcp.length) { <span class="chip info">{{ a.mcp.length }} mcp</span> }
+          </div>
         </div>
-      </div>
-    </a>
+      </a>
+      <button class="btn sm ghost shell-btn" type="button"
+              [disabled]="!liveMode"
+              [title]="liveMode
+                ? 'open a terminal running ' + (agentCommand(a.name) ?? 'a shell in ' + a.name)
+                : 'the web terminal needs the live backend'"
+              (click)="openShell(a)">shell →</button>
+    </div>
   }
 </div>
 
@@ -114,6 +125,38 @@
           </div>
         }
         <div class="field">
+          <label class="check">
+            <input type="checkbox" [ngModel]="auxOverride" (ngModelChange)="onAuxOverride($event)" />
+            run auxiliary tasks on a different model
+          </label>
+          <p class="lock-hint">compression, summarization, memory flush and the other side tasks.
+            They follow the main model by default — point them at a cheaper one when the main model is expensive.</p>
+        </div>
+        @if (auxOverride) {
+          <div class="row">
+            <div class="field">
+              <label>auxiliary provider</label>
+              <select class="select" [ngModel]="auxProvider" (ngModelChange)="onAuxProvider($event)">
+                @for (p of providerOptions(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
+              </select>
+            </div>
+            <div class="field">
+              <label>auxiliary model @if (auxModelsLoading()) { <span class="faint">loading…</span> }</label>
+              <input class="input" [(ngModel)]="auxModel" list="agent-aux-model-list"
+                     placeholder="model id" autocomplete="off" />
+              <datalist id="agent-aux-model-list">
+                @for (m of auxModels(); track m) { <option [value]="m"></option> }
+              </datalist>
+            </div>
+          </div>
+          @if (auxApiKeyRequired()) {
+            <div class="field">
+              <label>auxiliary API key — stored in the profile's .env</label>
+              <input class="input" type="password" [(ngModel)]="auxApiKey" placeholder="sk-…" />
+            </div>
+          }
+        }
+        <div class="field">
           <label>clone from — optional, copies config + soul + skills</label>
           <select class="select" [(ngModel)]="cloneFrom">
             <option value="">— blank profile —</option>
@@ -124,7 +167,7 @@
         <div class="modal-actions">
           <button class="btn ghost" (click)="createOpen.set(false)">cancel</button>
           <button class="btn primary"
-                  [disabled]="!name.trim() || !model || (apiKeyRequired() && !apiKey.trim())"
+                  [disabled]="!name.trim() || !model || (apiKeyRequired() && !apiKey.trim()) || auxIncomplete()"
                   (click)="create()">create profile</button>
         </div>
       </div>

@@ -26,6 +26,10 @@ mc:
   docker-socket: ${MC_DOCKER_SOCKET:unix:///var/run/docker.sock}
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
   container-filter: ${MC_CONTAINER_FILTER:hermes}
+  # Look up published image tags on Docker Hub so the dashboard can report a
+  # version that has not been pulled yet. Turn off for air-gapped installs —
+  # tag listing then falls back to the local image store.
+  registry-tags: ${MC_REGISTRY_TAGS:true}
   # Generated, non-secret Compose definitions for the managed MCP project.
   # The combined image overrides this to its persisted /data volume.
   mcp-stack-dir: ${MC_MCP_STACK_DIR:./data/mcp-stacks}

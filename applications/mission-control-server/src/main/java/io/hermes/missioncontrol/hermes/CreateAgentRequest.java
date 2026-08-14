@@ -15,5 +15,7 @@ public record CreateAgentRequest(
     String apiKey,
     String cloneFrom,
     String baseUrl,
-    String fromTemplateId) {
+    String fromTemplateId,
+    /** Optional — auxiliary side tasks follow the main model when absent. */
+    AuxiliaryModelSpec auxiliary) {
 }

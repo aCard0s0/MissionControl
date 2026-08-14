@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "MissionControl": {
+    "mission-control": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -65,10 +65,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "MissionControl:build:production"
+              "buildTarget": "mission-control:build:production"
             },
             "development": {
-              "buildTarget": "MissionControl:build:development"
+              "buildTarget": "mission-control:build:development"
             }
           },
           "defaultConfiguration": "development",

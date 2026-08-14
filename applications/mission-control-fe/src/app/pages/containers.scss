@@ -75,7 +75,18 @@
     }
   }
 
-  .actions { display: flex; gap: 8px; .spacer { flex: 1; } }
+  .actions {
+    display: flex; gap: 8px;
+    .spacer { flex: 1; }
+    // an available update is advisory, not a fault — amber, never red
+    .upd {
+      color: var(--amber);
+      border-color: var(--amber-line);
+      background: var(--amber-soft);
+      &:hover:not(:disabled) { border-color: var(--amber); }
+    }
+  }
+  .meta .chip { margin-left: 6px; }
 }
 
 .empty {

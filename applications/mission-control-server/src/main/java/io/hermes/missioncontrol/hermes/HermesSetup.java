@@ -7,11 +7,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /** Agent setup status: merges the `hermes status` report with the profile .env. */
 @Service
 public class HermesSetup {
+
+  private static final Logger log = LoggerFactory.getLogger(HermesSetup.class);
 
   /** Mirrors the provider tables in /opt/hermes/hermes_cli/status.py inside the
    *  hermes image — the .env is the source of truth for set/masked, the status
@@ -175,6 +179,10 @@ public class HermesSetup {
     try {
       return parseStatus(profiles.exec(url, containerId, command).stdout());
     } catch (RuntimeException e) {
+      // degrading to the .env alone makes every externally-configured provider look
+      // unconfigured, which is indistinguishable from "not set up" without this line
+      log.warn("`hermes status` failed for profile {} in {} — reporting from .env only: {}",
+          name, containerId, e.toString());
       return null;
     }
   }

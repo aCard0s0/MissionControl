@@ -39,6 +39,15 @@ export class App {
   protected readonly dateLine = computed(() =>
     this.now().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase());
 
+  /** What the fleet actually runs — never a literal, which goes stale on the first deploy. */
+  protected readonly imageLine = computed(() => {
+    const versions = new Set(this.store.containers().map(c => c.version));
+    if (!versions.size) return 'hermes-agent · no containers';
+    return versions.size === 1
+      ? `hermes-agent ${[...versions][0]}`
+      : `hermes-agent · ${versions.size} versions`;
+  });
+
   constructor() {
     setInterval(() => this.now.set(new Date()), 1000);
     effect(() => {

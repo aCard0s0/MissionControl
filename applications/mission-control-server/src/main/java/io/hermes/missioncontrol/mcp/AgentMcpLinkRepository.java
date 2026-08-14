@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.mcp;
 
+import io.hermes.missioncontrol.docker.ContainerIdListener;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -7,7 +8,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class AgentMcpLinkRepository {
+public class AgentMcpLinkRepository implements ContainerIdListener {
 
   private static final RowMapper<AgentMcpLink> MAPPER = (rs, n) -> new AgentMcpLink(
       rs.getString("host_id"), rs.getString("container_id"), rs.getString("profile"),
@@ -59,7 +60,24 @@ public class AgentMcpLinkRepository {
         """, hostId, containerId, profile, alias);
   }
 
+  /** Every link a profile holds, in one statement — the table's primary key covers it. */
+  public void deleteByAgent(String hostId, String containerId, String profile) {
+    jdbc.update("""
+        DELETE FROM mcp_agent_links
+         WHERE host_id = ? AND container_id = ? AND profile = ?
+        """, hostId, containerId, profile);
+  }
+
   public void deleteByServer(String serverId) {
     jdbc.update("DELETE FROM mcp_agent_links WHERE server_id = ?", serverId);
+  }
+
+  /** Host-scoped, matching this table's primary key. */
+  @Override
+  public int onContainerReplaced(String hostId, String oldContainerId, String newContainerId) {
+    return jdbc.update("""
+        UPDATE mcp_agent_links SET container_id = ?, updated_at = ?
+         WHERE host_id = ? AND container_id = ?
+        """, newContainerId, System.currentTimeMillis(), hostId, oldContainerId);
   }
 }

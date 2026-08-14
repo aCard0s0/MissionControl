@@ -8,6 +8,13 @@ export interface TermTarget {
   containerId: string;
   /** container name snapshot; shown as the tab label when the container is gone */
   label: string;
+  /** the agent (AgentProfile.id) this tab was opened for. Set only by the
+   *  "open shell for agent" shortcut, which uses it to focus the tab it already
+   *  made instead of stacking a new one per click. */
+  agentKey?: string;
+  /** typed into the shell once it is live, on every (re)connect — a reconnect
+   *  is always a brand-new exec, so re-running it is the correct behaviour. */
+  command?: string;
 }
 
 /** Persisted shape (localStorage) — only the reconnect target, never the live
@@ -17,6 +24,8 @@ export interface PersistedTab {
   hostId: string;
   containerId: string;
   label: string;
+  agentKey?: string;
+  command?: string;
 }
 
 export type TermStatus = 'idle' | 'connecting' | 'connected' | 'closed';
@@ -56,6 +65,9 @@ export class TerminalSession {
   private started = false;
   /** only the on-screen tab fits + reports its size to the backend */
   private active = false;
+  /** target().command awaiting a live shell; nulled the moment it is sent */
+  private pending: string | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(target: TermTarget, private readonly apiBase: string, id?: string) {
     this.id = id ?? newId();
@@ -110,11 +122,12 @@ export class TerminalSession {
 
   /** Open (or restart) the shell socket for the current target. */
   connect(): void {
-    const { hostId, containerId, label } = this.target();
+    const { hostId, containerId, label, command } = this.target();
     if (!containerId) return;
     this.started = true;
     this.ws?.close(1000);
     this.status.set('connecting');
+    this.armCommand(command);
 
     const url = this.apiBase.replace(/^http/, 'ws')
       + `/ws/terminal?hostId=${encodeURIComponent(hostId)}&containerId=${encodeURIComponent(containerId)}`;
@@ -127,23 +140,60 @@ export class TerminalSession {
       this.status.set('connected');
       this.term?.writeln(`\x1b[2m── ${label} ──\x1b[0m`);
       this.fitNow();
+      // safety net for a shell that prints no prompt — see flushCommand()
+      if (this.pending) {
+        this.pendingTimer = setTimeout(() => this.flushCommand(ws), 1500);
+      }
     };
     ws.onmessage = e => {
       if (this.ws !== ws) return;   // drop frames from a superseded socket
       if (typeof e.data === 'string') this.term?.write(e.data);
       else this.term?.write(new Uint8Array(e.data as ArrayBuffer));
+      this.flushCommand(ws);
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;   // superseded by a newer socket
+      this.clearPending();
       this.status.set('closed');
       this.term?.write('\r\n\x1b[2m[session closed — ↻ to reconnect]\x1b[0m\r\n');
     };
+  }
+
+  private armCommand(command: string | undefined): void {
+    this.clearPending();
+    this.pending = command || null;
+  }
+
+  /**
+   * Type the tab's startup command into the shell, once.
+   *
+   * It cannot go out on `onopen`: the WebSocket handshake completes before the
+   * backend has created the docker exec, and `TerminalSocketHandler` silently
+   * drops stdin frames while its `Shell` is still unregistered — the command
+   * would simply vanish. The first output frame is proof the exec is wired, so
+   * that is the trigger; the `onopen` timer only covers a shell that emits no
+   * prompt at all.
+   */
+  private flushCommand(ws: WebSocket): void {
+    if (this.ws !== ws || !this.pending || ws.readyState !== WebSocket.OPEN) return;
+    const cmd = this.pending;
+    this.clearPending();
+    ws.send(this.encoder.encode(cmd + '\n'));
+  }
+
+  private clearPending(): void {
+    this.pending = null;
+    if (this.pendingTimer !== null) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
   }
 
   /** Close the live socket but keep the Terminal + scrollback, so the backend
    *  releases this exec immediately (e.g. the container vanished, or the page is
    *  unloading). The onclose handler marks the tab closed; ↻ revives it. */
   closeSocket(): void {
+    this.clearPending();
     this.ws?.close(1000);
   }
 
@@ -180,6 +230,7 @@ export class TerminalSession {
   }
 
   dispose(): void {
+    this.clearPending();
     this.ws?.close(1000);
     this.observer?.disconnect();
     this.term?.dispose();
@@ -187,7 +238,7 @@ export class TerminalSession {
   }
 
   toJSON(): PersistedTab {
-    const { hostId, containerId, label } = this.target();
-    return { id: this.id, hostId, containerId, label };
+    const { hostId, containerId, label, agentKey, command } = this.target();
+    return { id: this.id, hostId, containerId, label, agentKey, command };
   }
 }

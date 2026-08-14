@@ -5,12 +5,15 @@
 # the dashboard is invisible to the LAN and the internet. Tailscale serve
 # forwards tailnet TCP :80 to the app on 127.0.0.1:8080.
 #
-# An optional ollama service (profile "ollama", started by './mc start' unless
-# --ollama=off) provides a local model runtime. Unlike the dashboard it DOES
-# publish a host port (default 11434, override with OLLAMA_PORT): Hermes agent
-# containers run on the host daemon outside this stack and reach it via
-# http://host.docker.internal:11434. It is independent of tailscale so the
-# plain flavor ('./mc start --ts=off') can run it too.
+# An optional ollama service (profile "ollama") provides a local model runtime.
+# It is opt-in: './mc start' leaves it alone, './mc start --ollama=on' or
+# './mc ollama up' deploys it, './mc ollama down' removes it. Unlike the
+# dashboard it DOES publish a host port (default 11434, override with
+# OLLAMA_PORT): Hermes agent containers run on the host daemon outside this
+# stack and reach it via http://host.docker.internal:11434 (on Linux hosts that
+# name needs --add-host=host.docker.internal:host-gateway, so prefer the host's
+# bridge/LAN ip there). It is independent of tailscale so the plain flavor
+# ('./mc start --ts=off') can run it too.
 #
 # Usage (via the repo-root manager script — this flavor is the default):
 #   cp .env.example .env       # fill in TS_AUTHKEY

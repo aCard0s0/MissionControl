@@ -5,6 +5,7 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -57,7 +58,7 @@ public class DockerExecService {
       if (user != null && !user.isBlank()) create.withUser(user);
       exec = create.exec();
     } catch (RuntimeException e) {
-      if (sensitive) throw new RuntimeException(operation + " failed", e);
+      if (sensitive) throw new UpstreamUnavailableException(operation + " failed", e);
       throw e;
     }
 
@@ -78,22 +79,22 @@ public class DockerExecService {
           .awaitCompletion(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new RuntimeException(operation + " interrupted", e);
+      throw new UpstreamUnavailableException(operation + " interrupted", e);
     } catch (RuntimeException e) {
-      if (sensitive) throw new RuntimeException(operation + " failed", e);
+      if (sensitive) throw new UpstreamUnavailableException(operation + " failed", e);
       throw e;
     } finally {
       try {
         callback.close();
       } catch (Exception ignored) { }
     }
-    if (!finished) throw new RuntimeException(operation + " timed out");
+    if (!finished) throw new UpstreamUnavailableException(operation + " timed out");
 
     Integer inspected;
     try {
       inspected = client.inspectExecCmd(exec.getId()).exec().getExitCode();
     } catch (RuntimeException e) {
-      if (sensitive) throw new RuntimeException(operation + " failed", e);
+      if (sensitive) throw new UpstreamUnavailableException(operation + " failed", e);
       throw e;
     }
     int exitCode = inspected == null ? 0 : inspected;

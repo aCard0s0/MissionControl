@@ -2,10 +2,14 @@ package io.hermes.missioncontrol.docker;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
+import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.ContainerConfig;
+import com.github.dockerjava.api.model.ContainerNetwork;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Image;
@@ -17,11 +21,13 @@ import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.core.InvocationBuilder;
 import com.github.dockerjava.api.async.ResultCallback;
 import io.hermes.missioncontrol.AppProperties;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -29,6 +35,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import io.hermes.missioncontrol.web.ResourceConflictException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -37,6 +45,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class DockerGateway {
+
+  private static final Logger log = LoggerFactory.getLogger(DockerGateway.class);
 
   private final DockerClients clients;
   private final AppProperties props;
@@ -77,6 +87,12 @@ public class DockerGateway {
       String name = primaryName(c);
       String image = c.getImage() == null ? "" : c.getImage();
       if (!includeAll) {
+        if (isUpgradeLeftover(name)) {
+          // a daemon crash mid-upgrade can strand the parked original; keep it out
+          // of the fleet view but reachable through ?all=true
+          log.warn("ignoring container left parked by an interrupted upgrade: {}", name);
+          continue;
+        }
         String repo = normalizeRepository(splitImage(image)[0]);
         if (!hermesRepo.isEmpty()) {
           if (!hermesRepo.equals(repo)) continue;
@@ -125,33 +141,20 @@ public class DockerGateway {
   }
 
   private static String[] splitImage(String image) {
-    if (image == null) return new String[]{"?", "?"};
-    int idx = image.lastIndexOf(':');
-    // a ':' inside a registry host:port segment is not a tag separator
-    if (idx > 0 && image.indexOf('/', idx) == -1) {
-      return new String[]{image.substring(0, idx), image.substring(idx + 1)};
-    }
-    return new String[]{image, "latest"};
+    return ImageRef.splitImage(image);
   }
 
   private static String normalizeRepository(String repository) {
-    if (repository == null) return "";
-    String repo = repository;
-    int idx = repo.lastIndexOf(':');
-    if (idx > 0 && repo.indexOf('/', idx) == -1) {
-      repo = repo.substring(0, idx);
-    }
-    String normalized = repo.toLowerCase(Locale.ROOT);
-    if (normalized.startsWith("docker.io/")) {
-      return normalized.substring("docker.io/".length());
-    }
-    if (normalized.startsWith("registry-1.docker.io/")) {
-      return normalized.substring("registry-1.docker.io/".length());
-    }
-    if (normalized.startsWith("index.docker.io/")) {
-      return normalized.substring("index.docker.io/".length());
-    }
-    return normalized;
+    return ImageRef.normalizeRepository(repository);
+  }
+
+  /**
+   * Repository half of MC_HERMES_IMAGE. The property is documented as a
+   * repository, but the filtering paths tolerate a tag on it — so the paths that
+   * build a reference must strip one rather than emit 'repo:tag:tag'.
+   */
+  private String hermesRepository() {
+    return ImageRef.splitImage(props.hermesImage())[0];
   }
 
   private static String mapStatus(String state, String statusText) {
@@ -175,7 +178,7 @@ public class DockerGateway {
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
-      throw new RuntimeException("stats failed: " + e.getMessage(), e);
+      throw new UpstreamUnavailableException("stats failed: " + e.getMessage(), e);
     }
   }
 
@@ -252,6 +255,12 @@ public class DockerGateway {
    * our inspection and the Engine call.
    */
   public void connectNetwork(String url, String containerId, String networkName) {
+    connectNetwork(url, containerId, networkName, List.of());
+  }
+
+  /** As above, preserving the network aliases a container was reachable under. */
+  public void connectNetwork(
+      String url, String containerId, String networkName, List<String> aliases) {
     if (networkName == null || networkName.isBlank()) {
       throw new IllegalArgumentException("missing network name");
     }
@@ -263,10 +272,13 @@ public class DockerGateway {
         .findFirst()
         .orElseThrow(() -> new NotFoundException("network not found: " + networkName));
     try {
-      client.connectToNetworkCmd()
+      var connect = client.connectToNetworkCmd()
           .withContainerId(containerId)
-          .withNetworkId(networkId)
-          .exec();
+          .withNetworkId(networkId);
+      if (aliases != null && !aliases.isEmpty()) {
+        connect.withContainerNetwork(new ContainerNetwork().withAliases(aliases));
+      }
+      connect.exec();
     } catch (RuntimeException race) {
       if (!containerUsesNetwork(client, containerId, networkName)) throw race;
     }
@@ -331,13 +343,11 @@ public class DockerGateway {
 
   // ── images ──────────────────────────────────────────────────────────────
 
-  public ImageTagsDto imageTags(String url) {
+  /** Tags of the configured Hermes image already present in this host's image store. */
+  public Set<String> localImageTags(String url) {
+    String targetRepo = normalizeRepository(props.hermesImage());
+    if (targetRepo.isBlank()) return Set.of();
     DockerClient client = clients.forUrl(url);
-    String repository = props.hermesImage() == null ? "" : props.hermesImage();
-    String targetRepo = normalizeRepository(repository);
-    if (targetRepo.isBlank()) {
-      return new ImageTagsDto(repository, List.of());
-    }
     Set<String> tags = new HashSet<>();
     List<Image> images = client.listImagesCmd().withShowAll(true).exec();
     for (Image image : images) {
@@ -346,45 +356,17 @@ public class DockerGateway {
       for (String repoTag : repoTags) {
         if (repoTag == null || repoTag.contains("<none>")) continue;
         String[] parts = splitImage(repoTag);
-        String repo = normalizeRepository(parts[0]);
-        if (!targetRepo.equals(repo)) continue;
+        if (!targetRepo.equals(normalizeRepository(parts[0]))) continue;
         String tag = parts[1];
         if (tag != null && !tag.isBlank()) tags.add(tag);
       }
     }
-    List<String> sorted = new ArrayList<>(tags);
-    sorted.sort(DockerGateway::compareTags);
-    return new ImageTagsDto(repository, sorted);
+    return tags;
   }
 
-  private static int compareTags(String left, String right) {
-    if ("latest".equals(left)) return "latest".equals(right) ? 0 : -1;
-    if ("latest".equals(right)) return 1;
-    int[] leftVer = parseSemver(left);
-    int[] rightVer = parseSemver(right);
-    if (leftVer != null && rightVer != null) {
-      for (int i = 0; i < 3; i++) {
-        if (leftVer[i] != rightVer[i]) {
-          return Integer.compare(rightVer[i], leftVer[i]);
-        }
-      }
-      return 0;
-    }
-    if (leftVer != null) return -1;
-    if (rightVer != null) return 1;
-    return right.compareTo(left);
-  }
-
-  private static int[] parseSemver(String tag) {
-    if (tag == null) return null;
-    String trimmed = tag.startsWith("v") ? tag.substring(1) : tag;
-    if (!trimmed.matches("\\d+(\\.\\d+){0,2}")) return null;
-    String[] parts = trimmed.split("\\.");
-    int[] result = new int[]{0, 0, 0};
-    for (int i = 0; i < parts.length && i < 3; i++) {
-      result[i] = Integer.parseInt(parts[i]);
-    }
-    return result;
+  /** The repository half of the configured Hermes image, as the catalog reports it. */
+  public String hermesImageRepository() {
+    return props.hermesImage() == null ? "" : props.hermesImage();
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────────
@@ -392,7 +374,7 @@ public class DockerGateway {
   public String deploy(String url, String hostId, String name, String version, List<String> profiles) {
     DockerClient client = clients.forUrl(url);
     String tag = version == null || version.isBlank() ? "latest" : version;
-    String image = props.hermesImage() + ":" + tag;
+    String image = hermesRepository() + ":" + tag;
     String volumeName = "mc-hermes-" + name;
     List<String> seedProfiles = normalizeProfiles(profiles);
 
@@ -434,7 +416,7 @@ public class DockerGateway {
       try {
         created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
       } catch (NotFoundException missingImage) {
-        pull(client, props.hermesImage(), tag);
+        pull(client, hermesRepository(), tag);
         created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
       }
       containerId = created.getId();
@@ -451,7 +433,7 @@ public class DockerGateway {
       String url, DockerClient client, String containerId, List<String> seedProfiles) {
     var state = client.inspectContainerCmd(containerId).exec().getState();
     if (state == null || !Boolean.TRUE.equals(state.getRunning())) {
-      throw new RuntimeException("Hermes container exited before readiness checks completed");
+      throw new UpstreamUnavailableException("Hermes container exited before readiness checks completed");
     }
 
     List<String> profiles = new ArrayList<>();
@@ -496,7 +478,7 @@ public class DockerGateway {
 
     state = client.inspectContainerCmd(containerId).exec().getState();
     if (state == null || !Boolean.TRUE.equals(state.getRunning())) {
-      throw new RuntimeException("Hermes container stopped during readiness checks");
+      throw new UpstreamUnavailableException("Hermes container stopped during readiness checks");
     }
   }
 
@@ -508,6 +490,233 @@ public class DockerGateway {
         .withLabels(labels)
         .withHostConfig(hostConfig);
     return create.withCmd(command).exec();
+  }
+
+  // ── image updates ────────────────────────────────────────────────────────
+
+  /**
+   * A managed container's identity, captured before it is replaced. Copied from
+   * the daemon rather than rebuilt from configuration: an Agent may have been
+   * attached to the managed MCP network after it was deployed, and the
+   * {@code mc.profiles} label records what was seeded, not what exists now.
+   */
+  public record ManagedContainerSpec(
+      String id,
+      String name,
+      String tag,
+      String imageId,
+      Map<String, String> labels,
+      List<Bind> binds,
+      RestartPolicy restartPolicy,
+      List<String> cmd,
+      List<String> entrypoint,
+      List<String> env,
+      String user,
+      String workingDir,
+      String primaryNetwork,
+      Map<String, List<String>> extraNetworks,
+      boolean wasRunning,
+      String dataVolume) {
+  }
+
+  public record UpgradeResult(
+      String oldContainerId, String newContainerId, String fromTag, String toTag, boolean running) {
+  }
+
+  /** Suffix given to a container parked during an upgrade, until the new one is verified. */
+  static final String UPGRADE_SUFFIX = "-mc-upgrade-";
+
+  /** Docker's own networks — a new container joins these without being connected. */
+  private static final Set<String> BUILTIN_NETWORKS = Set.of("bridge", "host", "none");
+
+  /**
+   * Inspects a container and refuses anything this dashboard did not deploy.
+   * Upgrading recreates the container against an existing data volume, so a
+   * mismatch here would attach someone else's container to Hermes' data.
+   */
+  public ManagedContainerSpec inspectManaged(String url, String containerId) {
+    DockerClient client = clients.forUrl(url);
+    return inspectManaged(client, containerId);
+  }
+
+  private ManagedContainerSpec inspectManaged(DockerClient client, String containerId) {
+    InspectContainerResponse inspected = client.inspectContainerCmd(containerId).exec();
+    ContainerConfig config = inspected.getConfig();
+    Map<String, String> labels = config == null || config.getLabels() == null
+        ? Map.of() : config.getLabels();
+
+    if (!"true".equals(labels.get("mc.managed"))) {
+      throw new IllegalArgumentException("not a Mission Control-managed container");
+    }
+    String dataVolume = labels.get("mc.dataVolume");
+    if (dataVolume == null || !dataVolume.startsWith("mc-hermes-")) {
+      throw new IllegalArgumentException("container has no recorded managed data volume");
+    }
+    String[] imageParts = splitImage(config.getImage());
+    if (!normalizeRepository(imageParts[0]).equals(normalizeRepository(props.hermesImage()))) {
+      throw new IllegalArgumentException("container does not run the configured Hermes image");
+    }
+
+    String name = inspected.getName() == null ? "" : inspected.getName();
+    if (name.startsWith("/")) name = name.substring(1);
+
+    HostConfig hostConfig = inspected.getHostConfig();
+    String primaryNetwork = hostConfig == null || hostConfig.getNetworkMode() == null
+        ? null : hostConfig.getNetworkMode();
+
+    Map<String, List<String>> extraNetworks = new LinkedHashMap<>();
+    var settings = inspected.getNetworkSettings();
+    if (settings != null && settings.getNetworks() != null) {
+      for (var entry : settings.getNetworks().entrySet()) {
+        // the primary and the built-ins come back with the new container; only
+        // user-defined networks (notably the managed MCP one) need reattaching
+        if (entry.getKey().equals(primaryNetwork) || BUILTIN_NETWORKS.contains(entry.getKey())) {
+          continue;
+        }
+        List<String> aliases = entry.getValue() == null || entry.getValue().getAliases() == null
+            ? List.of()
+            : entry.getValue().getAliases().stream()
+                .filter(alias -> !containerId.startsWith(alias))   // drop the auto short-id alias
+                .toList();
+        extraNetworks.put(entry.getKey(), aliases);
+      }
+    }
+
+    var state = inspected.getState();
+    return new ManagedContainerSpec(
+        inspected.getId(), name, imageParts[1], inspected.getImageId(), labels,
+        hostConfig == null || hostConfig.getBinds() == null ? List.of() : List.of(hostConfig.getBinds()),
+        hostConfig == null ? null : hostConfig.getRestartPolicy(),
+        config.getCmd() == null ? null : List.of(config.getCmd()),
+        config.getEntrypoint() == null ? null : List.of(config.getEntrypoint()),
+        config.getEnv() == null ? null : List.of(config.getEnv()),
+        config.getUser(), config.getWorkingDir(),
+        primaryNetwork, extraNetworks,
+        state != null && Boolean.TRUE.equals(state.getRunning()),
+        dataVolume);
+  }
+
+  /**
+   * Moves a managed container onto another tag of the Hermes image, keeping its
+   * name, labels, networks and — crucially — its data volume, so profiles, souls,
+   * skills and credentials survive.
+   *
+   * <p>The old container is renamed aside rather than removed, and is only
+   * dropped once the replacement passes its readiness checks. That keeps a real
+   * rollback target: the original container object, its id, and its logs.
+   */
+  public UpgradeResult upgrade(String url, String containerId, String version) {
+    DockerClient client = clients.forUrl(url);
+    ManagedContainerSpec spec = inspectManaged(client, containerId);
+
+    String tag = version == null || version.isBlank() ? "latest" : version;
+    String repository = hermesRepository();
+    String image = repository + ":" + tag;
+
+    // Pull before touching the running container: a bad tag or an unreachable
+    // registry then costs nothing, instead of leaving the Agent stopped.
+    String targetImageId = imageIdOf(client, image);
+    if (targetImageId == null) {
+      pull(client, repository, tag);
+      targetImageId = imageIdOf(client, image);
+    }
+    if (tag.equals(spec.tag()) && targetImageId != null && targetImageId.equals(spec.imageId())) {
+      throw new ResourceConflictException("already running " + tag);
+    }
+
+    if (spec.wasRunning()) {
+      try {
+        client.stopContainerCmd(spec.id()).withTimeout(10).exec();
+      } catch (NotModifiedException alreadyStopped) {
+        // raced with a manual stop — the desired state is what matters
+      }
+    }
+
+    String parkedName = spec.name() + UPGRADE_SUFFIX + shortToken(spec.id());
+    client.renameContainerCmd(spec.id()).withName(parkedName).exec();
+
+    String newContainerId = null;
+    try {
+      HostConfig hostConfig = HostConfig.newHostConfig().withBinds(spec.binds().toArray(new Bind[0]));
+      if (spec.restartPolicy() != null) hostConfig.withRestartPolicy(spec.restartPolicy());
+      if (spec.primaryNetwork() != null) hostConfig.withNetworkMode(spec.primaryNetwork());
+
+      var create = client.createContainerCmd(image)
+          .withName(spec.name())
+          .withLabels(spec.labels())
+          .withHostConfig(hostConfig);
+      if (spec.cmd() != null) create.withCmd(spec.cmd());
+      if (spec.entrypoint() != null) create.withEntrypoint(spec.entrypoint());
+      if (spec.env() != null) create.withEnv(spec.env());
+      if (spec.user() != null && !spec.user().isBlank()) create.withUser(spec.user());
+      if (spec.workingDir() != null && !spec.workingDir().isBlank()) {
+        create.withWorkingDir(spec.workingDir());
+      }
+      newContainerId = create.exec().getId();
+
+      for (var network : spec.extraNetworks().entrySet()) {
+        connectNetwork(url, newContainerId, network.getKey(), network.getValue());
+      }
+
+      if (!spec.wasRunning()) {
+        // a container someone deliberately parked comes back parked
+        client.removeContainerCmd(spec.id()).withForce(true).exec();
+        return new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, false);
+      }
+
+      client.startContainerCmd(newContainerId).exec();
+      // no seed profiles: they already exist in the reattached volume, and the
+      // mc.profiles label is a stale record of the original deploy
+      validateDeployment(url, client, newContainerId, List.of());
+
+      client.removeContainerCmd(spec.id()).withForce(true).exec();
+      return new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, true);
+    } catch (RuntimeException failure) {
+      rollbackUpgrade(client, spec, newContainerId, failure);
+      throw failure;
+    }
+  }
+
+  /** Restores the parked container after a failed upgrade. Best effort — never masks the cause. */
+  private void rollbackUpgrade(
+      DockerClient client, ManagedContainerSpec spec, String newContainerId, RuntimeException failure) {
+    if (newContainerId != null) {
+      try {
+        client.removeContainerCmd(newContainerId).withForce(true).exec();
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+    }
+    try {
+      client.renameContainerCmd(spec.id()).withName(spec.name()).exec();
+    } catch (RuntimeException cleanup) {
+      failure.addSuppressed(cleanup);
+    }
+    if (spec.wasRunning()) {
+      try {
+        client.startContainerCmd(spec.id()).exec();
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+    }
+  }
+
+  private static String imageIdOf(DockerClient client, String image) {
+    try {
+      return client.inspectImageCmd(image).exec().getId();
+    } catch (NotFoundException absent) {
+      return null;
+    }
+  }
+
+  private static String shortToken(String containerId) {
+    return containerId == null || containerId.length() < 8
+        ? "00000000" : containerId.substring(0, 8);
+  }
+
+  /** True for a container parked mid-upgrade — visible only via the unfiltered listing. */
+  static boolean isUpgradeLeftover(String name) {
+    return name != null && name.matches(".*" + UPGRADE_SUFFIX + "[0-9a-f]{8}$");
   }
 
   static List<String> normalizeProfiles(List<String> profiles) {
@@ -547,8 +756,8 @@ public class DockerGateway {
       var callback = client.waitContainerCmd(helperId).start();
       try {
         Integer exitCode = callback.awaitStatusCode(90, TimeUnit.SECONDS);
-        if (exitCode == null) throw new RuntimeException(operation + " timed out");
-        if (exitCode != 0) throw new RuntimeException(operation + " failed with exit code " + exitCode);
+        if (exitCode == null) throw new UpstreamUnavailableException(operation + " timed out");
+        if (exitCode != 0) throw new UpstreamUnavailableException(operation + " failed with exit code " + exitCode);
       } finally {
         try {
           callback.close();
@@ -591,15 +800,15 @@ public class DockerGateway {
     try (var callback = client.pullImageCmd(repository).withTag(tag)
         .exec(new com.github.dockerjava.api.command.PullImageResultCallback())) {
       if (!callback.awaitCompletion(180, TimeUnit.SECONDS)) {
-        throw new RuntimeException("image pull timed out: " + repository + ":" + tag);
+        throw new UpstreamUnavailableException("image pull timed out: " + repository + ":" + tag);
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new RuntimeException("image pull interrupted", e);
+      throw new UpstreamUnavailableException("image pull interrupted", e);
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
-      throw new RuntimeException("image pull failed: " + e.getMessage(), e);
+      throw new UpstreamUnavailableException("image pull failed: " + e.getMessage(), e);
     }
   }
 
@@ -624,7 +833,7 @@ public class DockerGateway {
     } catch (NotFoundException ignored) {
       // idempotent permanent removal
     } catch (RuntimeException e) {
-      throw new RuntimeException(
+      throw new UpstreamUnavailableException(
           "container removed but managed data volume could not be removed: " + volumeName, e);
     }
   }

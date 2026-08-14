@@ -29,6 +29,7 @@ All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 409 
 | `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. |
 | `POST /api/containers/{hostId}/{id}/start` | — | |
 | `POST /api/containers/{hostId}/{id}/stop` | — | 10s graceful timeout |
+| `POST /api/containers/{hostId}/{id}/update` | `{ version }` | recreates the container on another tag, reusing its data volume, and returns the **new** `{ id }`. Pulls first, then stops, parks the old container aside, creates the replacement under the same name/labels/networks, and only removes the parked original once readiness passes — a failure restores it. Never re-seeds profiles and never touches the volume. 400 if the container is not Mission Control-managed or runs another image; 409 if it already runs that tag. Held open through readiness, so it can take minutes on a cold pull. |
 | `DELETE /api/containers/{hostId}/{id}` | — | force removes the container and its recorded Mission Control-managed volume; unowned/external mounts are preserved |
 
 Container DTO: `{ id, shortId, name, hostId, status, image, version, startedAt, sizeRootFsGb, profiles }`
@@ -69,7 +70,7 @@ host networking, privileged mode, devices, and capabilities are not accepted.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/agents` | `?hostId=&containerId=` | one DTO per profile (`/opt/data` = `default`, plus `/opt/data/profiles/*`) |
-| `POST /api/agents` | `{ hostId, containerId, name, provider, model, apiKey?, cloneFrom? }` | `hermes profile create`, then sets model + provider API key |
+| `POST /api/agents` | `{ hostId, containerId, name, provider, model, apiKey?, cloneFrom?, auxiliary? }` | `hermes profile create`, then sets model + auxiliary tasks + provider API key |
 | `DELETE /api/agents/{hostId}/{containerId}/{name}` | — | `hermes profile delete --yes` |
 | `GET  …/{name}/logs` | `?tail=100` (max 500) | profile-scoped supervised gateway log from `/opt/data/logs/gateways/{name}`; returns `{ ts, level, source, msg }` |
 | `PUT  …/{name}/soul` | `{ soul }` | writes `SOUL.md` |
@@ -98,6 +99,23 @@ Create (`POST /api/agents`) accepts optional `baseUrl`; when set, the profile's
 `model.default` + `model.base_url` are written directly (ollama / any
 OpenAI-compatible endpoint) and no provider API key is required.
 
+Create also pins hermes' auxiliary side tasks — compression, summarization,
+memory flush and the rest — to the profile's own provider/model, and fails the
+create (rolling the profile back) if `config.yaml` ends up without a model.
+`hermes profile create` never seeds `config.yaml`, and every auxiliary slot ships
+as `provider: auto`, which resolves through the main model before OpenRouter /
+Nous / a custom endpoint — so a profile with no model config logs
+`no provider available … compression, summarization, and memory flush will not
+work` on its first long session.
+
+Optional `auxiliary: { provider?, model, baseUrl?, apiKey? }` runs those side
+tasks on a different model — useful when the main model is expensive, since side
+tasks are frequent, short and mechanical. `model` is the only required field; a
+blank `provider` means "same provider as the main model" and inherits its
+endpoint. `vision` is deliberately left on `auto`: its chain skips a main model
+known to be text-only and falls back to OpenRouter/Nous, so pinning it would aim
+image payloads at a model that may reject them.
+
 ## Model catalogs — what the create-agent form offers
 
 | Method & path | Body | Notes |
@@ -121,7 +139,23 @@ OpenAI-compatible endpoint) and no provider API key is required.
 
 | Method & path | Params | Notes |
 |---|---|---|
-| `GET /api/images/tags` | `?hostId=` | local tags of `MC_HERMES_IMAGE`, semver-sorted |
+| `GET /api/images/tags` | `?hostId=`, `?remote=true` | tags of `MC_HERMES_IMAGE` from the host's image store merged with the registry's published tags, newest first |
+
+Returns `{ repository, tags, entries, newest, registryStatus, registryDetail, registryCheckedAt }`.
+`tags` is every known tag as a flat list; `entries` is the same order as
+`{ tag, pulled, remote, lastUpdated, sizeBytes, digest }`, so callers can tell a
+locally cached tag from one that still needs a pull. `newest` is the highest
+pinned release — floating tags (`latest`, `main`, `edge`, `nightly`, `dev`) are
+excluded, since calling a moving pointer "newest" would mark every pinned
+container permanently out of date.
+
+Remote lookup is Docker Hub only and is cached per repository for 10 minutes
+(failures for 1 minute), so callers may poll this freely. It never fails the
+request: `registryStatus` reports `ok | cached | unavailable | unsupported |
+disabled` and the response falls back to local tags. Repositories on another
+registry report `unsupported`; `MC_REGISTRY_TAGS=false` reports `disabled`.
+Ordering handles calendar tags of any depth, so `v2026.7.7.2` ranks between
+`v2026.7.20` and `v2026.7.7`.
 
 ## Web terminal — WebSocket bridge to `docker exec`
 

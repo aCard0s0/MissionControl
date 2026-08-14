@@ -38,13 +38,23 @@ changes); `./mc status` shows tailscale health and the exact URL. `./mc start
 the two flavors never run side by side. `BIND_ADDRESS=0.0.0.0` is an explicit,
 warned opt-in to remote exposure; the application has no built-in auth.
 
-`./mc start` also brings up the stack's **ollama** service (compose profile
-`ollama`, skip with `--ollama=off`). Unlike the dashboard it *does* publish a
-host port — default `11434`, override with `OLLAMA_PORT=11435 ./mc start` —
-because Hermes agent containers run on the host daemon outside this stack and
-reach it at `http://host.docker.internal:11434`. If another container already
-holds the port, `./mc start` warns and skips ollama without failing the
-deploy. Manage it with `./mc ollama …` (`list`, `pull <model>`, `logs -f`).
+The stack's **ollama** service (compose profile `ollama`) is **opt-in** — a
+plain `./mc start` neither deploys nor removes it. Add it with `./mc start
+--ollama=on` or `./mc ollama up`, drop it with `./mc ollama down` (or `./mc
+start --ollama=off`); the `ollama-models` volume survives either way. Unlike the
+dashboard it *does* publish a host port — default `11434`, override with
+`OLLAMA_PORT=11435 ./mc ollama up` — because Hermes agent containers run on the
+host daemon outside this stack and reach it at
+`http://host.docker.internal:11434`. If another container already holds the
+port, the start warns and skips ollama without failing the deploy. Manage
+models with `./mc ollama …` (`list`, `pull <model>`, `logs -f`).
+
+On a Linux host (e.g. a VPS) `host.docker.internal` does not resolve inside
+containers unless they were created with
+`--add-host=host.docker.internal:host-gateway`; register the docker bridge ip
+(`172.17.0.1` by default) or the host's tailnet ip in the Models page instead.
+CPU-only ollama on a small VPS is slow and model files are large — leaving it
+off there and pointing agents at a hosted provider is usually the better trade.
 
 ## Access
 

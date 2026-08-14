@@ -24,10 +24,13 @@ public class ContainersController {
 
   private final DockerGateway docker;
   private final HostService hosts;
+  private final ContainerUpdateService updates;
 
-  public ContainersController(DockerGateway docker, HostService hosts) {
+  public ContainersController(
+      DockerGateway docker, HostService hosts, ContainerUpdateService updates) {
     this.docker = docker;
     this.hosts = hosts;
+    this.updates = updates;
   }
 
   /**
@@ -81,6 +84,18 @@ public class ContainersController {
   @PostMapping("/{hostId}/{id}/stop")
   public void stop(@PathVariable String hostId, @PathVariable String id) {
     docker.stop(hosts.urlOf(hostId), id);
+  }
+
+  /**
+   * Recreates the container on another image tag, reusing its data volume. The
+   * container id changes, so the replacement's id is returned.
+   */
+  @PostMapping("/{hostId}/{id}/update")
+  public Map<String, String> update(
+      @PathVariable String hostId,
+      @PathVariable String id,
+      @Valid @RequestBody UpdateContainerRequest request) {
+    return Map.of("id", updates.update(hostId, id, request.version()));
   }
 
   @DeleteMapping("/{hostId}/{id}")

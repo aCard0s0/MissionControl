@@ -18,21 +18,33 @@ public class ProfileTemplateRepository {
   private final JdbcTemplate jdbc;
   private final ObjectMapper objectMapper;
 
-  private final RowMapper<ProfileTemplate> mapper = (rs, n) -> new ProfileTemplate(
-      rs.getString("id"),
-      rs.getString("name"),
-      rs.getString("description"),
-      rs.getString("provider"),
-      rs.getString("model"),
-      rs.getString("base_url"),
-      rs.getString("cwd"),
-      rs.getString("soul"),
-      rs.getString("memory"),
-      readList(rs.getString("skills"), String.class),
-      readList(rs.getString("mcp_servers"), McpServerSpec.class),
-      readList(rs.getString("secrets"), StoredSecret.class),
-      rs.getLong("created_at"),
-      rs.getLong("updated_at"));
+  /** Tolerant of an unreadable list column — one bad row must not break the whole list. */
+  private final RowMapper<ProfileTemplate> lenientMapper = mapper(false);
+
+  /**
+   * Refuses to build a template from an unreadable list column. {@link #findById} feeds
+   * {@link #update}, so a silently-emptied list here would be written back over the real
+   * data on the next save — turning a bad read into permanent loss.
+   */
+  private final RowMapper<ProfileTemplate> strictMapper = mapper(true);
+
+  private RowMapper<ProfileTemplate> mapper(boolean strict) {
+    return (rs, n) -> new ProfileTemplate(
+        rs.getString("id"),
+        rs.getString("name"),
+        rs.getString("description"),
+        rs.getString("provider"),
+        rs.getString("model"),
+        rs.getString("base_url"),
+        rs.getString("cwd"),
+        rs.getString("soul"),
+        rs.getString("memory"),
+        readList(rs.getString("skills"), String.class, strict),
+        readList(rs.getString("mcp_servers"), McpServerSpec.class, strict),
+        readList(rs.getString("secrets"), StoredSecret.class, strict),
+        rs.getLong("created_at"),
+        rs.getLong("updated_at"));
+  }
 
   public ProfileTemplateRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
     this.jdbc = jdbc;
@@ -40,11 +52,12 @@ public class ProfileTemplateRepository {
   }
 
   public List<ProfileTemplate> findAll() {
-    return jdbc.query("SELECT * FROM profile_templates ORDER BY updated_at DESC", mapper);
+    return jdbc.query("SELECT * FROM profile_templates ORDER BY updated_at DESC", lenientMapper);
   }
 
   public Optional<ProfileTemplate> findById(String id) {
-    return jdbc.query("SELECT * FROM profile_templates WHERE id = ?", mapper, id).stream().findFirst();
+    return jdbc.query("SELECT * FROM profile_templates WHERE id = ?", strictMapper, id)
+        .stream().findFirst();
   }
 
   public boolean existsByName(String name) {
@@ -86,7 +99,7 @@ public class ProfileTemplateRepository {
     jdbc.update("DELETE FROM profile_templates WHERE id = ?", id);
   }
 
-  private <T> List<T> readList(String json, Class<T> type) {
+  private <T> List<T> readList(String json, Class<T> type, boolean strict) {
     if (json == null || json.isBlank()) {
       return List.of();
     }
@@ -94,6 +107,10 @@ public class ProfileTemplateRepository {
       return objectMapper.readValue(
           json, objectMapper.getTypeFactory().constructCollectionType(List.class, type));
     } catch (Exception e) {
+      if (strict) {
+        throw new IllegalStateException(
+            "stored template " + type.getSimpleName() + " column is unreadable", e);
+      }
       // corrupt JSON would otherwise vanish silently on every read — surface it
       log.warn("dropping unparseable {} column in profile_templates: {}", type.getSimpleName(), e.getMessage());
       return List.of();

@@ -47,6 +47,20 @@ export interface OllamaModel {
   modifiedAt: number;          // epoch ms
 }
 
+/** One tag of the Hermes image as seen from a specific docker host. */
+export interface ImageTag {
+  tag: string;
+  pulled: boolean;             // already in that host's image store
+}
+
+/** Registry and local tags for one docker host, as the backend merged them. */
+export interface ImageCatalog {
+  repository: string;
+  tags: ImageTag[];            // newest first
+  registryStatus: string;      // ok | cached | unavailable | unsupported | disabled
+  fetchedAt: number;
+}
+
 export interface HermesContainer {
   id: string;
   name: string;

@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.hosts.HostService;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -120,7 +121,7 @@ class ComposeStackManager {
       }
       return target;
     } catch (IOException e) {
-      throw new RuntimeException("could not write managed MCP Compose file: " + e.getMessage(), e);
+      throw new UpstreamUnavailableException("could not write managed MCP Compose file: " + e.getMessage(), e);
     }
   }
 
@@ -178,14 +179,19 @@ class ComposeStackManager {
 
   private static final class MissingDockerResource extends RuntimeException { }
 
-  private static String run(List<String> command, Map<String, String> environment, Duration timeout) {
+  /**
+   * Runs the Docker CLI. Package-private and non-static so a test can substitute it: every
+   * ownership guard in this class sits above this call, and none of them is reachable
+   * otherwise without a real daemon and real foreign resources to refuse to destroy.
+   */
+  String run(List<String> command, Map<String, String> environment, Duration timeout) {
     Process process;
     try {
       ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
       builder.environment().putAll(environment);
       process = builder.start();
     } catch (IOException e) {
-      throw new RuntimeException("could not start Docker CLI: " + e.getMessage(), e);
+      throw new UpstreamUnavailableException("could not start Docker CLI: " + e.getMessage(), e);
     }
 
     StringBuilder output = new StringBuilder();
@@ -205,19 +211,19 @@ class ComposeStackManager {
     try {
       if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
         process.destroyForcibly();
-        throw new RuntimeException("Docker Compose operation timed out");
+        throw new UpstreamUnavailableException("Docker Compose operation timed out");
       }
       reader.join(Duration.ofSeconds(2));
       if (process.exitValue() != 0) {
         String detail = output.toString().strip();
-        throw new RuntimeException("Docker Compose operation failed"
+        throw new UpstreamUnavailableException("Docker Compose operation failed"
             + (detail.isBlank() ? "" : ": " + detail));
       }
       return output.toString();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       process.destroyForcibly();
-      throw new RuntimeException("Docker Compose operation interrupted", e);
+      throw new UpstreamUnavailableException("Docker Compose operation interrupted", e);
     }
   }
 }

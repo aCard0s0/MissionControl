@@ -2,7 +2,7 @@ import {
   ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal,
   untracked, viewChild,
 } from '@angular/core';
-import { HermesStore } from '../core/hermes-store';
+import { HermesStore, TerminalRequest } from '../core/hermes-store';
 import { HermesContainer } from '../core/models';
 import { StatusDot } from './status-dot';
 import { PersistedTab, TermTarget, TerminalSession } from './terminal-session';
@@ -239,15 +239,19 @@ export class TerminalPanel {
 
   private readonly mount = viewChild<ElementRef<HTMLDivElement>>('mount');
 
+  /** last request seq acted on — a request is handled exactly once */
+  private lastSeq = 0;
+
   constructor() {
     if (!this.mock) this.restoreTabs();
 
-    // other pages can summon the panel (e.g. "open terminal" on setup hints)
+    // other pages can summon the panel (e.g. "open terminal" on setup hints,
+    // or the agent list's shell shortcut)
     effect(() => {
-      if (this.store.terminalRequest() > 0 && !this.open()) {
-        this.open.set(true);
-        untracked(() => this.onOpened());
-      }
+      const req = this.store.terminalRequest();
+      if (!req || req.seq === this.lastSeq) return;
+      this.lastSeq = req.seq;
+      untracked(() => this.handleRequest(req));
     });
 
     // render loop: park each session's host div in the shared mount slot, build
@@ -311,6 +315,41 @@ export class TerminalPanel {
     if (this.open()) this.onOpened();
   }
 
+  /**
+   * Act on a request from another page. An untargeted one keeps the original
+   * behaviour (open, seed a tab on the selected container). A targeted one
+   * opens a tab pinned to that container — or, when the same agent already has
+   * a tab, focuses that one instead of stacking another shell for it.
+   */
+  private handleRequest(req: TerminalRequest): void {
+    if (this.mock) return;
+    if (!this.open()) this.open.set(true);
+
+    if (!req.containerId) {
+      this.onOpened();
+      return;
+    }
+
+    const existing = req.agentKey
+      ? this.sessions().find(s => s.target().agentKey === req.agentKey)
+      : undefined;
+    if (existing) {
+      // the render effect fits + focuses whatever activeId points at
+      this.activeId.set(existing.id);
+      // the user closed it, or its container went away and came back — revive
+      if (existing.status() === 'closed') existing.connect();
+      return;
+    }
+
+    this.newSession({
+      hostId: req.hostId ?? '',
+      containerId: req.containerId,
+      label: req.label ?? req.containerId,
+      agentKey: req.agentKey,
+      command: req.command,
+    });
+  }
+
   /** On first open (or external request): seed a tab if empty, then fit. The
    *  render effect attaches + connects every (restored) session. */
   private onOpened(): void {
@@ -320,18 +359,23 @@ export class TerminalPanel {
   }
 
   protected addTab(): void {
+    const c = this.store.selectedContainer();
+    const s = this.newSession(c
+      ? { hostId: c.hostId, containerId: c.id, label: c.name }
+      : { hostId: '', containerId: '', label: '(choose)' });
+    if (s && !c) this.pickerForId.set(s.id);   // nothing selected — let the user pick
+  }
+
+  /** Append a tab for `target` and focus it, or toast and bail at the cap. */
+  private newSession(target: TermTarget): TerminalSession | null {
     if (this.sessions().length >= MAX_TABS) {
       this.store.toast(`terminal tab limit (${MAX_TABS}) reached — close a tab first`);
-      return;
+      return null;
     }
-    const c = this.store.selectedContainer();
-    const target: TermTarget = c
-      ? { hostId: c.hostId, containerId: c.id, label: c.name }
-      : { hostId: '', containerId: '', label: '(choose)' };
     const s = new TerminalSession(target, this.apiBase);
     this.sessions.update(list => [...list, s]);
     this.activeId.set(s.id);
-    if (!c) this.pickerForId.set(s.id);   // nothing selected — let the user pick
+    return s;
   }
 
   protected closeTab(s: TerminalSession): void {
@@ -367,9 +411,12 @@ export class TerminalPanel {
     this.active()?.clear();
   }
 
-  /** Live container name (absorbs renames), falling back to the saved label. */
+  /** Live container name (absorbs renames), falling back to the saved label.
+   *  An agent tab keeps its profile name — that, not the container, is what the
+   *  shell is running. */
   protected liveLabel(s: TerminalSession): string {
     const t = s.target();
+    if (t.agentKey) return t.label;
     return this.store.containers().find(c => c.id === t.containerId)?.name ?? t.label;
   }
 
@@ -408,7 +455,10 @@ export class TerminalPanel {
     const list = data.tabs
       .filter(t => t && t.containerId)
       .map(t => new TerminalSession(
-        { hostId: t.hostId, containerId: t.containerId, label: t.label ?? '' }, this.apiBase, t.id));
+        {
+          hostId: t.hostId, containerId: t.containerId, label: t.label ?? '',
+          agentKey: t.agentKey, command: t.command,
+        }, this.apiBase, t.id));
     if (!list.length) return;
     this.sessions.set(list);
     this.activeId.set((list.find(s => s.id === data.activeId) ?? list[0]).id);
