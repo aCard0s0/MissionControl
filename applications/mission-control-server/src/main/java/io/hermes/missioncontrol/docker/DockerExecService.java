@@ -19,6 +19,13 @@ public class DockerExecService {
 
   public record ExecResult(int exitCode, String stdout, String stderr) {}
 
+  /**
+   * Stand-in status for an exec the daemon reported no exit code for. Non-zero, so the
+   * unchecked callers that use an exit code as a boolean ({@code fileExists},
+   * {@code dirExists}) read "no" rather than "yes" when the answer is unknown.
+   */
+  static final int EXIT_STATUS_UNAVAILABLE = -1;
+
   private final DockerClients clients;
 
   public DockerExecService(DockerClients clients) {
@@ -97,9 +104,17 @@ public class DockerExecService {
       if (sensitive) throw new UpstreamUnavailableException(operation + " failed", e);
       throw e;
     }
-    int exitCode = inspected == null ? 0 : inspected;
     String out = stdout.toString(StandardCharsets.UTF_8);
     String err = stderr.toString(StandardCharsets.UTF_8);
+    if (inspected == null) {
+      // the daemon has no exit status for this exec — it never completed, or the
+      // inspection raced it. Treating that as 0 tells every caller the command
+      // succeeded, which for a config write or a profile delete means reporting a
+      // mutation that may not have happened.
+      if (check) throw new UpstreamUnavailableException(operation + " exit status unavailable");
+      return new ExecResult(EXIT_STATUS_UNAVAILABLE, out, err);
+    }
+    int exitCode = inspected;
     if (check && exitCode != 0) {
       throw commandFailure(operation, exitCode, sensitive, out, err);
     }

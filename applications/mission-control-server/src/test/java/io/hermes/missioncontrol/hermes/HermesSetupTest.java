@@ -68,10 +68,12 @@ class HermesSetupTest {
   }
 
   @Test
-  void aShortKeyIsStillNotShownInFull() {
+  void aKeyTooShortToHaveAHiddenPartRevealsNoneOfItsCharacters() {
+    // a mask that appends the whole value discloses the secret it exists to hide, and a
+    // short key is exactly the case where the suffix *is* the whole key
     envFile("OPENAI_API_KEY=abc");
 
-    assertEquals("...abc", key(run(), "OPENAI_API_KEY").masked());
+    assertEquals("...", key(run(), "OPENAI_API_KEY").masked());
   }
 
   @Test

@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -445,10 +447,12 @@ class HermesProfilesTest {
         "unix:///sock", "cid", "ops", "old-name",
         new AddMcpServerRequest(
             "occupied", "http", "https://new.example.test/mcp", null, null, null)));
-    // The sole exec is the config read. No temp-file write (and no deletion) is
-    // attempted after the collision is discovered.
-    verify(dockerExec, times(1)).runAsUser(
-        anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
+    // No temp-file write (and no deletion) is attempted after the collision is
+    // discovered. Asserted by operation rather than by a total exec count, because the
+    // profile-existence guard also reads before the config read.
+    verify(dockerExec, never()).runAsUser(
+        anyString(), anyString(), anyString(), any(), eq("write MCP configuration"), anyBoolean(),
+        anyBoolean(), any(Duration.class));
   }
 
   @Test

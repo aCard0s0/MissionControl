@@ -38,7 +38,12 @@ public class TerminalWebSocketConfig implements WebSocketConfigurer {
         .addInterceptors(originGuard());
   }
 
-  private static HandshakeInterceptor originGuard() {
+  /**
+   * Package-private rather than private so the guard can be exercised directly. It is the
+   * only access control on an endpoint that hands out an interactive shell, and a
+   * cross-site handshake it wrongly admits is remote code execution.
+   */
+  static HandshakeInterceptor originGuard() {
     return new HandshakeInterceptor() {
       @Override
       public boolean beforeHandshake(@NonNull ServerHttpRequest request,

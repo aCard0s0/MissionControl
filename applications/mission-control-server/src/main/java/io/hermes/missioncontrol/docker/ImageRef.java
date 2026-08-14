@@ -18,21 +18,28 @@ final class ImageRef {
   private ImageRef() {
   }
 
-  /** Splits a reference into {repository, tag}, defaulting the tag to 'latest'. */
+  /**
+   * Splits a reference into {repository, tag}, defaulting the tag to 'latest'.
+   *
+   * <p>A digest reference ({@code repo@sha256:…}) has no tag. Its digest also contains a
+   * ':', so the tag scan has to stop at the '@' — otherwise the digest algorithm becomes
+   * part of the repository and the hex becomes the "tag".
+   */
   static String[] splitImage(String image) {
     if (image == null) return new String[]{"?", "?"};
-    int idx = image.lastIndexOf(':');
+    String reference = withoutDigest(image);
+    int idx = reference.lastIndexOf(':');
     // a ':' inside a registry host:port segment is not a tag separator
-    if (idx > 0 && image.indexOf('/', idx) == -1) {
-      return new String[]{image.substring(0, idx), image.substring(idx + 1)};
+    if (idx > 0 && reference.indexOf('/', idx) == -1) {
+      return new String[]{reference.substring(0, idx), reference.substring(idx + 1)};
     }
-    return new String[]{image, "latest"};
+    return new String[]{reference, "latest"};
   }
 
   /** Drops any tag and the Docker Hub registry prefixes so short and long forms compare equal. */
   static String normalizeRepository(String repository) {
     if (repository == null) return "";
-    String repo = repository;
+    String repo = withoutDigest(repository);
     int idx = repo.lastIndexOf(':');
     if (idx > 0 && repo.indexOf('/', idx) == -1) {
       repo = repo.substring(0, idx);
@@ -62,6 +69,16 @@ final class ImageRef {
       return null;
     }
     return segments.length == 1 ? "library/" + first : normalized;
+  }
+
+  /**
+   * The reference with any {@code @sha256:…} digest removed. A digest pins the same
+   * repository a tag would, so dropping it is what lets a digest-pinned container still
+   * match the configured Hermes repository.
+   */
+  private static String withoutDigest(String reference) {
+    int at = reference.indexOf('@');
+    return at > 0 ? reference.substring(0, at) : reference;
   }
 
   /** True for tags that track a stream rather than pinning a release. */

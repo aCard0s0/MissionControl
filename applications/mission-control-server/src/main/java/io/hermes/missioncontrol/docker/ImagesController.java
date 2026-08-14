@@ -23,10 +23,10 @@ public class ImagesController {
   public ImageTagsDto tags(
       @RequestParam String hostId,
       @RequestParam(defaultValue = "true") boolean remote) {
-    DockerHostDto host = hosts.check(hostId);
-    if (!"connected".equals(host.status())) {
-      throw new IllegalArgumentException("docker host not connected");
-    }
+    // requireConnected rather than a local status check: a daemon that is down is an
+    // upstream failure (503), not a bad request, and every other endpoint that needs a
+    // live host reports it that way
+    DockerHostDto host = hosts.requireConnected(hostId);
     return catalog.tags(host.url(), remote);
   }
 }

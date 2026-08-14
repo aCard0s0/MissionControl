@@ -21,6 +21,17 @@ jobs:
           cache-dependency-path: applications/mission-control-fe/package-lock.json
       - name: Backend tests
         run: mvn test
+      - name: Backend coverage summary
+        # jacoco's report goal is bound to `test`, so the CSV already exists. Columns are
+        # LINE_MISSED ($8) and LINE_COVERED ($9); $4/$5 are instructions, not lines.
+        run: |
+          awk -F, 'NR>1 {m+=$8; c+=$9} END {printf "backend line coverage: %.1f%% (%d/%d)\n", 100*c/(c+m), c, c+m}' \
+            applications/mission-control-server/target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
+      - name: Backend coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: applications/mission-control-server/target/site/jacoco/
       - name: Frontend install
         working-directory: applications/mission-control-fe
         run: npm ci

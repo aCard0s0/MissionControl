@@ -106,4 +106,47 @@ class ImageRefTest {
         ImageRef.normalizeRepository("index.docker.io/NousResearch/Hermes-Agent:v2026.8.3"));
     assertEquals("", ImageRef.normalizeRepository(null));
   }
+
+  // --- digest references --------------------------------------------------------------
+  //
+  // A digest contains its own ':' ("@sha256:<hex>"), so scanning for the last ':' lands
+  // inside it. DockerGateway compares normalizeRepository() against the configured Hermes
+  // repository to decide what belongs in the fleet view, so getting this wrong makes a
+  // digest-pinned agent disappear from /api/containers entirely.
+
+  private static final String DIGEST =
+      "@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+  @Test
+  void aDigestPinnedReferenceNormalizesToTheSameRepositoryAsATaggedOne() {
+    assertEquals(
+        ImageRef.normalizeRepository("nousresearch/hermes-agent:v2026.8.3"),
+        ImageRef.normalizeRepository("nousresearch/hermes-agent" + DIGEST));
+  }
+
+  @Test
+  void aDigestPinnedReferenceKeepsItsRepositoryAndDoesNotReportTheDigestAsATag() {
+    String[] split = ImageRef.splitImage("nousresearch/hermes-agent" + DIGEST);
+
+    assertEquals("nousresearch/hermes-agent", split[0]);
+    // there is no tag in a digest reference; the hex is not one
+    assertEquals("latest", split[1]);
+  }
+
+  @Test
+  void aDigestOnAReferenceThatAlsoCarriesARegistryPortIsHandled() {
+    String[] split = ImageRef.splitImage("registry.local:5000/nous/hermes-agent" + DIGEST);
+
+    assertEquals("registry.local:5000/nous/hermes-agent", split[0]);
+    assertEquals("latest", split[1]);
+    assertEquals("registry.local:5000/nous/hermes-agent",
+        ImageRef.normalizeRepository("registry.local:5000/nous/hermes-agent" + DIGEST));
+  }
+
+  @Test
+  void dockerHubPathResolvesADigestReference() {
+    assertEquals("nousresearch/hermes-agent",
+        ImageRef.dockerHubPath("nousresearch/hermes-agent" + DIGEST));
+    assertEquals("library/postgres", ImageRef.dockerHubPath("postgres" + DIGEST));
+  }
 }

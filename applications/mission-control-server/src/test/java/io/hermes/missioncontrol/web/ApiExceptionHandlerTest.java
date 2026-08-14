@@ -116,6 +116,63 @@ class ApiExceptionHandlerTest {
         .andExpect(jsonPath("$.error").value("first line only"));
   }
 
+  // --- Spring's own failures ----------------------------------------------------------
+  //
+  // These are all RuntimeExceptions or checked ServletExceptions, so without explicit
+  // handlers they were either claimed by the RuntimeException catch-all (a 500 for what is
+  // plainly a bad request) or escaped the advice entirely (losing the {"error": ...} body
+  // shape the frontend parses).
+
+  @Test
+  void aMalformedJsonBodyIsABadRequestNotAServerError() throws Exception {
+    mvc.perform(post("/boom/validated")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").exists());
+  }
+
+  @Test
+  void aNonNumericQueryParameterIsABadRequestNotAServerError() throws Exception {
+    mvc.perform(get("/boom/tail").param("tail", "abc"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("tail")));
+  }
+
+  @Test
+  void aMissingRequiredQueryParameterKeepsTheErrorBodyShape() throws Exception {
+    mvc.perform(get("/boom/required-param"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value("hostId is required"));
+  }
+
+  @Test
+  void aDockerConflictIsAConflictNotABadGateway() throws Exception {
+    // a duplicate container name is the caller's problem and is actionable; 502 tells them
+    // the daemon is broken, which it is not
+    mvc.perform(get("/boom/docker-conflict"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.containsString("container name already in use")));
+  }
+
+  @Test
+  void aDockerNotModifiedIsNotReportedAsADaemonError() throws Exception {
+    // stopping an already-stopped container: nothing failed, the state is simply already
+    // what was asked for
+    mvc.perform(get("/boom/docker-not-modified"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.containsString("container already stopped")));
+  }
+
+  @Test
+  void aGenuineDaemonFailureIsStillABadGateway() throws Exception {
+    // the new conflict handlers must not swallow the general docker case
+    mvc.perform(get("/boom/docker"))
+        .andExpect(status().isBadGateway());
+  }
+
   record ValidatedBody(@NotBlank String name) {}
 
   @RestController
@@ -175,6 +232,28 @@ class ApiExceptionHandlerTest {
     @RequestMapping(value = "/validated", method = org.springframework.web.bind.annotation.RequestMethod.POST)
     void validated(@Valid @RequestBody ValidatedBody body) {
       throw new AssertionError("validation should have rejected this before the body ran");
+    }
+
+    @RequestMapping("/docker-conflict")
+    void dockerConflict() {
+      throw new com.github.dockerjava.api.exception.ConflictException("container name already in use");
+    }
+
+    @RequestMapping("/docker-not-modified")
+    void dockerNotModified() {
+      throw new com.github.dockerjava.api.exception.NotModifiedException("container already stopped");
+    }
+
+    /** Mirrors the logs endpoints: an int query param with a default. */
+    @RequestMapping("/tail")
+    int tail(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "100") int tail) {
+      return tail;
+    }
+
+    /** Mirrors GET /api/images/tags: a required query param with no default. */
+    @RequestMapping("/required-param")
+    String requiredParam(@org.springframework.web.bind.annotation.RequestParam String hostId) {
+      return hostId;
     }
 
     @RequestMapping("/echo/{id}")
