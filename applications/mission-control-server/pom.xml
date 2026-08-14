@@ -20,6 +20,8 @@
   <properties>
     <java.version>24</java.version>
     <docker-java.version>3.4.2</docker-java.version>
+    <!-- not managed by spring-boot-starter-parent, so pin it here -->
+    <jacoco.version>0.8.13</jacoco.version>
   </properties>
 
   <dependencies>
@@ -74,6 +76,37 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <configuration>
+          <excludes>
+            <!-- the entry point and the response records carry no logic worth a number.
+                 *Request* records are deliberately NOT excluded: their bean-validation
+                 annotations are the contract the controller tests exist to prove. -->
+            <exclude>io/hermes/missioncontrol/MissionControlApplication.class</exclude>
+            <exclude>io/hermes/missioncontrol/**/*Dto.class</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution>
+            <id>jacoco-prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>jacoco-report</id>
+            <!-- the goal's default phase is `verify`; CI runs bare `mvn test`, so the
+                 report has to be produced by that command to be worth anything -->
+            <phase>test</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
