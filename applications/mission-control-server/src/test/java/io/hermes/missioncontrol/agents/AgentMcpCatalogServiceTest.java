@@ -533,4 +533,43 @@ class AgentMcpCatalogServiceTest {
     return new AgentMcpServerDto(name, name, "http", false, "unknown", 0, null, null, null,
         "http://mcp-tools:1100/mcp", null, null);
   }
+
+  @Test
+  void connectingAManagedCatalogServerFromAnotherHostUsesItsCrossHostUrl() {
+    // the MCP network is local to each daemon, so the service name resolves nowhere from here
+    McpServerDto source = managedCatalog("dh-remote", "running");
+    when(source.crossHostUrl()).thenReturn("https://peer.test/mcp");
+    registryHas(source);
+    hostIsUp();
+    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+        .thenReturn(profile(List.of(custom("tools"))));
+    enrichesTransparently();
+
+    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
+
+    assertEquals("https://peer.test/mcp", capturedAdd().url());
+    verify(docker, never()).connectNetwork(anyString(), anyString(), anyString());
+  }
+
+  @Test
+  void aStdioCatalogServerNeedsNoNetworkAndNoUrl() {
+    registryHas(stdioCatalog("npx", List.of("a b")));
+    hostIsUp();
+    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+        .thenReturn(profile(List.of(custom("files"))));
+    enrichesTransparently();
+
+    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
+
+    assertNull(capturedAdd().url());
+    // one argument carrying a space must not become two
+    assertEquals("'a b'", capturedAdd().args());
+    verify(docker, never()).connectNetwork(anyString(), anyString(), anyString());
+  }
+
+  private void enrichesTransparently() {
+    when(links.list(anyString(), anyString(), anyString())).thenReturn(List.of());
+  }
 }

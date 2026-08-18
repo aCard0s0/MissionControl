@@ -449,4 +449,17 @@ class TerminalSocketHandlerTest {
     handler.afterConnectionEstablished(next);
     verify(next, never()).close(any());
   }
+
+  @Test
+  void aCloseWithNoStatusStillTearsTheSessionDownNormally() throws Exception {
+    // Spring passes null when the transport dropped without a close frame
+    TerminalSocketHandler handler = handler(props(1, 5));
+    WebSocketSession session = session("a", "10.0.0.1", QUERY);
+    handler.afterConnectionEstablished(session);
+
+    handler.afterConnectionClosed(session, null);
+
+    verify(session).close(CloseStatus.NORMAL);
+    assertSlotWasReturned(handler);
+  }
 }

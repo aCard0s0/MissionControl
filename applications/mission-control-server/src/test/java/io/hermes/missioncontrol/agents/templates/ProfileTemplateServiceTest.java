@@ -21,6 +21,7 @@ import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretInput;
 import io.hermes.missioncontrol.secrets.SecretRef;
+import java.util.NoSuchElementException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -203,5 +204,49 @@ class ProfileTemplateServiceTest {
     assertEquals(Map.of("npm_config_token", "stdio-token"),
         requests.getAllValues().get(1).environment());
     verify(setup, never()).putEnv(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyList());
+  }
+
+  @Test
+  void theCrudPathsReadWriteAndDeleteThroughTheRepository() {
+    ProfileTemplate stored = new ProfileTemplate("pt-1", "ops", "", "anthropic", "m", "", "",
+        "", "", List.of(), List.of(), List.of(), 1L, 1L);
+    when(repository.findAll()).thenReturn(List.of(stored));
+    when(repository.findById("pt-1")).thenReturn(Optional.of(stored));
+
+    assertEquals(List.of("ops"), service.list().stream().map(ProfileTemplateDto::name).toList());
+    assertEquals("ops", service.get("pt-1").name());
+    service.delete("pt-1");
+    verify(repository).delete("pt-1");
+  }
+
+  @Test
+  void anUnknownTemplateIdIsANotFoundOnEveryPathThatTakesOne() {
+    when(repository.findById("pt-nope")).thenReturn(Optional.empty());
+
+    assertThrows(NoSuchElementException.class, () -> service.get("pt-nope"));
+    assertThrows(NoSuchElementException.class, () -> service.update("pt-nope", request("ops", List.of())));
+    assertThrows(NoSuchElementException.class,
+        () -> service.deploy("pt-nope", "unix:///sock", "c1", "scout"));
+  }
+
+  @Test
+  void creatingRefusesANameThatIsAlreadyTaken() {
+    when(repository.existsByName("ops")).thenReturn(true);
+
+    assertEquals("a template named 'ops' already exists",
+        assertThrows(IllegalArgumentException.class,
+            () -> service.create(request("ops", List.of()))).getMessage());
+    verify(repository, never()).insert(any());
+  }
+
+  @Test
+  void creatingStoresTheRecordAndAnswersWithItsDto() {
+    when(repository.existsByName("ops")).thenReturn(false);
+
+    ProfileTemplateDto created = service.create(request("ops", List.of()));
+
+    assertEquals("ops", created.name());
+    assertTrue(created.id().startsWith("pt-"));
+    verify(repository).insert(any(ProfileTemplate.class));
   }
 }

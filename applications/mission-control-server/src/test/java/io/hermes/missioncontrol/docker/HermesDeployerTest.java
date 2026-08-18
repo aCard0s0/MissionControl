@@ -324,4 +324,19 @@ class HermesDeployerTest {
     when(client.removeVolumeCmd(name)).thenReturn(remove);
     return remove;
   }
+
+  // ── the profiles a deploy seeds ──────────────────────────────────────────
+
+  @Test
+  void theProfileListIsNormalisedBeforeAnythingIsSeeded() {
+    // the list becomes a series of seeding execs; a blank would create a profile named '' and a
+    // duplicate would seed the same one twice. 'default' is dropped: the image already has it,
+    // and seeding it again would overwrite a profile the operator may have configured.
+    assertEquals(List.of(), HermesDeployer.normalizeProfiles(null));
+    assertEquals(List.of(), HermesDeployer.normalizeProfiles(List.of()));
+    assertEquals(List.of(), HermesDeployer.normalizeProfiles(java.util.Arrays.asList("  ", "", null)));
+    assertEquals(List.of(), HermesDeployer.normalizeProfiles(List.of("default")));
+    assertEquals(List.of("ops", "scout"),
+        HermesDeployer.normalizeProfiles(List.of(" ops ", "scout", "ops", "default")));
+  }
 }

@@ -23,15 +23,32 @@ public class WebConfig implements WebMvcConfigurer {
     registry.addResourceHandler("/**")
         .addResourceLocations("classpath:/static/")
         .resourceChain(true)
-        .addResolver(new PathResourceResolver() {
-          @Override
-          protected Resource getResource(@NonNull String path, @NonNull Resource location) throws IOException {
-            Resource resource = location.createRelative(path);
-            if (resource.exists() && resource.isReadable()) return resource;
-            if (path.startsWith("api/") || path.equals("health") || path.equals("config.js")) return null;
-            return new ClassPathResource("/static/index.html");
-          }
-        });
+        .addResolver(spaFallbackResolver());
+  }
+
+  /**
+   * Resolves an unknown non-API path to {@code index.html} so a deep link survives a refresh.
+   *
+   * <p>Package-private rather than inline for the same reason as
+   * {@code TerminalWebSocketConfig.originGuard}: it decides which requests are handed the SPA
+   * shell and which fall through to a 404, and getting that wrong turns an API typo into an
+   * HTML page the client cannot parse.
+   */
+  static PathResourceResolver spaFallbackResolver() {
+    return new PathResourceResolver() {
+      @Override
+      protected Resource getResource(@NonNull String path, @NonNull Resource location) throws IOException {
+        return resolveSpaPath(path, location);
+      }
+    };
+  }
+
+  /** The rule itself, as a plain function: the resolver's own hook is protected. */
+  static Resource resolveSpaPath(String path, Resource location) throws IOException {
+    Resource resource = location.createRelative(path);
+    if (resource.exists() && resource.isReadable()) return resource;
+    if (path.startsWith("api/") || path.equals("health") || path.equals("config.js")) return null;
+    return new ClassPathResource("/static/index.html");
   }
 
   @Override

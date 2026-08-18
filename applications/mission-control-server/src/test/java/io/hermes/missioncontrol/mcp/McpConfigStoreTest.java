@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -249,5 +250,147 @@ class McpConfigStoreTest {
 
     Map<String, String> materialized = store.materialize(config.environment());
     assertEquals("sk-legacy-plaintext", materialized.get("API_TOKEN"));
+  }
+
+  // ── carrying values across an edit ───────────────────────────────────────
+
+  @Test
+  void aNonSecretValueIsStoredAsWrittenAndAnAbsentOneAsEmpty() {
+    StoredConfig stored = store.store(validated(
+        List.of(new ConfigValueInput("ROOT", "/data", false, false),
+            new ConfigValueInput("EMPTY", null, false, false))), null);
+
+    assertEquals("/data", stored.environment().get(0).value());
+    assertEquals("", stored.environment().get(1).value(), "an absent plain value is empty, not null");
+  }
+
+  @Test
+  void aValueMarkedForClearingIsDroppedRatherThanStoredBlank() {
+    StoredConfig existing = store.store(validated(
+        List.of(new ConfigValueInput("TOKEN", "secret", true, false))), null);
+
+    StoredConfig cleared = store.store(validated(
+        List.of(new ConfigValueInput("TOKEN", null, true, true))), existing);
+
+    assertTrue(cleared.environment().isEmpty());
+  }
+
+  @Test
+  void aBlankSecretWithNothingStoredBehindItIsRefused() {
+    // the UI sends blank for "keep what you have"; with nothing held that is a missing value
+    IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+        () -> store.store(validated(List.of(new ConfigValueInput("TOKEN", "  ", true, false))), null));
+    assertEquals("secret value is required: TOKEN", failure.getMessage());
+
+    // and the same when the stored value under that key was never a secret
+    StoredConfig plain = store.store(validated(
+        List.of(new ConfigValueInput("TOKEN", "plain", false, false))), null);
+    assertEquals("secret value is required: TOKEN",
+        assertThrows(IllegalArgumentException.class, () -> store.store(
+            validated(List.of(new ConfigValueInput("TOKEN", "", true, false))), plain)).getMessage());
+  }
+
+  @Test
+  void aBlankSecretRotatesTheStoredCiphertextRatherThanReusingIt() {
+    StoredConfig existing = store.store(validated(
+        List.of(new ConfigValueInput("TOKEN", "secret", true, false))), null);
+    String before = existing.environment().getFirst().value();
+
+    StoredConfig kept = store.store(validated(
+        List.of(new ConfigValueInput("TOKEN", "   ", true, false))), existing);
+
+    String after = kept.environment().getFirst().value();
+    assertNotEquals(before, after, "a fresh envelope, so a key rotation reaches every value");
+    assertEquals("secret", store.materialize(kept.environment()).get("TOKEN"));
+  }
+
+  @Test
+  void anUnrecoverableStoredSecretIsPreservedRatherThanDestroyedByAnUnrelatedEdit() {
+    // it cannot be re-encrypted, and dropping it would lose the only record that a value exists
+    StoredValue foreign = new StoredValue("TOKEN", "enc:v1:not-mine", true);
+    StoredConfig existing = configWith(List.of(foreign));
+
+    StoredConfig kept = store.store(validated(
+        List.of(new ConfigValueInput("TOKEN", null, true, false))), existing);
+
+    assertEquals("enc:v1:not-mine", kept.environment().getFirst().value());
+  }
+
+  @Test
+  void aSupportServicesSecretsAreCarriedAcrossAnEditTheSameWay() {
+    StoredConfig existing = store.store(withSupportSecret("PGPASSWORD", "secret"), null);
+
+    StoredConfig kept = store.store(withSupportSecret("PGPASSWORD", "   "), existing);
+
+    assertEquals("secret",
+        store.materialize(kept.supportServices().getFirst().environment()).get("PGPASSWORD"));
+  }
+
+  @Test
+  void aNewSupportServiceHasNoPriorSecretsToCarry() {
+    assertEquals("secret", store.materialize(
+        store.store(withSupportSecret("PGPASSWORD", "secret"), null)
+            .supportServices().getFirst().environment()).get("PGPASSWORD"));
+  }
+
+  // ── reading values back out ─────────────────────────────────────────────
+
+  @Test
+  void materialisingReadsPlainValuesAsWrittenAndDecryptsSecrets() {
+    StoredConfig stored = store.store(validated(
+        List.of(new ConfigValueInput("ROOT", "/data", false, false),
+            new ConfigValueInput("TOKEN", "secret", true, false))), null);
+
+    assertEquals("/data", store.materialize(stored.environment()).get("ROOT"));
+    assertEquals("secret", store.materialize(stored.environment()).get("TOKEN"));
+  }
+
+  @Test
+  void renderingSubstitutesBlankForAnUnrecoverableSecretRatherThanFailingTheWholeHost() {
+    // one server's stale key must not block lifecycle operations for every other server on
+    // the host; the strict check happens against the target of the operation
+    StoredConfig config = configWith(List.of(
+        new StoredValue("TOKEN", "enc:v1:not-mine", true),
+        new StoredValue("ROOT", "/data", false),
+        new StoredValue("MISSING", null, true)));
+
+    Map<String, String> rendered = store.materializeForRender(config.environment());
+
+    assertEquals("", rendered.get("TOKEN"));
+    assertEquals("/data", rendered.get("ROOT"));
+    assertEquals("", rendered.get("MISSING"));
+  }
+
+  @Test
+  void redactionReportsWhetherASecretIsSetAndStillRecoverable() {
+    StoredConfig config = configWith(List.of(
+        new StoredValue("ROOT", "/data", false),
+        new StoredValue("GOOD", store.store(validated(
+            List.of(new ConfigValueInput("GOOD", "secret", true, false))), null)
+            .environment().getFirst().value(), true),
+        new StoredValue("STALE", "enc:v1:not-mine", true),
+        new StoredValue("UNSET", null, true)));
+
+    List<ConfigValueDto> redacted = store.redact(config.environment());
+
+    assertEquals("/data", redacted.get(0).value(), "a plain value is not a secret");
+    assertNull(redacted.get(1).value(), "a secret is never returned");
+    assertTrue(redacted.get(1).set() && redacted.get(1).recoverable());
+    assertTrue(redacted.get(2).set());
+    assertEquals(false, redacted.get(2).recoverable(), "a stale envelope must be re-entered");
+    assertEquals(false, redacted.get(3).set());
+  }
+
+  @Test
+  void anUnrecoverableSecretBlocksTheServerItBelongsTo() {
+    StoredConfig config = configWith(List.of(new StoredValue("TOKEN", "enc:v1:not-mine", true)));
+
+    assertEquals("secret value is unrecoverable: TOKEN",
+        assertThrows(IllegalStateException.class, () -> store.assertRecoverable(config)).getMessage());
+  }
+
+  private StoredConfig configWith(List<StoredValue> environment) {
+    return new StoredConfig("http", null, "example/mcp:latest", null, List.of(), List.of(), null,
+        List.of(), 1100, null, "/mcp", null, environment, List.of(), List.of(), null, List.of());
   }
 }

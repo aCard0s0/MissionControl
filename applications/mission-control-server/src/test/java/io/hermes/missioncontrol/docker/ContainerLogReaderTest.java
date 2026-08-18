@@ -144,4 +144,61 @@ class ContainerLogReaderTest {
 
     assertTrue(ContainerLogReader.parseLogFrame(frame).isEmpty());
   }
+
+  @Test
+  void everyLevelPrefixAContainerCanEmitIsHonoured() {
+    // the log pane colours off this, and these are the prefixes a Hermes image actually writes:
+    // bare words, bracketed nginx/postgres forms, and python tracebacks
+    assertEquals("warn", levelOf("WARNING falling back"));
+    assertEquals("warn", levelOf("warn retrying"));
+    assertEquals("warn", levelOf("[warn] retrying"));
+    assertEquals("debug", levelOf("DEBUG resolved"));
+    assertEquals("debug", levelOf("[debug] cache hit"));
+    assertEquals("error", levelOf("ERROR refused"));
+    assertEquals("error", levelOf("FATAL cannot bind"));
+    assertEquals("error", levelOf("[emerg] no upstream"));
+    assertEquals("error", levelOf("Traceback (most recent call last):"));
+    assertEquals("info", levelOf("INFO listening"));
+    assertEquals("info", levelOf("[notice] started"));
+    assertEquals("info", levelOf("[info] ready"));
+  }
+
+  @Test
+  void aLineThatNamesNoLevelIsJudgedOnItsProse() {
+    assertEquals("error", levelOf("could not open file PermissionError: denied"));
+    assertEquals("error", levelOf("ValueError exception: bad model"));
+    assertEquals("error", levelOf("gateway hit a fatal error and gave up"));
+    assertEquals("info", levelOf("gateway: info: listening on 8080"));
+  }
+
+  @Test
+  void aBlankOrTimestampOnlyRecordIsDropped() {
+    // docker prefixes even an empty application record with its own timestamp
+    assertEquals(0, ContainerLogReader.parseLogFrame(frame(StreamType.STDOUT, "   \n")).size());
+    assertEquals(0, ContainerLogReader.parseLogFrame(
+        frame(StreamType.STDOUT, "2026-08-13T10:25:55.000000000Z \n")).size());
+  }
+
+  @Test
+  void aLineWithNoLeadingTimestampIsKeptWholeRatherThanTruncated() {
+    var lines = ContainerLogReader.parseLogFrame(frame(StreamType.STDOUT, "no-timestamp-here\n"));
+
+    assertEquals(1, lines.size());
+    assertEquals("no-timestamp-here", lines.getFirst().msg());
+  }
+
+  @Test
+  void aLineWhoseFirstWordIsNotATimestampKeepsThatWord() {
+    // 'starting up' would otherwise lose 'starting' to a failed timestamp parse
+    var lines = ContainerLogReader.parseLogFrame(frame(StreamType.STDOUT, "starting up\n"));
+
+    assertEquals("starting up", lines.getFirst().msg());
+  }
+
+  /** The level assigned to a single stdout line carrying a docker timestamp. */
+  private static String levelOf(String message) {
+    return ContainerLogReader.parseLogFrame(
+        frame(StreamType.STDOUT, "2026-08-13T10:25:55.000000000Z " + message + "\n"))
+        .getFirst().level();
+  }
 }

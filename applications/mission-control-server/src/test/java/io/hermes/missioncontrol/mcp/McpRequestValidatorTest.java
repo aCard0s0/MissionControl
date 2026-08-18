@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.mcp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
 import java.util.List;
@@ -623,5 +624,48 @@ class McpRequestValidatorTest {
         "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
         entrypoint, command, null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), healthcheck, List.of());
+  }
+
+  @Test
+  void anAbsentListIsTreatedAsAnEmptyOneRatherThanARejection() {
+    // an older client, or a form that never touched the field, sends null
+    var value = McpRequestValidator.validate(new McpServerRequest(
+        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        null, null, null, null, 1100, null, "/mcp", null,
+        null, null, null, null, null));
+
+    assertTrue(value.entrypoint().isEmpty());
+    assertTrue(value.command().isEmpty());
+    assertTrue(value.args().isEmpty());
+    assertTrue(value.environment().isEmpty());
+    assertTrue(value.headers().isEmpty());
+    assertTrue(value.volumes().isEmpty());
+    assertTrue(value.supportServices().isEmpty());
+  }
+
+  @Test
+  void aListWithTooManyEntriesIsRefusedPerField() {
+    List<String> tooMany = IntStream.rangeClosed(0, 100).mapToObj(i -> "arg" + i).toList();
+    assertEquals("args has too many entries", rejected(stdioRequest(r -> r.args = tooMany)));
+    assertEquals("entrypoint has too many entries", rejected(managedRequest(r -> r.entrypoint = tooMany)));
+    assertEquals("command has too many entries", rejected(managedRequest(r -> r.command = tooMany)));
+  }
+
+  @Test
+  void aNullEntryInsideAListIsRefusedRatherThanWrittenAsNull() {
+    assertEquals("args cannot be null",
+        rejected(stdioRequest(r -> r.args = Collections.singletonList(null))));
+    assertEquals("entrypoint cannot be null",
+        rejected(managedRequest(r -> r.entrypoint = Collections.singletonList(null))));
+  }
+
+  @Test
+  void aConfigurationEntryWithNoValueIsStoredAsAKeyWithNoValue() {
+    // the editor sends this to declare a variable it is not setting yet
+    var value = McpRequestValidator.validate(managedRequest(r -> r.environment =
+        List.of(new ConfigValueInput("TOKEN", null, true, false))));
+
+    assertEquals("TOKEN", value.environment().getFirst().key());
+    assertNull(value.environment().getFirst().value());
   }
 }

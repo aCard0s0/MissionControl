@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -428,6 +431,13 @@ class McpRegistryLifecycleTest {
       tasks.clear();
     }
 
+    /** Runs everything recorded so far, in order, the way the real executor eventually would. */
+    void runAll() {
+      List<Runnable> pending = List.copyOf(tasks);
+      tasks.clear();
+      pending.forEach(Runnable::run);
+    }
+
     @Override public void execute(Runnable command) {
       tasks.add(command);
     }
@@ -452,5 +462,97 @@ class McpRegistryLifecycleTest {
     @Override public boolean awaitTermination(long timeout, TimeUnit unit) {
       return true;
     }
+  }
+
+  // ── the queued work, once it runs ────────────────────────────────────────
+
+  @Test
+  void aQueuedProvisionRunsTheStackAndClearsTheOperation() {
+    String id = service.create(managed("Files", "dh-local")).id();
+
+    operations.runAll();
+
+    ServerRow row = row(id);
+    assertEquals("idle", row.operationState());
+    assertEquals(row.revision(), row.appliedRevision());
+    verify(compose).execute(eq("dh-local"), any(), any(), any());
+  }
+
+  @Test
+  void aQueuedStartAndStopEachReachTheirComposeCommand() {
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+
+    service.start(id);
+    operations.runAll();
+    assertEquals("running", row(id).runtimeState());
+
+    service.stop(id);
+    operations.runAll();
+    assertEquals("stopped", row(id).runtimeState());
+  }
+
+  @Test
+  void aQueuedApplyReconcilesTowardWhicheverStateIsRecorded() {
+    // apply is the same operation for a stopped and a running record; only the target differs
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+
+    service.apply(id);
+    operations.runAll();
+    assertEquals("stopped", row(id).runtimeState(), "a stopped record is re-provisioned stopped");
+
+    service.start(id);
+    operations.runAll();
+    service.apply(id);
+    operations.runAll();
+    assertEquals("running", row(id).runtimeState(), "a running record is brought back up");
+  }
+
+  @Test
+  void aQueuedDeleteRemovesTheRecordOnceItsStackIsTornDown() {
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+    service.delete(id);
+
+    operations.runAll();
+
+    assertTrue(repository.findById(id).isEmpty());
+  }
+
+  @Test
+  void startupReconciliationRunsForEveryManagedRecord() {
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+    service.initialize();
+
+    operations.runAll();
+
+    assertEquals("idle", row(id).operationState());
+    assertTrue(repository.findAll().size() > 1, "the seeded defaults are there too");
+  }
+
+  @Test
+  void aRecordResumingItsDeletionAfterARestartIsActuallyDeleted() {
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+    repository.beginOperation(id, "stopped", "deleting");
+    operations.clear();
+    service.initialize();
+
+    operations.runAll();
+
+    assertTrue(repository.findById(id).isEmpty());
+  }
+
+  @Test
+  void aCatalogReadRefreshesRuntimeStateAndAnUnknownServerIsStillANotFound() {
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+    when(compose.serviceContainerId(eq("dh-local"), anyString())).thenReturn(null);
+
+    assertTrue(service.list().stream().anyMatch(dto -> id.equals(dto.id())));
+    assertEquals("missing", service.require(id).runtimeState());
+    assertThrows(NoSuchElementException.class, () -> service.require("mcp-nope"));
   }
 }

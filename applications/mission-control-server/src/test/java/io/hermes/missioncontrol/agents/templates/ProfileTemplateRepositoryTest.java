@@ -164,4 +164,49 @@ class ProfileTemplateRepositoryTest {
     assertTrue(repository.findById("pt-1").isEmpty());
     assertTrue(repository.findAll().isEmpty());
   }
+
+  // ── name collisions and unreadable columns ──────────────────────────────
+
+  @Test
+  void aNameIsTakenExactlyAndNeverByTheTemplateThatOwnsIt() {
+    repository.insert(template("pt-1", "Ops"));
+
+    assertTrue(repository.existsByName("Ops"));
+    assertFalse(repository.existsByName("other"));
+    // the column is UNIQUE without COLLATE NOCASE, so 'ops' really is a different name — the
+    // pre-check and the constraint agree, which is what keeps a rename from hitting a raw DB error
+    assertFalse(repository.existsByName("ops"));
+    // a rename onto its own name is not a collision
+    assertFalse(repository.existsByNameExcept("Ops", "pt-1"));
+    assertTrue(repository.existsByNameExcept("Ops", "pt-2"));
+  }
+
+  @Test
+  void anUnreadableListColumnIsDroppedOnAListingRatherThanBreakingThePage() {
+    // a hand-edited or half-written column would otherwise 500 the whole templates page
+    repository.insert(template("pt-1", "Ops"));
+    database.jdbc().update("UPDATE profile_templates SET skills = ? WHERE id = ?", "{not json", "pt-1");
+
+    assertTrue(repository.findAll().getFirst().skills().isEmpty());
+  }
+
+  @Test
+  void anUnreadableListColumnIsRefusedWhenTheTemplateIsFetchedToBeApplied() {
+    // dropping it here would deploy an agent missing the skills the template promised
+    repository.insert(template("pt-1", "Ops"));
+    database.jdbc().update("UPDATE profile_templates SET mcp_servers = ? WHERE id = ?", "{not json", "pt-1");
+
+    assertThrows(IllegalStateException.class, () -> repository.findById("pt-1"));
+  }
+
+  @Test
+  void anEmptyListColumnReadsAsAnEmptyListNotNull() {
+    repository.insert(template("pt-1", "Ops"));
+    database.jdbc().update("UPDATE profile_templates SET skills = ?, secrets = ? WHERE id = ?",
+        "", null, "pt-1");
+
+    ProfileTemplate read = repository.findAll().getFirst();
+    assertTrue(read.skills().isEmpty());
+    assertTrue(read.secrets().isEmpty());
+  }
 }
