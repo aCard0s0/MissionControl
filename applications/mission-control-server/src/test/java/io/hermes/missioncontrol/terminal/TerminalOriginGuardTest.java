@@ -129,4 +129,18 @@ class TerminalOriginGuardTest {
     assertTrue(handshake("https://mc.example", "mc.example", "https",
         mock(ServerHttpResponse.class)));
   }
+
+  @Test
+  void anOriginWithNoHostToCompareIsForbidden() throws Exception {
+    // a browser sends the literal "null" for a file:// or sandboxed document, and a URL with an
+    // empty authority parses but names no host — neither can be same-origin with anything
+    assertFalse(handshake("null", "mc.test:8080", null, mock(ServerHttpResponse.class)));
+    assertFalse(handshake("https:///nohost", "mc.test:8080", null, mock(ServerHttpResponse.class)));
+  }
+
+  @Test
+  void aHandshakeWithNoHostHeaderIsForbidden() throws Exception {
+    // nothing to compare the origin against; admitting it would trust the client's own claim
+    assertFalse(handshake("http://evil.test", null, null, mock(ServerHttpResponse.class)));
+  }
 }

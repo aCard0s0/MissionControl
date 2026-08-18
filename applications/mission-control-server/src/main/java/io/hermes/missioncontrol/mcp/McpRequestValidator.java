@@ -127,7 +127,10 @@ final class McpRequestValidator {
   }
 
   private static String requireTransport(String transport) {
-    if (!Set.of("http", "sse").contains(transport)) {
+    // not Set.of(...).contains(transport): an omitted transport is null, and Set.of rejects a
+    // null argument with an NPE — which leaves the handler no IllegalArgumentException to turn
+    // into a 400 and reports a missing field as a 500
+    if (!("http".equals(transport) || "sse".equals(transport))) {
       throw new IllegalArgumentException("transport must be http or sse");
     }
     return transport;
@@ -144,13 +147,16 @@ final class McpRequestValidator {
     if (!value.startsWith("/") || value.startsWith("//")) {
       throw new IllegalArgumentException("path must start with one /");
     }
+    URI path;
     try {
-      URI path = URI.create(value);
-      if (path.isAbsolute() || path.getHost() != null || path.getFragment() != null) {
-        throw new IllegalArgumentException("path must be a relative HTTP path");
-      }
-    } catch (IllegalArgumentException e) {
+      path = URI.create(value);
+    } catch (IllegalArgumentException malformed) {
       throw new IllegalArgumentException("path is invalid");
+    }
+    // outside the try: inside it, this throw was caught by the catch below and reported as the
+    // generic "path is invalid", so the reason a path was refused never reached the operator
+    if (path.isAbsolute() || path.getHost() != null || path.getFragment() != null) {
+      throw new IllegalArgumentException("path must be a relative HTTP path");
     }
     return value;
   }

@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
+import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.MessagingStatusDto;
@@ -234,5 +236,76 @@ class HermesSetupTest {
     // every line is commented out, so seeding a profile with it enables nothing
     template.lines().filter(line -> !line.isBlank())
         .forEach(line -> assertTrue(line.startsWith("#"), "uncommented template line: " + line));
+  }
+
+  // ── parsing the .env back ────────────────────────────────────────────────
+
+  @Test
+  void commentsBlankLinesAndValuelessLinesAreIgnoredWhenReadingEnv() {
+    // the seeded template is entirely commented out, so a parser that read '#' lines as values
+    // would report every provider as configured
+    envFile("""
+        # ANTHROPIC_API_KEY=commented-out
+
+          OPENAI_API_KEY = sk-openai-abcdefgh
+        NOT_AN_ASSIGNMENT
+        =novalue
+        """);
+
+    AgentSetupDto dto = run();
+
+    assertTrue(key(dto, "OPENAI_API_KEY").set(), "a padded assignment is still an assignment");
+    assertFalse(key(dto, "ANTHROPIC_API_KEY").set(), "a commented key is not set");
+  }
+
+  @Test
+  void anAbsentEnvFileReportsNothingSetRatherThanFailing() {
+    when(files.fileExists(anyString(), anyString(), anyString())).thenReturn(false);
+    envFile("");
+
+    AgentSetupDto dto = run();
+
+    assertFalse(dto.envExists());
+    assertFalse(key(dto, "ANTHROPIC_API_KEY").set());
+  }
+
+  @Test
+  void aStatusLineOutsideAnySectionOrIndentedAsDetailIsSkipped() {
+    // the report starts with a banner, and each row may carry indented detail lines; taking
+    // either as a row would invent providers the agent does not have
+    statusOutput("""
+        hermes 1.2.0 — profile default
+        \u001B[1m◆ API Keys\u001B[0m
+          OpenAI  ✓ configured
+              key loaded from /opt/data/profiles/default/.env
+          NoMarkHere is not a row
+        """);
+
+    AgentSetupDto dto = run();
+
+    assertTrue(key(dto, "OPENAI_API_KEY").set(), "the row's own ✓ marks it configured");
+    assertFalse(dto.apiKeys().isEmpty());
+  }
+
+  @Test
+  void anEnvKeyThatIsBlankOrMalformedBlocksTheWholeBatch() {
+    for (String key : java.util.Arrays.asList("", "   ", "lower_case", "1LEADING", null)) {
+      assertThrows(IllegalArgumentException.class,
+          () -> setup.putEnv(URL, CONTAINER, PROFILE, List.of(new EnvEntry(key, "value"))));
+    }
+  }
+
+  @Test
+  void aStatusReportThatCouldNotBeReadLeavesEveryProviderUnknownRatherThanFailing() {
+    // 'hermes status' fails on a container whose gateway has never started; the .env half of
+    // the report is still worth showing
+    when(files.exec(anyString(), anyString(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+        .thenThrow(new io.hermes.missioncontrol.errors.UpstreamUnavailableException("exec failed"));
+    envFile("ANTHROPIC_API_KEY=sk-ant-abcdefgh\n");
+
+    AgentSetupDto dto = run();
+
+    assertTrue(key(dto, "ANTHROPIC_API_KEY").set(), "the .env is still read");
+    assertFalse(key(dto, "OPENAI_API_KEY").set());
   }
 }

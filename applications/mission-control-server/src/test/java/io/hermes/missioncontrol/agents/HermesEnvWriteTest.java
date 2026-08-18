@@ -158,4 +158,110 @@ class HermesEnvWriteTest {
   private static String eqContainer() {
     return org.mockito.ArgumentMatchers.eq(CONTAINER);
   }
+
+  // ── masking a stored key for display ──────────────────────────────────────
+
+  @Test
+  void aStoredKeyIsShownOnlyAsItsLastFewCharacters() {
+    String env = "OTHER=x\nANTHROPIC_API_KEY=sk-ant-api03-abcdefghij\n";
+
+    String masked = HermesEnvFile.maskApiKey(env, "anthropic");
+
+    assertEquals("...ghij", masked);
+    assertTrue(!masked.contains("sk-ant"), "no prefix of the key may reach the client");
+  }
+
+  @Test
+  void aVeryShortStoredValueIsMaskedEntirelyRatherThanRevealed() {
+    assertEquals("...", HermesEnvFile.maskApiKey("ANTHROPIC_API_KEY=abc\n", "anthropic"));
+  }
+
+  @Test
+  void aProviderWithNoKeyInTheFileMasksToNothing() {
+    assertEquals("", HermesEnvFile.maskApiKey("OPENAI_API_KEY=sk-openai-abcdefgh\n", "anthropic"));
+    assertEquals("", HermesEnvFile.maskApiKey("ANTHROPIC_API_KEY=\n", "anthropic"));
+  }
+
+  @Test
+  void anEmptyFileOrAKeylessProviderMasksToNothing() {
+    assertEquals("", HermesEnvFile.maskApiKey(null, "anthropic"));
+    assertEquals("", HermesEnvFile.maskApiKey("   ", "anthropic"));
+    // a provider the registry does not know has no env var to look for
+    assertEquals("", HermesEnvFile.maskApiKey("ANTHROPIC_API_KEY=sk-ant-abcdefgh\n", "who-knows"));
+    assertEquals("", HermesEnvFile.maskApiKey("ANTHROPIC_API_KEY=sk-ant-abcdefgh\n", null));
+  }
+
+  @Test
+  void theProviderNameIsNormalisedTheSameWayItIsElsewhere() {
+    // 'nous-portal' and 'Nous' are the same provider to the registry
+    String env = "NOUS_API_KEY=sk-nous-abcdefgh\n";
+
+    assertEquals(HermesEnvFile.maskApiKey(env, "nous"), HermesEnvFile.maskApiKey(env, " Nous-Portal "));
+  }
+
+  @Test
+  void aKeyThatOnlyAppearsAsASubstringOfAnotherVariableIsNotRead() {
+    // MY_ANTHROPIC_API_KEY is a different variable
+    assertEquals("", HermesEnvFile.maskApiKey("MY_ANTHROPIC_API_KEY=sk-ant-abcdefgh\n", "anthropic"));
+  }
+
+  // ── batch validation ─────────────────────────────────────────────────────
+
+  @Test
+  void aNullEntryInTheBatchBlocksEveryWrite() {
+    IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+        () -> setup.putEnv(URL, CONTAINER, PROFILE,
+            java.util.Arrays.asList(new EnvEntry("GOOD_KEY", "value"), null)));
+
+    assertEquals("invalid env key: null", failure.getMessage());
+    verifyNoInteractions(dockerExec);
+  }
+
+  @Test
+  void anEntryWithNoKeyAtAllBlocksEveryWrite() {
+    IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+        () -> setup.putEnv(URL, CONTAINER, PROFILE, List.of(new EnvEntry(null, "value"))));
+
+    assertEquals("invalid env key: null", failure.getMessage());
+    verifyNoInteractions(dockerExec);
+  }
+
+  // ── seeding the template ─────────────────────────────────────────────────
+
+  @Test
+  void anExistingEnvIsNeverOverwrittenByTheTemplate() {
+    // every exec in this harness succeeds, so the .env reads as present — and seeding it again
+    // would delete every key the operator had configured
+    envFile.seedIfMissing(URL, CONTAINER, PROFILE);
+
+    ArgumentCaptor<List<String>> argv = captureArgv();
+    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(anyString(), anyString(), any(),
+        argv.capture(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
+    assertTrue(argv.getAllValues().stream().noneMatch(command -> command.contains("printf")));
+  }
+
+  @Test
+  void anAbsentEnvIsSeededWithTheCommentedTemplate() {
+    // 'test -f' fails, so the file is not there yet
+    when(dockerExec.runAsUser(anyString(), anyString(), any(), any(), anyString(), anyBoolean(),
+        anyBoolean(), any(Duration.class)))
+        .thenAnswer(invocation -> {
+          List<String> command = invocation.getArgument(3);
+          boolean probing = command.stream().anyMatch(arg -> arg != null && arg.startsWith("test -f"));
+          return new DockerExecService.ExecResult(probing ? 1 : 0, "", "");
+        });
+
+    envFile.seedIfMissing(URL, CONTAINER, PROFILE);
+
+    ArgumentCaptor<List<String>> argv = captureArgv();
+    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(anyString(), anyString(), any(),
+        argv.capture(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
+    List<String> write = argv.getAllValues().stream()
+        .filter(command -> command.stream().anyMatch(arg -> arg != null && arg.contains("printf")))
+        .findFirst().orElseThrow(() -> new AssertionError("nothing was written"));
+    // every key is written commented out, so the file documents itself without enabling anything
+    assertTrue(write.contains(ENV_PATH), write.toString());
+    assertTrue(write.stream().anyMatch(arg -> arg != null && arg.contains("# ANTHROPIC_API_KEY=")),
+        "the documented template is written");
+  }
 }

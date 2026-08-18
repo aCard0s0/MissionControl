@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.mcp;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
@@ -41,7 +42,7 @@ class McpConfigStore {
           list(value.environment()), list(value.headers()), list(value.volumes()), value.healthcheck(),
           list(value.supportServices()));
     } catch (Exception e) {
-      throw new IllegalStateException("stored MCP configuration is unreadable", e);
+      throw new ResourceConflictException("stored MCP configuration is unreadable", e);
     }
   }
 
@@ -153,12 +154,12 @@ class McpConfigStore {
     for (StoredValue value : values) {
       if (!value.secret()) continue;
       if (value.value() == null) {
-        throw new IllegalStateException("secret value is not set: " + value.key());
+        throw new ResourceConflictException("secret value is not set: " + value.key());
       }
       try {
         cipher.decrypt(value.value());
       } catch (RuntimeException error) {
-        throw new IllegalStateException("secret value is unrecoverable: " + value.key(), error);
+        throw new ResourceConflictException("secret value is unrecoverable: " + value.key(), error);
       }
     }
   }

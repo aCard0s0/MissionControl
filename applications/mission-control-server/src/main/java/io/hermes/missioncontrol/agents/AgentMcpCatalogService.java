@@ -141,7 +141,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
       }
       if (updated.mcp().stream().noneMatch(
           server -> link.alias().equals(server.name()) && !server.enabled())) {
-        throw new IllegalStateException("could not disable MCP entry " + link.alias());
+        throw new ResourceConflictException("could not disable MCP entry " + link.alias());
       }
       links.delete(link.hostId(), link.containerId(), link.profile(), link.alias());
     }

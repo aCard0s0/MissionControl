@@ -204,3 +204,7 @@ cd applications/mission-control-fe && npm start
 
 Set `dataMode` in `applications/mission-control-fe/public/config.js` to `mock`
 (default, no backend needed) or `live` (real daemon via the backend).
+
+Backend tests follow the seams and conventions in [testing.md](testing.md) — most of the code
+worth testing here sits behind a Docker daemon, a provider API or an async executor, and that
+document is how it is reached without one.

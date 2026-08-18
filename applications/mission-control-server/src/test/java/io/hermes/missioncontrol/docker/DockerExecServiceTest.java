@@ -192,6 +192,7 @@ class DockerExecServiceTest {
 
   private ExecCreateCmd create;
   private ExecStartCmd start;
+  private InspectExecCmd inspect;
 
   private static Frame frame(StreamType stream, String text) {
     return new Frame(stream, text.getBytes(StandardCharsets.UTF_8));
@@ -207,7 +208,7 @@ class DockerExecServiceTest {
     create = mock(ExecCreateCmd.class, Answers.RETURNS_SELF);
     ExecCreateCmdResponse created = mock(ExecCreateCmdResponse.class);
     start = mock(ExecStartCmd.class);
-    InspectExecCmd inspect = mock(InspectExecCmd.class);
+    inspect = mock(InspectExecCmd.class);
     InspectExecResponse inspected = mock(InspectExecResponse.class);
     // an exec attach is silent while the command runs, so the service uses the streaming
     // client — one with no socket timeout to cut the caller's budget short
@@ -228,5 +229,114 @@ class DockerExecServiceTest {
     when(inspect.exec()).thenReturn(inspected);
     when(inspected.getExitCode()).thenReturn(exitCode);
     return clients;
+  }
+
+  // ── what counts as the connection breaking ──────────────────────────────
+
+  @Test
+  void anIoOrDockerFailureIsTransportAndAnythingElseIsNot() {
+    // the caller retries a transport failure and surfaces everything else as a defect
+    assertTrue(DockerExecService.isTransportFailure(new java.io.IOException("broken pipe")));
+    assertTrue(DockerExecService.isTransportFailure(
+        new com.github.dockerjava.api.exception.DockerException("boom", 500)));
+    assertTrue(DockerExecService.isTransportFailure(
+        new com.github.dockerjava.api.exception.DockerClientException("no transport")));
+    // wrapped a level or two down, which is how docker-java surfaces most of them
+    assertTrue(DockerExecService.isTransportFailure(
+        new RuntimeException("wrapped", new IllegalStateException("deeper",
+            new java.io.IOException("connection reset")))));
+
+    assertFalse(DockerExecService.isTransportFailure(new IllegalArgumentException("bad argument")));
+    assertFalse(DockerExecService.isTransportFailure(new RuntimeException("no cause")));
+  }
+
+  @Test
+  void aSelfReferentialCauseChainTerminatesRatherThanSpinning() {
+    // a cause that points at itself would otherwise loop forever inside the walk
+    RuntimeException looped = new RuntimeException("looped") {
+      @Override
+      public synchronized Throwable getCause() {
+        return this;
+      }
+    };
+
+    assertFalse(DockerExecService.isTransportFailure(looped));
+  }
+
+  @Test
+  void aBrokenStreamIsReportedAsTheDaemonGoingAwayNotAsADefect() {
+    // awaitCompletion rethrows whatever broke the stream in a bare RuntimeException; left alone
+    // that reaches the advice's catch-all as a 500 with a stack trace at ERROR
+    DockerClients clients = stubbedClients(0);
+    doThrow(new RuntimeException("stream broke",
+        new java.net.SocketTimeoutException("read timed out")))
+        .when(start).exec(any());
+
+    UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
+        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+            List.of("hermes", "gateway", "status"), "read gateway status",
+            true, false, Duration.ofSeconds(1)));
+
+    assertTrue(failure.getMessage().contains("lost its connection to the daemon"), failure.getMessage());
+  }
+
+  @Test
+  void aFailureThatIsNotTheTransportKeepsItsOwnType() {
+    // an IllegalArgumentException from our own argv is a defect, and must not be dressed up
+    // as a daemon outage
+    DockerClients clients = stubbedClients(0);
+    doThrow(new IllegalArgumentException("bad exec spec")).when(start).exec(any());
+
+    assertThrows(IllegalArgumentException.class,
+        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+            List.of("true"), "check file", false, false, Duration.ofSeconds(1)));
+  }
+
+  @Test
+  void aSensitiveCommandNeverLeaksItsOutputThroughAStreamFailureEither() {
+    DockerClients clients = stubbedClients(0);
+    doThrow(new RuntimeException("stream broke: ANTHROPIC_API_KEY=sk-ant-secret-value"))
+        .when(start).exec(any());
+
+    UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
+        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+            List.of("hermes", "profile", "env", "set"), "write profile environment",
+            true, true, Duration.ofSeconds(1)));
+
+    assertTrue(failure.getMessage().contains("write profile environment"));
+    assertFalse(failure.getMessage().contains("sk-ant-secret-value"));
+  }
+
+  @Test
+  void anInspectionThatFailsOnASensitiveCommandIsAlsoRedacted() {
+    DockerClients clients = stubbedClients(0);
+    doThrow(new RuntimeException("cannot inspect: ANTHROPIC_API_KEY=sk-ant-secret-value"))
+        .when(inspect).exec();
+
+    UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
+        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+            List.of("hermes", "profile", "env", "set"), "write profile environment",
+            true, true, Duration.ofSeconds(1)));
+
+    assertFalse(failure.getMessage().contains("sk-ant-secret-value"));
+
+    // the same failure on an ordinary command keeps its own type
+    DockerClients plain = stubbedClients(0);
+    doThrow(new IllegalStateException("cannot inspect")).when(inspect).exec();
+    assertThrows(IllegalStateException.class,
+        () -> new DockerExecService(plain).runAsUser("unix:///sock", "cid", "hermes",
+            List.of("true"), "check file", false, false, Duration.ofSeconds(1)));
+  }
+
+  @Test
+  void aFrameWithNoPayloadIsIgnoredRatherThanCountedAsOutput() {
+    DockerClients clients = stubbedClients(0,
+        new Frame(StreamType.STDOUT, null), frame(StreamType.STDOUT, "real output"));
+
+    DockerExecService.ExecResult result = new DockerExecService(clients).runAsUser(
+        "unix:///sock", "cid", "hermes", List.of("true"), "read", true, false,
+        Duration.ofSeconds(1));
+
+    assertEquals("real output", result.stdout());
   }
 }

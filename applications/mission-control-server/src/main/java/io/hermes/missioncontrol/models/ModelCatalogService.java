@@ -116,7 +116,13 @@ public class ModelCatalogService {
     return modelIds(send(builder.build()), id -> true);
   }
 
-  private String send(HttpRequest request) throws Exception {
+  /**
+   * Sends a provider request and returns its body. Package-private and non-static so a test can
+   * substitute it: the three fetch methods above address the real provider APIs by hostname, so
+   * the request they build — and the filtering of what comes back — is otherwise unreachable
+   * without calling Anthropic, OpenAI or OpenRouter for real.
+   */
+  String send(HttpRequest request) throws Exception {
     HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() / 100 != 2) {
       throw new IllegalStateException("provider returned HTTP " + response.statusCode());

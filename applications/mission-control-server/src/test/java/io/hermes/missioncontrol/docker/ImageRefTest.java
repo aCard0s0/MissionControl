@@ -149,4 +149,13 @@ class ImageRefTest {
         ImageRef.dockerHubPath("nousresearch/hermes-agent" + DIGEST));
     assertEquals("library/postgres", ImageRef.dockerHubPath("postgres" + DIGEST));
   }
+
+  // ── the tag a deploy or upgrade actually uses ────────────────────────────
+
+  @Test
+  void anAbsentVersionMeansLatest() {
+    assertEquals("latest", ImageStore.tagOf(null));
+    assertEquals("latest", ImageStore.tagOf("   "));
+    assertEquals("v2026.8.3", ImageStore.tagOf("v2026.8.3"));
+  }
 }

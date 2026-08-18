@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.agents.templates;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.secrets.StoredSecret;
 import java.util.List;
 import java.util.Optional;
@@ -109,7 +110,7 @@ public class ProfileTemplateRepository {
           json, objectMapper.getTypeFactory().constructCollectionType(List.class, type));
     } catch (Exception e) {
       if (strict) {
-        throw new IllegalStateException(
+        throw new ResourceConflictException(
             "stored template " + type.getSimpleName() + " column is unreadable", e);
       }
       // corrupt JSON would otherwise vanish silently on every read — surface it

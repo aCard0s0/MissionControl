@@ -306,4 +306,234 @@ class HermesSkillsTest {
     Map<?, ?> platform = (Map<?, ?>) skills.get("platform_disabled");
     return (List<?>) platform.get("cli");
   }
+
+  // ── frontmatter and source resolution ────────────────────────────────────
+
+  @Test
+  void aSkillWithNoUsableFrontmatterFallsBackToItsDirectoryName() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/plain/SKILL.md", "# no frontmatter here\n")
+        .file(SKILLS + "/unterminated/SKILL.md", "---\nname: never-closed\n")
+        .file(SKILLS + "/empty-meta/SKILL.md", "---\n\n---\nbody\n")
+        .onCommand("-name SKILL.md", SKILLS + "/plain/SKILL.md\n"
+            + SKILLS + "/unterminated/SKILL.md\n" + SKILLS + "/empty-meta/SKILL.md\n");
+
+    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", Map.of());
+
+    assertEquals(List.of("plain", "unterminated", "empty-meta"),
+        listed.stream().map(SkillDto::name).toList());
+  }
+
+  @Test
+  void frontmatterThatDeclaresItsSourceWinsOverTheBundledManifest() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/.bundled_manifest", "pdf:abc123\n")
+        .file(SKILLS + "/pdf/SKILL.md",
+            "---\nname: pdf\nversion: 1.0\ndescription: d\nsource: curator\n---\nbody\n")
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
+
+    assertEquals("curator", skills(container).list(URL, CONTAINER, "ops", Map.of())
+        .getFirst().source());
+  }
+
+  @Test
+  void aManifestLineWithNoHashStillNamesABundledSkill() {
+    // the manifest is "name:hash" per line, but an older hermes wrote bare names
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/.bundled_manifest", "pdf\n\n   \ndocx:abc123\n")
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .file(SKILLS + "/docx/SKILL.md", frontmatter("docx", "1.0", ""))
+        .file(SKILLS + "/local/SKILL.md", frontmatter("local", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n"
+            + SKILLS + "/docx/SKILL.md\n" + SKILLS + "/local/SKILL.md\n");
+
+    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", Map.of());
+
+    assertEquals("bundled", listed.get(0).source());
+    assertEquals("bundled", listed.get(1).source());
+    assertEquals("user", listed.get(2).source(), "anything not in the manifest was authored locally");
+  }
+
+  @Test
+  void aSkillWithAnEmptySkillMdIsSkippedEntirely() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/blank/SKILL.md", "   ")
+        .file(SKILLS + "/real/SKILL.md", frontmatter("real", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/blank/SKILL.md\n" + SKILLS + "/real/SKILL.md\n");
+
+    assertEquals(List.of("real"),
+        skills(container).list(URL, CONTAINER, "ops", Map.of()).stream().map(SkillDto::name).toList());
+  }
+
+  // ── which skills count as disabled ───────────────────────────────────────
+
+  @Test
+  void aConfigWithNoSkillsSectionDisablesNothing() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
+
+    // no config at all, a config whose skills key is a scalar, and one with an unrelated shape
+    for (Map<?, ?> config : List.of(Map.of(), Map.of("skills", "all"), Map.of("skills", List.of("pdf")))) {
+      assertTrue(skills(container).list(URL, CONTAINER, "ops", config).getFirst().enabled());
+    }
+    assertTrue(skills(container).list(URL, CONTAINER, "ops", null).getFirst().enabled());
+  }
+
+  @Test
+  void bothTheGlobalDisabledListAndThePlatformOneCount() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .file(SKILLS + "/docx/SKILL.md", frontmatter("docx", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n" + SKILLS + "/docx/SKILL.md\n");
+    Map<?, ?> config = yaml("""
+        skills:
+          disabled: [pdf, '  ']
+          platform_disabled:
+            cli: [docx]
+            web: [something-else]
+        """);
+
+    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", config);
+
+    assertFalse(listed.get(0).enabled(), "disabled globally");
+    assertFalse(listed.get(1).enabled(), "disabled for this platform");
+  }
+
+  @Test
+  void aPlatformDisabledSectionOfTheWrongShapeIsIgnored() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
+
+    // platform_disabled as a scalar, and cli as a scalar rather than a list
+    assertTrue(skills(container)
+        .list(URL, CONTAINER, "ops", yaml("skills:\n  platform_disabled: none\n"))
+        .getFirst().enabled());
+    assertTrue(skills(container)
+        .list(URL, CONTAINER, "ops", yaml("skills:\n  platform_disabled:\n    cli: pdf\n"))
+        .getFirst().enabled());
+  }
+
+  // ── name guards on the write paths ───────────────────────────────────────
+
+  @Test
+  void enablingASkillWithNoNameIsRefusedBeforeAnyConfigRead() {
+    FakeContainer container = new FakeContainer();
+
+    for (String name : List.of("", "   ")) {
+      assertEquals("missing skill name", assertThrows(IllegalArgumentException.class,
+          () -> skills(container).setEnabled(URL, CONTAINER, "ops", name, false)).getMessage());
+    }
+    assertEquals("missing skill name", assertThrows(IllegalArgumentException.class,
+        () -> skills(container).setEnabled(URL, CONTAINER, "ops", null, false)).getMessage());
+    assertTrue(container.executed().isEmpty());
+  }
+
+  @Test
+  void writingSkillContentRefusesABadNameOrAMissingBody() {
+    FakeContainer container = new FakeContainer();
+
+    assertEquals("invalid skill name", assertThrows(IllegalArgumentException.class,
+        () -> skills(container).updateContent(URL, CONTAINER, "ops", "../escape", "body")).getMessage());
+    assertEquals("missing skill body", assertThrows(IllegalArgumentException.class,
+        () -> skills(container).updateContent(URL, CONTAINER, "ops", "pdf", null)).getMessage());
+    assertTrue(container.executed().isEmpty());
+  }
+
+  @Test
+  void aSkillIsFoundByItsFrontmatterNameEvenWhenTheDirectoryIsCalledSomethingElse() {
+    // the UI sends the display name; a renamed or nested skill has to resolve to its directory
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/pdf-tools/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .file(SKILLS + "/office/xlsx/SKILL.md", frontmatter("xlsx", "1.0", ""))
+        .onCommand("-name SKILL.md",
+            SKILLS + "/pdf-tools/SKILL.md\n" + SKILLS + "/office/xlsx/SKILL.md\n");
+
+    SkillContentDto content = skills(container).readContent(URL, CONTAINER, "ops", "pdf");
+
+    assertTrue(content.path().endsWith("/pdf-tools"), content.path());
+  }
+
+  @Test
+  void aSkillDirectoryThatMatchesTheNameDirectlyIsUsedWithoutReadingAnyFrontmatter() {
+    FakeContainer container = new FakeContainer()
+        .dir(SKILLS + "/pdf")
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("something-else", "1.0", ""));
+
+    SkillContentDto content = skills(container).readContent(URL, CONTAINER, "ops", "pdf");
+
+    assertTrue(content.path().endsWith("/pdf"));
+    assertTrue(container.executed().stream().noneMatch(argv -> argv.contains("-name")),
+        "the direct hit needs no tree walk");
+  }
+
+  @Test
+  void aSkillThatCannotBeResolvedAtAllIsReportedAsUnknown() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
+
+    assertThrows(RuntimeException.class,
+        () -> skills(container).readContent(URL, CONTAINER, "ops", "nowhere"));
+  }
+
+  @Test
+  void aSkillMdThatIsBlankIsSkippedWhileResolvingByName() {
+    // an empty file has no frontmatter to match, and must not stop the walk
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/empty/SKILL.md", "   ")
+        .file(SKILLS + "/real/SKILL.md", frontmatter("wanted", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/empty/SKILL.md\n" + SKILLS + "/real/SKILL.md\n");
+
+    assertTrue(skills(container).readContent(URL, CONTAINER, "ops", "wanted").path().endsWith("/real"));
+  }
+
+  @Test
+  void aSkillsTreeWithNoBundledManifestReportsEverythingAsUserAuthored() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/local/SKILL.md", frontmatter("local", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/local/SKILL.md\n");
+
+    assertEquals("user", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().source());
+  }
+
+  @Test
+  void frontmatterWithABlankNameFallsBackToTheDirectory() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/pdf/SKILL.md", "---\nname: '  '\nversion: 1.0\n---\nbody\n")
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
+
+    assertEquals("pdf", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().name());
+  }
+
+  @Test
+  void aManifestOfNothingButBlanksNamesNoBundledSkill() {
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/.bundled_manifest", "\n   \n:\n")
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
+
+    assertEquals("user", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().source());
+  }
+
+  @Test
+  void aSkillsTreeWithNothingInItListsNothing() {
+    FakeContainer container = new FakeContainer().onCommand("-name SKILL.md", "");
+
+    assertTrue(skills(container).list(URL, CONTAINER, "ops", Map.of()).isEmpty());
+  }
+
+  @Test
+  void writingSkillContentReachesTheSkillsOwnDirectory() {
+    FakeContainer container = new FakeContainer()
+        .dir(SKILLS + "/pdf")
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""));
+
+    skills(container).updateContent(URL, CONTAINER, "ops", "pdf", "# rewritten\n");
+
+    assertTrue(container.executed().stream().anyMatch(argv ->
+        argv.stream().anyMatch(arg -> arg != null && arg.endsWith(SKILLS + "/pdf/SKILL.md"))),
+        container.executed().toString());
+  }
 }

@@ -1,0 +1,188 @@
+package io.hermes.missioncontrol.agents;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
+import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
+import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Writing the API keys a profile's model settings need, and refusing a profile that ended up
+ * without a model.
+ *
+ * <p>{@link HermesModelConfigTest} covers the pure planners; these are the decisions with a
+ * {@code .env} write behind them. Two of them matter: a provider that takes no key must not have
+ * one written for it, and an override that only swaps the model must not re-write the main key —
+ * a blank field in the create form would otherwise clobber a working credential.
+ */
+class HermesModelConfigWritesTest {
+
+  private static final String URL = "unix:///sock";
+  private static final String CONTAINER = "c1";
+  private static final String PROFILE = "scout";
+
+  private HermesContainerFiles files;
+  private HermesEnvFile env;
+  private HermesModelConfig modelConfig;
+
+  @BeforeEach
+  void setUp() {
+    files = mock(HermesContainerFiles.class);
+    env = mock(HermesEnvFile.class);
+    modelConfig = new HermesModelConfig(files, env);
+  }
+
+  // ── the profile's own key ───────────────────────────────────────────────
+
+  @Test
+  void aProvidersKeyIsWrittenUnderTheVariableThatProviderReads() {
+    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "anthropic", "sk-ant-real");
+
+    verify(env).write(URL, CONTAINER, PROFILE, "ANTHROPIC_API_KEY", "sk-ant-real");
+  }
+
+  @Test
+  void aProviderThatTakesNoKeyNeverGetsOneWritten() {
+    // nous authenticates with an account token held at the container level, not a profile key
+    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "nous", "sk-ant-real");
+    // and a provider the registry does not know has no variable to write to
+    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "who-knows", "sk-ant-real");
+    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, null, "sk-ant-real");
+
+    verifyNoInteractions(env);
+  }
+
+  @Test
+  void anAbsentKeyIsNotWrittenAsAnEmptyVariable() {
+    // an empty ANTHROPIC_API_KEY is worse than none: the agent starts and fails its first call
+    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "anthropic", null);
+    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "anthropic", "   ");
+
+    verifyNoInteractions(env);
+  }
+
+  // ── the override's key ──────────────────────────────────────────────────
+
+  @Test
+  void anOverrideThatIntroducesItsOwnProviderGetsItsOwnKeyWritten() {
+    ModelTarget auxiliary = new ModelTarget("openai", "gpt-5.2-mini", null);
+
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+        new AuxiliaryModelSpec("openai", "gpt-5.2-mini", null, "sk-openai-real"));
+
+    verify(env).write(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-openai-real");
+  }
+
+  @Test
+  void aSameProviderModelSwapNeverRewritesTheMainKey() {
+    // the main key already covers it, and a blank field in the create form would clobber it
+    ModelTarget auxiliary = new ModelTarget("anthropic", "claude-haiku-4-5", null);
+
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+        new AuxiliaryModelSpec(null, "claude-haiku-4-5", null, "sk-ant-real"));
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+        new AuxiliaryModelSpec("   ", "claude-haiku-4-5", null, "sk-ant-real"));
+
+    verifyNoInteractions(env);
+  }
+
+  @Test
+  void anOverrideWithNoKeyOrNoSpecAtAllWritesNothing() {
+    ModelTarget auxiliary = new ModelTarget("openai", "gpt-5.2-mini", null);
+
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary, null);
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+        new AuxiliaryModelSpec("openai", "gpt-5.2-mini", null, null));
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+        new AuxiliaryModelSpec("openai", "gpt-5.2-mini", null, "  "));
+
+    verifyNoInteractions(env);
+  }
+
+  @Test
+  void anOverrideOnAKeylessProviderWritesNothingEither() {
+    ModelTarget auxiliary = new ModelTarget("nous", "Hermes-4-70B", null);
+
+    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+        new AuxiliaryModelSpec("nous", "Hermes-4-70B", null, "token"));
+
+    verifyNoInteractions(env);
+  }
+
+  // ── refusing a profile with no model ────────────────────────────────────
+
+  @Test
+  void aProfileWhoseConfigNamesNoModelIsRefusedSoTheCallerCanRollItBack() {
+    // hermes profile create never seeds config.yaml; if the config writes silently no-op the
+    // agent's auxiliary chain has nothing to resolve to and its gateway logs say so at runtime
+    when(files.readFile(anyString(), anyString(), anyString())).thenReturn("terminal:\n  cwd: /work\n");
+
+    IllegalStateException failure = assertThrows(IllegalStateException.class,
+        () -> modelConfig.assertConfigured(URL, CONTAINER, PROFILE));
+
+    assertEquals(true, failure.getMessage().contains("has no model in"));
+    assertEquals(true, failure.getMessage().contains("compression, summarization, memory flush"));
+  }
+
+  @Test
+  void aProfileWithAModelPassesTheCheck() {
+    when(files.readFile(anyString(), anyString(), anyString()))
+        .thenReturn("model:\n  provider: anthropic\n  default: claude-opus-5\n");
+
+    modelConfig.assertConfigured(URL, CONTAINER, PROFILE);
+
+    verify(files).readFile(URL, CONTAINER, "/opt/data/profiles/scout/config.yaml");
+    verify(env, never()).write(anyString(), anyString(), anyString(), anyString(), anyString());
+  }
+
+  // ── reading a config back ───────────────────────────────────────────────
+
+  @Test
+  void aConfigWithNothingUsableInItReadsAsAutoWithNoModel() {
+    for (Map<?, ?> map : List.of(Map.of(), Map.of("model", List.of("opus")), Map.of("terminal", "none"))) {
+      ConfigInfo info = modelConfig.parseConfig(map);
+      assertEquals("auto", info.provider());
+      assertEquals("", info.model());
+      assertEquals("", info.cwd());
+    }
+    assertEquals("auto", modelConfig.parseConfig(null).provider());
+  }
+
+  @Test
+  void aStructuredBlockWithNoDefaultFallsBackToItsModelKey() {
+    // an older hermes wrote model.model rather than model.default
+    ConfigInfo info = modelConfig.parseConfig(
+        YamlValues.parseMap("model:\n  provider: openrouter\n  model: anthropic/claude-sonnet-4\n"));
+
+    assertEquals("openrouter", info.provider());
+    assertEquals("anthropic/claude-sonnet-4", info.model(), "the namespace must survive");
+  }
+
+  @Test
+  void aStructuredBlockWithNoProviderAndNoSlashKeepsTheModelAsWritten() {
+    ConfigInfo info = modelConfig.parseConfig(YamlValues.parseMap("model:\n  default: qwen3:8b\n"));
+
+    assertEquals("auto", info.provider());
+    assertEquals("qwen3:8b", info.model());
+  }
+
+  @Test
+  void aScalarModelStringWithNothingBeforeTheSlashIsNotSplit() {
+    // "/opus" has no provider half; treating "" as the provider would write a broken config
+    assertEquals("auto", modelConfig.parseModelString("/opus").provider());
+    assertEquals("/opus", modelConfig.parseModelString("/opus").model());
+    assertEquals("auto", modelConfig.parseModelString(null).provider());
+    assertEquals("", modelConfig.parseModelString("   ").model());
+  }
+}

@@ -202,4 +202,58 @@ class ContainerStatsReaderTest {
     when(net.getTxBytes()).thenReturn(txBytes);
     return net;
   }
+
+  @Test
+  void aCpuBlockMissingEitherHalfOfItsDeltaReportsZero() {
+    // the first sample after a container starts has no pre-read to subtract, and some drivers
+    // omit the system-wide figure
+    assertEquals(0.0, ContainerStatsReader.toStats(
+        sample(cpuSample(null, 11_000_000_000L, 2L), cpuSample(1_000_000_000L, 10_000_000_000L, 2L),
+            null, null)).cpuPercent(), 1e-9);
+    assertEquals(0.0, ContainerStatsReader.toStats(
+        sample(cpuSample(1_500_000_000L, null, 2L), cpuSample(1_000_000_000L, 10_000_000_000L, 2L),
+            null, null)).cpuPercent(), 1e-9);
+    assertEquals(0.0, ContainerStatsReader.toStats(
+        sample(cpuSample(1_500_000_000L, 11_000_000_000L, 2L), cpuSample(1_000_000_000L, null, 2L),
+            null, null)).cpuPercent(), 1e-9);
+  }
+
+  @Test
+  void aCpuBlockWithNoUsageObjectAtAllReportsZero() {
+    CpuStatsConfig cpu = mock(CpuStatsConfig.class);
+    when(cpu.getCpuUsage()).thenReturn(null);
+    when(cpu.getSystemCpuUsage()).thenReturn(11_000_000_000L);
+
+    assertEquals(0.0, ContainerStatsReader.toStats(
+        sample(cpu, cpuSample(1_000_000_000L, 10_000_000_000L, 2L), null, null)).cpuPercent(), 1e-9);
+    assertEquals(0.0, ContainerStatsReader.toStats(
+        sample(cpuSample(1_500_000_000L, 11_000_000_000L, 2L), cpu, null, null)).cpuPercent(), 1e-9);
+  }
+
+  @Test
+  void aMemorySampleWithNoDetailBlockReportsTheRawUsage() {
+    // cgroup detail is absent on some drivers; the raw figure is still better than nothing
+    assertEquals(512 * MIB,
+        ContainerStatsReader.usageWithoutCache(memorySample(512 * MIB, GIB, null)));
+  }
+
+  @Test
+  void theReclaimablePageCacheIsSubtractedFromEitherCgroupVersion() {
+    // an Agent that has read a few GB of skills otherwise shows as pinned at its limit
+    assertEquals(300 * MIB, ContainerStatsReader.usageWithoutCache(
+        memorySample(512 * MIB, GIB, cacheSample(212 * MIB, null))), "cgroup v1: total_inactive_file");
+    assertEquals(300 * MIB, ContainerStatsReader.usageWithoutCache(
+        memorySample(512 * MIB, GIB, cacheSample(null, 212 * MIB))), "cgroup v2: inactive_file");
+  }
+
+  @Test
+  void aNonsensicalCacheFigureIsIgnoredRatherThanSubtracted() {
+    // a partial sample can report more cache than usage, a negative value, or none at all
+    assertEquals(512 * MIB, ContainerStatsReader.usageWithoutCache(
+        memorySample(512 * MIB, GIB, cacheSample(600 * MIB, null))));
+    assertEquals(512 * MIB, ContainerStatsReader.usageWithoutCache(
+        memorySample(512 * MIB, GIB, cacheSample(-1L, null))));
+    assertEquals(512 * MIB, ContainerStatsReader.usageWithoutCache(
+        memorySample(512 * MIB, GIB, cacheSample(null, null))));
+  }
 }

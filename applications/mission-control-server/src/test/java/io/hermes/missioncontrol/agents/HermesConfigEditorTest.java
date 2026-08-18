@@ -172,24 +172,24 @@ class HermesConfigEditorTest {
   @Test
   void anUnparseableOrMalformedConfigIsRefusedRatherThanRewritten() {
     // the guard that stops an edit from wiping a profile's whole config
-    IllegalStateException unparseable = assertThrows(IllegalStateException.class, () ->
+    ResourceConflictException unparseable = assertThrows(ResourceConflictException.class, () ->
         editor.parseForEdit("\tkey: [unterminated", PATH));
     assertTrue(unparseable.getMessage().contains(PATH), "the message must name the file it refused");
 
     // a valid YAML document that is not a mapping is equally unusable
-    assertThrows(IllegalStateException.class, () -> editor.parseForEdit("- a\n- b", PATH));
+    assertThrows(ResourceConflictException.class, () -> editor.parseForEdit("- a\n- b", PATH));
 
     // mcp_servers present but not a map
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.addMcpServer("mcp_servers: oops\n", PATH, http("files", "https://x.internal/mcp")));
 
     // one entry present but not a map — refuse rather than overwrite it
     String malformedEntry = "mcp_servers:\n  files: oops\n";
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.addMcpServer(malformedEntry, PATH, http("files", "https://x.internal/mcp")));
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.updateMcpServer(malformedEntry, PATH, "files", http("files", "https://x.internal/mcp")));
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.setMcpServerEnabled(malformedEntry, PATH, "files", false));
   }
 
@@ -284,5 +284,135 @@ class HermesConfigEditorTest {
     assertThrows(IllegalArgumentException.class, () -> editor.serverName(null));
     assertThrows(IllegalArgumentException.class, () -> editor.serverName("   "));
     assertEquals("files", editor.serverName("  files  "));
+  }
+
+  // ── header and environment validation ────────────────────────────────────
+
+  @Test
+  void aHeaderWithNoNameOrNoValueIsRefused() {
+    // these are written verbatim into config.yaml and sent on every MCP request
+    assertEquals("MCP header name must not be blank", rejected(headers(Map.of("   ", "v"))));
+    assertEquals("missing value for MCP header: X-Api-Key",
+        rejected(headers(nullValued("X-Api-Key"))));
+  }
+
+  @Test
+  void aHeaderCarryingALineBreakIsRefusedInEitherHalf() {
+    // a CR or LF in a header splits it into two headers on the wire
+    assertEquals("MCP headers must not contain line breaks",
+        rejected(headers(Map.of("X-Api-Key", "value\r\nX-Injected: yes"))));
+    assertEquals("MCP headers must not contain line breaks",
+        rejected(headers(Map.of("X-Api\nKey", "value"))));
+  }
+
+  @Test
+  void aValidHeaderIsStoredTrimmedAndVerbatim() {
+    String yaml = editor.addMcpServer("", PATH, new AddMcpServerRequest(
+        "tools", "http", "https://tools.test/mcp", null, null, true,
+        Map.of("  X-Api-Key  ", "secret")));
+
+    Map<?, ?> headers = (Map<?, ?>) serverIn(yaml, "tools").get("headers");
+    assertEquals("secret", headers.get("X-Api-Key"));
+  }
+
+  @Test
+  void anEnvironmentKeyMustLookLikeAShellVariable() {
+    assertEquals("invalid MCP environment key: 1BAD",
+        rejected(environment(Map.of("1BAD", "v"))));
+    assertEquals("invalid MCP environment key: MY-KEY",
+        rejected(environment(Map.of("MY-KEY", "v"))));
+    assertEquals("invalid MCP environment key: ",
+        rejected(environment(Map.of("   ", "v"))));
+  }
+
+  @Test
+  void anEnvironmentValueCannotCarryNulOrALineBreak() {
+    assertEquals("missing value for MCP environment: ROOT",
+        rejected(environment(nullValued("ROOT"))));
+    assertEquals("MCP environment values must not contain NUL or line breaks",
+        rejected(environment(Map.of("ROOT", "/data\nEXTRA=1"))));
+    assertEquals("MCP environment values must not contain NUL or line breaks",
+        rejected(environment(Map.of("ROOT", "/data "))));
+  }
+
+  @Test
+  void aValidEnvironmentEntryIsStoredOnAStdioServer() {
+    String yaml = editor.addMcpServer("", PATH, new AddMcpServerRequest(
+        "files", "stdio", null, "npx", "-y @example/files", true, null, Map.of("ROOT", "/data")));
+
+    Map<?, ?> env = (Map<?, ?>) serverIn(yaml, "files").get("env");
+    assertEquals("/data", env.get("ROOT"));
+  }
+
+  // ── transport and parse guards ───────────────────────────────────────────
+
+  @Test
+  void aTransportThatIsNotOneOfTheThreeIsRefusedRatherThanGuessedFromTheUrl() {
+    // SSE cannot be inferred from a URL, so nothing is inferred at all
+    for (String transport : List.of("  ", "grpc", "HTTP2")) {
+      assertEquals("invalid transport", assertThrows(IllegalArgumentException.class,
+          () -> editor.addMcpServer("", PATH,
+              new AddMcpServerRequest("tools", transport, "https://tools.test/mcp", null, null, true)))
+          .getMessage());
+    }
+    assertEquals("invalid transport", assertThrows(IllegalArgumentException.class,
+        () -> editor.addMcpServer("", PATH,
+            new AddMcpServerRequest("tools", null, "https://tools.test/mcp", null, null, true)))
+        .getMessage());
+  }
+
+  @Test
+  void aTransportIsMatchedCaseInsensitivelyAndStoredLowercase() {
+    String yaml = editor.addMcpServer("", PATH,
+        new AddMcpServerRequest("tools", " SSE ", "https://tools.test/sse", null, null, true));
+
+    assertEquals("sse", serverIn(yaml, "tools").get("transport"));
+  }
+
+  @Test
+  void aStdioServerWithoutACommandIsRefused() {
+    assertEquals("missing command", assertThrows(IllegalArgumentException.class,
+        () -> editor.addMcpServer("", PATH, stdio("files", null, "-y x"))).getMessage());
+    assertEquals("missing command", assertThrows(IllegalArgumentException.class,
+        () -> editor.addMcpServer("", PATH, stdio("files", "   ", "-y x"))).getMessage());
+  }
+
+  @Test
+  void anUnparseableConfigIsNeverRewritten() {
+    // rewriting a file we cannot parse would drop whatever else the operator had in it
+    assertEquals("refusing to rewrite unparseable " + PATH,
+        assertThrows(ResourceConflictException.class,
+            () -> editor.parseForEdit("mcp_servers: [unclosed\n", PATH)).getMessage());
+    // a document that parses but is not a mapping is equally unsafe to edit
+    assertEquals("refusing to rewrite unparseable " + PATH,
+        assertThrows(ResourceConflictException.class,
+            () -> editor.parseForEdit("- a list\n", PATH)).getMessage());
+  }
+
+  @Test
+  void anAbsentConfigStartsFromAnEmptyTree() {
+    assertTrue(editor.parseForEdit(null, PATH).isEmpty());
+    assertTrue(editor.parseForEdit("   ", PATH).isEmpty());
+  }
+
+  private String rejected(Runnable call) {
+    return assertThrows(IllegalArgumentException.class, call::run).getMessage();
+  }
+
+  private Runnable headers(Map<String, String> headers) {
+    return () -> editor.addMcpServer("", PATH, new AddMcpServerRequest(
+        "tools", "http", "https://tools.test/mcp", null, null, true, headers));
+  }
+
+  private Runnable environment(Map<String, String> environment) {
+    return () -> editor.addMcpServer("", PATH, new AddMcpServerRequest(
+        "files", "stdio", null, "npx", null, true, null, environment));
+  }
+
+  /** A single-entry map with a null value, which Map.of cannot express. */
+  private static Map<String, String> nullValued(String key) {
+    Map<String, String> map = new java.util.LinkedHashMap<>();
+    map.put(key, null);
+    return map;
   }
 }

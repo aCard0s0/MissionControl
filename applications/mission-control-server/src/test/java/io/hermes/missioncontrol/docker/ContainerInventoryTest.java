@@ -306,4 +306,70 @@ class ContainerInventoryTest {
     when(client.inspectContainerCmd(id)).thenReturn(inspect);
     when(inspect.exec()).thenThrow(new NotFoundException("no such container"));
   }
+
+  // ── pure mapping the fleet view depends on ───────────────────────────────
+
+  @Test
+  void aBareImageIdIsRecognisedWithAndWithoutItsPrefix() {
+    // the Engine reports one once the stored reference stops resolving, and it is not a repository
+    assertTrue(ContainerInventory.isImageIdReference(
+        "sha256:e5b3f7c1a9d24b6e8f0a1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f607"));
+    assertTrue(ContainerInventory.isImageIdReference(
+        "e5b3f7c1a9d24b6e8f0a1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f607"));
+    // an ordinary reference, a short hex string and nothing at all are not image ids
+    assertFalse(ContainerInventory.isImageIdReference("hermes/agent:latest"));
+    assertFalse(ContainerInventory.isImageIdReference("deadbeef"));
+    assertFalse(ContainerInventory.isImageIdReference("sha256:notevenhexnotevenhexnotevenhex00"));
+    assertFalse(ContainerInventory.isImageIdReference(null));
+    assertFalse(ContainerInventory.isImageIdReference("   "));
+  }
+
+  @Test
+  void everyEngineStateMapsToOneOfTheFourTheDashboardRenders() {
+    assertEquals("running", ContainerInventory.mapStatus("running", "Up 3 hours"));
+    // the health suffix is the only way the Engine reports an unhealthy container in a list
+    assertEquals("unhealthy", ContainerInventory.mapStatus("running", "Up 3 hours (unhealthy)"));
+    assertEquals("unhealthy", ContainerInventory.mapStatus("restarting", "Restarting (1)"));
+    assertEquals("stopped", ContainerInventory.mapStatus("exited", "Exited (0)"));
+    assertEquals("stopped", ContainerInventory.mapStatus("created", ""));
+    assertEquals("stopped", ContainerInventory.mapStatus("paused", "Paused"));
+    assertEquals("stopped", ContainerInventory.mapStatus("dead", "Dead"));
+    assertEquals("unknown", ContainerInventory.mapStatus("removing", ""));
+    assertEquals("unknown", ContainerInventory.mapStatus(null, null));
+    // the Engine capitalises inconsistently across versions
+    assertEquals("running", ContainerInventory.mapStatus("Running", "Up 1 second"));
+  }
+
+  @Test
+  void aRunningContainerWithNoStatusTextIsStillRunning() {
+    assertEquals("running", ContainerInventory.mapStatus("running", null));
+  }
+
+  @Test
+  void aContainerWeDeployedIsShownWhateverItsImageReferenceReadsAs() {
+    // the Engine substitutes a bare image id once the stored reference stops resolving — which
+    // another Agent's upgrade does by moving a floating tag — and an id matches no repository
+    Container managed = container("aaaaaaa1111", "/demo", BARE_IMAGE_ID);
+    when(managed.getLabels()).thenReturn(Map.of("mc.managed", "true"));
+    stubListing(managed);
+
+    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
+  }
+
+  @Test
+  void aContainerReportingAnImageIdThatWeDidNotDeployIsNotShown() {
+    Container foreign = container("bbbbbbb2222", "/someone-elses", BARE_IMAGE_ID);
+    stubListing(foreign);
+
+    assertTrue(names(subject.listContainers("unix:///sock", "local", false)).isEmpty());
+  }
+
+  @Test
+  void aBootstrapHelperIsNeverAnAgent() {
+    Container helper = container("ccccccc3333", "/mc-seed-demo", "hermes/image:v1");
+    when(helper.getLabels()).thenReturn(Map.of("mc.bootstrap", "true"));
+    stubListing(helper);
+
+    assertTrue(names(subject.listContainers("unix:///sock", "local", false)).isEmpty());
+  }
 }
