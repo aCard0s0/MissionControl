@@ -1,0 +1,162 @@
+@let form = draft();
+
+<div class="panel editor">
+  <div class="panel-h">
+    {{ title() }}
+    <span class="spacer"></span>
+    <button class="btn ghost sm" (click)="closed.emit()">✕</button>
+  </div>
+  <div class="editor-b">
+    <div class="row">
+      <div class="field">
+        <label>name</label>
+        <input class="input" [(ngModel)]="form.name" placeholder="ops-sre" />
+      </div>
+      <div class="field">
+        <label>description</label>
+        <input class="input" [(ngModel)]="form.description" placeholder="what this agent does" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>provider</label>
+        <select class="select" [(ngModel)]="form.provider">
+          @for (p of providers(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
+        </select>
+      </div>
+      <div class="field">
+        <label>model</label>
+        <input class="input" [(ngModel)]="form.model" placeholder="Hermes-4-405B" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>base url — optional (ollama / custom endpoints)</label>
+        <input class="input" [(ngModel)]="form.baseUrl" placeholder="http://host:11434/v1" />
+      </div>
+      <div class="field">
+        <label>working dir</label>
+        <input class="input" [(ngModel)]="form.cwd" placeholder="/opt/data" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>soul — SOUL.md</label>
+      <textarea class="input mono code" rows="6" [(ngModel)]="form.soul"></textarea>
+    </div>
+
+    <div class="field">
+      <label>memory — MEMORY.md seed</label>
+      <textarea class="input mono code" rows="4" [(ngModel)]="form.memory"></textarea>
+    </div>
+
+    <!-- skills -->
+    <div class="field">
+      <label>skills</label>
+      <div class="chips edit-chips">
+        @for (s of form.skills; track s) {
+          <span class="chip on">{{ s }}<button class="x" type="button" (click)="removeSkill(s)">×</button></span>
+        }
+        @if (!form.skills.length) { <span class="faint mono empty-note">no skills</span> }
+      </div>
+      <div class="add-row">
+        <input class="input" [(ngModel)]="newSkill" placeholder="skill-id e.g. web-research"
+               (keydown.enter)="addSkill()" />
+        <button class="btn sm" type="button" (click)="addSkill()">add</button>
+      </div>
+    </div>
+
+    <!-- mcp servers -->
+    <div class="field">
+      <label>tools — mcp servers</label>
+      @for (m of form.mcpServers; track m.name) {
+        <div class="line mono">
+          <span class="ln-name">{{ m.name }}</span>
+          <span class="chip info">{{ m.transport }}</span>
+          <span class="ln-detail faint">{{ m.command || m.url }}{{ m.args ? ' ' + m.args : '' }}</span>
+          <span class="spacer"></span>
+          <button class="btn ghost sm" type="button" (click)="removeMcp(m.name)">remove</button>
+        </div>
+      }
+      @if (!form.mcpServers.length) { <span class="faint mono empty-note">no mcp servers</span> }
+
+      <div class="catalog-mcp">
+        <div class="catalog-copy">
+          <span class="mono">add from MCP Servers</span>
+          <span class="faint">Creates a detached snapshot. Later catalog edits will not change this profile.</span>
+        </div>
+        <select class="select" [ngModel]="mcpCatalogId" (ngModelChange)="selectCatalogMcp($event)">
+          <option value="">select a server…</option>
+          @for (server of catalog(); track server.id) {
+            <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
+          }
+        </select>
+        <input class="input" [(ngModel)]="mcpCatalogAlias" placeholder="agent alias" />
+        <button class="btn sm" type="button"
+                [disabled]="!mcpCatalogId || !mcpCatalogAlias.trim()"
+                (click)="addCatalogMcp()">add snapshot</button>
+        @if (catalogServer(); as selected) {
+          @if (selected.kind === 'managed' && !selected.crossHostUrl) {
+            <span class="catalog-warning">Uses the stack-internal URL. It will only work for Agents that can reach the source host's MCP network.</span>
+          }
+        }
+      </div>
+
+      <div class="or mono faint"><span>or add a custom definition</span></div>
+      <div class="add-mcp">
+        <input class="input" [(ngModel)]="mcpForm.name" placeholder="server name" />
+        <select class="select" [(ngModel)]="mcpForm.transport">
+          <option value="stdio">stdio</option>
+          <option value="http">http</option>
+          <option value="sse">sse</option>
+        </select>
+        @if (mcpForm.stdio) {
+          <input class="input" [(ngModel)]="mcpForm.command" placeholder="command" />
+          <input class="input" [(ngModel)]="mcpForm.args" placeholder="args (optional)" />
+        } @else {
+          <input class="input wide" [(ngModel)]="mcpForm.url" placeholder="https://endpoint/mcp" />
+        }
+        <button class="btn sm" type="button" [disabled]="!mcpForm.valid()" (click)="addMcp()">add</button>
+      </div>
+    </div>
+
+    <!-- keys -->
+    <div class="field">
+      <label>keys — stored encrypted in the dashboard db</label>
+      @for (s of form.secrets; track s.key) {
+        <div class="line mono">
+          <span class="ln-name">{{ s.key }}</span>
+          <mc-status [status]="s.set ? (s.recoverable ? 'connected' : 'error') : 'off'"
+                     [label]="s.set ? (s.recoverable ? 'set' : 'unreadable') : 'unset'" />
+          @if (s.set && s.recoverable) { <span class="ln-detail faint">leave blank to keep</span> }
+          @if (s.set && !s.recoverable) { <span class="ln-detail faint">unreadable (key changed) · enter to restore</span> }
+          <input class="input key-inp" type="password" [(ngModel)]="s.value"
+                 [placeholder]="s.set ? 'new value (optional)' : 'value'" />
+          <button class="btn ghost sm" type="button" (click)="removeSecret(s.key)">remove</button>
+        </div>
+      }
+      @if (!form.secrets.length) { <span class="faint mono empty-note">no keys</span> }
+      <div class="add-row">
+        <input class="input" [(ngModel)]="secretKey" placeholder="ANTHROPIC_API_KEY" />
+        <input class="input" type="password" [(ngModel)]="secretValue" placeholder="value" />
+        <button class="btn sm" type="button" (click)="addSecret()">add</button>
+      </div>
+    </div>
+
+    <p class="lock-hint">deploy with the button below, or from the <a routerLink="/agents">Agents</a> page under "from profile".</p>
+
+    <div class="editor-actions">
+      @if (stored(); as t) {
+        <button class="btn danger" type="button" (click)="removeRequested.emit(t)">delete</button>
+        <button class="btn" type="button" (click)="deployRequested.emit(t)">deploy →</button>
+      }
+      <span class="spacer"></span>
+      <button class="btn ghost" type="button" (click)="closed.emit()">cancel</button>
+      <button class="btn primary" type="button" [disabled]="!canSave() || saving()" (click)="save()">
+        {{ saving() ? 'saving…' : (form.id ? 'save changes' : 'create template') }}
+      </button>
+    </div>
+  </div>
+</div>
