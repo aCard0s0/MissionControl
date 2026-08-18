@@ -133,4 +133,70 @@ class ContainerUpdateServiceTest {
 
     assertEquals(1, board.findByContainer(OLD_ID).size());
   }
+
+  @Test
+  void aRemapThatFailsOnceIsRetriedAndSucceeds() {
+    stubUpgrade();
+    seedBoardTask(OLD_ID);
+    seedLink(HOST, OLD_ID);
+    // sqlite is single-writer, so a concurrent writer holding the lock is the realistic
+    // failure this retry exists for — it is gone a moment later
+    FailingListener locked = new FailingListener(1);
+    // first in the list: the first attempt dies before either store writes, so the rows
+    // below can only have moved on the retry
+    service = new ContainerUpdateService(docker, hosts, List.of(locked, board, links), transactions);
+
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+
+    assertEquals(2, locked.attempts());
+    assertEquals(1, board.findByContainer(NEW_ID).size());
+    assertTrue(board.findByContainer(OLD_ID).isEmpty());
+    assertEquals(1, links.list(HOST, NEW_ID, "default").size());
+    assertTrue(links.list(HOST, OLD_ID, "default").isEmpty());
+  }
+
+  @Test
+  void aRemapThatKeepsFailingStillReturnsAHealthyUpdate() {
+    stubUpgrade();
+    seedBoardTask(OLD_ID);
+    seedLink(HOST, OLD_ID);
+    FailingListener locked = new FailingListener(Integer.MAX_VALUE);
+    // last in the list, so both stores have already written when it fails
+    service = new ContainerUpdateService(docker, hosts, List.of(board, links, locked), transactions);
+
+    // undoing a working upgrade to preserve a bookkeeping row would trade a live Agent
+    // for a link, so the caller still learns where its container went
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+
+    assertEquals(2, locked.attempts());
+    // every table moves in one transaction: an abandoned remap leaves the whole Agent on
+    // the old id rather than splitting its tasks and links across two container ids
+    assertEquals(1, board.findByContainer(OLD_ID).size());
+    assertEquals(1, links.list(HOST, OLD_ID, "default").size());
+    assertTrue(board.findByContainer(NEW_ID).isEmpty());
+    assertTrue(links.list(HOST, NEW_ID, "default").isEmpty());
+  }
+
+  /** Refuses its first {@code failures} attempts the way a locked sqlite write would. */
+  private static final class FailingListener implements ContainerIdListener {
+
+    private final int failures;
+    private int attempts;
+
+    FailingListener(int failures) {
+      this.failures = failures;
+    }
+
+    int attempts() {
+      return attempts;
+    }
+
+    @Override
+    public int onContainerReplaced(String hostId, String oldContainerId, String newContainerId) {
+      if (++attempts <= failures) {
+        throw new IllegalStateException("[SQLITE_BUSY] database is locked");
+      }
+      return 0;
+    }
+  }
 }

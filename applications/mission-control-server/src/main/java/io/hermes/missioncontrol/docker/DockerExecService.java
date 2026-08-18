@@ -24,7 +24,7 @@ public class DockerExecService {
    * unchecked callers that use an exit code as a boolean ({@code fileExists},
    * {@code dirExists}) read "no" rather than "yes" when the answer is unknown.
    */
-  static final int EXIT_STATUS_UNAVAILABLE = -1;
+  public static final int EXIT_STATUS_UNAVAILABLE = -1;
 
   private final DockerClients clients;
 
@@ -55,7 +55,9 @@ public class DockerExecService {
       boolean check,
       boolean sensitive,
       Duration timeout) {
-    DockerClient client = clients.forUrl(url);
+    // streaming: an exec attach is silent for as long as the command runs, so a socket
+    // timeout here would cap every caller's budget at the transport's ceiling
+    DockerClient client = clients.streamingForUrl(url);
     ExecCreateCmdResponse exec;
     try {
       var create = client.execCreateCmd(containerId)
@@ -89,6 +91,13 @@ public class DockerExecService {
       throw new UpstreamUnavailableException(operation + " interrupted", e);
     } catch (RuntimeException e) {
       if (sensitive) throw new UpstreamUnavailableException(operation + " failed", e);
+      // awaitCompletion rethrows whatever broke the stream (via throwFirstError), wrapping a
+      // checked cause such as SocketTimeoutException in a bare RuntimeException. Left alone
+      // that reaches the advice's catch-all as a 500 — reporting the daemon going away as a
+      // Mission Control defect, complete with a stack trace at ERROR.
+      if (isTransportFailure(e)) {
+        throw new UpstreamUnavailableException(operation + " lost its connection to the daemon", e);
+      }
       throw e;
     } finally {
       try {
@@ -119,6 +128,19 @@ public class DockerExecService {
       throw commandFailure(operation, exitCode, sensitive, out, err);
     }
     return new ExecResult(exitCode, out, err);
+  }
+
+  /** True for a failure that is the connection breaking rather than a defect in this code. */
+  static boolean isTransportFailure(Throwable e) {
+    for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+      if (cause instanceof java.io.IOException
+          || cause instanceof com.github.dockerjava.api.exception.DockerException
+          || cause instanceof com.github.dockerjava.api.exception.DockerClientException) {
+        return true;
+      }
+      if (cause.getCause() == cause) break;
+    }
+    return false;
   }
 
   static RuntimeException commandFailure(

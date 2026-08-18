@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.docker;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.InspectContainerResponse;
+import com.github.dockerjava.api.exception.DockerClientException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.AccessMode;
@@ -86,6 +87,7 @@ public class DockerGateway {
     for (Container c : containers) {
       String name = primaryName(c);
       String image = c.getImage() == null ? "" : c.getImage();
+      Map<String, String> containerLabels = c.getLabels() == null ? Map.of() : c.getLabels();
       if (!includeAll) {
         if (isUpgradeLeftover(name)) {
           // a daemon crash mid-upgrade can strand the parked original; keep it out
@@ -93,13 +95,29 @@ public class DockerGateway {
           log.warn("ignoring container left parked by an interrupted upgrade: {}", name);
           continue;
         }
-        String repo = normalizeRepository(splitImage(image)[0]);
-        if (!hermesRepo.isEmpty()) {
-          if (!hermesRepo.equals(repo)) continue;
-        } else if (!filter.isEmpty()) {
-          if (!image.toLowerCase(Locale.ROOT).contains(filter)
-              && !name.toLowerCase(Locale.ROOT).contains(filter)) {
+        if ("true".equals(containerLabels.get("mc.bootstrap"))) {
+          // a short-lived seeding helper, or one stranded by a failed deploy — never an Agent
+          continue;
+        }
+        // A container we deployed is ours whatever its image reference reads as, so it is
+        // never matched on that reference. The Engine substitutes the raw image ID once a
+        // reference stops resolving — moving the `latest` tag during one Agent's upgrade
+        // does exactly that to every other Agent on that tag — and an ID parses as
+        // repository "sha256", matching nothing and dropping a live Agent out of the fleet.
+        if (!"true".equals(containerLabels.get("mc.managed"))) {
+          if (isImageIdReference(image)) {
+            log.warn("container {} reports an image id rather than a reference and is not "
+                + "Mission Control-managed, so it is not shown in the fleet", name);
             continue;
+          }
+          String repo = normalizeRepository(splitImage(image)[0]);
+          if (!hermesRepo.isEmpty()) {
+            if (!hermesRepo.equals(repo)) continue;
+          } else if (!filter.isEmpty()) {
+            if (!image.toLowerCase(Locale.ROOT).contains(filter)
+                && !name.toLowerCase(Locale.ROOT).contains(filter)) {
+              continue;
+            }
           }
         }
       }
@@ -111,6 +129,12 @@ public class DockerGateway {
   private ContainerDto toDto(DockerClient client, Container c, String hostId) {
     String name = primaryName(c);
     String[] imageParts = splitImage(c.getImage());
+    if (isImageIdReference(c.getImage())) {
+      // "sha256:e5b3…" would otherwise render as repository "sha256" with the hex as the
+      // version. Report the repository the container is known to run and leave the tag
+      // blank — the reference it was created from is genuinely no longer recoverable here.
+      imageParts = new String[]{hermesRepository(), ""};
+    }
     String status = mapStatus(c.getState(), c.getStatus());
 
     Long startedAt = null;
@@ -149,6 +173,19 @@ public class DockerGateway {
   }
 
   /**
+   * True when the Engine reported a bare image ID instead of a reference. It does that once
+   * the stored reference no longer resolves to the container's image — notably after another
+   * container's upgrade moves a floating tag. Such a value is not a repository, so matching
+   * it against one is meaningless.
+   */
+  static boolean isImageIdReference(String image) {
+    if (image == null || image.isBlank()) return false;
+    String value = image.startsWith("sha256:") ? image.substring("sha256:".length()) : image;
+    return value.length() >= 32 && value.chars()
+        .allMatch(ch -> (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'));
+  }
+
+  /**
    * Repository half of MC_HERMES_IMAGE. The property is documented as a
    * repository, but the filtering paths tolerate a tag on it — so the paths that
    * build a reference must strip one rather than emit 'repo:tag:tag'.
@@ -174,6 +211,12 @@ public class DockerGateway {
     try (InvocationBuilder.AsyncResultCallback<Statistics> callback = new InvocationBuilder.AsyncResultCallback<>()) {
       client.statsCmd(containerId).withNoStream(true).exec(callback);
       Statistics stats = callback.awaitResult();
+      if (stats == null) {
+        // the stream completed without ever delivering a sample — a truncated response, or
+        // a daemon restarting mid-request. awaitResult reports that as null rather than an
+        // error, and mapping null would surface a defect-shaped 500 for a dependency outage.
+        throw new UpstreamUnavailableException("stats returned no sample for " + containerId);
+      }
       return toStats(stats);
     } catch (RuntimeException e) {
       throw e;
@@ -182,7 +225,8 @@ public class DockerGateway {
     }
   }
 
-  private static StatsDto toStats(Statistics stats) {
+  /** Package-private for the same reason as {@link #parseLogFrame}: it is pure mapping worth pinning. */
+  static StatsDto toStats(Statistics stats) {
     double cpu = 0;
     var cpuStats = stats.getCpuStats();
     var preCpu = stats.getPreCpuStats();
@@ -198,7 +242,7 @@ public class DockerGateway {
     double ramMb = 0;
     double ramTotalMb = 0;
     if (stats.getMemoryStats() != null) {
-      ramMb = orZero(stats.getMemoryStats().getUsage()) / 1_048_576.0;
+      ramMb = usageWithoutCache(stats.getMemoryStats()) / 1_048_576.0;
       ramTotalMb = orZero(stats.getMemoryStats().getLimit()) / 1_048_576.0;
     }
 
@@ -219,9 +263,32 @@ public class DockerGateway {
     return value == null ? 0 : value;
   }
 
+  /**
+   * Memory usage with the reclaimable page cache subtracted, the way {@code docker stats}
+   * itself reports it.
+   *
+   * <p>Raw {@code memory_stats.usage} counts every page the kernel cached on the
+   * container's behalf and will drop under pressure. An Agent that has read a few GB of
+   * skills or model files otherwise shows as pinned at its limit and about to OOM while
+   * the daemon reports it comfortably idle.
+   *
+   * <p>cgroup v1 reports {@code total_inactive_file}, cgroup v2 {@code inactive_file};
+   * a value larger than usage is nonsense from a partial sample, so it is ignored.
+   */
+  static long usageWithoutCache(com.github.dockerjava.api.model.MemoryStatsConfig memory) {
+    long usage = orZero(memory.getUsage());
+    var detail = memory.getStats();
+    if (detail == null) return usage;
+    Long cache = detail.getTotalInactiveFile() != null
+        ? detail.getTotalInactiveFile() : detail.getInactiveFile();
+    if (cache == null || cache < 0 || cache > usage) return usage;
+    return usage - cache;
+  }
+
   public List<LogLineDto> logs(String url, String containerId, int tail) {
     DockerClient client = clients.forUrl(url);
     List<LogLineDto> lines = new ArrayList<>();
+    boolean complete = false;
     try (ResultCallback.Adapter<Frame> callback = new ResultCallback.Adapter<>() {
       @Override
       public void onNext(Frame frame) {
@@ -239,14 +306,21 @@ public class DockerGateway {
           .withTimestamps(true)
           .withTail(Math.min(Math.max(tail, 1), 500))
           .exec(callback);
-      callback.awaitCompletion(8, TimeUnit.SECONDS);
+      complete = callback.awaitCompletion(8, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     } catch (Exception e) {
       throw e instanceof RuntimeException runtime ? runtime
           : new RuntimeException("logs failed: " + e.getMessage(), e);
     }
-    return lines;
+    if (!complete) {
+      // close() does not join the reader thread, so it may still append after the wait
+      // expires. Returning the live list would hand a mutating ArrayList to Jackson.
+      log.warn("log tail for {} was cut short after 8s — returning a partial read", containerId);
+    }
+    synchronized (lines) {
+      return List.copyOf(lines);
+    }
   }
 
   /**
@@ -327,18 +401,38 @@ public class DockerGateway {
     if (msg.isBlank()) return null;
 
     // Explicit severity wins over keywords inside the prose. In particular,
-    // "WARNING ... connection failed ... error" is still a warning.
+    // "WARNING ... connection failed ... error" is still a warning, and
+    // "INFO ... retrying after exception: ..." is still info — so every explicit
+    // prefix is tested before any substring heuristic runs.
     String lower = msg.stripLeading().toLowerCase(Locale.ROOT);
-    String level;
-    if (lower.startsWith("warning") || lower.startsWith("warn") || lower.startsWith("[warn")) level = "warn";
-    else if (lower.startsWith("debug") || lower.startsWith("[debug")) level = "debug";
-    else if (lower.startsWith("error") || lower.startsWith("fatal") || lower.startsWith("[emerg]")
-        || lower.startsWith("traceback") || lower.contains("permissionerror:")
-        || lower.contains("exception:") || lower.contains("fatal error")) level = "error";
-    else if (lower.startsWith("info") || lower.startsWith("[notice]") || lower.startsWith("[info")
-        || lower.contains(": info:")) level = "info";
-    else level = frame.getStreamType() == com.github.dockerjava.api.model.StreamType.STDERR ? "warn" : "info";
+    String level = explicitLevel(lower);
+    if (level == null) level = keywordLevel(lower);
+    if (level == null) {
+      level = frame.getStreamType() == com.github.dockerjava.api.model.StreamType.STDERR ? "warn" : "info";
+    }
     return new LogLineDto(ts, level, "container", msg);
+  }
+
+  /** Severity the line states about itself, or null when it carries no level prefix. */
+  private static String explicitLevel(String lower) {
+    if (lower.startsWith("warning") || lower.startsWith("warn") || lower.startsWith("[warn")) return "warn";
+    if (lower.startsWith("debug") || lower.startsWith("[debug")) return "debug";
+    if (lower.startsWith("error") || lower.startsWith("fatal") || lower.startsWith("[emerg]")
+        || lower.startsWith("traceback")) {
+      return "error";
+    }
+    if (lower.startsWith("info") || lower.startsWith("[notice]") || lower.startsWith("[info")) return "info";
+    return null;
+  }
+
+  /** Severity inferred from the prose, for lines that never named one. */
+  private static String keywordLevel(String lower) {
+    if (lower.contains("permissionerror:") || lower.contains("exception:")
+        || lower.contains("fatal error")) {
+      return "error";
+    }
+    if (lower.contains(": info:")) return "info";
+    return null;
   }
 
   // ── images ──────────────────────────────────────────────────────────────
@@ -349,7 +443,9 @@ public class DockerGateway {
     if (targetRepo.isBlank()) return Set.of();
     DockerClient client = clients.forUrl(url);
     Set<String> tags = new HashSet<>();
-    List<Image> images = client.listImagesCmd().withShowAll(true).exec();
+    // no withShowAll: that only adds intermediate and dangling layers, which carry a null or
+    // <none> repo tag and are discarded immediately below
+    List<Image> images = client.listImagesCmd().exec();
     for (Image image : images) {
       String[] repoTags = image.getRepoTags();
       if (repoTags == null) continue;
@@ -364,9 +460,16 @@ public class DockerGateway {
     return tags;
   }
 
-  /** The repository half of the configured Hermes image, as the catalog reports it. */
+  /**
+   * The repository half of the configured Hermes image, as the catalog reports it.
+   *
+   * <p>Tag-stripped like every sibling path: the frontend gates its update badges on this
+   * value matching {@code ContainerDto.image}, which is already a bare repository. Echoing
+   * a tagged MC_HERMES_IMAGE verbatim compares unequal and silently retires the upgrade
+   * affordance for the whole fleet.
+   */
   public String hermesImageRepository() {
-    return props.hermesImage() == null ? "" : props.hermesImage();
+    return props.hermesImage() == null ? "" : hermesRepository();
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────────
@@ -401,9 +504,9 @@ public class DockerGateway {
       // One-shot containers run the image's normal init hooks before their main
       // command. This seeds the default profile and creates named profiles while
       // the long-running gateway is still stopped, avoiding restart/exec races.
-      runOneShot(client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
+      runOneShot(url, client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
       for (String profile : seedProfiles) {
-        runOneShot(client, image, dataHostConfig,
+        runOneShot(url, client, image, dataHostConfig,
             List.of("profile", "create", profile, "--no-alias"),
             "create seed profile " + profile);
       }
@@ -416,7 +519,7 @@ public class DockerGateway {
       try {
         created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
       } catch (NotFoundException missingImage) {
-        pull(client, hermesRepository(), tag);
+        pull(clients.streamingForUrl(url), hermesRepository(), tag);
         created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
       }
       containerId = created.getId();
@@ -472,9 +575,19 @@ public class DockerGateway {
         """;
     List<String> command = new ArrayList<>(List.of("sh", "-c", script, "_"));
     command.addAll(profiles);
-    dockerExec.runAsUser(
-        url, containerId, "hermes", command, "Hermes deployment readiness",
-        true, false, Duration.ofSeconds(45));
+    try {
+      dockerExec.runAsUser(
+          url, containerId, "hermes", command, "Hermes deployment readiness",
+          true, false, Duration.ofSeconds(45));
+    } catch (UpstreamUnavailableException already) {
+      throw already;
+    } catch (RuntimeException notReady) {
+      // A non-zero readiness exit is a bare RuntimeException, which the advice answers as
+      // 500 with a stack trace — for the same operational outcome the checks two lines
+      // above and below report as 503. A gateway that is slow to come up is not a defect.
+      throw new UpstreamUnavailableException(
+          "Hermes readiness checks failed: " + notReady.getMessage(), notReady);
+    }
 
     state = client.inspectContainerCmd(containerId).exec().getState();
     if (state == null || !Boolean.TRUE.equals(state.getRunning())) {
@@ -617,7 +730,7 @@ public class DockerGateway {
     // registry then costs nothing, instead of leaving the Agent stopped.
     String targetImageId = imageIdOf(client, image);
     if (targetImageId == null) {
-      pull(client, repository, tag);
+      pull(clients.streamingForUrl(url), repository, tag);
       targetImageId = imageIdOf(client, image);
     }
     if (tag.equals(spec.tag()) && targetImageId != null && targetImageId.equals(spec.imageId())) {
@@ -629,6 +742,17 @@ public class DockerGateway {
         client.stopContainerCmd(spec.id()).withTimeout(10).exec();
       } catch (NotModifiedException alreadyStopped) {
         // raced with a manual stop — the desired state is what matters
+      } catch (RuntimeException failedStop) {
+        // The daemon may well have killed it before failing to answer, and an explicitly
+        // stopped container is not covered by its restart policy — so without this the
+        // Agent stays down indefinitely with nothing putting it back. Same exposure the
+        // rename below was already pulled inside the guard for.
+        try {
+          client.startContainerCmd(spec.id()).exec();
+        } catch (RuntimeException restore) {
+          failedStop.addSuppressed(restore);
+        }
+        throw failedStop;
       }
     }
 
@@ -690,20 +814,39 @@ public class DockerGateway {
     return result;
   }
 
-  /** Restores the parked container after a failed upgrade. Best effort — never masks the cause. */
+  /**
+   * Restores the parked container after a failed upgrade. Best effort — never masks the cause.
+   *
+   * <p>The replacement must be confirmed gone before the original is started again. Both
+   * containers were created from the same binds, so both mount the same managed data volume
+   * at /opt/data and both run {@code gateway run}: starting the original while the
+   * replacement survives puts two Hermes gateways on one profile tree.
+   */
   private void rollbackUpgrade(
       DockerClient client, ManagedContainerSpec spec, String newContainerId, RuntimeException failure) {
+    boolean replacementGone = true;
     if (newContainerId != null) {
       try {
         client.removeContainerCmd(newContainerId).withForce(true).exec();
+      } catch (NotFoundException alreadyGone) {
+        // nothing to undo
       } catch (RuntimeException cleanup) {
         failure.addSuppressed(cleanup);
+        replacementGone = !containerExists(client, newContainerId);
       }
     }
+
     try {
       client.renameContainerCmd(spec.id()).withName(spec.name()).exec();
     } catch (RuntimeException cleanup) {
       failure.addSuppressed(cleanup);
+    }
+
+    if (!replacementGone) {
+      log.error("upgrade of {} failed and its replacement {} could not be removed — leaving the "
+          + "original stopped rather than running two gateways against {}",
+          spec.name(), newContainerId, spec.dataVolume());
+      return;
     }
     if (spec.wasRunning()) {
       try {
@@ -711,6 +854,18 @@ public class DockerGateway {
       } catch (RuntimeException cleanup) {
         failure.addSuppressed(cleanup);
       }
+    }
+  }
+
+  /** Whether the daemon still knows this container, for deciding if a cleanup really landed. */
+  private static boolean containerExists(DockerClient client, String containerId) {
+    try {
+      client.inspectContainerCmd(containerId).exec();
+      return true;
+    } catch (NotFoundException gone) {
+      return false;
+    } catch (RuntimeException unknown) {
+      return true;   // cannot prove it is gone — assume the unsafe case
     }
   }
 
@@ -744,7 +899,8 @@ public class DockerGateway {
   }
 
   void runOneShot(
-      DockerClient client, String image, HostConfig hostConfig, List<String> command, String operation) {
+      String url, DockerClient client, String image, HostConfig hostConfig,
+      List<String> command, String operation) {
     String helperId = null;
     RuntimeException failure = null;
     try {
@@ -757,7 +913,7 @@ public class DockerGateway {
             .exec();
       } catch (NotFoundException missingImage) {
         String[] parts = splitImage(image);
-        pull(client, parts[0], parts[1]);
+        pull(clients.streamingForUrl(url), parts[0], parts[1]);
         helper = client.createContainerCmd(image)
             .withLabels(Map.of("mc.bootstrap", "true"))
             .withHostConfig(hostConfig)
@@ -766,11 +922,17 @@ public class DockerGateway {
       }
       helperId = helper.getId();
       client.startContainerCmd(helperId).exec();
-      var callback = client.waitContainerCmd(helperId).start();
+      // /wait emits nothing until the container exits, so it must not run on a client
+      // carrying a socket timeout — the 90s budget below is the real bound
+      var callback = clients.streamingForUrl(url).waitContainerCmd(helperId).start();
       try {
         Integer exitCode = callback.awaitStatusCode(90, TimeUnit.SECONDS);
         if (exitCode == null) throw new UpstreamUnavailableException(operation + " timed out");
         if (exitCode != 0) throw new UpstreamUnavailableException(operation + " failed with exit code " + exitCode);
+      } catch (DockerClientException exhausted) {
+        // how docker-java actually reports an expired wait: a DockerClientException, which is
+        // not a DockerException, so it would otherwise reach the advice's catch-all as a 500
+        throw new UpstreamUnavailableException(operation + " timed out", exhausted);
       } finally {
         try {
           callback.close();
@@ -784,8 +946,16 @@ public class DockerGateway {
         try {
           client.removeContainerCmd(helperId).withForce(true).exec();
         } catch (RuntimeException cleanup) {
-          if (failure != null) failure.addSuppressed(cleanup);
-          else throw cleanup;
+          if (failure != null) {
+            failure.addSuppressed(cleanup);
+          } else {
+            // the step itself succeeded. Failing the deploy over a transient cleanup error
+            // would roll back working state — and the surviving helper still mounts the data
+            // volume, so the rollback could not remove that either. It is labelled
+            // mc.bootstrap and can be reaped later.
+            log.warn("{} succeeded but its bootstrap helper {} could not be removed: {}",
+                operation, helperId, cleanup.getMessage());
+          }
         }
       }
     }

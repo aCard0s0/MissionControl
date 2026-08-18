@@ -2,6 +2,8 @@
 
 Base: same origin as the dashboard (combined image) or `MC_API_BASE_URL`.
 All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 409 / 502 (docker) / 503.
+A request the daemon itself rejects (a malformed image reference, an unacceptable body) is a 400, not a
+502 — 502 is reserved for the daemon or its registry failing, including rejected registry credentials.
 
 ## Meta
 
@@ -24,9 +26,9 @@ All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 409 
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts |
-| `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates |
+| `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates. `ramMb` excludes the reclaimable page cache, matching what `docker stats` reports rather than raw `memory_stats.usage`. 503 if the daemon returns no sample. |
 | `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | container-scoped `{ ts, level, source, msg }`; multiline frames are split, empty records dropped, and explicit severity preserved |
-| `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. |
+| `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. `version` is validated as an image tag (same rule as the update endpoint) — blank or absent means `latest`. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. A gateway that never reports ready is 503, not 500. |
 | `POST /api/containers/{hostId}/{id}/start` | — | |
 | `POST /api/containers/{hostId}/{id}/stop` | — | 10s graceful timeout |
 | `POST /api/containers/{hostId}/{id}/update` | `{ version }` | recreates the container on another tag, reusing its data volume, and returns the **new** `{ id }`. Pulls first, then stops, parks the old container aside, creates the replacement under the same name/labels/networks, and only removes the parked original once readiness passes — a failure restores it. Never re-seeds profiles and never touches the volume. 400 if the container is not Mission Control-managed or runs another image; 409 if it already runs that tag. Held open through readiness, so it can take minutes on a cold pull. |
@@ -139,7 +141,7 @@ image payloads at a model that may reject them.
 
 | Method & path | Params | Notes |
 |---|---|---|
-| `GET /api/images/tags` | `?hostId=`, `?remote=true` | tags of `MC_HERMES_IMAGE` from the host's image store merged with the registry's published tags, newest first |
+| `GET /api/images/tags` | `?hostId=`, `?remote=true` | tags of `MC_HERMES_IMAGE` from the host's image store merged with the registry's published tags, newest first. `repository` is always the bare repository — a tag on `MC_HERMES_IMAGE` is stripped, so it still matches the `image` every container DTO reports. |
 
 Returns `{ repository, tags, entries, newest, registryStatus, registryDetail, registryCheckedAt }`.
 `tags` is every known tag as a flat list; `entries` is the same order as

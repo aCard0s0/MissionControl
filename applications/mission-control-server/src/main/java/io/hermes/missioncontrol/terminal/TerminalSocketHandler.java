@@ -177,7 +177,9 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
 
     Shell shell = null;
     try {
-      DockerClient client = clients.forUrl(url);
+      // an attached TTY is silent whenever nobody is typing; a socket timeout on this client
+      // would close an idle session long before TerminalProperties' own idle reaper does
+      DockerClient client = clients.streamingForUrl(url);
       ExecCreateCmdResponse exec = client.execCreateCmd(containerId)
           .withAttachStdin(true)
           .withAttachStdout(true)

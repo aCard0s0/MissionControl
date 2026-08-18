@@ -173,6 +173,47 @@ class ApiExceptionHandlerTest {
         .andExpect(status().isBadGateway());
   }
 
+  // --- the daemon rejecting us vs. the daemon being broken ----------------------------
+  //
+  // The DockerException catch-all answered 502 for the whole family, so a malformed image
+  // reference — a request the daemon itself refused — was reported as "docker daemon error"
+  // and tripped alerting keyed on 5xx.
+
+  @Test
+  void aRequestTheDaemonItselfRejectsIsAClientErrorNotAGatewayFailure() throws Exception {
+    mvc.perform(get("/boom/docker-bad-request"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.containsString("invalid reference format")));
+  }
+
+  @Test
+  void aNotAcceptableFromTheDaemonIsAlsoAClientError() throws Exception {
+    mvc.perform(get("/boom/docker-not-acceptable"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.containsString("container is not running")));
+  }
+
+  @Test
+  void rejectedRegistryCredentialsAreReportedAsAGatewayFailureNotABadRequest() throws Exception {
+    // nothing the caller sent is wrong — our registry configuration is
+    mvc.perform(get("/boom/docker-unauthorized"))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.containsString("registry credentials")));
+  }
+
+  @Test
+  void aGenuineDaemonFailureStillAnswers502() throws Exception {
+    // Spring picks the most specific handler, so this proves the subtype handlers above did
+    // not capture the general case with them
+    mvc.perform(get("/boom/docker"))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.startsWith("docker daemon error:")));
+  }
+
   record ValidatedBody(@NotBlank String name) {}
 
   @RestController
@@ -242,6 +283,24 @@ class ApiExceptionHandlerTest {
     @RequestMapping("/docker-not-modified")
     void dockerNotModified() {
       throw new com.github.dockerjava.api.exception.NotModifiedException("container already stopped");
+    }
+
+    @RequestMapping("/docker-bad-request")
+    void dockerBadRequest() {
+      throw new com.github.dockerjava.api.exception.BadRequestException(
+          "Status 400: invalid reference format");
+    }
+
+    @RequestMapping("/docker-not-acceptable")
+    void dockerNotAcceptable() {
+      throw new com.github.dockerjava.api.exception.NotAcceptableException(
+          "container is not running");
+    }
+
+    @RequestMapping("/docker-unauthorized")
+    void dockerUnauthorized() {
+      throw new com.github.dockerjava.api.exception.UnauthorizedException(
+          "unauthorized: incorrect username or password");
     }
 
     /** Mirrors the logs endpoints: an int query param with a default. */
