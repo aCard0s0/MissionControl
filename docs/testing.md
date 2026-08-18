@@ -197,10 +197,34 @@ Two assumptions make it skip rather than fail where it cannot run: no daemon/Com
 no registry access for the one flow that pulls (on macOS that is usually a locked keychain
 blocking the credential helper — `security -v unlock-keychain ~/Library/Keychains/login.keychain-db`).
 
-One tier still does **not** exist, and its absence is a known blind spot rather than an oversight:
-every hermes CLI parser is pinned to fixtures we wrote ourselves rather than captured from a real
-container, so a hermes release can change `status`, `mcp test` or the gateway log format and every
-parser test stays green.
+## Parsers pinned to captured hermes output
+
+`hermes status`, the gateway log, the bundled manifest and SKILL.md frontmatter are all read by
+parsers that were written against text we typed ourselves. `HermesSetupTest` says so in its own
+javadoc: the fixtures prove the rules we believe hermes follows, not what it prints. A release can
+move a section heading or rename a row label, and every one of those tests stays green while the
+dashboard reports a configured agent as unconfigured.
+
+`HermesCliFixtureTest` closes that by provenance rather than by mocking. Capture real output:
+
+```bash
+./tools/capture-hermes-fixtures.sh <container> [profile]
+```
+
+The script reads only (`hermes --version`, `hermes status`, `cat`), redacts what belongs to the
+operator rather than to the output format, and writes into
+`src/test/resources/fixtures/hermes-<version>/`. The test parses every set present and asserts the
+parse is **non-degenerate** — sections yield rows, ✓/✗ resolves, indented detail lines stay detail,
+the frontmatter name beats the directory. A changed format makes these readers return empty rather
+than throw, and empty is the failure that is otherwise invisible.
+
+On a hermes bump: re-capture, read the diff, keep the old set. Drift then arrives as a reviewable
+diff and a failing test instead of a silent misread. With no fixtures present the test skips and
+names the script, so the mechanism is inert until someone captures.
+
+`fixtures/README.md` records what each file pins. One output is deliberately absent: `hermes mcp
+test` is the only command here with a side effect — it opens a connection and can start a stdio
+server inside the agent — so its parsing stays covered by synthetic output only.
 
 ## Test names and comments
 
