@@ -1,9 +1,8 @@
-import { McpCatalogServer, McpServer } from '../models';
-import { quoteMcpArgs } from '../../shared/mcp-args';
+import { McpServer } from '../models';
 import { McpEndpointOptions } from '../../shared/mcp-endpoint-form';
 import { AgentStore } from './agent-store';
 import { McpCatalogStore } from './mcp-catalog-store';
-import { StoreContext, nid } from './store-context';
+import { StoreContext } from './store-context';
 
 /**
  * The MCP servers one profile connects to. Two kinds live side by side: servers
@@ -21,23 +20,9 @@ export class AgentMcpStore {
     agentId: string, name: string, transport: McpServer['transport'], opts?: McpEndpointOptions,
   ): Promise<boolean> {
     if (!this.agents.byId(agentId)) return false;
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, 'mcp add', ref => this.ctx.api.agents.mcp.add(ref, {
-        name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
-      }));
-    }
-    // mock upsert: replace a same-named server (edit), else append
-    const server = directServer(name, transport, opts);
-    this.agents.update(agentId, x => {
-      const existing = x.mcp.find(m => m.name === name);
-      return {
-        ...x,
-        mcp: existing
-          ? x.mcp.map(m => m.name === name ? { ...server, id: m.id } : m)
-          : [...x.mcp, server],
-      };
-    });
-    return true;
+    return this.agents.mutate(agentId, 'mcp add', ref => this.ctx.api.agents.mcp.add(ref, {
+      name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
+    }));
   }
 
   /** Atomic direct-server edit/rename. Catalog-linked servers must be unlinked
@@ -53,39 +38,18 @@ export class AgentMcpStore {
       this.ctx.toast(`MCP alias already exists: ${name}`);
       return false;
     }
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, 'MCP update',
-        ref => this.ctx.api.agents.mcp.update(ref, oldName, {
-          name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
-          enabled: existing.enabled,
-        }));
-    }
-    this.agents.update(agentId, item => ({
-      ...item,
-      mcp: item.mcp.map(server => server.name !== oldName ? server : ({
-        ...server, name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
-        status: server.enabled ? 'unknown' as const : 'disabled' as const,
-        tools: 0, latencyMs: null, error: null, checkedAt: null,
-      })),
-    }));
-    return true;
+    return this.agents.mutate(agentId, 'MCP update',
+      ref => this.ctx.api.agents.mcp.update(ref, oldName, {
+        name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
+        enabled: existing.enabled,
+      }));
   }
 
   async setEnabled(agentId: string, serverName: string, enabled: boolean): Promise<boolean> {
     const agent = this.agents.byId(agentId);
     if (!agent?.mcp.some(server => server.name === serverName)) return false;
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, `MCP ${enabled ? 'connect' : 'disconnect'}`,
-        ref => this.ctx.api.agents.mcp.setEnabled(ref, serverName, enabled));
-    }
-    this.agents.update(agentId, item => ({
-      ...item,
-      mcp: item.mcp.map(server => server.name !== serverName ? server : ({
-        ...server, enabled, status: enabled ? 'unknown' as const : 'disabled' as const,
-        ...(enabled ? { error: null } : {}),
-      })),
-    }));
-    return true;
+    return this.agents.mutate(agentId, `MCP ${enabled ? 'connect' : 'disconnect'}`,
+      ref => this.ctx.api.agents.mcp.setEnabled(ref, serverName, enabled));
   }
 
   /** Starts a stopped managed catalog server and waits for the real runtime
@@ -108,13 +72,8 @@ export class AgentMcpStore {
       if (!(await this.catalog.waitUntilRunning(serverId))) return false;
     }
 
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, 'MCP catalog connect',
-        target => this.ctx.api.agents.mcp.connectCatalog(target, serverId, alias.trim()));
-    }
-    const linked = catalogDefinition(this.catalog.byId(serverId)!, alias.trim(), true);
-    this.agents.update(agentId, item => ({ ...item, mcp: [...item.mcp, linked] }));
-    return true;
+    return this.agents.mutate(agentId, 'MCP catalog connect',
+      target => this.ctx.api.agents.mcp.connectCatalog(target, serverId, alias.trim()));
   }
 
   /** Re-applies the catalog definition onto an alias already linked to it. */
@@ -122,47 +81,24 @@ export class AgentMcpStore {
     const agent = this.agents.byId(agentId);
     const linked = agent?.mcp.find(server => server.name === alias && server.catalogServerId);
     if (!agent || !linked?.catalogServerId) return false;
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, 'MCP sync',
-        ref => this.ctx.api.agents.mcp.syncCatalog(ref, alias));
-    }
-    const catalog = this.catalog.byId(linked.catalogServerId);
-    if (!catalog) return false;
-    const synced = catalogDefinition(catalog, alias, linked.enabled, linked.id);
-    this.agents.update(agentId, item => ({
-      ...item, mcp: item.mcp.map(server => server.name === alias ? synced : server),
-    }));
-    return true;
+    return this.agents.mutate(agentId, 'MCP sync',
+      ref => this.ctx.api.agents.mcp.syncCatalog(ref, alias));
   }
 
   /** Detaches the alias from the catalog so it can be edited directly. */
   async unlinkCatalog(agentId: string, alias: string): Promise<boolean> {
     const agent = this.agents.byId(agentId);
     if (!agent?.mcp.some(server => server.name === alias)) return false;
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, 'MCP customize',
-        ref => this.ctx.api.agents.mcp.unlinkCatalog(ref, alias));
-    }
-    this.agents.update(agentId, item => ({
-      ...item,
-      mcp: item.mcp.map(server => server.name !== alias ? server : ({
-        ...server, origin: 'custom' as const, catalogServerId: null,
-        syncedRevision: null, catalogRevision: null, updateAvailable: false,
-      })),
-    }));
-    return true;
+    return this.agents.mutate(agentId, 'MCP customize',
+      ref => this.ctx.api.agents.mcp.unlinkCatalog(ref, alias));
   }
 
   async remove(agentId: string, mcpId: string): Promise<boolean> {
     const agent = this.agents.byId(agentId);
     const server = agent?.mcp.find(m => m.id === mcpId);
     if (!agent || !server) return false;
-    if (!this.ctx.mock) {
-      return this.agents.mutate(agentId, 'mcp remove',
-        ref => this.ctx.api.agents.mcp.remove(ref, server.name));
-    }
-    this.agents.update(agentId, x => ({ ...x, mcp: x.mcp.filter(m => m.id !== mcpId) }));
-    return true;
+    return this.agents.mutate(agentId, 'mcp remove',
+      ref => this.ctx.api.agents.mcp.remove(ref, server.name));
   }
 
   /** Retest a single MCP server's reachability. */
@@ -173,35 +109,25 @@ export class AgentMcpStore {
       ? server
       : { ...server, status: 'checking' as const, error: null });
 
-    if (!this.ctx.mock) {
-      const resolved = this.agents.resolve(agentId);
-      if (!resolved) return false;
-      try {
-        const r = await this.ctx.api.agents.mcp.test(resolved.ref, serverName);
-        this.patchServer(agentId, serverName, server => ({
-          ...server, status: r.status as McpServer['status'], tools: r.tools,
-          latencyMs: r.latencyMs, error: r.error, checkedAt: r.checkedAt,
-        }));
-        if (r.error) this.ctx.toast(`mcp ${serverName}: ${r.error}`);
-        return r.status === 'connected';
-      } catch (e) {
-        const message = (e as { message?: string } | null)?.message ?? String(e);
-        this.ctx.toast(`mcp test failed: ${message}`);
-        this.patchServer(agentId, serverName, server => ({
-          ...server, status: 'error' as const, latencyMs: null,
-          error: message, checkedAt: Date.now(),
-        }));
-        return false;
-      }
+    const resolved = this.agents.resolve(agentId);
+    if (!resolved) return false;
+    try {
+      const r = await this.ctx.api.agents.mcp.test(resolved.ref, serverName);
+      this.patchServer(agentId, serverName, server => ({
+        ...server, status: r.status as McpServer['status'], tools: r.tools,
+        latencyMs: r.latencyMs, error: r.error, checkedAt: r.checkedAt,
+      }));
+      if (r.error) this.ctx.toast(`mcp ${serverName}: ${r.error}`);
+      return r.status === 'connected';
+    } catch (e) {
+      const message = (e as { message?: string } | null)?.message ?? String(e);
+      this.ctx.toast(`mcp test failed: ${message}`);
+      this.patchServer(agentId, serverName, server => ({
+        ...server, status: 'error' as const, latencyMs: null,
+        error: message, checkedAt: Date.now(),
+      }));
+      return false;
     }
-    await new Promise(res => setTimeout(res, 700));
-    const ok = Math.random() < 0.85;
-    this.patchServer(agentId, serverName, server => ({
-      ...server, status: ok ? 'connected' : 'error',
-      latencyMs: ok ? 30 + Math.floor(Math.random() * 200) : null,
-      error: ok ? null : 'simulated endpoint unreachable', checkedAt: Date.now(),
-    }));
-    return ok;
   }
 
   private patchServer(
@@ -211,32 +137,4 @@ export class AgentMcpStore {
       ...x, mcp: x.mcp.map(m => m.name === serverName ? change(m) : m),
     }));
   }
-}
-
-/** A server the operator configured on the profile itself. */
-function directServer(
-  name: string, transport: McpServer['transport'], opts?: McpEndpointOptions,
-): McpServer {
-  return {
-    id: nid('m'), name, transport, enabled: true, origin: 'custom', catalogServerId: null,
-    syncedRevision: null, catalogRevision: null, updateAvailable: false, status: 'unknown',
-    tools: 0, latencyMs: null, error: null, checkedAt: null,
-    url: opts?.url, command: opts?.command, args: opts?.args,
-  };
-}
-
-/** The profile-side view of a catalog entry, linked at its current revision. */
-function catalogDefinition(
-  catalog: McpCatalogServer, alias: string, enabled: boolean, id = nid('m'),
-): McpServer {
-  return {
-    id, name: alias, transport: catalog.transport, enabled, origin: 'catalog',
-    catalogServerId: catalog.id, syncedRevision: catalog.revision,
-    catalogRevision: catalog.revision, updateAvailable: false,
-    status: enabled ? 'unknown' : 'disabled', tools: 0, latencyMs: null,
-    error: null, checkedAt: null,
-    url: catalog.kind === 'stdio' ? undefined : (catalog.connectionUrl ?? catalog.url ?? undefined),
-    command: catalog.kind === 'stdio' ? (catalog.stdioCommand ?? undefined) : undefined,
-    args: catalog.kind === 'stdio' ? quoteMcpArgs(catalog.args) : undefined,
-  };
 }

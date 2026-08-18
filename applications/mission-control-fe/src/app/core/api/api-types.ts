@@ -234,3 +234,82 @@ export interface ApiProfileTemplate {
   createdAt: number;
   updatedAt: number;
 }
+
+/**
+ * One scheduled job, as hermes records it. `schedule` is hermes' own rendering —
+ * only a cron schedule has an expression, while `once` and `interval` jobs are
+ * stored as a timestamp and a minute count, so the display string is the one form
+ * present for every kind and the one the editor hands back.
+ */
+export interface ApiCronJob {
+  id: string;
+  name: string | null;
+  prompt: string | null;
+  schedule: string | null;
+  scheduleKind: string | null;
+  deliver: string | null;
+  enabled: boolean;
+  state: string | null;
+  repeatTimes: number | null;
+  repeatDone: number;
+  createdAt: number | null;
+  nextRunAt: number | null;
+  lastRunAt: number | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  skills: string[];
+}
+
+/** A profile's schedule, and whether the gateway that fires it is up. */
+export interface ApiCronJobs {
+  jobs: ApiCronJob[];
+  schedulerRunning: boolean;
+}
+
+/** Create or edit a job. Every field is optional on an edit; a blank one is left alone. */
+export interface ApiCronJobRequest {
+  schedule?: string;
+  prompt?: string;
+  name?: string;
+  deliver?: string;
+  repeat?: number | null;
+  skills?: string[];
+}
+
+/** One webhook route. The HMAC secret is never part of a listing. */
+export interface ApiWebhookSubscription {
+  name: string;
+  description: string | null;
+  url: string;
+  events: string[];
+  prompt: string | null;
+  skills: string[];
+  deliver: string | null;
+  deliverOnly: boolean;
+  secretMasked: string;
+  createdAt: number | null;
+}
+
+/** The listener a route arrives on. */
+export interface ApiWebhookPlatform {
+  enabled: boolean;
+  host: string | null;
+  port: number | null;
+  published: boolean;
+}
+
+export interface ApiWebhooks {
+  subscriptions: ApiWebhookSubscription[];
+  platform: ApiWebhookPlatform;
+}
+
+export interface ApiSubscribeWebhookRequest {
+  name: string;
+  prompt?: string;
+  description?: string;
+  events?: string[];
+  skills?: string[];
+  deliver?: string;
+  deliverChatId?: string;
+  deliverOnly?: boolean;
+}

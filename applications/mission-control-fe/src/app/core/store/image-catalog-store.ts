@@ -1,7 +1,6 @@
 import { signal } from '@angular/core';
 import { ApiImageTags } from '../hermes-api';
 import { ImageCatalog } from '../models';
-import { seedImageTags } from '../mock-data';
 import { ContainerStore } from './container-store';
 import { HostStore } from './host-store';
 import { StoreContext } from './store-context';
@@ -28,14 +27,6 @@ export class ImageCatalogStore {
 
   /** Raw tag list for the deploy picker, which shows remote tags too. */
   tags(hostId: string): Promise<ApiImageTags> {
-    if (this.ctx.mock) {
-      const catalog = this.mockCatalog(hostId);
-      return Promise.resolve({
-        repository: catalog.repository,
-        tags: catalog.tags.map(t => t.tag),
-        entries: catalog.tags.map(t => ({ tag: t.tag, pulled: t.pulled, remote: true })),
-      });
-    }
     return this.ctx.api.containers.imageTags(hostId);
   }
 
@@ -45,9 +36,7 @@ export class ImageCatalogStore {
     if (!force && known && Date.now() - known.fetchedAt < CATALOG_TTL) return;
     this.inFlight.add(hostId);
     try {
-      const catalog = this.ctx.mock
-        ? this.mockCatalog(hostId)
-        : toImageCatalog(await this.ctx.api.containers.imageTags(hostId));
+      const catalog = toImageCatalog(await this.ctx.api.containers.imageTags(hostId));
       this.catalog.update(m => ({ ...m, [hostId]: catalog }));
     } catch {
       /* registry or daemon hiccup — keep the last catalog */
@@ -63,16 +52,5 @@ export class ImageCatalogStore {
       .filter(h => h.status === 'connected' && hosted.has(h.id))
       .map(h => h.id);
     await this.ctx.mapPool(ids, 4, id => this.refresh(id, force));
-  }
-
-  private mockCatalog(hostId: string): ImageCatalog {
-    const containers = this.containers.containers();
-    const running = new Set(containers.filter(c => c.hostId === hostId).map(c => c.version));
-    return {
-      repository: containers[0]?.image ?? 'nousresearch/hermes-agent',
-      tags: seedImageTags().map(tag => ({ tag, pulled: tag === 'latest' || running.has(tag) })),
-      registryStatus: 'ok',
-      fetchedAt: Date.now(),
-    };
   }
 }

@@ -29,8 +29,10 @@ export class HermesApi {
   readonly templates: TemplatesApi;
   readonly board: BoardApi;
 
-  constructor(apiBaseUrl: string) {
-    this.http = new ApiHttp(apiBaseUrl);
+  /** `http` is the one seam a test substitutes to answer every resource
+   *  client at once; production always builds the real one. */
+  constructor(apiBaseUrl: string, http: ApiHttp = new ApiHttp(apiBaseUrl)) {
+    this.http = http;
     this.hosts = new HostsApi(this.http);
     this.containers = new ContainersApi(this.http);
     this.agents = new AgentsApi(this.http);

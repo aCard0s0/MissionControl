@@ -1,0 +1,73 @@
+// The MCP catalog entry form. `.scrim`, `.modal`, `.panel-h`, `.btn`, `.input`,
+// `.select`, `.field` and `.chip` are global (src/styles.scss); everything the
+// form lays out itself lives here.
+.editor-modal { width: min(780px, calc(100vw - 48px)); }
+.modal-b {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  > p { margin: 0; }
+}
+.form-grid { display: grid; gap: 12px; }
+.form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-grid.transport-url { grid-template-columns: 140px 1fr; }
+.section-label { color: var(--faint); font-size: 9.5px; letter-spacing: .14em; }
+.field-note { color: var(--faint); font-family: var(--font-mono); font-size: 9px; }
+.code-list { min-height: 76px; resize: vertical; line-height: 1.55; }
+
+.kv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.kv-row {
+  display: grid;
+  grid-template-columns: minmax(140px, .8fr) minmax(180px, 1.3fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.volume-row {
+  display: grid;
+  grid-template-columns: minmax(160px, .8fr) minmax(200px, 1.2fr) auto;
+  gap: 8px;
+}
+.health-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(90px, .5fr));
+  gap: 8px;
+  .health-command { min-width: 0; }
+}
+.support-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--panel-2);
+  .support-head { display: flex; align-items: center; gap: 8px; }
+  .kv-head.nested { padding-top: 8px; }
+}
+.secret-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 10px;
+  white-space: nowrap;
+  input { accent-color: var(--acc); }
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+
+@media (max-width: 760px) {
+  .editor-modal { width: 94vw; }
+  .form-grid.two, .form-grid.transport-url { grid-template-columns: 1fr; }
+  .health-grid { grid-template-columns: 1fr 1fr; .health-command { grid-column: 1 / -1; } }
+  .kv-row { grid-template-columns: 1fr auto; }
+  .kv-row .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .volume-row { grid-template-columns: 1fr auto; }
+  .volume-row .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+}

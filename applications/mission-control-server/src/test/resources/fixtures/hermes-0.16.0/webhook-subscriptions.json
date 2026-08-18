@@ -1,0 +1,29 @@
+{
+  "grafana": {
+    "description": "Grafana alerting",
+    "events": [
+      "alert.firing",
+      "alert.resolved"
+    ],
+    "secret": "FfrKrfUrccoJwEDfeIW_t2brVGBacVyfK4IcNsFWjd0",
+    "prompt": "Alert {alert.name} is {status}",
+    "skills": [],
+    "deliver": "log",
+    "created_at": "2026-08-18T23:16:12Z"
+  },
+  "deploys": {
+    "description": "Agent-created subscription: deploys",
+    "events": [],
+    "secret": "awTJVc6kv84uyK_fpR_qJ20ra_Siz9rMnVcXshnTm8Q",
+    "prompt": "Deploy {sha}",
+    "skills": [
+      "web-research"
+    ],
+    "deliver": "telegram",
+    "created_at": "2026-08-18T23:16:12Z",
+    "deliver_only": true,
+    "deliver_extra": {
+      "chat_id": "12345"
+    }
+  }
+}

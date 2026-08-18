@@ -20,7 +20,7 @@ Both ship in **one container**: Spring Boot serves the Angular build and the API
 ```bash
 ./mc start --build      # build combined image + deploy behind tailscale (default)
 ./mc start --ts=off     # plain docker on loopback — http://127.0.0.1:8080
-./mc start --ts=off --mock --port=9000   # demo mode with mock data, custom port
+./mc start --ts=off --port=9000          # plain docker on a custom port
 ./mc status             # which flavor is running, where
 ./mc logs -f            # follow app logs
 ./mc ollama up          # optional local model runtime (not started by default)
@@ -53,8 +53,11 @@ cd applications/mission-control-server && MC_ALLOW_DEV_KEY=true mvn spring-boot:
 cd applications/mission-control-fe && npm install && npm start
 ```
 
-The frontend dev default is `dataMode: 'mock'` (no backend needed) — switch to `live` in [public/config.js](applications/mission-control-fe/public/config.js) to drive it from the real backend.
+The frontend always talks to the backend — run both, and `npm start` proxies `/api` and `/health` to `:8080`. There is no demo-data mode: an unreachable backend shows an empty dashboard and a banner saying so, rather than inventory nobody can act on.
 
 ## Status
 
-Live mode today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, a persisted MCP server catalog with managed Compose services and external endpoints, a persisted ops board, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP connections, integrations, and sessions. Calendar jobs and webhooks remain mock-only.
+Working today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, a persisted MCP server catalog with managed Compose services and external endpoints, a persisted ops board, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP connections, integrations, and sessions. Scheduled jobs and inbound webhooks drive hermes' own `cron` and `webhook`
+commands — Mission Control manages them but never carries webhook traffic itself, so a route
+stays unreachable from outside the docker network until an operator exposes the agent's
+listener deliberately.

@@ -4,6 +4,8 @@ import { BoardStore } from './board-store';
 import { ContainerStore } from './container-store';
 import { HostStore } from './host-store';
 import { ImageCatalogStore } from './image-catalog-store';
+import { JobStore } from './job-store';
+import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
 import { ProviderStore } from './provider-store';
@@ -16,6 +18,9 @@ import { TemplateStore } from './template-store';
 const POLL = {
   containers: 10_000,
   agents: 12_000,
+  // a schedule only changes when a job runs or an operator edits one, and reading it
+  // is one exec per profile — the slowest useful period, not the fastest
+  jobs: 30_000,
   imageCatalogs: 300_000,
   stats: 3_000,
   logs: 5_000,
@@ -25,21 +30,19 @@ const POLL = {
 const RETRY_MS = 10_000;
 
 /**
- * Live mode's clock: probes the backend, loads everything once it answers, and
- * then keeps each domain fresh on its own period. In mock mode none of this runs
- * — {@link MockTelemetry} plays that part instead.
+ * The store's clock: probes the backend, loads everything once it answers, and
+ * then keeps each domain fresh on its own period.
  */
 export class LiveSync {
-  /** Banner text shown app-wide while live mode has no working backend. */
+  /** Banner text shown app-wide while there is no working backend. */
   readonly notice = computed(() => {
     switch (this.ctx.backendStatus()) {
-      case 'mock':
       case 'connected': return null;
-      case 'connecting': return 'live mode — connecting to backend…';
+      case 'connecting': return 'connecting to backend…';
       case 'unreachable':
         return this.ctx.config.apiBaseUrl
-          ? `live mode — backend unreachable at ${this.ctx.config.apiBaseUrl}, retrying…`
-          : 'live mode — backend unreachable (is mission-control-server running?), retrying…';
+          ? `backend unreachable at ${this.ctx.config.apiBaseUrl}, retrying…`
+          : 'backend unreachable (is mission-control-server running?), retrying…';
     }
   });
 
@@ -56,6 +59,8 @@ export class LiveSync {
     private readonly mcp: McpCatalogStore,
     private readonly providers: ProviderStore,
     private readonly images: ImageCatalogStore,
+    private readonly jobs: JobStore,
+    private readonly webhooks: WebhookStore,
   ) {}
 
   async probeBackend(): Promise<void> {
@@ -79,8 +84,12 @@ export class LiveSync {
     ]);
     await this.agents.refresh();   // needs the container list
     void this.images.refreshAll();
+    void this.jobs.refresh();      // needs the profile list
+    void this.webhooks.refresh();
     setInterval(() => this.containers.refresh(), POLL.containers);
     setInterval(() => this.agents.refresh(), POLL.agents);
+    setInterval(() => this.jobs.refresh(), POLL.jobs);
+    setInterval(() => this.webhooks.refresh(), POLL.jobs);
     setInterval(() => this.images.refreshAll(), POLL.imageCatalogs);
     setInterval(() => this.containers.pollStats(), POLL.stats);
     setInterval(() => this.logs.poll(), POLL.logs);

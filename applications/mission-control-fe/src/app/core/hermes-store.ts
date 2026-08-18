@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { runtimeConfig } from './app-config';
 import {
   ApiAgentSetup, ApiAuxiliaryModel, ApiImageTags, ApiPullState, ApiSetupAuthProvider,
+  ApiSubscribeWebhookRequest,
 } from './hermes-api';
 import {
   BoardColumn, ContainerStatus, CronJob, McpCatalogServerInput, McpServer, ProfileTemplateInput,
@@ -20,7 +21,6 @@ import { JobStore } from './store/job-store';
 import { LiveSync } from './store/live-sync';
 import { LogStore } from './store/log-store';
 import { McpCatalogStore } from './store/mcp-catalog-store';
-import { MockTelemetry } from './store/mock-telemetry';
 import { ProviderStore } from './store/provider-store';
 import { StoreContext } from './store/store-context';
 import { TemplateStore } from './store/template-store';
@@ -33,15 +33,14 @@ export type { TerminalRequest } from './store/terminal-request-store';
 /**
  * Hermes data store — the single surface every page reads and writes through.
  *
- * In `mock` data mode (the dev default, see public/config.js) it seeds demo data
- * and simulates telemetry; in `live` mode it starts empty and is fed by the
- * backend adapter hitting `apiBaseUrl`. Components only ever see the signals and
- * actions below, so swapping the adapter never touches a page.
+ * It starts empty and is filled by {@link LiveSync} hitting `apiBaseUrl`.
+ * Components only ever see the signals and actions below, so swapping the
+ * backend client never touches a page.
  *
  * The state itself lives in the domain slices under ./store — one per subject,
  * all sharing a {@link StoreContext} that holds the data mode, the API client and
  * the toast channel. This class is the facade over them: it wires the slices
- * together, owns the mock/live clock, and keeps the flat surface the pages use.
+ * together, owns the poll clock, and keeps the flat surface the pages use.
  * All container-scoped views read through the selected container, which enforces
  * the "never mix containers" rule at the store level.
  */
@@ -52,30 +51,27 @@ export class HermesStore {
   private readonly hostStore = new HostStore(this.ctx);
   private readonly containerStore = new ContainerStore(this.ctx);
   private readonly logStore = new LogStore(this.ctx, this.containerStore);
-  private readonly agentStore = new AgentStore(this.ctx, this.containerStore, this.logStore);
-  private readonly skillStore = new AgentSkillStore(this.ctx, this.agentStore, this.logStore);
+  private readonly agentStore = new AgentStore(this.ctx, this.containerStore);
+  private readonly skillStore = new AgentSkillStore(this.ctx, this.agentStore);
   private readonly catalogStore = new McpCatalogStore(this.ctx);
   private readonly agentMcpStore = new AgentMcpStore(this.ctx, this.agentStore, this.catalogStore);
   private readonly setupStore = new AgentSetupStore(this.ctx, this.containerStore, this.agentStore);
   private readonly providerStore = new ProviderStore(this.ctx);
   private readonly imageStore = new ImageCatalogStore(this.ctx, this.containerStore, this.hostStore);
   private readonly templateStore =
-    new TemplateStore(this.ctx, this.containerStore, this.agentStore, this.providerStore);
-  private readonly jobStore = new JobStore(this.ctx, this.containerStore);
+    new TemplateStore(this.ctx, this.containerStore, this.agentStore);
+  private readonly jobStore = new JobStore(this.ctx, this.containerStore, this.agentStore);
   private readonly boardStore = new BoardStore(this.ctx, this.containerStore);
-  private readonly webhookStore = new WebhookStore(this.ctx, this.agentStore);
-  private readonly lifecycle = new ContainerLifecycle(
-    this.ctx, this.containerStore, this.agentStore, this.logStore, this.jobStore, this.boardStore,
-    this.webhookStore, this.imageStore);
+  private readonly webhookStore =
+    new WebhookStore(this.ctx, this.agentStore, listener => this.containerStore.onSelect(listener));
+  private readonly lifecycle = new ContainerLifecycle(this.ctx, this.containerStore, this.imageStore);
   private readonly terminal = new TerminalRequestStore();
-  private readonly telemetry = new MockTelemetry(this.containerStore, this.agentStore, this.logStore);
   private readonly liveSync = new LiveSync(
     this.ctx, this.hostStore, this.containerStore, this.agentStore, this.logStore, this.boardStore,
-    this.templateStore, this.catalogStore, this.providerStore, this.imageStore);
+    this.templateStore, this.catalogStore, this.providerStore, this.imageStore, this.jobStore, this.webhookStore);
 
   constructor() {
-    if (this.ctx.mock) this.telemetry.start();
-    else void this.liveSync.probeBackend();
+    void this.liveSync.probeBackend();
   }
 
   // ── app-wide state ─────────────────────────────────────────────────────
@@ -242,13 +238,19 @@ export class HermesStore {
 
   // ── scheduled jobs ─────────────────────────────────────────────────────
   readonly containerJobs = this.jobStore.forSelectedContainer;
-  toggleJob = (id: string): void => this.jobStore.toggle(id);
-  updateJob = (id: string, patch: Partial<CronJob>): void => this.jobStore.update(id, patch);
+  /** False when the gateway is down: hermes keeps the jobs, but nothing fires them. */
+  readonly schedulerRunning = this.jobStore.schedulerRunning;
+  refreshJobs = (): Promise<void> => this.jobStore.refresh();
+  toggleJob = (id: string): Promise<boolean> => this.jobStore.toggle(id);
+  updateJob = (id: string, patch: Partial<CronJob>): Promise<boolean> =>
+    this.jobStore.update(id, patch);
   createJob = (
     containerId: string, agentId: string, name: string, schedule: string, prompt: string,
     deliverTo: string,
-  ): void => this.jobStore.create(containerId, agentId, name, schedule, prompt, deliverTo);
-  removeJob = (id: string): void => this.jobStore.remove(id);
+  ): Promise<boolean> =>
+    this.jobStore.create(containerId, agentId, name, schedule, prompt, deliverTo);
+  runJobNow = (id: string): Promise<boolean> => this.jobStore.runNow(id);
+  removeJob = (id: string): Promise<boolean> => this.jobStore.remove(id);
 
   // ── board ──────────────────────────────────────────────────────────────
   readonly containerTasks = this.boardStore.forSelectedContainer;
@@ -256,8 +258,17 @@ export class HermesStore {
 
   // ── webhooks ───────────────────────────────────────────────────────────
   readonly containerWebhooks = this.webhookStore.forSelectedContainer;
-  addWebhook = (agentId: string, name: string, slug: string, events: string[]): void =>
-    this.webhookStore.add(agentId, name, slug, events);
-  toggleWebhook = (id: string): void => this.webhookStore.toggle(id);
-  removeWebhook = (id: string): void => this.webhookStore.remove(id);
+  readonly webhookListeners = this.webhookStore.containerListeners;
+  refreshWebhooks = (): Promise<void> => this.webhookStore.refresh();
+  webhookListenerOf = (agentId: string) => this.webhookStore.listenerOf(agentId);
+  setWebhookListener = (agentId: string, enabled: boolean, port?: number): Promise<boolean> =>
+    this.webhookStore.setListenerEnabled(agentId, enabled, port);
+  addWebhook = (agentId: string, request: ApiSubscribeWebhookRequest): Promise<boolean> =>
+    this.webhookStore.subscribe(agentId, request);
+  removeWebhook = (agentId: string, route: string): Promise<boolean> =>
+    this.webhookStore.remove(agentId, route);
+  webhookSecret = (agentId: string, route: string): Promise<string | null> =>
+    this.webhookStore.secretOf(agentId, route);
+  testWebhook = (agentId: string, route: string): Promise<string | null> =>
+    this.webhookStore.test(agentId, route);
 }

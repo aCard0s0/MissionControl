@@ -1,6 +1,5 @@
 import { WritableSignal, computed, signal } from '@angular/core';
 import { ContainerStatus, HermesContainer } from '../models';
-import { seedContainers } from '../mock-data';
 import { StoreContext } from './store-context';
 
 /** Keeps the last 60 samples — one minute at the 1s-ish poll rate. */
@@ -31,8 +30,8 @@ export class ContainerStore {
   private statsInFlight = false;
 
   constructor(private readonly ctx: StoreContext) {
-    this.containers = signal(ctx.mock ? seedContainers() : []);
-    this.selectedContainerId = signal(ctx.mock ? 'c-prod' : '');
+    this.containers = signal([]);
+    this.selectedContainerId = signal('');
   }
 
   byId = (id: string): HermesContainer | null => this.containers().find(c => c.id === id) ?? null;

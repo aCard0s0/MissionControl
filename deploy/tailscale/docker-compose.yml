@@ -53,7 +53,6 @@ services:
       tailscale:
         condition: service_healthy
     environment:
-      MC_DATA_MODE: live
       MC_CONTAINER_FILTER: hermes
       MC_SECRET_KEY: ${MC_SECRET_KEY:?set by ./mc}
       MC_SECRET_KEY_PREVIOUS: ${MC_SECRET_KEY_PREVIOUS:-}

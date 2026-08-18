@@ -13,6 +13,16 @@
           (click)="startCreate()">+ schedule job</button>
 </div>
 
+@if (!store.schedulerRunning() && store.containerAgents().length) {
+  <div class="panel sched-warn" data-reveal>
+    <div class="panel-b mono">
+      <mc-status status="off" label="scheduler down" />
+      <span>The container's gateway is not running — jobs are saved but nothing fires them.</span>
+      <span class="faint">start it with <code>hermes gateway install</code> in the terminal</span>
+    </div>
+  </div>
+}
+
 <div class="layout">
   <!-- month grid -->
   <div class="panel cal" data-reveal>
@@ -90,7 +100,9 @@
           </div>
           <div class="form-actions">
             <button class="btn ghost" (click)="cancelForm()">cancel</button>
-            <button class="btn primary" [disabled]="!fName.trim() || !scheduleHelp().valid || !fAgent" (click)="save()">{{ editing() ? 'save' : 'create' }}</button>
+            <button class="btn primary"
+                    [disabled]="!fName.trim() || !scheduleHelp().valid || !fAgent || saving()"
+                    (click)="save()">{{ saving() ? 'saving…' : (editing() ? 'save' : 'create') }}</button>
           </div>
         </div>
       }
@@ -103,6 +115,8 @@
             <span class="chip info mono">{{ until(j.nextRun) }}</span>
             <span class="spacer"></span>
             <button class="btn sm ghost" (click)="store.toggleJob(j.id)">{{ j.enabled ? 'pause' : 'resume' }}</button>
+            <button class="btn sm ghost" title="run on the next scheduler tick"
+                    (click)="runNow(j)">run now</button>
             <button class="btn sm ghost" (click)="startEdit(j)">edit</button>
             <button class="btn sm danger ghost" (click)="store.removeJob(j.id)">delete</button>
           </div>

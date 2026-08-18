@@ -33,7 +33,7 @@ class ContainerInventoryTest {
   private final DockerClient client = mock(DockerClient.class);
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final ContainerInventory subject = DockerWiring.inventory(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"));
+  private final ContainerInventory subject = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true));
 
   @BeforeEach
   void setUp() {
@@ -95,7 +95,7 @@ class ContainerInventoryTest {
 
   @Test
   void theSubstringFilterMatchesImageOrNameWhenNoHermesImageIsConfigured() {
-    ContainerInventory substringInventory = DockerWiring.inventory(clients, new AppProperties("live", "", "unix:///sock", "", "hermes", "test"));
+    ContainerInventory substringInventory = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "", "hermes", "test", true));
     stubListing(
         container("aaaaaaa1111", "/alpha", "Acme/HERMES-agent:v1"),
         container("bbbbbbb2222", "/hermes-beta", "acme/other:v1"),

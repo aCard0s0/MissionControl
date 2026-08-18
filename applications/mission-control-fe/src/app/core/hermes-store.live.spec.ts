@@ -2,36 +2,78 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from './hermes-store';
 
 /**
- * Flips a constructed store onto live mode against a stubbed backend — see the
- * same helper in hermes-store.spec.ts. `api` is shaped like {@link HermesApi},
- * carrying only the calls a test reaches.
+ * Substitutes the backend for a whole constructed store — `api` is the one seam
+ * every slice shares, shaped like {@link HermesApi} and carrying only the calls a
+ * test reaches. See the same helper in hermes-store.spec.ts.
  */
-const goLive = (store: HermesStore, api: unknown): void => {
-  const ctx = (store as any).ctx;
-  ctx.mock = false;
-  ctx.api = api;
+const stubBackend = (store: HermesStore, api: unknown): void => {
+  (store as any).ctx.api = api;
 };
 
-// Live mode had no coverage below the action level: the probe, the first load
-// fan-out, and the pollers all ran only against a real backend. These drive the
-// real HermesApi against a stubbed fetch, so the URL composition and the wire
-// mapping are exercised together with the slice that asked for them.
-describe('HermesStore live bootstrap', () => {
-  const CONTAINER = {
-    id: 'c-live', shortId: 'aa11bb2', name: 'hermes-live', hostId: 'dh-remote',
-    status: 'running', image: 'nousresearch/hermes-agent', version: 'v2026.8.3',
-    startedAt: 10, sizeRootFsGb: 2, profiles: ['atlas'],
-  };
-  const PROFILE = {
-    id: 'a-live', containerId: 'c-live', name: 'atlas', role: 'Ops', state: 'active',
-    provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…9f2c', cwd: '/srv/ops',
-    soul: '# SOUL', memoryMd: '# MEMORY', configYaml: 'provider: anthropic',
-    skills: [{ id: 's1', name: 'ops', source: 'bundled', version: '1', description: '', enabled: true }],
-    mcp: [{ id: 'm1', name: 'github', transport: 'http', status: 'connected', tools: 4, latencyMs: 30 }],
-    integrations: [{ kind: 'filesystem', status: 'up', detail: '/srv/ops (rw)' }],
-    lastActive: 20,
-  };
+// The probe, the first load fan-out and the pollers used to run only against a
+// real backend. These drive the real HermesApi against a stubbed fetch, so the
+// URL composition and the wire mapping are exercised together with the slice
+// that asked for them.
+const CONTAINER = {
+  id: 'c-live', shortId: 'aa11bb2', name: 'hermes-live', hostId: 'dh-remote',
+  status: 'running', image: 'nousresearch/hermes-agent', version: 'v2026.8.3',
+  startedAt: 10, sizeRootFsGb: 2, profiles: ['atlas'],
+};
 
+const STOPPED = {
+  ...CONTAINER, id: 'c-stopped', name: 'hermes-cold', status: 'stopped', startedAt: null,
+};
+
+const TEMPLATE = {
+  id: 'pt-ops', name: 'ops-sre', description: 'SRE copilot', provider: 'anthropic',
+  model: 'claude-fable-5', baseUrl: '', cwd: '/opt/data', soul: '', memory: '',
+  skills: [], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2,
+};
+
+const CATALOG_SERVER = {
+  id: 'mcp-browser', name: 'browser', description: '', kind: 'managed', hostId: 'dh-remote',
+  transport: 'http', url: null, image: 'mcp/playwright:latest', platform: null,
+  entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: 1100,
+  publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: 'http://browser:1100/mcp',
+  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
+  desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle', operationError: null,
+  checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null,
+  revision: 1, appliedRevision: 1, pendingChanges: false, serviceKey: 'browser',
+  createdAt: 1, updatedAt: 1,
+};
+
+const PROFILE = {
+  id: 'a-live', containerId: 'c-live', name: 'atlas', role: 'Ops', state: 'active',
+  provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…9f2c', cwd: '/srv/ops',
+  soul: '# SOUL', memoryMd: '# MEMORY', configYaml: 'provider: anthropic',
+  skills: [{ id: 's1', name: 'ops', source: 'bundled', version: '1', description: '', enabled: true }],
+  mcp: [{ id: 'm1', name: 'github', transport: 'http', status: 'connected', tools: 4, latencyMs: 30 }],
+  integrations: [{ kind: 'filesystem', status: 'up', detail: '/srv/ops (rw)' }],
+  lastActive: 20,
+};
+
+/**
+ * A store already holding one running container and one profile, loaded the way
+ * the pollers load them. The describes below are about what happens after the
+ * inventory is there, so each starts from this rather than from an empty store.
+ */
+const loaded = async (): Promise<HermesStore> => {
+  const store = new HermesStore();
+  stubBackend(store, {
+    containers: { list: vi.fn().mockResolvedValue([CONTAINER, STOPPED]) },
+    agents: { list: vi.fn().mockResolvedValue([PROFILE, { ...PROFILE, id: 'a-cold', containerId: 'c-stopped' }]) },
+    mcp: { list: vi.fn().mockResolvedValue([CATALOG_SERVER]) },
+    templates: { list: vi.fn().mockResolvedValue([TEMPLATE]) },
+  });
+  await (store as any).containerStore.refresh();
+  await (store as any).agentStore.refresh();
+  await store.refreshMcpServers();
+  await store.refreshTemplates();
+  return store;
+};
+
+
+describe('HermesStore bootstrap', () => {
   /** Answers the endpoints the first live load touches; anything else 404s so a
    *  missing route shows up as a failure rather than as empty state. */
   const backend = (overrides: Record<string, unknown> = {}) => {
@@ -72,7 +114,7 @@ describe('HermesStore live bootstrap', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
-      dataMode: 'live', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     };
   });
 
@@ -89,7 +131,7 @@ describe('HermesStore live bootstrap', () => {
     expect(store.backendStatus()).toBe('connecting');
     expect(store.containers()).toEqual([]);
     expect(store.agents()).toEqual([]);
-    expect(store.liveNotice()).toBe('live mode — connecting to backend…');
+    expect(store.liveNotice()).toBe('connecting to backend…');
     // the local docker row is a placeholder until the backend reports hosts
     expect(store.dockerHosts()).toHaveLength(1);
     expect(store.dockerOverall()).toBe('disconnected');
@@ -111,7 +153,7 @@ describe('HermesStore live bootstrap', () => {
 
   it('names the configured base url in the banner, so a wrong one is visible', async () => {
     window.__MC_CONFIG__ = {
-      dataMode: 'live', apiBaseUrl: 'http://mc.internal:9999', dockerSocket: 'unix:///x',
+      apiBaseUrl: 'http://mc.internal:9999', dockerSocket: 'unix:///x',
     };
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('refused'))));
     const store = new HermesStore();
@@ -200,7 +242,7 @@ describe('HermesStore live pollers', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
-      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     };
   });
 
@@ -210,7 +252,7 @@ describe('HermesStore live pollers', () => {
   });
 
   it('derives network rate from the byte counters, not from the counters', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const target = store.containers().find(c => c.status === 'running')!;
     // every running container is sampled each tick, so the queue is per container
     const queued = [
@@ -220,7 +262,7 @@ describe('HermesStore live pollers', () => {
     const idle = { cpuPercent: 1, ramMb: 1, ramTotalMb: 2, rxBytes: 0, txBytes: 0, sampledAt: 1_000 };
     const stats = vi.fn((_hostId: string, id: string) =>
       Promise.resolve(id === target.id ? queued.shift() ?? idle : idle));
-    goLive(store, { containers: { stats } });
+    stubBackend(store, { containers: { stats } });
     const pollStats = () => (store as any).containerStore.pollStats();
 
     // the first sample has nothing to compare against, so the rate reads zero
@@ -237,7 +279,7 @@ describe('HermesStore live pollers', () => {
   });
 
   it('never reports a negative rate when a counter resets', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     // a restarted container reports counters below the last sample
     const counters = [5_000_000, 0];
     let tick = 0;
@@ -246,7 +288,7 @@ describe('HermesStore live pollers', () => {
       rxBytes: counters[Math.min(tick, 1)], txBytes: counters[Math.min(tick, 1)],
       sampledAt: 1_000 + tick * 1_000,
     }));
-    goLive(store, { containers: { stats } });
+    stubBackend(store, { containers: { stats } });
     const pollStats = () => (store as any).containerStore.pollStats();
 
     await pollStats();
@@ -257,12 +299,12 @@ describe('HermesStore live pollers', () => {
   });
 
   it('does not ask a stopped container for its profiles, and keeps the ones it had', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const stopped = store.containers().find(c => c.status === 'stopped')!;
     const kept = store.agents().filter(a => a.containerId === stopped.id);
     expect(kept.length).toBeGreaterThan(0);
     const list = vi.fn().mockResolvedValue([]);
-    goLive(store, { agents: { list } });
+    stubBackend(store, { agents: { list } });
 
     await (store as any).agentStore.refresh();
 
@@ -271,10 +313,10 @@ describe('HermesStore live pollers', () => {
   });
 
   it('keeps the last known profiles of a container that failed this tick', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const running = store.containers().find(c => c.status === 'running')!;
     const kept = store.agents().filter(a => a.containerId === running.id);
-    goLive(store, { agents: { list: vi.fn().mockRejectedValue(new Error('daemon busy')) } });
+    stubBackend(store, { agents: { list: vi.fn().mockRejectedValue(new Error('daemon busy')) } });
 
     await (store as any).agentStore.refresh();
 
@@ -282,14 +324,14 @@ describe('HermesStore live pollers', () => {
   });
 
   it('leaves an in-flight MCP probe alone while a refresh lands', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents().find(a => a.mcp.length)!;
     const container = store.containers().find(c => c.id === agent.containerId)!;
     (store as any).agentStore.update(agent.id, (a: any) => ({
       ...a, mcp: a.mcp.map((m: any, i: number) => i === 0 ? { ...m, status: 'checking' } : m),
     }));
     const probing = agent.mcp[0].name;
-    goLive(store, {
+    stubBackend(store, {
       agents: {
         list: vi.fn().mockImplementation((_host: string, containerId: string) => Promise.resolve(
           containerId === container.id
@@ -310,7 +352,7 @@ describe('HermesStore live MCP catalog lifecycle', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
-      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     };
   });
 
@@ -320,13 +362,13 @@ describe('HermesStore live MCP catalog lifecycle', () => {
   });
 
   it('shows the operation as in flight, then polls until the backend settles', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const server = store.mcpServers().find(s => s.kind === 'managed')!;
     const run = vi.fn().mockResolvedValue({ ...server, operationState: 'pulling' });
     const list = vi.fn().mockResolvedValue([{
       ...server, operationState: 'idle', runtimeState: 'running', desiredState: 'running',
     }]);
-    goLive(store, { mcp: { run, list } });
+    stubBackend(store, { mcp: { run, list } });
 
     const started = store.startCatalogMcpServer(server.id);
     await vi.advanceTimersByTimeAsync(0);
@@ -342,9 +384,9 @@ describe('HermesStore live MCP catalog lifecycle', () => {
   });
 
   it('records why an operation failed, on the row and in a toast', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const server = store.mcpServers().find(s => s.kind === 'managed')!;
-    goLive(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('port 5432 already published')) } });
+    stubBackend(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('port 5432 already published')) } });
 
     expect(await store.startCatalogMcpServer(server.id)).toBe(false);
 
@@ -355,9 +397,9 @@ describe('HermesStore live MCP catalog lifecycle', () => {
   });
 
   it('answers a check with what the probe found, leaving the operation state alone', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const server = store.mcpServers().find(s => s.kind === 'managed')!;
-    goLive(store, {
+    stubBackend(store, {
       mcp: {
         run: vi.fn().mockResolvedValue({
           ...server, checkStatus: 'connected', latencyMs: 18, checkedAt: 99,
@@ -372,9 +414,9 @@ describe('HermesStore live MCP catalog lifecycle', () => {
   });
 
   it('reports a failed check without claiming the server stopped', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const server = store.mcpServers().find(s => s.kind === 'managed')!;
-    goLive(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('handshake timeout')) } });
+    stubBackend(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('handshake timeout')) } });
 
     expect(await store.checkCatalogMcpServer(server.id)).toBe(false);
     expect(store.mcpServerById(server.id)).toMatchObject({
@@ -384,12 +426,12 @@ describe('HermesStore live MCP catalog lifecycle', () => {
   });
 
   it('refuses to write an Agent config against a server that never came up', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     const container = store.containers().find(c => c.id === agent.containerId)!;
     const server = store.mcpServers().find(s => s.kind === 'managed' && s.hostId === container.hostId)!;
     const connectCatalog = vi.fn();
-    goLive(store, {
+    stubBackend(store, {
       mcp: {
         run: vi.fn().mockResolvedValue({ ...server, operationState: 'starting' }),
         list: vi.fn().mockResolvedValue([{
@@ -415,7 +457,7 @@ describe('HermesStore live registries', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
-      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     };
   });
 
@@ -425,13 +467,13 @@ describe('HermesStore live registries', () => {
   });
 
   it('adds a docker host by asking the backend, then re-reading the list', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const add = vi.fn().mockResolvedValue({});
     const list = vi.fn().mockResolvedValue([{
       id: 'dh-new', name: 'prod', url: 'tcp://10.0.0.2:2375', kind: 'remote',
       status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 9, note: null,
     }]);
-    goLive(store, { hosts: { add, list } });
+    stubBackend(store, { hosts: { add, list } });
 
     store.addDockerHost('prod', 'tcp://10.0.0.2:2375');
     await vi.advanceTimersByTimeAsync(0);
@@ -441,9 +483,9 @@ describe('HermesStore live registries', () => {
   });
 
   it('reports a refused host and re-reads rather than inventing a state', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const list = vi.fn().mockResolvedValue([]);
-    goLive(store, {
+    stubBackend(store, {
       hosts: { check: vi.fn().mockRejectedValue(new Error('x509: certificate expired')), list },
     });
 
@@ -454,10 +496,10 @@ describe('HermesStore live registries', () => {
     expect(list).toHaveBeenCalled();
   });
 
-  it('never removes the local socket, backend or not', () => {
-    const store = new HermesStore();
+  it('never removes the local socket, backend or not', async () => {
+    const store = await loaded();
     const remove = vi.fn();
-    goLive(store, { hosts: { remove } });
+    stubBackend(store, { hosts: { remove } });
 
     store.removeDockerHost('dh-local');
 
@@ -465,9 +507,9 @@ describe('HermesStore live registries', () => {
   });
 
   it('keeps the bootstrap provider mirror when the registry cannot be read', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const mirrored = store.llmProviders();
-    goLive(store, { providers: { registry: vi.fn().mockRejectedValue(new Error('offline')) } });
+    stubBackend(store, { providers: { registry: vi.fn().mockRejectedValue(new Error('offline')) } });
 
     await store.refreshProviderRegistry();
 
@@ -475,9 +517,9 @@ describe('HermesStore live registries', () => {
   });
 
   it('ignores an empty registry, which would leave the picker unusable', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const mirrored = store.llmProviders();
-    goLive(store, { providers: { registry: vi.fn().mockResolvedValue([]) } });
+    stubBackend(store, { providers: { registry: vi.fn().mockResolvedValue([]) } });
 
     await store.refreshProviderRegistry();
 
@@ -485,8 +527,8 @@ describe('HermesStore live registries', () => {
   });
 
   it('falls back to the offline model list when a catalog lookup fails', async () => {
-    const store = new HermesStore();
-    goLive(store, {
+    const store = await loaded();
+    stubBackend(store, {
       providers: {
         modelCatalog: vi.fn().mockRejectedValue(new Error('provider 502')),
         modelCatalogLive: vi.fn().mockRejectedValue(new Error('bad key')),
@@ -501,8 +543,8 @@ describe('HermesStore live registries', () => {
   });
 
   it('answers an empty model list rather than throwing at a page', async () => {
-    const store = new HermesStore();
-    goLive(store, {
+    const store = await loaded();
+    stubBackend(store, {
       providers: {
         models: vi.fn().mockRejectedValue(new Error('ollama down')),
         pullStatus: vi.fn().mockRejectedValue(new Error('ollama down')),
@@ -515,10 +557,10 @@ describe('HermesStore live registries', () => {
   });
 
   it('creates a template, then updates that same one', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const create = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops', createdAt: 1, updatedAt: 1 });
     const update = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops v2', createdAt: 1, updatedAt: 2 });
-    goLive(store, { templates: { create, update } });
+    stubBackend(store, { templates: { create, update } });
     const input = {
       name: 'ops', description: '', provider: 'anthropic', model: 'claude-fable-5',
       baseUrl: '', cwd: '', soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
@@ -535,9 +577,9 @@ describe('HermesStore live registries', () => {
   });
 
   it('reports a failed template save as an empty id, so the editor stays open', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const before = store.profileTemplates().length;
-    goLive(store, { templates: { create: vi.fn().mockRejectedValue(new Error('name taken')) } });
+    stubBackend(store, { templates: { create: vi.fn().mockRejectedValue(new Error('name taken')) } });
 
     expect(await store.saveTemplate({
       name: 'ops', description: '', provider: '', model: '', baseUrl: '', cwd: '',
@@ -548,9 +590,9 @@ describe('HermesStore live registries', () => {
   });
 
   it('keeps a template the backend refused to delete', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const target = store.profileTemplates()[0];
-    goLive(store, { templates: { remove: vi.fn().mockRejectedValue(new Error('in use')) } });
+    stubBackend(store, { templates: { remove: vi.fn().mockRejectedValue(new Error('in use')) } });
 
     await store.deleteTemplate(target.id);
 
@@ -559,7 +601,7 @@ describe('HermesStore live registries', () => {
   });
 
   it('adopts the profile a template deploy created', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const template = store.profileTemplates()[0];
     const container = store.containers()[0];
     const deploy = vi.fn().mockResolvedValue({
@@ -568,7 +610,7 @@ describe('HermesStore live registries', () => {
       cwd: '/srv', soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [],
       integrations: [], lastActive: 1,
     });
-    goLive(store, { templates: { deploy } });
+    stubBackend(store, { templates: { deploy } });
 
     expect(await store.deployTemplate(template.id, container.id, 'from-template')).toBe('a-deployed');
     expect(deploy).toHaveBeenCalledWith(template.id, {
@@ -582,7 +624,7 @@ describe('HermesStore live profile writes', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
-      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     };
   });
 
@@ -600,9 +642,9 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('applies the profile a config save answered with', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
-    goLive(store, {
+    stubBackend(store, {
       agents: {
         updateConfig: vi.fn().mockResolvedValue(echo(agent, { configYaml: 'model: from-backend' })),
       },
@@ -614,10 +656,10 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('reports a rejected config save and keeps the file as it was', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     const original = agent.configYaml;
-    goLive(store, {
+    stubBackend(store, {
       agents: { updateConfig: vi.fn().mockRejectedValue(new Error('invalid yaml at line 3')) },
     });
 
@@ -627,13 +669,13 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('applies the skill list a toggle answered with', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents().find(a => a.skills.length)!;
     const skill = agent.skills[0];
     const setEnabled = vi.fn().mockResolvedValue(echo(agent, {
       skills: [{ ...skill, enabled: !skill.enabled }],
     }));
-    goLive(store, { agents: { skills: { setEnabled } } });
+    stubBackend(store, { agents: { skills: { setEnabled } } });
 
     store.toggleSkill(agent.id, skill.id);
     await vi.advanceTimersByTimeAsync(0);
@@ -646,9 +688,9 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('answers null for a failed setup read, and says why', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
-    goLive(store, {
+    stubBackend(store, {
       agents: { setup: vi.fn().mockRejectedValue(new Error('hermes status timed out')) },
     });
 
@@ -657,7 +699,7 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('returns the refreshed setup an env write answered with', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     const answered = {
       envPath: `/opt/data/profiles/${agent.name}/.env`, envExists: true,
@@ -665,7 +707,7 @@ describe('HermesStore live profile writes', () => {
       authProviders: [], apiKeyProviders: [], messaging: [],
     };
     const setEnv = vi.fn().mockResolvedValue(answered);
-    goLive(store, { agents: { setEnv } });
+    stubBackend(store, { agents: { setEnv } });
 
     expect(await store.setAgentEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]))
       .toEqual(answered);
@@ -675,9 +717,9 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('degrades an auth-provider read to an empty list, so the modal still opens', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const container = store.containers()[0];
-    goLive(store, {
+    stubBackend(store, {
       agents: { authProviders: vi.fn().mockRejectedValue(new Error('no default profile')) },
     });
 
@@ -686,9 +728,9 @@ describe('HermesStore live profile writes', () => {
   });
 
   it('drops a removed profile only after the backend confirms it', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
-    goLive(store, { agents: { remove: vi.fn().mockRejectedValue(new Error('profile busy')) } });
+    stubBackend(store, { agents: { remove: vi.fn().mockRejectedValue(new Error('profile busy')) } });
 
     store.removeAgent(agent.id);
     await vi.advanceTimersByTimeAsync(0);
@@ -705,7 +747,7 @@ describe('HermesStore setup cache', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
-      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     };
   });
 
@@ -720,10 +762,10 @@ describe('HermesStore setup cache', () => {
   });
 
   it('reads a profile once and serves the cached copy after that', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     const setup = vi.fn().mockResolvedValue(answer(agent.name));
-    goLive(store, { agents: { setup } });
+    stubBackend(store, { agents: { setup } });
 
     expect(store.agentSetupOf(agent.id)).toBeNull();
     await store.agentSetup(agent.id);
@@ -734,12 +776,12 @@ describe('HermesStore setup cache', () => {
   });
 
   it('re-reads only when the caller forces it', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     const setup = vi.fn()
       .mockResolvedValueOnce(answer(agent.name, { envExists: false }))
       .mockResolvedValueOnce(answer(agent.name, { envExists: true }));
-    goLive(store, { agents: { setup } });
+    stubBackend(store, { agents: { setup } });
 
     await store.agentSetup(agent.id);
     expect(store.agentSetupOf(agent.id)?.envExists).toBe(false);
@@ -750,9 +792,9 @@ describe('HermesStore setup cache', () => {
   });
 
   it('caches each profile separately', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const [first, second] = store.agents();
-    goLive(store, {
+    stubBackend(store, {
       agents: {
         setup: vi.fn().mockImplementation((ref: { name: string }) =>
           Promise.resolve(answer(ref.name))),
@@ -767,12 +809,12 @@ describe('HermesStore setup cache', () => {
   });
 
   it('collapses two concurrent reads of the same profile into one call', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     let release!: (value: unknown) => void;
     const pending = new Promise(resolve => { release = resolve; });
     const setup = vi.fn().mockReturnValue(pending.then(() => answer(agent.name)));
-    goLive(store, { agents: { setup } });
+    stubBackend(store, { agents: { setup } });
 
     const first = store.agentSetup(agent.id);
     const second = store.agentSetup(agent.id);
@@ -786,9 +828,9 @@ describe('HermesStore setup cache', () => {
   });
 
   it('replaces the cached copy with what a write answered', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
-    goLive(store, {
+    stubBackend(store, {
       agents: {
         setup: vi.fn().mockResolvedValue(answer(agent.name, { envExists: false })),
         setEnv: vi.fn().mockResolvedValue(answer(agent.name, {
@@ -808,12 +850,12 @@ describe('HermesStore setup cache', () => {
   });
 
   it('keeps the last good copy when a refresh fails', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
     const setup = vi.fn()
       .mockResolvedValueOnce(answer(agent.name))
       .mockRejectedValueOnce(new Error('hermes status timed out'));
-    goLive(store, { agents: { setup } });
+    stubBackend(store, { agents: { setup } });
 
     await store.agentSetup(agent.id);
     expect(await store.agentSetup(agent.id, true)).toBeNull();
@@ -823,12 +865,19 @@ describe('HermesStore setup cache', () => {
   });
 
   it('forgets a deleted profile\'s credentials along with the profile', async () => {
-    const store = new HermesStore();
+    const store = await loaded();
     const agent = store.agents()[0];
+    stubBackend(store, {
+      agents: {
+        setup: vi.fn().mockResolvedValue(answer(agent.name)),
+        remove: vi.fn().mockResolvedValue(undefined),
+      },
+    });
     await store.agentSetup(agent.id);
     expect(store.agentSetupOf(agent.id)).not.toBeNull();
 
     store.removeAgent(agent.id);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(store.agentSetupOf(agent.id)).toBeNull();
   });

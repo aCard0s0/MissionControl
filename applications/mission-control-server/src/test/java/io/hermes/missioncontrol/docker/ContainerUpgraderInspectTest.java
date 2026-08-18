@@ -66,7 +66,7 @@ class ContainerUpgraderInspectTest {
     networks = mock(DockerNetworks.class);
     when(clients.forUrl(URL)).thenReturn(client);
     upgrader = new ContainerUpgrader(clients,
-        new AppProperties("live", "", "unix:///sock", "hermes/agent", "hermes", "test"),
+        new AppProperties("", "unix:///sock", "hermes/agent", "hermes", "test", true),
         images, mock(DeploymentReadiness.class), networks);
   }
 

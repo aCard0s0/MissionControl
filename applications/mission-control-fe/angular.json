@@ -91,7 +91,13 @@
             "coverageExclude": [
               "src/main.ts",
               "src/**/*.html"
-            ]
+            ],
+            "coverageThresholds": {
+              "statements": 71,
+              "branches": 68,
+              "functions": 67,
+              "lines": 74
+            }
           }
         }
       }

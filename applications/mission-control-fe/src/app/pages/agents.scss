@@ -87,18 +87,6 @@
 
 .empty { align-items: center; gap: 8px; padding: 48px; text-align: center; margin-bottom: 14px; }
 
-.modal-b { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-.key-row {
-  display: flex;
-  gap: 8px;
-  .input { flex: 1; }
-  .key-refresh { padding: 0 10px; }
-}
-// a label that reads as one line with its checkbox, not as a stacked field label
-.check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
-
 @media (max-width: 1024px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -109,7 +97,5 @@
     flex-wrap: wrap;
     .head-stats { width: 100%; order: 3; margin-left: 0; flex-wrap: wrap; }
   }
-  .row { grid-template-columns: 1fr; }
-  .modal-b { padding: 10px; }
   .empty { padding: 24px 16px; }
 }

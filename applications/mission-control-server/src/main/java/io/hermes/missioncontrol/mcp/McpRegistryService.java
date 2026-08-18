@@ -50,7 +50,7 @@ public class McpRegistryService {
   private final McpHealthProbe health;
   private final McpCatalogSeeder seeder;
   private final McpLogReader logReader;
-  private final String dataMode;
+  private final boolean startupReconcile;
 
   @Autowired
   public McpRegistryService(
@@ -87,7 +87,7 @@ public class McpRegistryService {
     this.retained = retained;
     this.links = links;
     this.hosts = hosts;
-    this.dataMode = props.dataMode();
+    this.startupReconcile = props.startupReconcile();
     this.configs = new McpConfigStore(cipher, json);
     this.mapper = new McpServerDtoMapper(configs);
     this.lifecycle = new McpComposeLifecycle(repository, retained, hosts, docker, compose,
@@ -260,9 +260,9 @@ public class McpRegistryService {
 
   @EventListener(ApplicationReadyEvent.class)
   public void initialize() {
-    // Mock mode is intentionally side-effect free; its catalog/lifecycle is
-    // simulated in the Angular store and must never pull or create real images.
-    if ("mock".equalsIgnoreCase(dataMode)) return;
+    // A context test boots the whole application without a daemon, so seeding and
+    // reconciliation — which pull images and create containers — must be skippable.
+    if (!startupReconcile) return;
     hosts.seedLocalHost();
     if (!repository.meta(McpCatalogSeeder.SEED_META)
         .map(McpCatalogSeeder.SEED_VERSION::equals).orElse(false)) {

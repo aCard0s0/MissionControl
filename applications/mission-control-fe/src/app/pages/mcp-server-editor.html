@@ -1,0 +1,265 @@
+@let form = draft();
+
+<div class="scrim" (click)="saveBusy() ? null : closed.emit()">
+  <div class="modal editor-modal" (click)="$event.stopPropagation()">
+    <div class="panel-h">
+      {{ form.id ? 'EDIT MCP SERVER' : 'ADD MCP SERVER' }}
+      <span class="spacer"></span>
+      <span class="chip info">safe structured config</span>
+    </div>
+    <div class="modal-b">
+      <div class="form-grid two">
+        <div class="field">
+          <label>display name</label>
+          <input class="input" [(ngModel)]="form.name" placeholder="Playwright" autofocus />
+        </div>
+        <div class="field">
+          <label>type</label>
+          <select class="select" [(ngModel)]="form.kind" [disabled]="!!form.id" (ngModelChange)="kindChanged()">
+            <option value="managed">managed container</option>
+            <option value="external">external HTTP/SSE</option>
+            <option value="stdio">stdio definition</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>description</label>
+        <input class="input" [(ngModel)]="form.description" placeholder="What this server provides" />
+      </div>
+
+      @if (form.kind === 'managed') {
+        <div class="section-label mono">CONTAINER</div>
+        <div class="form-grid two">
+          <div class="field">
+            <label>Docker host</label>
+            <select class="select" [(ngModel)]="form.hostId" [disabled]="form.hostLocked">
+              @for (host of hosts(); track host.id) {
+                <option [value]="host.id">{{ host.name }} — {{ host.status }}</option>
+              }
+            </select>
+            @if (form.hostLocked) { <span class="field-note">duplicate this server to change host</span> }
+          </div>
+          <div class="field">
+            <label>image</label>
+            <input class="input" [(ngModel)]="form.image" placeholder="mcp/playwright:latest" />
+          </div>
+          <div class="field">
+            <label>platform — optional</label>
+            <input class="input" [(ngModel)]="form.platform" placeholder="linux/amd64" />
+          </div>
+          <div class="field">
+            <label>transport</label>
+            <select class="select" [(ngModel)]="form.transport">
+              <option value="http">HTTP</option>
+              <option value="sse">SSE</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>internal port</label>
+            <input class="input" type="number" min="1" max="65535" [(ngModel)]="form.internalPort" />
+          </div>
+          <div class="field">
+            <label>endpoint path</label>
+            <input class="input" [(ngModel)]="form.path" placeholder="/mcp" />
+          </div>
+          <div class="field">
+            <label>published port — optional</label>
+            <input class="input" type="number" min="1" max="65535" [(ngModel)]="form.publishedPort" placeholder="internal only" />
+          </div>
+          <div class="field">
+            <label>cross-host URL — optional</label>
+            <input class="input" [(ngModel)]="form.crossHostUrl" placeholder="https://mcp.example.net/mcp" />
+          </div>
+        </div>
+        <div class="form-grid two">
+          <div class="field">
+            <label>entrypoint — one item per line</label>
+            <textarea class="input code-list" rows="3" [(ngModel)]="form.entrypoint" placeholder="node"></textarea>
+          </div>
+          <div class="field">
+            <label>command — one item per line</label>
+            <textarea class="input code-list" rows="3" [(ngModel)]="form.command" placeholder="server.js&#10;--port&#10;1100"></textarea>
+          </div>
+        </div>
+      } @else if (form.kind === 'external') {
+        <div class="section-label mono">ENDPOINT</div>
+        <div class="form-grid transport-url">
+          <div class="field">
+            <label>transport</label>
+            <select class="select" [(ngModel)]="form.transport">
+              <option value="http">HTTP</option>
+              <option value="sse">SSE</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>URL</label>
+            <input class="input" [(ngModel)]="form.url" placeholder="https://mcp.example.net/mcp" />
+          </div>
+        </div>
+      } @else {
+        <div class="section-label mono">STDIO COMMAND</div>
+        <div class="form-grid two">
+          <div class="field">
+            <label>executable</label>
+            <input class="input" [(ngModel)]="form.stdioCommand" placeholder="npx" />
+          </div>
+          <div class="field">
+            <label>arguments — one per line</label>
+            <textarea class="input code-list" rows="3" [(ngModel)]="form.args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem"></textarea>
+          </div>
+        </div>
+      }
+
+      @if (form.kind !== 'external') {
+        <div class="kv-head">
+          <span class="section-label mono">ENVIRONMENT</span>
+          <button class="btn sm ghost" (click)="addEntry(form.environment)">+ variable</button>
+        </div>
+        @for (entry of form.environment; track $index; let i = $index) {
+          <div class="kv-row">
+            <input class="input" [(ngModel)]="entry.key" placeholder="VARIABLE_NAME" />
+            <input class="input" [type]="entry.secret ? 'password' : 'text'" [(ngModel)]="entry.value"
+                   [placeholder]="entry.set ? 'stored — blank keeps current value' : 'value'" />
+            <label class="secret-toggle mono"><input type="checkbox" [(ngModel)]="entry.secret" /> secret</label>
+            <button class="btn sm danger ghost" (click)="removeRow(form.environment, i)">remove</button>
+          </div>
+        }
+      }
+
+      @if (form.kind !== 'stdio') {
+        <div class="kv-head">
+          <span class="section-label mono">CONNECTION HEADERS</span>
+          <button class="btn sm ghost" (click)="addEntry(form.headers)">+ header</button>
+        </div>
+        @for (entry of form.headers; track $index; let i = $index) {
+          <div class="kv-row">
+            <input class="input" [(ngModel)]="entry.key" placeholder="Authorization" />
+            <input class="input" [type]="entry.secret ? 'password' : 'text'" [(ngModel)]="entry.value"
+                   [placeholder]="entry.set ? 'stored — blank keeps current value' : 'value'" />
+            <label class="secret-toggle mono"><input type="checkbox" [(ngModel)]="entry.secret" /> secret</label>
+            <button class="btn sm danger ghost" (click)="removeRow(form.headers, i)">remove</button>
+          </div>
+        }
+      }
+
+      @if (form.kind === 'managed') {
+        <div class="kv-head">
+          <span class="section-label mono">NAMED VOLUMES</span>
+          <button class="btn sm ghost" (click)="addVolume(form.volumes)">+ volume</button>
+        </div>
+        @for (volume of form.volumes; track $index; let i = $index) {
+          <div class="volume-row">
+            <input class="input" [(ngModel)]="volume.name" placeholder="server-data" />
+            <input class="input" [(ngModel)]="volume.target" placeholder="/data" />
+            <button class="btn sm danger ghost" (click)="removeRow(form.volumes, i)">remove</button>
+          </div>
+        }
+
+        <div class="kv-head">
+          <span class="section-label mono">HEALTH CHECK</span>
+          <button class="btn sm ghost" (click)="toggleHealthcheck(form)">
+            {{ form.healthcheck ? 'remove health check' : '+ health check' }}
+          </button>
+        </div>
+        @if (form.healthcheck; as health) {
+          <div class="health-grid">
+            <div class="field health-command">
+              <label>test — one item per line; first is CMD, CMD-SHELL, or NONE</label>
+              <textarea class="input code-list" rows="3" [ngModel]="health.test.join('\n')"
+                        (ngModelChange)="health.test = splitLines($event)"></textarea>
+            </div>
+            <div class="field"><label>interval</label><input class="input" [(ngModel)]="health.interval" placeholder="30s" /></div>
+            <div class="field"><label>timeout</label><input class="input" [(ngModel)]="health.timeout" placeholder="5s" /></div>
+            <div class="field"><label>retries</label><input class="input" type="number" min="1" max="100" [(ngModel)]="health.retries" /></div>
+            <div class="field"><label>start period</label><input class="input" [(ngModel)]="health.startPeriod" placeholder="5s" /></div>
+          </div>
+        }
+
+        <div class="kv-head">
+          <span class="section-label mono">PRIVATE SUPPORT SERVICES</span>
+          <button class="btn sm ghost" (click)="addSupportService()">+ dependency</button>
+        </div>
+        @for (service of form.supportServices; track $index; let serviceIndex = $index) {
+          <div class="support-editor">
+            <div class="support-head">
+              <strong class="mono">{{ service.name || 'new dependency' }}</strong>
+              <span class="spacer"></span>
+              <button class="btn sm danger ghost" (click)="removeRow(form.supportServices, serviceIndex)">remove service</button>
+            </div>
+            <div class="form-grid two">
+              <div class="field"><label>service name</label><input class="input" [(ngModel)]="service.name" placeholder="database" /></div>
+              <div class="field"><label>image</label><input class="input" [(ngModel)]="service.image" placeholder="postgres:16-alpine" /></div>
+              <div class="field"><label>platform — optional</label><input class="input" [(ngModel)]="service.platform" placeholder="linux/amd64" /></div>
+            </div>
+            <div class="form-grid two">
+              <div class="field">
+                <label>entrypoint — one item per line</label>
+                <textarea class="input code-list" rows="2" [ngModel]="(service.entrypoint ?? []).join('\n')"
+                          (ngModelChange)="service.entrypoint = splitLines($event)"></textarea>
+              </div>
+              <div class="field">
+                <label>command — one item per line</label>
+                <textarea class="input code-list" rows="2" [ngModel]="(service.command ?? []).join('\n')"
+                          (ngModelChange)="service.command = splitLines($event)"></textarea>
+              </div>
+            </div>
+            <div class="kv-head nested">
+              <span class="mono faint">ENVIRONMENT</span>
+              <button class="btn sm ghost" (click)="addEntry(service.environment)">+ variable</button>
+            </div>
+            @for (entry of service.environment; track $index; let envIndex = $index) {
+              <div class="kv-row">
+                <input class="input" [(ngModel)]="entry.key" placeholder="VARIABLE_NAME" />
+                <input class="input" [type]="entry.secret ? 'password' : 'text'" [(ngModel)]="entry.value"
+                       [placeholder]="entry.set ? 'stored — blank keeps current value' : 'value'" />
+                <label class="secret-toggle mono"><input type="checkbox" [(ngModel)]="entry.secret" /> secret</label>
+                <button class="btn sm danger ghost" (click)="removeRow(service.environment, envIndex)">remove</button>
+              </div>
+            }
+            <div class="kv-head nested">
+              <span class="mono faint">NAMED VOLUMES</span>
+              <button class="btn sm ghost" (click)="addVolume(service.volumes)">+ volume</button>
+            </div>
+            @for (volume of service.volumes; track $index; let volumeIndex = $index) {
+              <div class="volume-row">
+                <input class="input" [(ngModel)]="volume.name" placeholder="data" />
+                <input class="input" [(ngModel)]="volume.target" placeholder="/var/lib/data" />
+                <button class="btn sm danger ghost" (click)="removeRow(service.volumes, volumeIndex)">remove</button>
+              </div>
+            }
+            <div class="kv-head nested">
+              <span class="mono faint">HEALTH CHECK</span>
+              <button class="btn sm ghost" (click)="toggleHealthcheck(service)">
+                {{ service.healthcheck ? 'remove' : '+ health check' }}
+              </button>
+            </div>
+            @if (service.healthcheck; as supportHealth) {
+              <div class="health-grid">
+                <div class="field health-command">
+                  <label>test — one item per line</label>
+                  <textarea class="input code-list" rows="2" [ngModel]="supportHealth.test.join('\n')"
+                            (ngModelChange)="supportHealth.test = splitLines($event)"></textarea>
+                </div>
+                <div class="field"><label>interval</label><input class="input" [(ngModel)]="supportHealth.interval" /></div>
+                <div class="field"><label>timeout</label><input class="input" [(ngModel)]="supportHealth.timeout" /></div>
+                <div class="field"><label>retries</label><input class="input" type="number" min="1" max="100" [(ngModel)]="supportHealth.retries" /></div>
+                <div class="field"><label>start period</label><input class="input" [(ngModel)]="supportHealth.startPeriod" /></div>
+              </div>
+            }
+          </div>
+        }
+        <p class="lock-hint">Host bind mounts, Docker socket access, privileged mode, host networking, devices, and capabilities are not accepted.</p>
+      }
+
+      @if (form.id === null && (form.environment.length || form.headers.length)) {
+        <p class="lock-hint warn">Secret values must be entered when unset; redacted values are never sent back by the API.</p>
+      }
+      <div class="modal-actions">
+        <button class="btn ghost" [disabled]="saveBusy()" (click)="closed.emit()">cancel</button>
+        <button class="btn primary" [disabled]="!draftValid() || saveBusy()" (click)="save()">
+          {{ saveBusy() ? 'saving…' : (form.id ? 'save changes' : 'add server') }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -37,6 +37,7 @@ export class CalendarPage {
   protected fAgent = '';
 
   protected readonly presets = SCHEDULE_PRESETS;
+  protected readonly saving = signal(false);
   protected scheduleHelp = () => describeSchedule(this.fSchedule);
 
   protected readonly weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -99,20 +100,33 @@ export class CalendarPage {
     this.fAgent = this.store.containerAgents()[0]?.id ?? '';
   }
 
-  protected save(): void {
+  /**
+   * Hermes parses the schedule, mints the id and decides the next run, so the form stays
+   * open until the write comes back — closing it early would leave the operator looking at
+   * a schedule that does not contain what they just typed.
+   */
+  protected async save(): Promise<void> {
     const container = this.store.selectedContainer();
-    if (!this.fName.trim() || !this.scheduleHelp().valid || !this.fAgent) return;
-    const j = this.editing();
-    if (j) {
-      this.store.updateJob(j.id, {
-        name: this.fName, schedule: this.fSchedule, prompt: this.fPrompt,
-        deliverTo: this.fDeliver, agentId: this.fAgent,
-      });
-      this.editing.set(null);
-    } else if (container) {
-      this.store.createJob(container.id, this.fAgent, this.fName, this.fSchedule, this.fPrompt, this.fDeliver || 'cli');
-      this.creating.set(false);
-    }
+    if (!this.fName.trim() || !this.scheduleHelp().valid || !this.fAgent || this.saving()) return;
+    const job = this.editing();
+    this.saving.set(true);
+    const saved = job
+      ? await this.store.updateJob(job.id, {
+          name: this.fName, schedule: this.fSchedule, prompt: this.fPrompt,
+          deliverTo: this.fDeliver,
+        })
+      : !!container && await this.store.createJob(
+          container.id, this.fAgent, this.fName, this.fSchedule, this.fPrompt,
+          this.fDeliver || 'local');
+    this.saving.set(false);
+    if (!saved) return;   // the store has already said why
+    this.editing.set(null);
+    this.creating.set(false);
+  }
+
+  /** Runs the job on the next scheduler tick instead of waiting for its schedule. */
+  protected runNow(job: CronJob): void {
+    void this.store.runJobNow(job.id);
   }
 
   protected cancelForm(): void {

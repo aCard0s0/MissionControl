@@ -17,12 +17,10 @@ describe('runtimeConfig', () => {
     vi.restoreAllMocks();
   });
 
-  it('falls back to live with no backend when config.js never loaded', () => {
-    // failing OPEN here would paint seeded demo containers over an empty
-    // dashboard, and an operator cannot tell mock inventory from real
+  it('falls back to the same origin when config.js never loaded', () => {
     delete window.__MC_CONFIG__;
     expect(runtimeConfig()).toEqual({
-      dataMode: 'live', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+      apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
     });
   });
 
@@ -32,23 +30,9 @@ describe('runtimeConfig', () => {
     expect(errors[0]).toContain('config.js missing or failed to parse');
   });
 
-  it('serves mock data only when the deployment asks for it by exact spelling', () => {
-    window.__MC_CONFIG__ = { dataMode: 'mock' };
-    expect(runtimeConfig().dataMode).toBe('mock');
-  });
-
-  it('rejects a misspelled dataMode down to live, naming the value it refused', () => {
-    for (const bad of ['Mock', 'MOCK', 'demo', '', 'true']) {
-      window.__MC_CONFIG__ = { dataMode: bad as never };
-      expect(runtimeConfig().dataMode, bad).toBe('live');
-    }
-    expect(errors.some(e => e.includes('unrecognized dataMode "demo"'))).toBe(true);
-  });
-
   it('keeps the defaults for keys the deployment did not override', () => {
     window.__MC_CONFIG__ = { apiBaseUrl: 'https://mc.example' };
     expect(runtimeConfig()).toEqual({
-      dataMode: 'live',
       apiBaseUrl: 'https://mc.example',
       dockerSocket: 'unix:///var/run/docker.sock',
     });
@@ -56,7 +40,7 @@ describe('runtimeConfig', () => {
   });
 
   it('lets a deployment point the local daemon at a non-standard socket', () => {
-    window.__MC_CONFIG__ = { dataMode: 'live', dockerSocket: 'tcp://10.0.0.2:2375' };
+    window.__MC_CONFIG__ = { dockerSocket: 'tcp://10.0.0.2:2375' };
     expect(runtimeConfig().dockerSocket).toBe('tcp://10.0.0.2:2375');
   });
 });

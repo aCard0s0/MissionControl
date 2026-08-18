@@ -72,26 +72,59 @@ templates and are passed to Compose at execution time rather than written into
 the generated YAML. As with all container environment variables, their runtime
 values remain visible to principals with Docker-daemon access.
 
-## Frontend data modes
+## Frontend data loading
 
 `window.__MC_CONFIG__` (served by the backend at `/config.js`, dev default in
-`public/config.js`) selects the mode:
+`public/config.js`) carries `apiBaseUrl` and `dockerSocket`. There is one mode: the
+store starts empty, health-checks the backend, then polls — containers every 10s,
+stats per running container every 3s (network rates derived client-side from
+cumulative counters), selected-container logs every 5s. Log requests are
+non-overlapping and container-scoped because Docker stdout/stderr has no reliable
+profile identity.
 
-- **mock** — seeded demo fleet + simulated telemetry; used for design work and demos.
-- **live** — starts empty, health-checks the backend, then polls:
-  containers every 10s, stats per running container every 3s (network rates
-  derived client-side from cumulative counters), selected-container logs every
-  5s. Log requests are non-overlapping and container-scoped because Docker
-  stdout/stderr has no reliable profile identity. Failures fail closed:
-  missing/broken config lands in live (empty +
-  banner), never silently in demo data.
+An unreachable backend shows an empty dashboard and a banner naming the address it
+could not reach, and retries every 10s. That is deliberate: seeded demo inventory
+used to fill the same screens, and an operator could not tell it from real state.
 
-Hermes profile/agent introspection is wired in live mode through bounded
-`docker exec` calls and profile-file reads. SOUL, config, setup, skills, MCP,
-integrations, and sessions are live. Each agent Activity tab polls its own
-supervised gateway log under `/opt/data/logs/gateways/{profile}` every five
-seconds; it does not reuse the container-wide Docker stream. Calendar jobs and
-webhooks remain mock-only.
+Hermes profile/agent introspection runs through bounded `docker exec` calls and
+profile-file reads. SOUL, config, setup, skills, MCP, integrations and sessions are
+all read from the container. Each agent Activity tab polls its own supervised
+gateway log under `/opt/data/logs/gateways/{profile}` every five seconds; it does
+not reuse the container-wide Docker stream.
+
+### Scheduled jobs and inbound webhooks
+
+Both are hermes' own features, driven the way profiles are: **reads come from the
+files hermes owns, writes go through its CLI.**
+
+- **Jobs** live in `<profile>/cron/jobs.json`. Listing reads that file rather than
+  parsing the table `hermes cron list` prints; `hermes cron create/edit/pause/
+  resume/run/remove` does the writing, because hermes parses the schedule
+  expression, mints the job id and computes the next run. Only a `cron` schedule
+  carries an expression — `once` stores a timestamp and `interval` a minute count —
+  so the UI shows hermes' own display string, which is the one form every kind has.
+  The page also reports when the gateway is down: hermes stores jobs either way,
+  but nothing fires them.
+- **Webhooks** live in `<profile>/webhook_subscriptions.json`, keyed by route name.
+  A route needs the profile's `platforms.webhook` listener enabled first, which is
+  a config write. Hermes generates each route's HMAC secret, so no secret ever
+  travels through the dashboard to reach it.
+
+Both are **per profile** while their pages are per container, so each listing fans
+out over the container's profiles — one read each, capped like the other pollers —
+and a profile that cannot be read loses only its own entries.
+
+**Mission Control never carries webhook traffic.** It manages the listener and the
+routes and nothing else. An agent container publishes no port, so a route is
+configured but unreachable from outside the docker network until an operator
+exposes it deliberately; the page says so rather than implying it is live. Proxying
+inbound hooks through the dashboard was considered and rejected: Mission Control has
+no authentication, and that would make it an unauthenticated public trigger for
+agent runs.
+
+A route's HMAC secret is stored by hermes in plaintext and the sending provider
+needs it, so the listing carries only a masked tail and revealing it in full is a
+separate, deliberate request.
 
 ## Terminal
 
@@ -118,13 +151,11 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   registers the shell, so anything sent on `open` would be dropped). Clicking the same agent
   again focuses the tab it already made; re-pointing that tab at another container clears the
   command, so `hermes -p <profile>` never runs where the profile does not exist.
-- **Live only.** The panel needs the live backend — it is disabled in mock mode.
 
 ## Environment variables (combined image)
 
 | Var | Default | Meaning |
 |---|---|---|
-| `MC_DATA_MODE` | `live` | `live` or `mock` (demo data) |
 | `MC_DOCKER_SOCKET` | `unix:///var/run/docker.sock` | local daemon endpoint |
 | `MC_CONTAINER_FILTER` | `hermes` | substring marking Hermes-related containers (`?all=true` bypasses) |
 | `MC_HERMES_IMAGE` | `nousresearch/hermes-agent` | image used by deploys |
@@ -202,8 +233,8 @@ cd applications/mission-control-server && MC_ALLOW_DEV_KEY=true mvn spring-boot:
 cd applications/mission-control-fe && npm start
 ```
 
-Set `dataMode` in `applications/mission-control-fe/public/config.js` to `mock`
-(default, no backend needed) or `live` (real daemon via the backend).
+`public/config.js` points the dev frontend at the backend; the combined image
+serves the same file from `MC_*` environment variables instead.
 
 Backend tests follow the seams and conventions in [testing.md](testing.md) — most of the code
 worth testing here sits behind a Docker daemon, a provider API or an async executor, and that

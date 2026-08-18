@@ -21,7 +21,7 @@ spring:
       mode: always
 
 mc:
-  data-mode: ${MC_DATA_MODE:live}
+  startup-reconcile: ${MC_STARTUP_RECONCILE:true}
   api-base-url: ${MC_API_BASE_URL:}
   docker-socket: ${MC_DOCKER_SOCKET:unix:///var/run/docker.sock}
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}

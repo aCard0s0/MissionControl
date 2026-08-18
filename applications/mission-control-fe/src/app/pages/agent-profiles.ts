@@ -1,78 +1,27 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { HermesStore } from '../core/hermes-store';
-import { McpCatalogServer, ProfileTemplate, ProfileTemplateInput, TemplateMcp } from '../core/models';
-import { StatusDot } from '../shared/status-dot';
+import { ProfileTemplate } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
-import { quoteMcpArgs } from '../shared/mcp-args';
-import { McpEndpointForm } from '../shared/mcp-endpoint-form';
-import { OLLAMA_PREFIX, ollamaOptionForBaseUrl } from '../shared/provider-resolve';
-
-interface SecretRow { key: string; value: string; set: boolean; recoverable: boolean; }
-
-/** The source id exists only in an editor request. The backend resolves it to a
- * detached, encrypted template snapshot and never persists the catalog link. */
-export interface EditorTemplateMcp extends TemplateMcp {
-  sourceServerId?: string;
-}
-
-/** Builds the request preview for a one-time catalog snapshot. The backend
- * resolves the source id again and owns the authoritative secret copy. */
-export function catalogTemplateSnapshot(
-  server: McpCatalogServer, alias: string,
-): EditorTemplateMcp | null {
-  if (server.kind === 'stdio') {
-    if (!server.stdioCommand) return null;
-    return {
-      name: alias,
-      transport: 'stdio',
-      command: server.stdioCommand,
-      args: quoteMcpArgs(server.args),
-      enabled: true,
-      sourceServerId: server.id,
-    };
-  }
-  const url = server.crossHostUrl || server.connectionUrl || server.url;
-  if (!url) return null;
-  return {
-    name: alias,
-    transport: server.transport,
-    url,
-    enabled: true,
-    sourceServerId: server.id,
-  };
-}
-
-/** Copy only the durable template fields, deliberately dropping request-only
- * catalog metadata from an editor row after a successful save. */
-export function detachedTemplateMcp(m: TemplateMcp): EditorTemplateMcp {
-  return {
-    name: m.name,
-    transport: m.transport,
-    url: m.url,
-    command: m.command,
-    args: m.args,
-    enabled: m.enabled,
-  };
-}
-
-/** Skill ids / env keys the backend accepts — mirror PROFILE_NAME / ENV_KEY there
- *  (ENV_KEY caps at 64 chars to match the server, so the editor rejects what a
- *  save would). */
-const SKILL_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
-const ENV_KEY = /^[A-Z][A-Z0-9_]{1,63}$/;
+import { providerOptionFor, providerOptions } from '../shared/provider-resolve';
+import { ProfileDeployDialog } from './profile-deploy-dialog';
+import { ProfileEditorPanel } from './profile-editor-panel';
+import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 
 /**
  * Agent Profiles — author reusable blueprints (soul, memory, skills, MCP servers,
  * encrypted keys) that can be applied when deploying an agent (see the Agents
  * page "from profile" selector).
+ *
+ * The page is the list and which blueprint is open. Editing one is
+ * {@link ProfileEditorPanel}'s business, deploying it {@link ProfileDeployDialog}'s,
+ * and what a draft is lives in ./profile-editor.
  */
 @Component({
   selector: 'mc-agent-profiles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, StatusDot, Reveal],
+  imports: [Reveal, ProfileEditorPanel, ProfileDeployDialog],
   templateUrl: './agent-profiles.html',
   styleUrl: './agent-profiles.scss',
 })
@@ -81,266 +30,52 @@ export class AgentProfilesPage {
   private readonly router = inject(Router);
   protected readonly ago = ago;
 
-  protected readonly providerOptions = computed(() => [
-    ...this.store.llmProviders().map(p => ({ value: p.key, label: p.label })),
-    ...this.store.modelProviders().map(p => ({ value: OLLAMA_PREFIX + p.name, label: 'Ollama: ' + p.name })),
-  ]);
+  /** The blueprint the editor is open on. A fresh object each time, so the panel
+   *  can tell one draft from the next and clear its half-typed rows. */
+  protected readonly draft = signal<ProfileDraft>(newProfileDraft());
+  protected readonly open = signal(false);   // editor pane visible (mobile + first load)
 
-  /** Reverse of {@link save}'s ollama flattening: a template stores ollama as a
-   *  bare `ollama` + baseUrl, but the editor dropdown lists `ollama: <name>` per
-   *  instance — resolve it back (matching on baseUrl, falling back to the first
-   *  instance) so the dropdown shows the right option instead of going blank.
-   *  Non-ollama providers (or an unknown one) pass through, defaulting to nous. */
-  private providerOption(provider: string, baseUrl: string): string {
-    if (provider === 'ollama') {
-      const opt = ollamaOptionForBaseUrl(baseUrl, this.store.modelProviders());
-      if (opt) return opt;
-    }
-    return provider || 'nous';
-  }
-
-  // ── editor state ──────────────────────────────────────────────────────────
-  protected readonly editingId = signal<string | null>(null);
-  protected readonly open = signal(false);   // editor panel visible (mobile + first load)
-  protected readonly saving = signal(false);
-
-  protected name = '';
-  protected description = '';
-  protected provider = 'nous';
-  protected model = 'Hermes-4-405B';
-  protected baseUrl = '';
-  protected cwd = '/opt/data';
-  protected soul = '';
-  protected memory = '';
-
-  protected readonly skills = signal<string[]>([]);
-  protected readonly mcpServers = signal<EditorTemplateMcp[]>([]);
-  protected readonly secrets = signal<SecretRow[]>([]);
-
-  // add-row scratch fields
-  protected newSkill = '';
-  /** custom-definition form — templates most often carry a stdio command */
-  protected readonly mcpForm = new McpEndpointForm('stdio');
-  protected mcpCatalogId = '';
-  protected mcpCatalogAlias = '';
-  protected secretKey = '';
-  protected secretValue = '';
-
-  protected readonly editingName = computed(() => {
-    const t = this.store.templateById(this.editingId());
-    return t?.name ?? null;
-  });
-
-  // ── deploy ──────────────────────────────────────────────────────────────────
   protected readonly deployFor = signal<ProfileTemplate | null>(null);
-  protected readonly deploying = signal(false);
-  protected deployContainer = '';
-  protected deployName = '';
 
-  protected openDeploy(t: ProfileTemplate): void {
-    this.deployFor.set(t);
-    this.deployName = t.name;
-    this.deployContainer = this.store.selectedContainerId() || this.store.containers()[0]?.id || '';
-  }
-
-  protected closeDeploy(): void {
-    this.deployFor.set(null);
-  }
-
-  protected async doDeploy(): Promise<void> {
-    const t = this.deployFor();
-    const cid = this.deployContainer;
-    const name = this.deployName.trim();
-    if (!t || !cid || !name || this.deploying()) return;
-    // warn before deploying a template that carries no usable key for a provider
-    // that needs one (e.g. a captured template) — the agent would fail to auth
-    const info = this.store.llmProviders().find(p => p.key === t.provider);
-    if (info?.needsKey && info.envVar
-        && !t.secrets.some(s => s.key === info.envVar && s.set && s.recoverable)) {
-      const ok = confirm(
-        `This template has no usable ${info.envVar} for ${info.label}. The deployed agent `
-        + `may fail to authenticate until you add the key on its Setup tab. Deploy anyway?`);
-      if (!ok) return;
-    }
-    this.deploying.set(true);
-    const id = await this.store.deployTemplate(t.id, cid, name);
-    this.deploying.set(false);
-    if (id) {
-      this.deployFor.set(null);
-      this.router.navigate(['/agents', id]);
-    }
-  }
-
-  // ── list actions ────────────────────────────────────────────────────────────
   protected newTemplate(): void {
-    this.editingId.set(null);
-    this.name = '';
-    this.description = '';
-    this.provider = 'nous';
-    this.model = 'Hermes-4-405B';
-    this.baseUrl = '';
-    this.cwd = '/opt/data';
-    this.soul = '# SOUL.md\n\nDescribe this agent\'s personality and directives.\n';
-    this.memory = '# MEMORY.md\n\n';
-    this.skills.set([]);
-    this.mcpServers.set([]);
-    this.secrets.set([]);
-    this.resetScratch();
+    this.draft.set(newProfileDraft());
     this.open.set(true);
   }
 
   protected edit(t: ProfileTemplate): void {
-    this.editingId.set(t.id);
-    this.name = t.name;
-    this.description = t.description;
-    this.provider = this.providerOption(t.provider, t.baseUrl);
-    this.model = t.model;
-    this.baseUrl = t.baseUrl;
-    this.cwd = t.cwd || '/opt/data';
-    this.soul = t.soul;
-    this.memory = t.memory;
-    this.skills.set([...t.skills]);
-    this.mcpServers.set(t.mcpServers.map(detachedTemplateMcp));
-    this.secrets.set(t.secrets.map(s => ({ key: s.key, value: '', set: s.set, recoverable: s.recoverable })));
-    this.resetScratch();
+    // a template stores ollama flat; the dropdown lists one option per instance
+    const option = providerOptionFor(
+      t.provider, t.baseUrl,
+      providerOptions(this.store.llmProviders(), this.store.modelProviders()),
+      this.store.modelProviders());
+    this.draft.set(profileDraftFrom(t, option ?? (t.provider || 'nous')));
     this.open.set(true);
+  }
+
+  /** The panel mutates the draft it was handed rather than replacing it, so this
+   *  is what tells the list a new blueprint now has an id to highlight. */
+  protected onSaved(_id: string): void {
+    // nothing to change here; being called is the point
+  }
+
+  protected closeEditor(): void {
+    this.open.set(false);
+    this.draft.set(newProfileDraft());
   }
 
   protected async remove(t: ProfileTemplate): Promise<void> {
     if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
     await this.store.deleteTemplate(t.id);
-    if (this.editingId() === t.id) this.closeEditor();
+    if (this.draft().id === t.id) this.closeEditor();
   }
 
-  protected closeEditor(): void {
-    this.open.set(false);
-    this.editingId.set(null);
+  protected openDeploy(t: ProfileTemplate): void {
+    this.deployFor.set(t);
   }
 
-  // ── skills ──────────────────────────────────────────────────────────────────
-  protected addSkill(): void {
-    const s = this.newSkill.trim();
-    if (!s) { this.newSkill = ''; return; }
-    // reject ids the backend's installSkill would throw on (a deploy applies skills
-    // and rolls the whole agent back on a bad id) — fail here with a clear message
-    if (!SKILL_ID.test(s)) {
-      this.store.toast(`invalid skill id "${s}" — use letters, digits, . _ - (no spaces)`);
-      return;
-    }
-    if (this.skills().includes(s)) { this.newSkill = ''; return; }
-    this.skills.update(list => [...list, s]);
-    this.newSkill = '';
+  /** Straight to the agent the blueprint just became. */
+  protected onDeployed(agentId: string): void {
+    this.deployFor.set(null);
+    this.router.navigate(['/agents', agentId]);
   }
-
-  protected removeSkill(skill: string): void {
-    this.skills.update(list => list.filter(s => s !== skill));
-  }
-
-  // ── mcp servers ───────────────────────────────────────────────────────────────
-  protected addMcp(): void {
-    const endpoint = this.mcpForm.endpoint();
-    if (!endpoint) return;
-    const server: TemplateMcp = {
-      name: this.mcpForm.trimmedName(), transport: this.mcpForm.transport, enabled: true,
-      ...endpoint,
-    };
-    this.mcpServers.update(list => [...list.filter(m => m.name !== server.name), server]);
-    this.mcpForm.reset();
-  }
-
-  protected removeMcp(name: string): void {
-    this.mcpServers.update(list => list.filter(m => m.name !== name));
-  }
-
-  protected selectCatalogMcp(id: string): void {
-    this.mcpCatalogId = id;
-    const server = this.store.mcpServerById(id);
-    if (server) this.mcpCatalogAlias = server.name;
-  }
-
-  protected addCatalogMcp(): void {
-    const server = this.store.mcpServerById(this.mcpCatalogId);
-    const alias = this.mcpCatalogAlias.trim();
-    if (!server || !alias) return;
-    if (this.mcpServers().some(item => item.name === alias)) {
-      this.store.toast(`an MCP server named "${alias}" is already in this template`);
-      return;
-    }
-    const snapshot = catalogTemplateSnapshot(server, alias);
-    if (!snapshot) {
-      this.store.toast(`${server.name} does not have a usable connection definition`);
-      return;
-    }
-    this.mcpServers.update(list => [...list, snapshot]);
-    this.mcpCatalogId = this.mcpCatalogAlias = '';
-  }
-
-  // ── secrets ───────────────────────────────────────────────────────────────────
-  protected addSecret(): void {
-    const key = this.secretKey.trim().toUpperCase();
-    if (!key || !ENV_KEY.test(key)) return;
-    const value = this.secretValue;
-    this.secrets.update(list => [
-      ...list.filter(s => s.key !== key),
-      { key, value, set: !!value, recoverable: !!value },
-    ]);
-    this.secretKey = this.secretValue = '';
-  }
-
-  protected removeSecret(key: string): void {
-    this.secrets.update(list => list.filter(s => s.key !== key));
-  }
-
-  // ── save ──────────────────────────────────────────────────────────────────────
-  protected canSave(): boolean {
-    return !!this.name.trim() && /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(this.name.trim());
-  }
-
-  protected async save(): Promise<void> {
-    if (!this.canSave() || this.saving()) return;
-    let provider = this.provider;
-    let baseUrl = this.baseUrl.trim();
-    if (provider.startsWith(OLLAMA_PREFIX)) {
-      const op = this.store.modelProviders().find(p => OLLAMA_PREFIX + p.name === provider);
-      provider = 'ollama';
-      if (op && !baseUrl) baseUrl = op.url.replace(/\/+$/, '') + '/v1';
-    }
-    const input: ProfileTemplateInput = {
-      name: this.name.trim(),
-      description: this.description.trim(),
-      provider,
-      model: this.model.trim(),
-      baseUrl,
-      cwd: this.cwd.trim(),
-      soul: this.soul,
-      memory: this.memory,
-      skills: this.skills(),
-      mcpServers: this.mcpServers(),
-      secrets: this.secrets().map(s => ({ key: s.key, value: s.value })),
-    };
-    this.saving.set(true);
-    const id = await this.store.saveTemplate(input, this.editingId() ?? undefined);
-    this.saving.set(false);
-    if (id) {
-      this.editingId.set(id);
-      // The source id is request-only. Reload the backend-materialized shape so
-      // a second save in the same open editor cannot re-read a changed catalog
-      // record. Mock mode may retain structural extras, so copy only public
-      // TemplateMcp fields explicitly.
-      const saved = this.store.templateById(id);
-      if (saved) {
-        this.mcpServers.set(saved.mcpServers.map(detachedTemplateMcp));
-      } else {
-        this.mcpServers.update(servers => servers.map(detachedTemplateMcp));
-      }
-    }
-  }
-
-  private resetScratch(): void {
-    this.newSkill = '';
-    this.mcpForm.reset();
-    this.mcpCatalogId = this.mcpCatalogAlias = '';
-    this.secretKey = this.secretValue = '';
-  }
-
 }

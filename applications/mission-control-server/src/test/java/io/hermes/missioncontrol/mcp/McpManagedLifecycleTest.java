@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
 class McpManagedLifecycleTest {
 
   private static final AppProperties LIVE_MODE =
-      new AppProperties("live", "", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test");
+      new AppProperties("", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test", true);
 
   /** Runs submitted work on the calling thread, so operations finish before create/start returns. */
   private static final class DirectExecutorService extends AbstractExecutorService {

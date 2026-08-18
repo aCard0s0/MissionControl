@@ -10,7 +10,7 @@ spring:
       mode: always
 
 mc:
-  data-mode: mock
+  startup-reconcile: false
   registry-tags: false
   docker-socket: unix:///var/run/docker.sock
   mcp-stack-dir: ./target/test-mcp-stacks

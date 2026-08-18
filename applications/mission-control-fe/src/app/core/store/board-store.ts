@@ -1,6 +1,5 @@
 import { WritableSignal, computed, signal } from '@angular/core';
 import { BoardColumn, BoardTask } from '../models';
-import { seedTasks } from '../mock-data';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
 
@@ -12,7 +11,7 @@ export class BoardStore {
     this.tasks().filter(t => t.containerId === this.containers.selectedContainerId()));
 
   constructor(private readonly ctx: StoreContext, private readonly containers: ContainerStore) {
-    this.tasks = signal(ctx.mock ? seedTasks() : []);
+    this.tasks = signal([]);
   }
 
   async refresh(): Promise<void> {
@@ -25,12 +24,10 @@ export class BoardStore {
   move(id: string, column: BoardColumn): void {
     const before = this.tasks();
     this.tasks.update(ts => ts.map(t => t.id === id ? { ...t, column } : t));
-    if (!this.ctx.mock) {
-      this.ctx.api.board.moveTask(id, column).catch(e => {
-        this.tasks.set(before);   // optimistic move failed — roll back
-        this.ctx.toastFailure('move', e);
-      });
-    }
+    this.ctx.api.board.moveTask(id, column).catch(e => {
+      this.tasks.set(before);   // optimistic move failed — roll back
+      this.ctx.toastFailure('move', e);
+    });
   }
 
   dropByContainer(containerId: string): void {

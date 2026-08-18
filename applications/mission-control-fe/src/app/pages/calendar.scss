@@ -199,3 +199,10 @@
 
   .cron-fields { grid-template-columns: repeat(5, minmax(44px, auto)); }
 }
+
+.sched-warn {
+  margin-bottom: 12px;
+  border-color: var(--amber);
+  .panel-b { display: flex; align-items: center; gap: 10px; padding: 10px 14px; font-size: 11px; }
+  code { color: var(--cyan); background: var(--cyan-soft); padding: 1px 5px; border-radius: 3px; }
+}
