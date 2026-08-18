@@ -19,14 +19,17 @@ import org.yaml.snakeyaml.Yaml;
  * switching, rename collisions, header and environment validation, refusing to rewrite a
  * file it cannot parse — can be exercised directly.
  *
- * <p>Holds its own plain {@code new Yaml()}: the same default dumper options
+ * <p>Uses a plain {@code new Yaml()} per call: the same default dumper options
  * {@link HermesProfiles} used, so the on-disk formatting of a rewritten config is
- * unchanged.
+ * unchanged, and no parser state is shared between concurrent edits — {@link Yaml} keeps
+ * mutable per-document state and is documented as unsafe for concurrent use.
  */
 @Component
 class HermesConfigEditor {
 
-  private final Yaml yaml = new Yaml();
+  private static Yaml yaml() {
+    return new Yaml();
+  }
 
   /** Creates or overwrites one entry under {@code mcp_servers}. */
   String addMcpServer(String configYaml, String configPath, AddMcpServerRequest request) {
@@ -41,7 +44,7 @@ class HermesConfigEditor {
     applyDefinition(server, request);
     servers.put(name, server);
     root.put("mcp_servers", servers);
-    return yaml.dump(root);
+    return yaml().dump(root);
   }
 
   /** Updates an entry, renaming it when the request carries a different name. */
@@ -66,7 +69,7 @@ class HermesConfigEditor {
     if (!currentName.equals(newName)) servers.remove(currentName);
     servers.put(newName, server);
     root.put("mcp_servers", servers);
-    return yaml.dump(root);
+    return yaml().dump(root);
   }
 
   /**
@@ -87,7 +90,7 @@ class HermesConfigEditor {
     server.put("enabled", enabled);
     servers.put(name, server);
     root.put("mcp_servers", servers);
-    return yaml.dump(root);
+    return yaml().dump(root);
   }
 
   /** Drops an entry. Removing something that was never there is not an error. */
@@ -97,7 +100,7 @@ class HermesConfigEditor {
     Map<Object, Object> servers = mcpServersForEdit(root);
     servers.remove(name);
     root.put("mcp_servers", servers);
-    return yaml.dump(root);
+    return yaml().dump(root);
   }
 
   Map<Object, Object> mcpServersForEdit(Map<Object, Object> root) {
@@ -204,7 +207,7 @@ class HermesConfigEditor {
   Map<Object, Object> parseForEdit(String yamlText, String configPath) {
     if (yamlText == null || yamlText.isBlank()) return new LinkedHashMap<>();
     try {
-      Object loaded = yaml.load(yamlText);
+      Object loaded = yaml().load(yamlText);
       if (loaded instanceof Map<?, ?> map) return new LinkedHashMap<>(map);
     } catch (Exception e) {
       throw new IllegalStateException("refusing to rewrite unparseable " + configPath, e);
@@ -220,7 +223,7 @@ class HermesConfigEditor {
   }
 
   String dump(Map<Object, Object> root) {
-    return yaml.dump(root);
+    return yaml().dump(root);
   }
 
   /** Shell-style tokenizer so quoted MCP args keep their internal spaces. */

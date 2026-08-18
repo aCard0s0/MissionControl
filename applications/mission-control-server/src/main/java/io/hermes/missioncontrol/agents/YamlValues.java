@@ -15,15 +15,23 @@ import org.yaml.snakeyaml.Yaml;
  */
 final class YamlValues {
 
-  private static final Yaml YAML = new Yaml();
-
   private YamlValues() {}
+
+  /**
+   * A parser per call. {@link Yaml} keeps mutable per-document state and is documented as
+   * unsafe for concurrent use, so one shared instance — which is what this package held
+   * before — lets two concurrent profile reads corrupt each other's parse. Construction is
+   * cheap next to a container exec, which is what every caller here already pays for.
+   */
+  private static Yaml parser() {
+    return new Yaml();
+  }
 
   /** The document as a mapping, or an empty map for anything else (including a parse failure). */
   static Map<?, ?> parseMap(String yamlText) {
     if (yamlText == null || yamlText.isBlank()) return Map.of();
     try {
-      Object loaded = YAML.load(yamlText);
+      Object loaded = parser().load(yamlText);
       return loaded instanceof Map<?, ?> map ? map : Map.of();
     } catch (Exception ignored) {
       return Map.of();
@@ -36,7 +44,7 @@ final class YamlValues {
       throw new IllegalArgumentException(message);
     }
     try {
-      if (!(YAML.load(yamlText) instanceof Map<?, ?>)) {
+      if (!(parser().load(yamlText) instanceof Map<?, ?>)) {
         throw new IllegalArgumentException(message);
       }
     } catch (IllegalArgumentException e) {
@@ -78,6 +86,6 @@ final class YamlValues {
 
   /** Dumps an edited config tree back to YAML text. */
   static String dump(Object root) {
-    return YAML.dump(root);
+    return parser().dump(root);
   }
 }
