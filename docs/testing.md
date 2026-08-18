@@ -1,11 +1,12 @@
-# Mission Control — Backend Testing Conventions
+# Mission Control — Testing Conventions
 
 How the backend tests are built, and why. Written down because most of the code worth testing
 here sits behind a boundary — a Docker daemon, a provider API, an async executor, a database —
 and the four patterns below are what make that code reachable without one.
 
-The conventions below are backend-only. The frontend runs Vitest through the Angular
-`@angular/build:unit-test` builder; its coverage setup is at the end of this file.
+The four patterns below are backend-only. The frontend runs Vitest through the Angular
+`@angular/build:unit-test` builder; its coverage setup and the traps its component tests keep
+falling into are at the end of this file.
 
 ## The rule these follow
 
@@ -284,6 +285,31 @@ Two settings do the load-bearing work:
   backend's JaCoCo line figure. Drop the entry to count render paths instead; expect the total
   to fall sharply until component tests exist.
 
-No threshold is enforced yet — unlike the backend, where `jacoco:check` fails the build below
-its ratchet. Worth adding the same once there is a baseline worth defending; until then the
-number is reported, not gated.
+`coverageThresholds` fails the run below its minimums, the same ratchet the backend gets from
+`jacoco:check`. Each minimum sits a point or two under what the suite covers today, so a refactor
+passes and a regression does not. Raise them after a deliberate push; do not lower them to make a
+build green. CI runs `npm run test:coverage`, so the gate runs there without a separate step.
+
+The minimums are lower than the backend's 95% and will stay lower for a while: the pages under
+`src/app/pages/` are mostly template, and their TypeScript is thin. The number to watch is
+whether it moves down, not whether it reaches a target.
+
+## Frontend component tests
+
+Rendering tests go through `TestBed` with a host component, and reach into the DOM the way an
+operator reaches the page — a button by its label, a field by its `<label>`, a row by its class.
+Two things trip up every one of them:
+
+- **`whenStable()` does not settle a promise the harness does not know about.** A store call in an
+  `effect` or a click handler is invisible to Angular's pending-task registry, so a spec holding
+  fake timers settles with `await vi.advanceTimersByTimeAsync(0)` followed by `detectChanges()`.
+  `[(ngModel)]` needs the same beat before the DOM carries the new value.
+- **`data-reveal` animates through gsap on a real timer.** A tween started by a test that does not
+  hold the clock finishes after jsdom has torn the document down, and reads `getComputedStyle` off
+  a window that no longer exists — reported as an unhandled error, not a failure, so the suite
+  still says every test passed while the run exits non-zero. Any spec that renders a page freezes
+  the clock for the whole file.
+
+A required `input()` is not bound until after construction, so a component that reads one to load
+something reads it in an `effect`, not its constructor. A spec that renders it through a host is
+what catches the difference — the template compiler cannot.
