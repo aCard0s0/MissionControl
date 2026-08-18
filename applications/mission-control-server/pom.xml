@@ -96,6 +96,11 @@
             <goals>
               <goal>prepare-agent</goal>
             </goals>
+            <configuration>
+              <!-- the agent appends by default, so a partial `mvn test -Dtest=Foo` would leave
+                   its coverage in the exec file and inflate the next full report -->
+              <append>false</append>
+            </configuration>
           </execution>
           <execution>
             <id>jacoco-report</id>
@@ -105,6 +110,52 @@
             <goals>
               <goal>report</goal>
             </goals>
+          </execution>
+          <execution>
+            <id>jacoco-check</id>
+            <!-- same rebinding as the report above, and declared after it so it runs last
+                 in the phase. A ratchet, not a target: each minimum sits just under what the
+                 suite covers today, so this fails on a regression rather than on a refactor.
+                 Raise them when a deliberate push moves the numbers; do not lower them to
+                 make a build pass. -->
+            <phase>test</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>INSTRUCTION</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.95</minimum>
+                    </limit>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.95</minimum>
+                    </limit>
+                    <limit>
+                      <counter>METHOD</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.96</minimum>
+                    </limit>
+                    <limit>
+                      <counter>BRANCH</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.91</minimum>
+                    </limit>
+                    <limit>
+                      <counter>COMPLEXITY</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.89</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
           </execution>
         </executions>
       </plugin>
