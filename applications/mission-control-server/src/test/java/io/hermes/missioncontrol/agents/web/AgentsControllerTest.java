@@ -1,7 +1,5 @@
 package io.hermes.missioncontrol.agents.web;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -12,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
-import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
@@ -44,7 +41,7 @@ class AgentsControllerTest {
 
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentsController(
-            profiles, mock(HermesSetup.class), hosts, templates, mcpCatalog))
+            profiles, templates, mcpCatalog, new AgentEndpoints(hosts, mcpCatalog)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

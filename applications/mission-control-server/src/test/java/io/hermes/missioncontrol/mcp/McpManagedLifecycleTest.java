@@ -17,7 +17,6 @@ import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
 import java.util.concurrent.AbstractExecutorService;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
