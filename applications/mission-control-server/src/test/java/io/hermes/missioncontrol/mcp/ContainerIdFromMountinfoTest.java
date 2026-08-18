@@ -22,7 +22,7 @@ class ContainerIdFromMountinfoTest {
         "1234 1200 0:100 / / rw,relatime - overlay overlay rw,lowerdir=/var/lib/docker/overlay2",
         "1240 1234 8:1 /var/lib/docker/containers/" + MC_ID + "/hostname /etc/hostname rw,relatime - ext4 /dev/sda1 rw");
 
-    assertEquals(MC_ID, McpRegistryService.containerIdFrom(lines));
+    assertEquals(MC_ID, McpHealthProbe.containerIdFrom(lines));
   }
 
   @Test
@@ -33,7 +33,7 @@ class ContainerIdFromMountinfoTest {
         "1240 1234 8:1 /var/lib/docker/containers/" + TAILSCALE_ID + "/resolv.conf /etc/resolv.conf rw - ext4 /dev/sda1 rw",
         "1241 1234 8:1 /var/lib/docker/containers/" + MC_ID + "/hostname /etc/hostname rw - ext4 /dev/sda1 rw");
 
-    assertEquals(TAILSCALE_ID, McpRegistryService.containerIdFrom(lines));
+    assertEquals(TAILSCALE_ID, McpHealthProbe.containerIdFrom(lines));
   }
 
   @Test
@@ -42,12 +42,12 @@ class ContainerIdFromMountinfoTest {
         "22 28 0:21 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw",
         "23 28 0:22 / /proc rw,nosuid,nodev,noexec,relatime shared:14 - proc proc rw");
 
-    assertNull(McpRegistryService.containerIdFrom(lines));
+    assertNull(McpHealthProbe.containerIdFrom(lines));
   }
 
   @Test
   void returnsNullForAnEmptyMountinfo() {
-    assertNull(McpRegistryService.containerIdFrom(List.of()));
+    assertNull(McpHealthProbe.containerIdFrom(List.of()));
   }
 
   @Test
@@ -56,6 +56,6 @@ class ContainerIdFromMountinfoTest {
     List<String> lines = List.of(
         "1240 1234 8:1 /var/lib/docker/containers/abc123/hostname /etc/hostname rw - ext4 /dev/sda1 rw");
 
-    assertNull(McpRegistryService.containerIdFrom(lines));
+    assertNull(McpHealthProbe.containerIdFrom(lines));
   }
 }

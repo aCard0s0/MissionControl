@@ -47,8 +47,7 @@ class DockerGatewayReadThroughTest {
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = new DockerGateway(
-      clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
 
   /** The last callback the gateway handed to the log stream, so a test can drive it late. */
   private final AtomicReference<ResultCallback<Frame>> lastLogCallback = new AtomicReference<>();
@@ -77,7 +76,7 @@ class DockerGatewayReadThroughTest {
     when(version.getVersion()).thenReturn("27.1.2");
     when(version.getApiVersion()).thenReturn("1.46");
 
-    DockerGateway.DaemonInfo info = gateway.ping("unix:///sock");
+    DaemonInfo info = gateway.ping("unix:///sock");
 
     assertEquals("Docker 27.1.2", info.engine());
     assertEquals("1.46", info.apiVersion());
@@ -189,7 +188,7 @@ class DockerGatewayReadThroughTest {
 
   @Test
   void theReportedRepositoryDropsATagOnTheConfiguredImage() {
-    DockerGateway tagged = new DockerGateway(clients, new AppProperties(
+    DockerGateway tagged = DockerWiring.gateway(clients, new AppProperties(
         "live", "", "unix:///sock", "nousresearch/hermes-agent:v2026.7.7", "hermes", "test"), dockerExec);
 
     // the frontend compares this against ContainerDto.image, which is always bare; a
@@ -199,9 +198,9 @@ class DockerGatewayReadThroughTest {
 
   @Test
   void anUnconfiguredHermesImageReportsAnEmptyRepository() {
-    DockerGateway unset = new DockerGateway(clients,
+    DockerGateway unset = DockerWiring.gateway(clients,
         new AppProperties("live", "", "unix:///sock", null, "hermes", "test"), dockerExec);
-    DockerGateway blank = new DockerGateway(clients,
+    DockerGateway blank = DockerWiring.gateway(clients,
         new AppProperties("live", "", "unix:///sock", "", "hermes", "test"), dockerExec);
 
     // '?' or 'null' would read as a repository name and match nothing the frontend holds

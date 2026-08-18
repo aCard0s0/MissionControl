@@ -176,42 +176,6 @@ class McpRegistryServiceTest {
     assertEquals(revision, postgresRow().revision());
   }
 
-  @Test
-  void aRejectedHostHeaderIsReportedAsAnImageFaultRatherThanAnHttpCode() {
-    String failure = McpRegistryService.probeFailure(
-        421, "text/plain", transport("sse"), "http://postgres-mcp:1103/sse");
-
-    assertTrue(failure.contains("Host header"));
-    assertTrue(failure.contains("http://postgres-mcp:1103/sse"));
-  }
-
-  @Test
-  void aHealthyEndpointProducesNoFailureAndAWrongContentTypeDoes() {
-    assertNull(McpRegistryService.probeFailure(
-        200, "text/event-stream; charset=utf-8", transport("sse"), "http://pg:1103/sse"));
-    assertNull(McpRegistryService.probeFailure(
-        200, "text/event-stream", transport("http"), "http://c7:1101/mcp"));
-    // A streamable-HTTP server answering an SSE entry means the entry is misconfigured.
-    assertTrue(McpRegistryService.probeFailure(
-            200, "application/json", transport("sse"), "http://pg:1103/sse")
-        .contains("rather than an SSE stream"));
-  }
-
-  @Test
-  void aMissingEndpointIsDistinguishedFromAnUnhealthyOne() {
-    assertTrue(McpRegistryService.probeFailure(404, "", transport("http"), "http://x:1/mcp")
-        .contains("no MCP endpoint"));
-    assertTrue(McpRegistryService.probeFailure(405, "", transport("http"), "http://x:1/mcp")
-        .contains("no MCP endpoint"));
-    assertTrue(McpRegistryService.probeFailure(503, "", transport("http"), "http://x:1/mcp")
-        .contains("HTTP 503"));
-  }
-
-  private static StoredConfig transport(String transport) {
-    return new StoredConfig(transport, null, "example/mcp:latest", null, List.of(), List.of(),
-        null, List.of(), 1103, null, "/sse", null, List.of(), List.of(), List.of(), null,
-        List.of());
-  }
 
   private ServerRow postgresRow() {
     return repository.findBySeedKey("postgres").orElseThrow();

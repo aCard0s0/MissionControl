@@ -32,26 +32,27 @@ class HermesSetupTest {
   private static final String CONTAINER = "c1";
   private static final String PROFILE = "default";
 
-  private HermesProfiles profiles;
+  private HermesContainerFiles files;
   private HermesSetup setup;
 
   @BeforeEach
   void setUp() {
-    profiles = mock(HermesProfiles.class);
-    setup = new HermesSetup(profiles);
-    when(profiles.profileDir(PROFILE)).thenReturn("/opt/data/profiles/default");
-    when(profiles.fileExists(anyString(), anyString(), anyString())).thenReturn(true);
-    when(profiles.readFile(anyString(), anyString(), anyString())).thenReturn("");
+    files = mock(HermesContainerFiles.class);
+    setup = new HermesSetup(files, mock(HermesEnvFile.class));
+    when(files.fileExists(anyString(), anyString(), anyString())).thenReturn(true);
+    when(files.readFile(anyString(), anyString(), anyString())).thenReturn("");
     statusOutput("");
   }
 
   private void statusOutput(String stdout) {
-    when(profiles.exec(anyString(), anyString(), any()))
+    when(files.exec(anyString(), anyString(), any()))
         .thenReturn(new io.hermes.missioncontrol.docker.DockerExecService.ExecResult(0, stdout, ""));
   }
 
+  /** The default profile lives at Hermes' home, not under {@code profiles/} — see
+   *  {@link ProfilePaths#profileDir}. */
   private void envFile(String contents) {
-    when(profiles.readFile(URL, CONTAINER, "/opt/data/profiles/default/.env")).thenReturn(contents);
+    when(files.readFile(URL, CONTAINER, "/opt/data/.env")).thenReturn(contents);
   }
 
   private AgentSetupDto run() {
@@ -195,7 +196,7 @@ class HermesSetupTest {
 
   @Test
   void aFailingStatusCommandDegradesToTheEnvInsteadOfFailingTheRequest() {
-    when(profiles.exec(anyString(), anyString(), any()))
+    when(files.exec(anyString(), anyString(), any()))
         .thenThrow(new RuntimeException("container is not running"));
     envFile("OPENAI_API_KEY=sk-still-here-7777");
 
@@ -207,11 +208,9 @@ class HermesSetupTest {
 
   @Test
   void aNamedProfileAsksHermesForThatProfile() {
-    when(profiles.profileDir("scout")).thenReturn("/opt/data/profiles/scout");
-
     setup.setup(URL, CONTAINER, "scout");
 
-    org.mockito.Mockito.verify(profiles)
+    org.mockito.Mockito.verify(files)
         .exec(URL, CONTAINER, List.of("hermes", "-p", "scout", "status"));
   }
 
@@ -219,7 +218,7 @@ class HermesSetupTest {
   void theDefaultProfileOmitsTheProfileFlag() {
     run();
 
-    org.mockito.Mockito.verify(profiles).exec(URL, CONTAINER, List.of("hermes", "status"));
+    org.mockito.Mockito.verify(files).exec(URL, CONTAINER, List.of("hermes", "status"));
   }
 
   @Test

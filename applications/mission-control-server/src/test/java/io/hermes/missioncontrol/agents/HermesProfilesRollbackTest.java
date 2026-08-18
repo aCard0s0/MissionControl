@@ -8,7 +8,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import java.time.Duration;
@@ -20,7 +19,7 @@ class HermesProfilesRollbackTest {
   @Test
   void baseConfigurationFailureDeletesNewProfile() {
     DockerExecService dockerExec = mock(DockerExecService.class);
-    HermesProfiles profiles = new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor());
+    HermesProfiles profiles = AgentsWiring.profiles(dockerExec);
     CreateAgentRequest request = new CreateAgentRequest(
         "dh-local", "cid", "ops", "anthropic", "model", null, null, null, null, null);
     when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(),
@@ -41,7 +40,7 @@ class HermesProfilesRollbackTest {
     // every exec "succeeds" but config.yaml reads back empty — the state that
     // produced a profile whose auxiliary chain had no provider to resolve to
     DockerExecService dockerExec = mock(DockerExecService.class);
-    HermesProfiles profiles = new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor());
+    HermesProfiles profiles = AgentsWiring.profiles(dockerExec);
     CreateAgentRequest request = new CreateAgentRequest(
         "dh-local", "cid", "ops", "anthropic", "model", null, null, null, null, null);
     when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(),

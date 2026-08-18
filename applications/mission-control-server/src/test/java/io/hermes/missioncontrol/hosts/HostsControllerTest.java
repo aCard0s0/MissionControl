@@ -61,7 +61,7 @@ class HostsControllerTest {
   }
 
   private void daemonAnswers() {
-    when(docker.ping(anyString())).thenReturn(new DockerGateway.DaemonInfo("docker", "1.47", 3L));
+    when(docker.ping(anyString())).thenReturn(new io.hermes.missioncontrol.docker.DaemonInfo("docker", "1.47", 3L));
   }
 
   private void daemonIsDown() {

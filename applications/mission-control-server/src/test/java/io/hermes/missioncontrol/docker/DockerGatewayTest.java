@@ -67,7 +67,10 @@ class DockerGatewayTest {
   /** Separate client for endpoints that stream or long-poll — see DockerClients. */
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = new DockerGateway(
+  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+
+  /** One-shot bootstrap containers are the deployer's own step, driven directly. */
+  private final HermesDeployer deployer = DockerWiring.deployer(
       clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
 
   @BeforeEach
@@ -79,7 +82,7 @@ class DockerGatewayTest {
   @Test
   void profileNormalizationDropsDefaultAndDuplicates() {
     assertEquals(List.of("ops", "research"),
-        DockerGateway.normalizeProfiles(List.of("default", "ops", "ops", "research")));
+        HermesDeployer.normalizeProfiles(List.of("default", "ops", "ops", "research")));
   }
 
   @Test
@@ -90,7 +93,7 @@ class DockerGatewayTest {
         + "2026-07-10T17:14:42.303717876Z s6-rc: info: service started\n")
         .getBytes(StandardCharsets.UTF_8));
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(3, lines.size());
     assertEquals("warn", lines.get(0).level());
@@ -145,7 +148,7 @@ class DockerGatewayTest {
     stubOneShotExhausted("helper-id");
 
     RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> gateway.runOneShot("unix:///sock", client, "hermes/image:latest",
+        () -> deployer.runOneShot("unix:///sock", client, "hermes/image:latest",
             HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     assertEquals("initialize Hermes data volume timed out", failure.getMessage());
@@ -167,7 +170,7 @@ class DockerGatewayTest {
     // the volume is seeded by this point. Failing here would roll the whole deploy back —
     // and the surviving helper still holds the data volume, so that rollback could not
     // delete it either, leaving a half-removed deploy nothing can retry over.
-    assertDoesNotThrow(() -> gateway.runOneShot("unix:///sock", client, "hermes/image:latest",
+    assertDoesNotThrow(() -> deployer.runOneShot("unix:///sock", client, "hermes/image:latest",
         HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     verify(reap).exec();
@@ -186,7 +189,7 @@ class DockerGatewayTest {
     when(reap.exec()).thenThrow(new RuntimeException("removal already in progress"));
 
     RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> gateway.runOneShot("unix:///sock", client, "hermes/image:latest",
+        () -> deployer.runOneShot("unix:///sock", client, "hermes/image:latest",
             HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     // the seeding failure is the diagnosis an operator needs; the tidy-up error must not
@@ -335,7 +338,7 @@ class DockerGatewayTest {
     RemoveContainerCmd removeOld = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     when(client.removeContainerCmd("cid")).thenReturn(removeOld);
 
-    DockerGateway.UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
 
     assertEquals("new-id", result.newContainerId());
     assertEquals("v2026.7.1", result.fromTag());
@@ -460,7 +463,7 @@ class DockerGatewayTest {
     stubCreate("hermes/image:v2026.8.3", "new-id");
     when(client.removeContainerCmd("cid")).thenReturn(mock(RemoveContainerCmd.class, Answers.RETURNS_SELF));
 
-    DockerGateway.UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
 
     assertFalse(result.running());
     // an operator parked this container on purpose; an update must not start it
@@ -593,7 +596,7 @@ class DockerGatewayTest {
 
     // the replacement is created, started and validated by this point: the upgrade
     // succeeded, and clearing away the parked original is only cleanup
-    DockerGateway.UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
 
     assertEquals("new-id", result.newContainerId());
     verify(removeNew, never()).exec();
@@ -613,7 +616,7 @@ class DockerGatewayTest {
     stubStartAndReady("new-id");
     when(client.removeContainerCmd("cid")).thenReturn(mock(RemoveContainerCmd.class, Answers.RETURNS_SELF));
 
-    DockerGateway.UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
 
     assertEquals("new-id", result.newContainerId());
     assertTrue(result.running());
@@ -622,9 +625,9 @@ class DockerGatewayTest {
   @Test
   void isUpgradeLeftoverMatchesOnlyTheGeneratedSuffix() {
     // the fleet-level behaviour this feeds is asserted in DockerGatewayInventoryTest
-    assertTrue(DockerGateway.isUpgradeLeftover("demo-mc-upgrade-0a1b2c3d"));
-    assertFalse(DockerGateway.isUpgradeLeftover("demo"));
-    assertFalse(DockerGateway.isUpgradeLeftover("demo-mc-upgrade-nothex"));
+    assertTrue(ParkedContainerName.isUpgradeLeftover("demo-mc-upgrade-0a1b2c3d"));
+    assertFalse(ParkedContainerName.isUpgradeLeftover("demo"));
+    assertFalse(ParkedContainerName.isUpgradeLeftover("demo-mc-upgrade-nothex"));
   }
 
   private static Map<String, String> managedLabels() {

@@ -18,7 +18,6 @@ import io.hermes.missioncontrol.secrets.SecretRef;
 import io.hermes.missioncontrol.secrets.StoredSecret;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -46,7 +45,7 @@ public class ProfileTemplateService {
   private static final int MAX_SECRET_LEN = 65_536;
 
   private final ProfileTemplateRepository repository;
-  private final SecretCipher cipher;
+  private final TemplateSecrets templateSecrets;
   private final HermesProfiles profiles;
   private final HermesSetup setup;
   private final McpRegistryService mcpRegistry;
@@ -59,7 +58,7 @@ public class ProfileTemplateService {
       HermesSetup setup,
       McpRegistryService mcpRegistry) {
     this.repository = repository;
-    this.cipher = cipher;
+    this.templateSecrets = new TemplateSecrets(cipher);
     this.profiles = profiles;
     this.setup = setup;
     this.mcpRegistry = mcpRegistry;
@@ -166,9 +165,9 @@ public class ProfileTemplateService {
         if (m == null || m.name() == null || m.name().isBlank()) {
           continue;
         }
-        Map<String, String> headers = decryptValues(m.headers());
+        Map<String, String> headers = templateSecrets.decryptValues(m.headers());
         Map<String, String> mcpEnvironment = "stdio".equalsIgnoreCase(m.transport())
-            ? decryptValues(m.environment()) : Map.of();
+            ? templateSecrets.decryptValues(m.environment()) : Map.of();
         profiles.addMcpServer(url, containerId, name,
             new AddMcpServerRequest(
                 m.name(), m.transport(), m.url(), m.command(), m.args(), m.enabled(),
@@ -176,7 +175,7 @@ public class ProfileTemplateService {
       }
       List<EnvEntry> env = new ArrayList<>();
       for (StoredSecret s : t.secrets()) {
-        String value = safeDecrypt(s.enc());
+        String value = templateSecrets.decryptOrNull(s.enc());
         if (value != null && !value.isBlank()) {
           env.add(new EnvEntry(s.key(), value));
         }
@@ -263,7 +262,7 @@ public class ProfileTemplateService {
         if (value.length() > MAX_SECRET_LEN) {
           throw new IllegalArgumentException("secret value too large for " + key);
         }
-        secrets.add(new StoredSecret(key, cipher.encrypt(value)));
+        secrets.add(new StoredSecret(key, templateSecrets.encrypt(value)));
       }
     }
     List<McpServerSpec> mcpServers = materializeMcpSnapshots(r.mcpServers(), existing);
@@ -279,11 +278,11 @@ public class ProfileTemplateService {
     List<SecretRef> refs = t.secrets().stream()
         .map(s -> {
           boolean set = s.enc() != null;
-          boolean recoverable = set && safeDecrypt(s.enc()) != null;
+          boolean recoverable = set && templateSecrets.decryptOrNull(s.enc()) != null;
           return new SecretRef(s.key(), set, recoverable);
         })
         .toList();
-    List<McpServerSpec> mcp = t.mcpServers().stream().map(this::redactedMcp).toList();
+    List<McpServerSpec> mcp = t.mcpServers().stream().map(TemplateSecrets::redacted).toList();
     return new ProfileTemplateDto(
         t.id(), t.name(), t.description(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
         t.soul(), t.memory(), t.skills(), mcp, refs, t.createdAt(), t.updatedAt());
@@ -316,8 +315,8 @@ public class ProfileTemplateService {
       result.add(new McpServerSpec(
           requested.name(), requested.transport(), requested.url(), requested.command(),
           requested.args(), requested.enabled(), null,
-          unchanged ? reencryptValues(prior.environment()) : null,
-          unchanged ? reencryptValues(prior.headers()) : null));
+          unchanged ? templateSecrets.reencryptValues(prior.environment()) : null,
+          unchanged ? templateSecrets.reencryptValues(prior.headers()) : null));
     }
     return List.copyOf(result);
   }
@@ -339,7 +338,7 @@ public class ProfileTemplateService {
       Map<String, String> environment = mcpRegistry.materializedEnvironment(sourceId);
       return new McpServerSpec(
           alias, "stdio", null, source.stdioCommand(), joinArgs(source.args()), enabled,
-          null, encryptValues(environment), List.of());
+          null, templateSecrets.encryptValues(environment), List.of());
     }
 
     String url = firstNonBlank(source.crossHostUrl(), source.connectionUrl(), source.url());
@@ -348,53 +347,13 @@ public class ProfileTemplateService {
     }
     return new McpServerSpec(
         alias, source.transport(), url, null, null, enabled, null, List.of(),
-        encryptValues(mcpRegistry.materializedHeaders(sourceId)));
+        templateSecrets.encryptValues(mcpRegistry.materializedHeaders(sourceId)));
   }
 
-  private List<TemplateMcpConfigValue> encryptValues(Map<String, String> values) {
-    if (values == null || values.isEmpty()) return List.of();
-    return values.entrySet().stream()
-        .filter(entry -> entry.getKey() != null && entry.getValue() != null)
-        .map(entry -> new TemplateMcpConfigValue(entry.getKey(), cipher.encrypt(entry.getValue())))
-        .toList();
-  }
 
-  private Map<String, String> decryptValues(List<TemplateMcpConfigValue> values) {
-    Map<String, String> result = new LinkedHashMap<>();
-    for (TemplateMcpConfigValue value : nz(values)) {
-      if (value == null || value.key() == null || value.key().isBlank()) continue;
-      String clear = safeDecrypt(value.encryptedValue());
-      if (clear != null) result.put(value.key(), clear);
-    }
-    return result;
-  }
 
-  /** A normal template save is also the key-rotation opportunity for MCP
-   * snapshot values, matching the behavior of template-owned API keys. */
-  private List<TemplateMcpConfigValue> reencryptValues(List<TemplateMcpConfigValue> values) {
-    return nz(values).stream()
-        .filter(Objects::nonNull)
-        .map(value -> {
-          String clear = safeDecrypt(value.encryptedValue());
-          return clear == null
-              ? value
-              : new TemplateMcpConfigValue(value.key(), cipher.encrypt(clear));
-        })
-        .toList();
-  }
 
-  private McpServerSpec redactedMcp(McpServerSpec value) {
-    return new McpServerSpec(
-        value.name(), value.transport(), value.url(), value.command(), value.args(), value.enabled(),
-        null, redactValues(value.environment()), redactValues(value.headers()));
-  }
 
-  private List<TemplateMcpConfigValue> redactValues(List<TemplateMcpConfigValue> values) {
-    return nz(values).stream()
-        .filter(Objects::nonNull)
-        .map(value -> new TemplateMcpConfigValue(value.key(), null))
-        .toList();
-  }
 
   private static boolean sameConnection(McpServerSpec left, McpServerSpec right) {
     return Objects.equals(left.transport(), right.transport())
@@ -437,19 +396,6 @@ public class ProfileTemplateService {
     return name;
   }
 
-  private String safeDecrypt(String enc) {
-    if (enc == null) {
-      return null;
-    }
-    try {
-      return cipher.decrypt(enc);
-    } catch (RuntimeException e) {
-      // wrong MC_SECRET_KEY or corrupt ciphertext — the secret is unrecoverable.
-      // Don't fail the whole read/deploy, but make the loss visible.
-      log.warn("failed to decrypt a stored template secret (check MC_SECRET_KEY): {}", e.getMessage());
-      return null;
-    }
-  }
 
   private String newId() {
     return "pt-" + UUID.randomUUID().toString().substring(0, 8);

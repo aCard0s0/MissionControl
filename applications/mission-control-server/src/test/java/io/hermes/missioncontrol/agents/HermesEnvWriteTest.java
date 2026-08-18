@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import java.time.Duration;
@@ -36,14 +35,14 @@ class HermesEnvWriteTest {
   private static final String ENV_PATH = "/opt/data/profiles/scout/.env";
 
   private DockerExecService dockerExec;
-  private HermesProfiles profiles;
+  private HermesEnvFile envFile;
   private HermesSetup setup;
 
   @BeforeEach
   void setUp() {
     dockerExec = mock(DockerExecService.class);
-    profiles = new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor());
-    setup = new HermesSetup(profiles);
+    envFile = AgentsWiring.envFile(dockerExec);
+    setup = new HermesSetup(AgentsWiring.files(dockerExec), envFile);
     // every exec succeeds; the reporting read-back after a write returns an empty .env
     when(dockerExec.runAsUser(anyString(), anyString(), any(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
@@ -98,7 +97,7 @@ class HermesEnvWriteTest {
 
   @Test
   void theKeyAndValueAreAlwaysPositionalArgumentsAndNeverInterpolatedIntoTheScript() {
-    profiles.writeEnvVar(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
+    envFile.write(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
 
     ArgumentCaptor<List<String>> argv = captureArgv();
     verify(dockerExec).runAsUser(anyString(), anyString(), any(), argv.capture(),
@@ -119,7 +118,7 @@ class HermesEnvWriteTest {
 
   @Test
   void writingAnEnvVarUsesTheSensitiveExecSoTheValueNeverReachesALog() {
-    profiles.writeEnvVar(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
+    envFile.write(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
 
     // sensitive=true keeps argv and command output out of the failure message and the log
     verify(dockerExec).runAsUser(eqUrl(), eqContainer(), any(), any(),

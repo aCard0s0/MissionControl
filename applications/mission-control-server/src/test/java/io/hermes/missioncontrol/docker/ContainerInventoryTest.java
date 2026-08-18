@@ -23,7 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 
-class DockerGatewayInventoryTest {
+class ContainerInventoryTest {
 
   /** The Engine substitutes this for a reference it can no longer resolve. */
   private static final String BARE_IMAGE_ID =
@@ -33,8 +33,7 @@ class DockerGatewayInventoryTest {
   private final DockerClient client = mock(DockerClient.class);
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = new DockerGateway(
-      clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final ContainerInventory subject = DockerWiring.inventory(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"));
 
   @BeforeEach
   void setUp() {
@@ -50,9 +49,9 @@ class DockerGatewayInventoryTest {
 
     // the parked original runs the same image as the live one, so only the name
     // tells them apart — showing both would offer the operator two identical cards
-    assertEquals(List.of("demo"), names(gateway.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
     assertEquals(List.of("demo", "demo-mc-upgrade-0a1b2c3d"),
-        names(gateway.listContainers("unix:///sock", "local", true)));
+        names(subject.listContainers("unix:///sock", "local", true)));
   }
 
   @Test
@@ -61,7 +60,7 @@ class DockerGatewayInventoryTest {
         container("aaaaaaa1111", "/demo", "hermes/image:v1"),
         container("bbbbbbb2222", "/postgres", "other/thing:v1"));
 
-    List<ContainerDto> fleet = gateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
 
     assertEquals(List.of("demo"), names(fleet));
     assertEquals("hermes/image", fleet.get(0).image());
@@ -73,7 +72,7 @@ class DockerGatewayInventoryTest {
     stubListing(container("aaaaaaa1111", "/demo",
         "hermes/image@sha256:9b2c1e4f6a8d0c3e5f7a9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f01"));
 
-    List<ContainerDto> fleet = gateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
 
     // the digest carries its own ':', so a repository comparison that does not strip
     // it first hides every container this dashboard pinned by digest
@@ -86,7 +85,7 @@ class DockerGatewayInventoryTest {
   void aDockerHubQualifiedReferenceMatchesTheShortConfiguredForm() {
     stubListing(container("aaaaaaa1111", "/demo", "docker.io/hermes/image:v1"));
 
-    List<ContainerDto> fleet = gateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
 
     assertEquals(List.of("demo"), names(fleet));
     // the card still shows the reference the daemon reported, registry host included
@@ -96,14 +95,13 @@ class DockerGatewayInventoryTest {
 
   @Test
   void theSubstringFilterMatchesImageOrNameWhenNoHermesImageIsConfigured() {
-    DockerGateway substringGateway = new DockerGateway(
-        clients, new AppProperties("live", "", "unix:///sock", "", "hermes", "test"), dockerExec);
+    ContainerInventory substringInventory = DockerWiring.inventory(clients, new AppProperties("live", "", "unix:///sock", "", "hermes", "test"));
     stubListing(
         container("aaaaaaa1111", "/alpha", "Acme/HERMES-agent:v1"),
         container("bbbbbbb2222", "/hermes-beta", "acme/other:v1"),
         container("ccccccc3333", "/gamma", "acme/other:v1"));
 
-    List<ContainerDto> fleet = substringGateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = substringInventory.listContainers("unix:///sock", "local", false);
 
     // an operator who typed a lowercase filter still expects to see a container whose
     // image was published with capitals
@@ -125,7 +123,7 @@ class DockerGatewayInventoryTest {
     // raced with a removal: the container is gone by the time uptime is read
     stubMissingOnInspect("bbbbbbb2222");
 
-    Map<String, ContainerDto> fleet = byName(gateway.listContainers("unix:///sock", "local", false));
+    Map<String, ContainerDto> fleet = byName(subject.listContainers("unix:///sock", "local", false));
 
     assertEquals("running", fleet.get("healthy").status());
     assertEquals("unhealthy", fleet.get("sick").status());
@@ -155,7 +153,7 @@ class DockerGatewayInventoryTest {
     when(unlabelled.getLabels()).thenReturn(null);
     stubListing(seeded, blank, otherLabels, unlabelled);
 
-    Map<String, ContainerDto> fleet = byName(gateway.listContainers("unix:///sock", "local", false));
+    Map<String, ContainerDto> fleet = byName(subject.listContainers("unix:///sock", "local", false));
 
     assertEquals(List.of("ops", "research"), fleet.get("seeded").profiles());
     assertEquals(List.of(), fleet.get("blank").profiles());
@@ -169,7 +167,7 @@ class DockerGatewayInventoryTest {
     when(nameless.getNames()).thenReturn(null);
     stubListing(nameless);
 
-    List<ContainerDto> fleet = gateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
 
     // a container mid-rename reports no name; dropping the whole listing over it
     // would blank the dashboard
@@ -181,7 +179,7 @@ class DockerGatewayInventoryTest {
   void theShortIdIsTheFirstSevenCharactersOfTheContainerId() {
     stubListing(container("9f3c1a4e8b2d7c05", "/demo", "hermes/image:v1"));
 
-    List<ContainerDto> fleet = gateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
 
     assertEquals("9f3c1a4", fleet.get(0).shortId());
     assertEquals("9f3c1a4e8b2d7c05", fleet.get(0).id());
@@ -196,7 +194,7 @@ class DockerGatewayInventoryTest {
     when(unsized.getSizeRootFs()).thenReturn(null);
     stubListing(sized, unsized);
 
-    Map<String, ContainerDto> fleet = byName(gateway.listContainers("unix:///sock", "local", false));
+    Map<String, ContainerDto> fleet = byName(subject.listContainers("unix:///sock", "local", false));
 
     assertEquals(1.0, fleet.get("sized").sizeRootFsGb(), 1e-9);
     assertNull(fleet.get("unsized").sizeRootFsGb());
@@ -208,7 +206,7 @@ class DockerGatewayInventoryTest {
     when(agent.getLabels()).thenReturn(Map.of("mc.managed", "true"));
     stubListing(agent);
 
-    List<ContainerDto> fleet = gateway.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
 
     // moving a floating tag during another container's upgrade makes the Engine report this
     // one by image id; that parses as repository "sha256", which matches nothing
@@ -229,19 +227,19 @@ class DockerGatewayInventoryTest {
 
     // nothing ties this one to the configured repository, so claiming it runs Hermes
     // would invent an Agent the operator never deployed
-    assertEquals(List.of("demo"), names(gateway.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
   }
 
   @Test
   void isImageIdReferenceRecognisesBothPrefixedAndBareDigests() {
     String hex = BARE_IMAGE_ID.substring("sha256:".length());
 
-    assertTrue(DockerGateway.isImageIdReference(BARE_IMAGE_ID));
-    assertTrue(DockerGateway.isImageIdReference(hex));
-    assertFalse(DockerGateway.isImageIdReference("hermes/image:v1"));
-    assertFalse(DockerGateway.isImageIdReference("hermes/image"));
-    assertFalse(DockerGateway.isImageIdReference(""));
-    assertFalse(DockerGateway.isImageIdReference(null));
+    assertTrue(ContainerInventory.isImageIdReference(BARE_IMAGE_ID));
+    assertTrue(ContainerInventory.isImageIdReference(hex));
+    assertFalse(ContainerInventory.isImageIdReference("hermes/image:v1"));
+    assertFalse(ContainerInventory.isImageIdReference("hermes/image"));
+    assertFalse(ContainerInventory.isImageIdReference(""));
+    assertFalse(ContainerInventory.isImageIdReference(null));
   }
 
   @Test
@@ -253,9 +251,9 @@ class DockerGatewayInventoryTest {
 
     // a seeding helper runs the Hermes image but is never an Agent; a stray left by a
     // failed deploy still has to be reachable through ?all=true so it can be reaped
-    assertEquals(List.of("demo"), names(gateway.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
     assertEquals(List.of("demo", "nostalgic_wozniak"),
-        names(gateway.listContainers("unix:///sock", "local", true)));
+        names(subject.listContainers("unix:///sock", "local", true)));
   }
 
   private static List<String> names(List<ContainerDto> containers) {

@@ -39,7 +39,7 @@ public class ContainerUpdateService {
    * @return the id of the replacement container
    */
   public String update(String hostUrl, String hostId, String containerId, String version) {
-    DockerGateway.UpgradeResult result = docker.upgrade(hostUrl, containerId, version);
+    UpgradeResult result = docker.upgrade(hostUrl, containerId, version);
     remap(hostId, result.oldContainerId(), result.newContainerId());
     return result.newContainerId();
   }

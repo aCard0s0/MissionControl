@@ -12,7 +12,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import java.time.Duration;
@@ -36,12 +35,16 @@ class HermesProfileFileAccessTest {
   private static final String CONTAINER = "c1";
 
   private DockerExecService dockerExec;
+  private HermesContainerFiles files;
+  private HermesEnvFile envFile;
   private HermesProfiles profiles;
 
   @BeforeEach
   void setUp() {
     dockerExec = mock(DockerExecService.class);
-    profiles = new HermesProfiles(dockerExec, new ObjectMapper(), new HermesConfigEditor());
+    files = AgentsWiring.files(dockerExec);
+    envFile = AgentsWiring.envFile(dockerExec);
+    profiles = AgentsWiring.profiles(dockerExec);
   }
 
   /** Every exec succeeds; {@code test -d} therefore reports the directory as present. */
@@ -111,7 +114,7 @@ class HermesProfileFileAccessTest {
     theProfileDoesNotExist();
 
     assertThrows(NoSuchElementException.class,
-        () -> profiles.writeEnvVar(URL, CONTAINER, "tpyo", "OPENAI_API_KEY", "sk-x"));
+        () -> envFile.write(URL, CONTAINER, "tpyo", "OPENAI_API_KEY", "sk-x"));
 
     verify(dockerExec, never()).runAsUser(anyString(), anyString(), any(), any(),
         eq("write profile environment"), anyBoolean(), anyBoolean(), any(Duration.class));
@@ -120,24 +123,24 @@ class HermesProfileFileAccessTest {
   @Test
   void aProfileNameThatCouldEscapeTheProfilesDirectoryIsRejected() {
     // the name is a URL path segment concatenated into a container path
-    assertThrows(IllegalArgumentException.class, () -> profiles.profileDir("../../etc"));
-    assertThrows(IllegalArgumentException.class, () -> profiles.profileDir("a/b"));
-    assertThrows(IllegalArgumentException.class, () -> profiles.profileDir(""));
-    assertThrows(IllegalArgumentException.class, () -> profiles.profileDir(null));
-    assertThrows(IllegalArgumentException.class, () -> profiles.profileDir(".hidden"));
+    assertThrows(IllegalArgumentException.class, () -> ProfilePaths.profileDir("../../etc"));
+    assertThrows(IllegalArgumentException.class, () -> ProfilePaths.profileDir("a/b"));
+    assertThrows(IllegalArgumentException.class, () -> ProfilePaths.profileDir(""));
+    assertThrows(IllegalArgumentException.class, () -> ProfilePaths.profileDir(null));
+    assertThrows(IllegalArgumentException.class, () -> ProfilePaths.profileDir(".hidden"));
   }
 
   @Test
   void theDefaultProfileMapsToHermesHomeRatherThanTheProfilesDirectory() {
-    assertEquals("/opt/data", profiles.profileDir("default"));
-    assertEquals("/opt/data/profiles/scout", profiles.profileDir("scout"));
+    assertEquals("/opt/data", ProfilePaths.profileDir("default"));
+    assertEquals("/opt/data/profiles/scout", ProfilePaths.profileDir("scout"));
   }
 
   @Test
   void readFileAndWriteFilePassThePathAsAPositionalArgument() {
     theProfileExists();
 
-    profiles.readFile(URL, CONTAINER, "/opt/data/profiles/scout/SOUL.md");
+    files.readFile(URL, CONTAINER, "/opt/data/profiles/scout/SOUL.md");
 
     ArgumentCaptor<List<String>> argv = captureArgv();
     verify(dockerExec).runAsUser(anyString(), anyString(), any(), argv.capture(), anyString(),
