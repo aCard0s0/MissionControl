@@ -1,0 +1,118 @@
+// Terminal chrome is pinned to the --term-* tokens — dark in both themes.
+:host {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--term-line);
+  background: var(--term-bg);
+  color: var(--term-text);
+  min-width: 0;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 10px;
+  letter-spacing: .18em;
+  cursor: pointer;
+  user-select: none;
+  .chev { color: var(--term-acc); }
+  .faint { color: var(--term-faint); letter-spacing: .04em; }
+  .status { color: var(--term-faint); letter-spacing: .04em; &.on { color: var(--term-acc); } }
+  .spacer { flex: 1; }
+  .act {
+    background: none; border: 1px solid var(--term-line); color: var(--term-faint);
+    border-radius: 3px; cursor: pointer; font-size: 11px; line-height: 1;
+    padding: 2px 7px;
+    &:hover { color: var(--term-acc); border-color: var(--term-acc); }
+  }
+}
+// tab strip — wraps instead of clipping so the picker popover can escape
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 0;
+}
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--term-line);
+  border-radius: 4px 4px 0 0;
+  color: var(--term-faint);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  &:hover { color: var(--term-text); }
+  &.act { color: var(--term-text); border-color: var(--term-acc); background: var(--acc-soft); }
+  .lbl { letter-spacing: .02em; &.gone { opacity: .6; text-decoration: line-through; } }
+  .caret, .x {
+    background: none; border: 0; color: var(--term-faint);
+    cursor: pointer; font-size: 11px; line-height: 1; padding: 0 2px;
+    &:hover { color: var(--term-acc); }
+  }
+}
+.add {
+  flex: none;
+  background: none; border: 1px solid var(--term-line); color: var(--term-faint);
+  border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; padding: 1px 8px;
+  &:hover { color: var(--term-acc); border-color: var(--term-acc); }
+}
+// container picker — reuses the .ctx-pop look but in dark term tokens
+.scrim { position: fixed; inset: 0; z-index: 80; }
+.pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 90;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--term-bg);
+  border: 1px solid var(--term-line);
+  border-radius: 6px;
+  box-shadow: 0 18px 60px var(--shadow);
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--term-line);
+    color: var(--term-text);
+    font-size: 11px;
+    cursor: pointer;
+    text-align: left;
+    &:hover { background: var(--acc-soft); }
+    &.sel { background: var(--acc-soft); color: var(--term-acc); }
+    .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .meta { margin-left: auto; color: var(--term-faint); font-size: 10px; }
+  }
+  .none { padding: 10px 12px; color: var(--term-faint); font-size: 11px; }
+}
+.drag {
+  height: 8px;
+  cursor: row-resize;
+  margin: -6px 0 -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;   /* keep touch drags resizing instead of scrolling */
+  .grip {
+    width: 44px; height: 3px; border-radius: 2px;
+    background: var(--term-line);
+  }
+  &:hover .grip, &:active .grip { background: var(--term-acc); }
+}
+.body { position: relative; padding: 4px 8px 8px; }
+// host divs are stacked absolutely inside the mount; only the active one is
+// visible (others stay attached + measurable so their buffers keep filling)
+.mount { position: relative; height: 100%; &.hidden { display: none; } }
+.hint { padding: 12px; color: var(--term-dim); }
