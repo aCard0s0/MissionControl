@@ -292,10 +292,10 @@ class McpRequestValidatorTest {
     // '//host' is a protocol-relative URL, not a path: it would point the gateway elsewhere
     assertEquals("path must start with one /", rejected(managedRequest(r -> r.path = "//evil.test/mcp")));
     assertEquals("path must start with one /", rejected(managedRequest(r -> r.path = "mcp")));
-    // NOTE: normalizePath's own "path must be a relative HTTP path" is swallowed by the
-    // catch block directly below the throw, so a fragment surfaces as the generic message.
-    // Pinned as-is rather than depending on wording the code cannot currently produce.
-    assertEquals("path is invalid", rejected(managedRequest(r -> r.path = "/mcp#frag")));
+    // a fragment is not part of a path the gateway can forward
+    assertEquals("path must be a relative HTTP path", rejected(managedRequest(r -> r.path = "/mcp#frag")));
+    // and something URI cannot parse at all is refused generically
+    assertEquals("path is invalid", rejected(managedRequest(r -> r.path = "/mcp%zz")));
   }
 
   // --- ports --------------------------------------------------------------------------

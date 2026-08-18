@@ -147,13 +147,16 @@ final class McpRequestValidator {
     if (!value.startsWith("/") || value.startsWith("//")) {
       throw new IllegalArgumentException("path must start with one /");
     }
+    URI path;
     try {
-      URI path = URI.create(value);
-      if (path.isAbsolute() || path.getHost() != null || path.getFragment() != null) {
-        throw new IllegalArgumentException("path must be a relative HTTP path");
-      }
-    } catch (IllegalArgumentException e) {
+      path = URI.create(value);
+    } catch (IllegalArgumentException malformed) {
       throw new IllegalArgumentException("path is invalid");
+    }
+    // outside the try: inside it, this throw was caught by the catch below and reported as the
+    // generic "path is invalid", so the reason a path was refused never reached the operator
+    if (path.isAbsolute() || path.getHost() != null || path.getFragment() != null) {
+      throw new IllegalArgumentException("path must be a relative HTTP path");
     }
     return value;
   }
