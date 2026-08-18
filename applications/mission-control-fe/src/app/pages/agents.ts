@@ -39,8 +39,6 @@ export class AgentsPage {
   protected readonly ago = ago;
   protected readonly createOpen = signal(false);
 
-  /** The terminal panel is live-mode only, so the shell shortcut is too. */
-  protected readonly liveMode = this.store.config.dataMode === 'live';
   protected readonly agentCommand = agentSessionCommand;
 
   protected readonly totals = computed(() => {

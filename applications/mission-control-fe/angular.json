@@ -93,10 +93,10 @@
               "src/**/*.html"
             ],
             "coverageThresholds": {
-              "statements": 69,
-              "branches": 65,
-              "functions": 66,
-              "lines": 72
+              "statements": 71,
+              "branches": 68,
+              "functions": 67,
+              "lines": 74
             }
           }
         }

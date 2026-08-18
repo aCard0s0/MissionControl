@@ -67,11 +67,11 @@ class DockerGatewayTest {
   /** Separate client for endpoints that stream or long-poll — see DockerClients. */
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true), dockerExec);
 
   /** One-shot bootstrap containers are the deployer's own step, driven directly. */
   private final HermesDeployer deployer = DockerWiring.deployer(
-      clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+      clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true), dockerExec);
 
   @BeforeEach
   void setUp() {

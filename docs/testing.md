@@ -146,8 +146,8 @@ tests that assert a mock was called.
 ## The one test that runs the whole application
 
 `HttpSurfaceTest` boots the app (`@SpringBootTest` on a random port, `@ActiveProfiles("test")`,
-so `data-mode: mock` keeps startup away from any daemon) and asserts what only the assembled
-stack decides:
+so `mc.startup-reconcile: false` keeps startup away from any daemon) and asserts what only the
+assembled stack decides:
 
 - **No mutating route answers 5xx to a body it should reject.** This is a sweep, not a list: it
   walks every POST/PUT/PATCH/DELETE the application maps, sends an empty body and `{}`, and fails

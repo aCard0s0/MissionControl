@@ -72,63 +72,29 @@ templates and are passed to Compose at execution time rather than written into
 the generated YAML. As with all container environment variables, their runtime
 values remain visible to principals with Docker-daemon access.
 
-## Frontend data modes
+## Frontend data loading
 
 `window.__MC_CONFIG__` (served by the backend at `/config.js`, dev default in
-`public/config.js`) selects the mode:
+`public/config.js`) carries `apiBaseUrl` and `dockerSocket`. There is one mode: the
+store starts empty, health-checks the backend, then polls — containers every 10s,
+stats per running container every 3s (network rates derived client-side from
+cumulative counters), selected-container logs every 5s. Log requests are
+non-overlapping and container-scoped because Docker stdout/stderr has no reliable
+profile identity.
 
-- **mock** — seeded demo fleet + simulated telemetry; used for design work and demos.
-- **live** — starts empty, health-checks the backend, then polls:
-  containers every 10s, stats per running container every 3s (network rates
-  derived client-side from cumulative counters), selected-container logs every
-  5s. Log requests are non-overlapping and container-scoped because Docker
-  stdout/stderr has no reliable profile identity. Failures fail closed:
-  missing/broken config lands in live (empty +
-  banner), never silently in demo data.
+An unreachable backend shows an empty dashboard and a banner naming the address it
+could not reach, and retries every 10s. That is deliberate: seeded demo inventory
+used to fill the same screens, and an operator could not tell it from real state.
 
-Hermes profile/agent introspection is wired in live mode through bounded
-`docker exec` calls and profile-file reads. SOUL, config, setup, skills, MCP,
-integrations, and sessions are live. Each agent Activity tab polls its own
-supervised gateway log under `/opt/data/logs/gateways/{profile}` every five
-seconds; it does not reuse the container-wide Docker stream. Calendar jobs and
-webhooks remain mock-only.
+Hermes profile/agent introspection runs through bounded `docker exec` calls and
+profile-file reads. SOUL, config, setup, skills, MCP, integrations and sessions are
+all read from the container. Each agent Activity tab polls its own supervised
+gateway log under `/opt/data/logs/gateways/{profile}` every five seconds; it does
+not reuse the container-wide Docker stream.
 
-### How mock mode is served
-
-Mock mode is being moved from a branch inside every store slice to a fake HTTP
-layer. `MockHttp` (`core/api/mock-http.ts`) stands in for `ApiHttp`, the one class
-that talks to `fetch`, so in mock mode the resource clients under `core/api` run
-exactly as they do against the server — same paths, same bodies, same error
-unwrapping — and a converted slice has one code path instead of a live half and a
-mock half that can drift.
-
-Converted so far: **docker hosts**, **board tasks**. A path `MockHttp` has no
-route for throws, so an unconverted slice reaching it fails loudly rather than
-reading empty state; those slices still answer from their own `ctx.mock` branch
-and never get there.
-
-Why this order, and what is left:
-
-1. **Dual implementations** — around 45 sites where a live call and a local
-   mutation express the same operation twice (`agent-mcp-store`,
-   `agent-setup-store`, `agent-skill-store`, `container-lifecycle`, `agent-store`,
-   `provider-store`, `template-store`, `mcp-catalog-store`). These are the
-   duplication worth removing, and each is one domain's routes plus its seed.
-2. **Simulations** — the fake daemon probe, `pingIntegrations`, the mock MCP
-   operation results and log tails. They belong to the fake backend, not to the
-   store; the host probe already moved.
-3. **Seeds** — `signal(ctx.mock ? seedX() : [])` in ten slices. These move with
-   their domain, and each conversion trades synchronous seeding for a read on
-   startup, so a mock-mode page paints one tick before its data.
-4. **Not this at all** — calendar jobs and webhooks have no backend to be a fake
-   of. Their `ctx.mock` is not a duplicated implementation, it is a capability
-   flag ("live mode cannot do this yet"). Collapsing those into `MockHttp` would
-   invent an endpoint the server does not serve; they need a feature flag, or a
-   backend.
-
-`MockTelemetry` stays where it is until the container and agent domains convert:
-it drifts stats and emits log lines by writing into slice signals directly, which
-is the fake backend's job once those slices read through one.
+Two features have no backend behind them yet — **calendar jobs** and **webhooks**.
+Their pages render empty and creating one toasts that it is unavailable. They are
+the only surfaces in the app whose store slice holds nothing.
 
 ## Terminal
 
@@ -155,13 +121,11 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   registers the shell, so anything sent on `open` would be dropped). Clicking the same agent
   again focuses the tab it already made; re-pointing that tab at another container clears the
   command, so `hermes -p <profile>` never runs where the profile does not exist.
-- **Live only.** The panel needs the live backend — it is disabled in mock mode.
 
 ## Environment variables (combined image)
 
 | Var | Default | Meaning |
 |---|---|---|
-| `MC_DATA_MODE` | `live` | `live` or `mock` (demo data) |
 | `MC_DOCKER_SOCKET` | `unix:///var/run/docker.sock` | local daemon endpoint |
 | `MC_CONTAINER_FILTER` | `hermes` | substring marking Hermes-related containers (`?all=true` bypasses) |
 | `MC_HERMES_IMAGE` | `nousresearch/hermes-agent` | image used by deploys |
@@ -239,8 +203,8 @@ cd applications/mission-control-server && MC_ALLOW_DEV_KEY=true mvn spring-boot:
 cd applications/mission-control-fe && npm start
 ```
 
-Set `dataMode` in `applications/mission-control-fe/public/config.js` to `mock`
-(default, no backend needed) or `live` (real daemon via the backend).
+`public/config.js` points the dev frontend at the backend; the combined image
+serves the same file from `MC_*` environment variables instead.
 
 Backend tests follow the seams and conventions in [testing.md](testing.md) — most of the code
 worth testing here sits behind a Docker daemon, a provider API or an async executor, and that

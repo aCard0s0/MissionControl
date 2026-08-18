@@ -47,7 +47,7 @@ class DockerGatewayReadThroughTest {
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true), dockerExec);
 
   /** The last callback the gateway handed to the log stream, so a test can drive it late. */
   private final AtomicReference<ResultCallback<Frame>> lastLogCallback = new AtomicReference<>();
@@ -188,8 +188,7 @@ class DockerGatewayReadThroughTest {
 
   @Test
   void theReportedRepositoryDropsATagOnTheConfiguredImage() {
-    DockerGateway tagged = DockerWiring.gateway(clients, new AppProperties(
-        "live", "", "unix:///sock", "nousresearch/hermes-agent:v2026.7.7", "hermes", "test"), dockerExec);
+    DockerGateway tagged = DockerWiring.gateway(clients, new AppProperties("", "unix:///sock", "nousresearch/hermes-agent:v2026.7.7", "hermes", "test", true), dockerExec);
 
     // the frontend compares this against ContainerDto.image, which is always bare; a
     // tagged value compares unequal and silently retires the update badge fleet-wide
@@ -199,9 +198,9 @@ class DockerGatewayReadThroughTest {
   @Test
   void anUnconfiguredHermesImageReportsAnEmptyRepository() {
     DockerGateway unset = DockerWiring.gateway(clients,
-        new AppProperties("live", "", "unix:///sock", null, "hermes", "test"), dockerExec);
+        new AppProperties("", "unix:///sock", null, "hermes", "test", true), dockerExec);
     DockerGateway blank = DockerWiring.gateway(clients,
-        new AppProperties("live", "", "unix:///sock", "", "hermes", "test"), dockerExec);
+        new AppProperties("", "unix:///sock", "", "hermes", "test", true), dockerExec);
 
     // '?' or 'null' would read as a repository name and match nothing the frontend holds
     assertEquals("", unset.hermesImageRepository());

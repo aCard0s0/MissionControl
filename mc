@@ -17,7 +17,6 @@ TAG="${TAG:-latest}"
 NAME="${NAME:-mission-control}"
 PORT="${PORT:-8080}"
 BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
-MC_DATA_MODE="${MC_DATA_MODE:-live}"
 MC_CONTAINER_FILTER="${MC_CONTAINER_FILTER:-hermes}"
 DATA_VOLUME="${DATA_VOLUME:-mission-control-data}"
 MC_NO_KEYCHAIN="${MC_NO_KEYCHAIN:-}"
@@ -38,7 +37,7 @@ mc — Mission Control manager (combined image: ${IMAGE}:${TAG})
 Usage: ./mc <command> [flags]
 
 Commands:
-  start [--build] [--ts=on|off] [--ollama=on|off] [--mock] [--port=N] [--no-socket] [--no-keychain]
+  start [--build] [--ts=on|off] [--ollama=on|off] [--port=N] [--no-socket] [--no-keychain]
                      deploy — default --ts=on (behind tailscale, tailnet-only);
                      --ts=off runs plain docker with a published port;
                      the ollama service is NOT started by default — --ollama=on
@@ -59,7 +58,7 @@ Examples:
   ./mc start                  # tailscale flavor — http://mission-control.<tailnet>.ts.net
   ./mc start --build          # rebuild the image, then deploy
   ./mc start --ts=off         # plain docker — http://localhost:${PORT}
-  ./mc start --ts=off --mock --port=9000   # demo mode on a custom port
+  ./mc start --ts=off --port=9000          # plain mode on a custom port
   ./mc start --ollama=on      # deploy + local model runtime on port ${OLLAMA_PORT}
   ./mc ollama up              # add the ollama service to a running deploy
   ./mc ollama pull llama3.2   # pull a model into the ollama service
@@ -68,7 +67,7 @@ Examples:
   ./mc logs -f
   ./mc down --volumes
 
-Env overrides: IMAGE TAG NAME PORT BIND_ADDRESS MC_DATA_MODE MC_CONTAINER_FILTER DATA_VOLUME
+Env overrides: IMAGE TAG NAME PORT BIND_ADDRESS MC_CONTAINER_FILTER DATA_VOLUME
                BIND_ADDRESS defaults to 127.0.0.1; remote exposure has no app auth
                OLLAMA_PORT  (host port for the ollama service, default 11434)
                MC_NO_KEYCHAIN=1  (bypass macOS keychain creds in headless runs)
@@ -210,7 +209,7 @@ start_ts() {  # $1 = --build flag value
   echo "  docker compose -p mission-control -f ${COMPOSE_FILE} exec tailscale tailscale status"
 }
 
-start_plain() {  # $1 = --build flag, $2 = --mock flag, $3 = --no-socket flag
+start_plain() {  # $1 = --build flag, $2 = --no-socket flag
   ensure_image "$1"
   if ts_exists; then
     echo "→ taking down the tailscale flavor (switching to plain docker)"
@@ -219,11 +218,8 @@ start_plain() {  # $1 = --build flag, $2 = --mock flag, $3 = --no-socket flag
     compose_ro rm -sf tailscale mission-control
   fi
 
-  local mode="${MC_DATA_MODE}"
-  if [[ -n "$2" ]]; then mode="mock"; fi
-
   local socket_args=(-v /var/run/docker.sock:/var/run/docker.sock)
-  if [[ -n "$3" ]]; then
+  if [[ -n "$2" ]]; then
     socket_args=()
     echo "→ socket mount disabled — container management will be unavailable"
   fi
@@ -238,7 +234,6 @@ start_plain() {  # $1 = --build flag, $2 = --mock flag, $3 = --no-socket flag
     ${socket_args[@]+"${socket_args[@]}"} \
     -v "${DATA_VOLUME}:/data" \
     --env-file "${APP_ENV_FILE}" \
-    -e MC_DATA_MODE="${mode}" \
     -e MC_CONTAINER_FILTER="${MC_CONTAINER_FILTER}" \
     --restart unless-stopped \
     "${IMAGE}:${TAG}" >/dev/null
@@ -282,7 +277,7 @@ stop_ollama() {
 cmd_start() {
   # ollama is opt-in: empty means "leave whatever is there alone", so a plain
   # './mc start' neither deploys nor tears down the local model runtime
-  local ts="on" build="" mock="" no_socket="" ollama="" arg
+  local ts="on" build="" no_socket="" ollama="" arg
   for arg in "$@"; do
     case "${arg}" in
       --build)     build=1 ;;
@@ -290,7 +285,6 @@ cmd_start() {
       --ts=off)    ts="off" ;;
       --ollama=on)  ollama="on" ;;
       --ollama=off) ollama="off" ;;
-      --mock)      mock=1 ;;
       --port=*)    PORT="${arg#--port=}" ;;
       --no-socket) no_socket=1 ;;
       --no-keychain) MC_NO_KEYCHAIN=1 ;;
@@ -301,12 +295,12 @@ cmd_start() {
   require_docker
   ensure_app_secret
   if [[ "${ts}" == "on" ]]; then
-    if [[ -n "${mock}${no_socket}" ]]; then
-      echo "→ note: --mock/--port/--no-socket only apply to --ts=off — ignored"
+    if [[ -n "${no_socket}" ]]; then
+      echo "→ note: --port/--no-socket only apply to --ts=off — ignored"
     fi
     start_ts "${build}"
   else
-    start_plain "${build}" "${mock}" "${no_socket}"
+    start_plain "${build}" "${no_socket}"
   fi
   case "${ollama}" in
     on)  start_ollama ;;

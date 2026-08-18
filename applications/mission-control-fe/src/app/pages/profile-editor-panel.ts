@@ -174,9 +174,8 @@ export class ProfileEditorPanel {
     if (!id) return;
     draft.id = id;
     // The source id is request-only. Reload the backend-materialized shape so a
-    // second save in the same open editor cannot re-read a changed catalog record.
-    // Mock mode may retain structural extras, so copy only public TemplateMcp
-    // fields explicitly.
+    // second save in the same open editor cannot re-read a changed catalog record,
+    // copying only the public TemplateMcp fields.
     const saved = this.store.templateById(id);
     draft.mcpServers = (saved?.mcpServers ?? draft.mcpServers).map(detachedTemplateMcp);
     this.saved.emit(id);

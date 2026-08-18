@@ -36,8 +36,8 @@ class HealthAndRuntimeConfigControllerTest {
         .build();
   }
 
-  private static AppProperties props(String dataMode, String apiBaseUrl, String dockerSocket) {
-    return new AppProperties(dataMode, apiBaseUrl, dockerSocket, "hermes/agent:latest", "hermes", "0.1.0");
+  private static AppProperties props(String apiBaseUrl, String dockerSocket) {
+    return new AppProperties(apiBaseUrl, dockerSocket, "hermes/agent:latest", "hermes", "0.1.0", true);
   }
 
   @Test
@@ -45,7 +45,7 @@ class HealthAndRuntimeConfigControllerTest {
     HostService hosts = mock(HostService.class);
     when(hosts.isLocalDaemonConnected()).thenReturn(true);
 
-    mvcFor(props("live", "", SOCKET), hosts).perform(get("/health"))
+    mvcFor(props("", SOCKET), hosts).perform(get("/health"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("ok"))
         .andExpect(jsonPath("$.version").value("0.1.0"))
@@ -59,7 +59,7 @@ class HealthAndRuntimeConfigControllerTest {
 
     // the daemon being down is data, not a server failure — a 500 here would take the
     // dashboard's own status indicator and the container healthcheck down with it
-    mvcFor(props("live", "", SOCKET), hosts).perform(get("/health"))
+    mvcFor(props("", SOCKET), hosts).perform(get("/health"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("ok"))
         .andExpect(jsonPath("$.dockerConnected").value(false));
@@ -67,13 +67,12 @@ class HealthAndRuntimeConfigControllerTest {
 
   @Test
   void configJsIsServedAsJavascriptWithNoStoreAndCarriesEveryConfiguredValue() throws Exception {
-    mvcFor(props("mock", "https://mc.example/api", SOCKET), mock(HostService.class))
+    mvcFor(props("https://mc.example/api", SOCKET), mock(HostService.class))
         .perform(get("/config.js"))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith("text/javascript"))
         // the browser must not cache a config that changes with the deployment
         .andExpect(header().string("Cache-Control", Matchers.containsString("no-store")))
-        .andExpect(content().string(Matchers.containsString("dataMode: 'mock'")))
         .andExpect(content().string(Matchers.containsString("apiBaseUrl: 'https://mc.example/api'")))
         .andExpect(content().string(Matchers.containsString("dockerSocket: '" + SOCKET + "'")));
   }
@@ -82,7 +81,7 @@ class HealthAndRuntimeConfigControllerTest {
   void aSingleQuoteInAConfigValueCannotBreakOutOfTheScriptLiteral() throws Exception {
     String hostile = "');alert(1);//";
 
-    mvcFor(props("live", hostile, SOCKET), mock(HostService.class))
+    mvcFor(props(hostile, SOCKET), mock(HostService.class))
         .perform(get("/config.js"))
         .andExpect(status().isOk())
         // the quote is escaped, so the literal continues rather than closing and handing
@@ -95,7 +94,7 @@ class HealthAndRuntimeConfigControllerTest {
   void aClosingScriptTagInAConfigValueIsNeutralised() throws Exception {
     // </script> inside an inline script ends the block regardless of JS quoting, so
     // escaping the slash is the only thing standing between a config value and an XSS
-    mvcFor(props("live", "</script><script>alert(1)</script>", SOCKET), mock(HostService.class))
+    mvcFor(props("</script><script>alert(1)</script>", SOCKET), mock(HostService.class))
         .perform(get("/config.js"))
         .andExpect(status().isOk())
         .andExpect(content().string(Matchers.not(Matchers.containsString("</script>"))))

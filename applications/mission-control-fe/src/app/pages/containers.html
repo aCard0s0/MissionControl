@@ -99,11 +99,11 @@
 
 @if (!store.containers().length) {
   <div class="panel empty" data-reveal>
-    @if (store.config.dataMode === 'live' && store.backendStatus() !== 'connected') {
+    @if (store.backendStatus() !== 'connected') {
       <p class="mono dim">No containers — waiting for the Mission Control backend.</p>
       <p class="lock-hint">the banner above shows the connection state; discovery starts as soon as it connects</p>
     } @else {
-      <p class="mono dim">No Hermes containers detected{{ store.config.dataMode === 'live' ? ' on the connected hosts' : '' }}.</p>
+      <p class="mono dim">No Hermes containers detected on the connected hosts.</p>
       <p class="lock-hint">deploy one above, or run <code>docker run -d nousresearch/hermes-agent</code></p>
     }
   </div>

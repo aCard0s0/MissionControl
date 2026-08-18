@@ -17,9 +17,7 @@
   <div class="panel empty" data-reveal>
     <p class="mono dim">No profiles in this container.</p>
     <p class="lock-hint">equivalent CLI: <code>hermes profile create &lt;name&gt;</code></p>
-    @if (store.config.dataMode === 'live') {
-      <p class="lock-hint">inspect profiles directly: <code>docker exec -it &lt;container&gt; hermes profile list</code></p>
-    }
+    <p class="lock-hint">inspect profiles directly: <code>docker exec -it &lt;container&gt; hermes profile list</code></p>
   </div>
 }
 
@@ -57,10 +55,7 @@
         </div>
       </a>
       <button class="btn sm ghost shell-btn" type="button"
-              [disabled]="!liveMode"
-              [title]="liveMode
-                ? 'open a terminal running ' + (agentCommand(a.name) ?? 'a shell in ' + a.name)
-                : 'the web terminal needs the live backend'"
+              [title]="'open a terminal running ' + (agentCommand(a.name) ?? 'a shell in ' + a.name)"
               (click)="openShell(a)">shell →</button>
     </div>
   }

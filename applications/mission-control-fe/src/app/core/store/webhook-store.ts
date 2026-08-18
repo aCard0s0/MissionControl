@@ -1,10 +1,10 @@
 import { WritableSignal, computed, signal } from '@angular/core';
 import { Webhook } from '../models';
-import { seedWebhooks } from '../mock-data';
 import { AgentStore } from './agent-store';
-import { StoreContext, nid } from './store-context';
+import { StoreContext } from './store-context';
 
-/** Inbound webhooks, each owned by one profile. Mock-only, like jobs. */
+/** Inbound webhooks, each owned by one profile. Like jobs, there is no endpoint
+ *  behind them yet, so this holds nothing. */
 export class WebhookStore {
   readonly webhooks: WritableSignal<Webhook[]>;
 
@@ -14,19 +14,11 @@ export class WebhookStore {
   });
 
   constructor(private readonly ctx: StoreContext, private readonly agents: AgentStore) {
-    this.webhooks = signal(ctx.mock ? seedWebhooks() : []);
+    this.webhooks = signal([]);
   }
 
   add(agentId: string, name: string, slug: string, events: string[]): void {
-    if (!this.ctx.mock) {
-      this.ctx.toast('webhooks require the hermes adapter — not available in live mode yet');
-      return;
-    }
-    this.webhooks.update(ws => [...ws, {
-      id: nid('w'), agentId, name, slug,
-      secretMasked: 'whsec_…' + Math.random().toString(16).slice(2, 6),
-      events, active: true, deliveries: [],
-    }]);
+    this.ctx.toast('webhooks require the hermes adapter — not available yet');
   }
 
   toggle(id: string): void {

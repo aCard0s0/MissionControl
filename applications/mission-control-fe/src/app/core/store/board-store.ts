@@ -3,8 +3,7 @@ import { BoardColumn, BoardTask } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
 
-/** The kanban board. Moves are optimistic and roll back if the backend says no —
- *  in mock data mode that backend is {@link MockHttp}, so this has one path. */
+/** The kanban board. Moves are optimistic and roll back if the backend says no. */
 export class BoardStore {
   readonly tasks: WritableSignal<BoardTask[]>;
 

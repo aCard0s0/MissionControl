@@ -45,7 +45,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class McpRegistryLifecycleTest {
 
   private static final AppProperties LIVE_MODE =
-      new AppProperties("live", "", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test");
+      new AppProperties("", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test", true);
 
   private SqliteTestDatabase database;
   private McpServerRepository repository;

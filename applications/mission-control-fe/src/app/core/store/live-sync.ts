@@ -25,21 +25,19 @@ const POLL = {
 const RETRY_MS = 10_000;
 
 /**
- * Live mode's clock: probes the backend, loads everything once it answers, and
- * then keeps each domain fresh on its own period. In mock mode none of this runs
- * — {@link MockTelemetry} plays that part instead.
+ * The store's clock: probes the backend, loads everything once it answers, and
+ * then keeps each domain fresh on its own period.
  */
 export class LiveSync {
-  /** Banner text shown app-wide while live mode has no working backend. */
+  /** Banner text shown app-wide while there is no working backend. */
   readonly notice = computed(() => {
     switch (this.ctx.backendStatus()) {
-      case 'mock':
       case 'connected': return null;
-      case 'connecting': return 'live mode — connecting to backend…';
+      case 'connecting': return 'connecting to backend…';
       case 'unreachable':
         return this.ctx.config.apiBaseUrl
-          ? `live mode — backend unreachable at ${this.ctx.config.apiBaseUrl}, retrying…`
-          : 'live mode — backend unreachable (is mission-control-server running?), retrying…';
+          ? `backend unreachable at ${this.ctx.config.apiBaseUrl}, retrying…`
+          : 'backend unreachable (is mission-control-server running?), retrying…';
     }
   });
 

@@ -1,13 +1,55 @@
 import '@angular/compiler';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HermesStore } from '../core/hermes-store';
+import { ApiModelProvider } from '../core/hermes-api';
+import { ProfileTemplate } from '../core/models';
 import { AgentProfilesPage } from './agent-profiles';
 
-// A real HermesStore in mock mode, so this covers the editor against the store's
-// actual seeded templates — the way an operator opens one and edits it.
+const llm: ApiModelProvider[] = [
+  { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
+  { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
+    envVar: 'ANTHROPIC_API_KEY' },
+];
+
+const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
+  id: 'pt-ops', name: 'ops-sre', description: 'Production SRE copilot.',
+  provider: 'anthropic', model: 'claude-fable-5', baseUrl: '', cwd: '/opt/data',
+  soul: '# SOUL.md — ops-sre\n', memory: '# MEMORY.md\n',
+  skills: ['daily-briefing', 'web-research'],
+  mcpServers: [
+    { name: 'github', transport: 'http', url: 'https://api.github.test/mcp', enabled: true },
+    { name: 'grafana', transport: 'stdio', command: 'mcp-grafana', args: '--url http://g:3000', enabled: true },
+  ],
+  secrets: [
+    { key: 'ANTHROPIC_API_KEY', set: true, recoverable: true },
+    { key: 'GITHUB_TOKEN', set: true, recoverable: true },
+  ],
+  createdAt: 1, updatedAt: 2, ...patch,
+});
+
+/** Only what the page, the editor pane and the deploy dialog reach for. */
+const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
+  profileTemplates: signal(templates),
+  templateById: (id: string | null) => templates.find(t => t.id === id) ?? null,
+  saveTemplate: vi.fn().mockResolvedValue('pt-new'),
+  deleteTemplate: vi.fn().mockResolvedValue(undefined),
+  deployTemplate: vi.fn().mockResolvedValue('a-new'),
+  mcpServers: signal([]),
+  mcpServerById: () => null,
+  llmProviders: signal(llm),
+  modelProviders: signal([]),
+  containers: signal([]),
+  selectedContainerId: signal(''),
+  toast: vi.fn(),
+});
+
 const render = () => {
-  TestBed.configureTestingModule({ providers: [provideRouter([])] });
+  TestBed.configureTestingModule({
+    providers: [provideRouter([]), { provide: HermesStore, useValue: storeStub() }],
+  });
   const fixture = TestBed.createComponent(AgentProfilesPage);
   fixture.detectChanges();
   return fixture;
@@ -59,12 +101,7 @@ const openTemplate = (fixture: Fixture, name: string): void => {
 };
 
 describe('AgentProfilesPage', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    window.__MC_CONFIG__ = {
-      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
-    };
-  });
+  beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
     vi.clearAllTimers();

@@ -53,7 +53,7 @@ class HermesDeployerTest {
   /** Endpoints that stream or long-poll (/wait, image pull) run on their own client. */
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final HermesDeployer subject = DockerWiring.deployer(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final HermesDeployer subject = DockerWiring.deployer(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true), dockerExec);
 
   @BeforeEach
   void setUp() {

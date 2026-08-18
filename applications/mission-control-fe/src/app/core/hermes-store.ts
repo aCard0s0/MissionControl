@@ -20,7 +20,6 @@ import { JobStore } from './store/job-store';
 import { LiveSync } from './store/live-sync';
 import { LogStore } from './store/log-store';
 import { McpCatalogStore } from './store/mcp-catalog-store';
-import { MockTelemetry } from './store/mock-telemetry';
 import { ProviderStore } from './store/provider-store';
 import { StoreContext } from './store/store-context';
 import { TemplateStore } from './store/template-store';
@@ -33,15 +32,14 @@ export type { TerminalRequest } from './store/terminal-request-store';
 /**
  * Hermes data store — the single surface every page reads and writes through.
  *
- * In `mock` data mode (the dev default, see public/config.js) it seeds demo data
- * and simulates telemetry; in `live` mode it starts empty and is fed by the
- * backend adapter hitting `apiBaseUrl`. Components only ever see the signals and
- * actions below, so swapping the adapter never touches a page.
+ * It starts empty and is filled by {@link LiveSync} hitting `apiBaseUrl`.
+ * Components only ever see the signals and actions below, so swapping the
+ * backend client never touches a page.
  *
  * The state itself lives in the domain slices under ./store — one per subject,
  * all sharing a {@link StoreContext} that holds the data mode, the API client and
  * the toast channel. This class is the facade over them: it wires the slices
- * together, owns the mock/live clock, and keeps the flat surface the pages use.
+ * together, owns the poll clock, and keeps the flat surface the pages use.
  * All container-scoped views read through the selected container, which enforces
  * the "never mix containers" rule at the store level.
  */
@@ -52,36 +50,26 @@ export class HermesStore {
   private readonly hostStore = new HostStore(this.ctx);
   private readonly containerStore = new ContainerStore(this.ctx);
   private readonly logStore = new LogStore(this.ctx, this.containerStore);
-  private readonly agentStore = new AgentStore(this.ctx, this.containerStore, this.logStore);
-  private readonly skillStore = new AgentSkillStore(this.ctx, this.agentStore, this.logStore);
+  private readonly agentStore = new AgentStore(this.ctx, this.containerStore);
+  private readonly skillStore = new AgentSkillStore(this.ctx, this.agentStore);
   private readonly catalogStore = new McpCatalogStore(this.ctx);
   private readonly agentMcpStore = new AgentMcpStore(this.ctx, this.agentStore, this.catalogStore);
   private readonly setupStore = new AgentSetupStore(this.ctx, this.containerStore, this.agentStore);
   private readonly providerStore = new ProviderStore(this.ctx);
   private readonly imageStore = new ImageCatalogStore(this.ctx, this.containerStore, this.hostStore);
   private readonly templateStore =
-    new TemplateStore(this.ctx, this.containerStore, this.agentStore, this.providerStore);
+    new TemplateStore(this.ctx, this.containerStore, this.agentStore);
   private readonly jobStore = new JobStore(this.ctx, this.containerStore);
   private readonly boardStore = new BoardStore(this.ctx, this.containerStore);
   private readonly webhookStore = new WebhookStore(this.ctx, this.agentStore);
-  private readonly lifecycle = new ContainerLifecycle(
-    this.ctx, this.containerStore, this.agentStore, this.logStore, this.jobStore, this.boardStore,
-    this.webhookStore, this.imageStore);
+  private readonly lifecycle = new ContainerLifecycle(this.ctx, this.containerStore, this.imageStore);
   private readonly terminal = new TerminalRequestStore();
-  private readonly telemetry = new MockTelemetry(this.containerStore, this.agentStore, this.logStore);
   private readonly liveSync = new LiveSync(
     this.ctx, this.hostStore, this.containerStore, this.agentStore, this.logStore, this.boardStore,
     this.templateStore, this.catalogStore, this.providerStore, this.imageStore);
 
   constructor() {
-    if (this.ctx.mock) {
-      // the domains served by MockHttp are read the same way live mode reads them
-      void this.hostStore.refresh();
-      void this.boardStore.refresh();
-      this.telemetry.start();
-    } else {
-      void this.liveSync.probeBackend();
-    }
+    void this.liveSync.probeBackend();
   }
 
   // ── app-wide state ─────────────────────────────────────────────────────

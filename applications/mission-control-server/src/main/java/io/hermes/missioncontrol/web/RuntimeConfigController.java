@@ -24,11 +24,10 @@ public class RuntimeConfigController {
   public ResponseEntity<String> configJs() {
     String js = """
         window.__MC_CONFIG__ = {
-          dataMode: '%s',
           apiBaseUrl: '%s',
           dockerSocket: '%s',
         };
-        """.formatted(escape(props.dataMode()), escape(props.apiBaseUrl()), escape(props.dockerSocket()));
+        """.formatted(escape(props.apiBaseUrl()), escape(props.dockerSocket()));
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
         .contentType(MediaType.parseMediaType("text/javascript"))

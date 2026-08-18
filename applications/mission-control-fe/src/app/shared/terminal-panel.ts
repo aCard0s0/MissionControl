@@ -38,7 +38,6 @@ const MAX_TABS = 12;
 })
 export class TerminalPanel {
   protected readonly store = inject(HermesStore);
-  protected readonly mock = this.store.config.dataMode === 'mock';
   private readonly apiBase = this.store.config.apiBaseUrl || location.origin;
 
   protected readonly open = signal(false);
@@ -56,7 +55,7 @@ export class TerminalPanel {
   private lastSeq = 0;
 
   constructor() {
-    if (!this.mock) this.restoreTabs();
+    this.restoreTabs();
 
     // other pages can summon the panel (e.g. "open terminal" on setup hints,
     // or the agent list's shell shortcut)
@@ -74,7 +73,7 @@ export class TerminalPanel {
       const slot = this.mount()?.nativeElement;
       const list = this.sessions();
       const activeId = this.activeId();
-      if (!slot || !this.open() || this.mock) return;
+      if (!slot || !this.open()) return;
       for (const s of list) {
         if (s.hostEl.parentElement !== slot) {
           slot.appendChild(s.hostEl);   // (re-)park the still-live div in the slot
@@ -89,7 +88,6 @@ export class TerminalPanel {
 
     // persist tab targets (not the live socket/scrollback) on any change
     effect(() => {
-      if (this.mock) return;
       writeTerminalTabs(this.sessions().map(s => s.toJSON()), this.activeId());
     });
 
@@ -131,7 +129,6 @@ export class TerminalPanel {
    * a tab, focuses that one instead of stacking another shell for it.
    */
   private handleRequest(req: TerminalRequest): void {
-    if (this.mock) return;
     if (!this.open()) this.open.set(true);
 
     if (!req.containerId) {
@@ -162,7 +159,6 @@ export class TerminalPanel {
   /** On first open (or external request): seed a tab if empty, then fit. The
    *  render effect attaches + connects every (restored) session. */
   private onOpened(): void {
-    if (this.mock) return;
     if (this.sessions().length === 0) this.addTab();
     queueMicrotask(() => this.active()?.fitNow());
   }

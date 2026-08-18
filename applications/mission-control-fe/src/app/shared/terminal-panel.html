@@ -1,9 +1,7 @@
 <div class="bar mono" (click)="toggle()">
   <span class="chev">{{ open() ? '▾' : '▴' }}</span>
   <span class="title">TERMINAL</span>
-  @if (mock) {
-    <span class="faint">— live mode only</span>
-  } @else if (active(); as a) {
+  @if (active(); as a) {
     <span class="faint">{{ liveLabel(a) }}</span>
     <span class="status" [class.on]="a.status() === 'connected'">{{ a.status() }}</span>
   } @else {
@@ -14,13 +12,13 @@
     <button class="act" (click)="shorter(); $event.stopPropagation()" title="shorter">▼</button>
     <button class="act" (click)="taller(); $event.stopPropagation()" title="taller">▲</button>
   }
-  @if (open() && !mock) {
+  @if (open()) {
     <button class="act" (click)="reconnect(); $event.stopPropagation()" title="restart session">↻</button>
     <button class="act" (click)="clear(); $event.stopPropagation()" title="clear">⌫</button>
   }
 </div>
 
-@if (open() && !mock) {
+@if (open()) {
   <div class="tabs mono">
     @for (s of sessions(); track s.id) {
       <div class="tab" [class.act]="s.id === activeId()" (click)="setActive(s)">
@@ -52,11 +50,9 @@
 @if (open()) {
   <div class="drag" (pointerdown)="dragStart($event)" title="drag to resize"><span class="grip"></span></div>
   <div class="body" [style.height.px]="height.px()">
-    @if (mock) {
-      <p class="hint mono">The terminal needs the live backend — switch dataMode to 'live' in config.js.</p>
-    } @else if (sessions().length === 0) {
+    @if (sessions().length === 0) {
       <p class="hint mono">+ a shell to get started.</p>
     }
-    <div #mount class="mount" [class.hidden]="mock || sessions().length === 0"></div>
+    <div #mount class="mount" [class.hidden]="sessions().length === 0"></div>
   </div>
 }

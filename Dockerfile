@@ -25,8 +25,7 @@ WORKDIR /app
 RUN apk add --no-cache docker-cli docker-cli-compose
 COPY --from=be-build /srv/target/mission-control-server-*.jar app.jar
 
-ENV MC_DATA_MODE=live \
-    MC_API_BASE_URL="" \
+ENV MC_API_BASE_URL="" \
     MC_DOCKER_SOCKET=unix:///var/run/docker.sock \
     MC_DB_PATH=/data/mission-control.db \
     MC_MCP_STACK_DIR=/data/mcp-stacks

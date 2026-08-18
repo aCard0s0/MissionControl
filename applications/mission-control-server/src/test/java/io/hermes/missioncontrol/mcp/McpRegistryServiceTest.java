@@ -25,8 +25,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 class McpRegistryServiceTest {
 
-  private static final AppProperties LIVE_MODE =
-      new AppProperties("live", "", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test");
+  private static final AppProperties PROPS =
+      new AppProperties("", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test", true);
 
   private SqliteTestDatabase database;
   private McpServerRepository repository;
@@ -42,7 +42,7 @@ class McpRegistryServiceTest {
     service = new McpRegistryService(repository, new RetainedResourceRepository(jdbc), links,
         mock(HostService.class), mock(DockerGateway.class),
         new SecretCipher("test-secret", "", false), new ObjectMapper(), mock(ComposeStackManager.class),
-        LIVE_MODE);
+        PROPS);
   }
 
   // one @AfterEach, not two: JUnit 5 does not order sibling teardown methods, and the
@@ -54,26 +54,26 @@ class McpRegistryServiceTest {
   }
 
   @Test
-  void mockModeStartupTouchesNothing() throws Exception {
-    // mock mode drives the Angular store's simulated catalog; seeding real rows or
-    // reaching for a daemon here would create resources the operator never asked for
+  void startupTouchesNothingWhenReconciliationIsOff() throws Exception {
+    // a context test boots the whole application with no daemon behind it, so this
+    // switch has to keep startup from seeding rows or creating real resources
     HostService hosts = mock(HostService.class);
     DockerGateway docker = mock(DockerGateway.class);
-    AppProperties mockMode =
-        new AppProperties("mock", "", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test");
+    AppProperties noReconcile =
+        new AppProperties("", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test", false);
 
-    McpRegistryService mocked = new McpRegistryService(repository,
+    McpRegistryService quiet = new McpRegistryService(repository,
         new RetainedResourceRepository(database.jdbc()), links, hosts, docker,
         new SecretCipher("test-secret", "", false), new ObjectMapper(),
-        mock(ComposeStackManager.class), mockMode);
+        mock(ComposeStackManager.class), noReconcile);
     try {
-      mocked.initialize();
+      quiet.initialize();
 
       verifyNoInteractions(hosts);
       verifyNoInteractions(docker);
       assertTrue(repository.findAll().isEmpty());
     } finally {
-      mocked.close();
+      quiet.close();
     }
   }
 

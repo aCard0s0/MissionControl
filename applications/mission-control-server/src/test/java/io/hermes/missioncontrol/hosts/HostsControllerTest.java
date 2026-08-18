@@ -52,7 +52,7 @@ class HostsControllerTest {
     repository = new HostRepository(database.jdbc());
     hosts = new HostService(
         repository, docker, clients,
-        new AppProperties("live", "", SOCKET, "hermes/agent:latest", "hermes", "test"));
+        new AppProperties("", SOCKET, "hermes/agent:latest", "hermes", "test", true));
     mvc = MockMvcBuilders
         .standaloneSetup(new HostsController(hosts))
         .setControllerAdvice(new ApiExceptionHandler())

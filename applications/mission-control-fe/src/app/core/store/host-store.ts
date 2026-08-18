@@ -3,11 +3,9 @@ import { DockerHost } from '../models';
 import { StoreContext } from './store-context';
 
 /**
- * The docker daemons Mission Control deploys to, and their reachability.
- *
- * One code path: every write goes to the backend and the answer is what lands in
- * the signal. In mock data mode that backend is {@link MockHttp}, which owns the
- * simulated daemon — so there is nothing mode-specific left in here.
+ * The docker daemons Mission Control deploys to, and their reachability. Every
+ * write goes to the backend, and the answer is what lands in the signal — the
+ * daemon decides what is reachable, so nothing here guesses.
  */
 export class HostStore {
   readonly hosts: WritableSignal<DockerHost[]>;
