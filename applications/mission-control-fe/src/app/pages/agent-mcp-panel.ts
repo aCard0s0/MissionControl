@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HermesStore } from '../core/hermes-store';
 import { AgentProfile, McpServer } from '../core/models';
+import { McpEndpointForm } from '../shared/mcp-endpoint-form';
 import { StatusDot } from '../shared/status-dot';
 
 /**
@@ -25,12 +26,8 @@ export class AgentMcpPanel {
 
   protected readonly store = inject(HermesStore);
 
-  // add / edit form
-  protected mcpName = '';
-  protected mcpTransport: McpServer['transport'] = 'http';
-  protected mcpUrl = '';
-  protected mcpCommand = '';
-  protected mcpArgs = '';
+  /** add / edit form — an http endpoint is the common case here */
+  protected readonly form = new McpEndpointForm('http');
   /** original server name when editing an existing server, else null */
   protected readonly editingMcp = signal<string | null>(null);
 
@@ -97,24 +94,15 @@ export class AgentMcpPanel {
     }
   }
 
-  /** valid when the form can be submitted (transport-specific required field present) */
-  protected mcpFormValid(): boolean {
-    if (!this.mcpName.trim()) return false;
-    return this.mcpTransport === 'stdio' ? !!this.mcpCommand.trim() : !!this.mcpUrl.trim();
-  }
-
   protected async saveMcp(): Promise<void> {
-    const name = this.mcpName.trim();
-    if (!name) return;
-    const opts = this.mcpTransport === 'stdio'
-      ? { command: this.mcpCommand.trim(), args: this.mcpArgs.trim() || undefined }
-      : { url: this.mcpUrl.trim() };
-    if (this.mcpTransport === 'stdio' ? !opts.command : !opts.url) return;
+    const opts = this.form.endpoint();
+    const name = this.form.trimmedName();
+    if (!opts) return;
 
     const editing = this.editingMcp();
     const savedOk = editing
-      ? await this.store.updateMcp(this.agentId(), editing, name, this.mcpTransport, opts)
-      : await this.store.addMcp(this.agentId(), name, this.mcpTransport, opts);
+      ? await this.store.updateMcp(this.agentId(), editing, name, this.form.transport, opts)
+      : await this.store.addMcp(this.agentId(), name, this.form.transport, opts);
     if (!savedOk) return;
     this.resetMcpForm();
     const saved = this.serverNamed(name);
@@ -123,20 +111,12 @@ export class AgentMcpPanel {
 
   protected editMcp(m: McpServer): void {
     this.editingMcp.set(m.name);
-    this.mcpName = m.name;
-    this.mcpTransport = m.transport;
-    this.mcpUrl = m.url ?? '';
-    this.mcpCommand = m.command ?? '';
-    this.mcpArgs = m.args ?? '';
+    this.form.load(m);
   }
 
   protected resetMcpForm(): void {
     this.editingMcp.set(null);
-    this.mcpName = '';
-    this.mcpTransport = 'http';
-    this.mcpUrl = '';
-    this.mcpCommand = '';
-    this.mcpArgs = '';
+    this.form.reset();
   }
 
   protected async setMcpConnected(m: McpServer, enabled: boolean): Promise<void> {

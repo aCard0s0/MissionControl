@@ -7,7 +7,7 @@ import {
   BoardColumn, ContainerStatus, CronJob, McpCatalogServerInput, McpServer, ProfileTemplateInput,
   SkillRef,
 } from './models';
-import { AgentMcpStore, McpEndpointOptions } from './store/agent-mcp-store';
+import { AgentMcpStore } from './store/agent-mcp-store';
 import { AgentSetupStore } from './store/agent-setup-store';
 import { AgentSkillStore } from './store/agent-skill-store';
 import { AgentStore } from './store/agent-store';
@@ -26,6 +26,7 @@ import { StoreContext } from './store/store-context';
 import { TemplateStore } from './store/template-store';
 import { TerminalRequestStore } from './store/terminal-request-store';
 import { WebhookStore } from './store/webhook-store';
+import { McpEndpointOptions } from '../shared/mcp-endpoint-form';
 
 export type { TerminalRequest } from './store/terminal-request-store';
 

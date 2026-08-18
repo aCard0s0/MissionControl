@@ -150,19 +150,19 @@
 
           <div class="or mono faint"><span>or add a custom definition</span></div>
           <div class="add-mcp">
-            <input class="input" [(ngModel)]="mcpName" placeholder="server name" />
-            <select class="select" [(ngModel)]="mcpTransport">
+            <input class="input" [(ngModel)]="mcpForm.name" placeholder="server name" />
+            <select class="select" [(ngModel)]="mcpForm.transport">
               <option value="stdio">stdio</option>
               <option value="http">http</option>
               <option value="sse">sse</option>
             </select>
-            @if (mcpTransport === 'stdio') {
-              <input class="input" [(ngModel)]="mcpCommand" placeholder="command" />
-              <input class="input" [(ngModel)]="mcpArgs" placeholder="args (optional)" />
+            @if (mcpForm.stdio) {
+              <input class="input" [(ngModel)]="mcpForm.command" placeholder="command" />
+              <input class="input" [(ngModel)]="mcpForm.args" placeholder="args (optional)" />
             } @else {
-              <input class="input wide" [(ngModel)]="mcpUrl" placeholder="https://endpoint/mcp" />
+              <input class="input wide" [(ngModel)]="mcpForm.url" placeholder="https://endpoint/mcp" />
             }
-            <button class="btn sm" type="button" (click)="addMcp()">add</button>
+            <button class="btn sm" type="button" [disabled]="!mcpForm.valid()" (click)="addMcp()">add</button>
           </div>
         </div>
 

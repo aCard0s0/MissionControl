@@ -430,3 +430,53 @@ describe('HermesStore cross-slice wiring', () => {
     expect(store.containerLogs().every(line => line.msg.length > 0)).toBe(true);
   });
 });
+
+describe('HermesStore catalog MCP links', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('quotes a stdio argument that carries a space when linking a catalog entry', async () => {
+    // the profile stores args as one string; joining raw would split this into
+    // two arguments the next time anything reads it back
+    const store = new HermesStore();
+    const id = await store.saveCatalogMcpServer({
+      name: 'local-tools', description: '', kind: 'stdio', hostId: null, transport: 'stdio',
+      url: null, image: null, platform: null, entrypoint: [], command: [],
+      stdioCommand: 'npx', args: ['-y', '@acme/server', 'two words'],
+      internalPort: null, publishedPort: null, path: null, crossHostUrl: null,
+      headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
+    });
+    const agent = store.agents()[0];
+
+    expect(await store.connectCatalogMcp(agent.id, id, 'tools')).toBe(true);
+
+    expect(store.agentById(agent.id)?.mcp.find(m => m.name === 'tools')).toMatchObject({
+      command: 'npx', args: "-y @acme/server 'two words'",
+    });
+  });
+
+  it('omits the args field entirely for a stdio entry that takes none', async () => {
+    const store = new HermesStore();
+    const id = await store.saveCatalogMcpServer({
+      name: 'bare-tools', description: '', kind: 'stdio', hostId: null, transport: 'stdio',
+      url: null, image: null, platform: null, entrypoint: [], command: [],
+      stdioCommand: 'hermes-mcp', args: [],
+      internalPort: null, publishedPort: null, path: null, crossHostUrl: null,
+      headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
+    });
+    const agent = store.agents()[0];
+
+    expect(await store.connectCatalogMcp(agent.id, id, 'bare')).toBe(true);
+    expect(store.agentById(agent.id)?.mcp.find(m => m.name === 'bare')?.args).toBeUndefined();
+  });
+});
+
