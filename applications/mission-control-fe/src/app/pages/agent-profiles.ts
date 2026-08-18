@@ -6,6 +6,8 @@ import { McpCatalogServer, ProfileTemplate, ProfileTemplateInput, TemplateMcp } 
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
+import { quoteMcpArgs } from '../shared/mcp-args';
+import { McpEndpointForm } from '../shared/mcp-endpoint-form';
 import { OLLAMA_PREFIX, ollamaOptionForBaseUrl } from '../shared/provider-resolve';
 
 interface SecretRow { key: string; value: string; set: boolean; recoverable: boolean; }
@@ -27,7 +29,7 @@ export function catalogTemplateSnapshot(
       name: alias,
       transport: 'stdio',
       command: server.stdioCommand,
-      args: server.args.length ? server.args.map(quoteMcpArg).join(' ') : undefined,
+      args: quoteMcpArgs(server.args),
       enabled: true,
       sourceServerId: server.id,
     };
@@ -41,13 +43,6 @@ export function catalogTemplateSnapshot(
     enabled: true,
     sourceServerId: server.id,
   };
-}
-
-/** Mirrors the backend's shell-style argument tokenizer for an accurate
- * pre-save preview; the backend still materializes the authoritative list. */
-export function quoteMcpArg(value: string): string {
-  if (value && !/[\s'\"]/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
 
 /** Copy only the durable template fields, deliberately dropping request-only
@@ -124,11 +119,8 @@ export class AgentProfilesPage {
 
   // add-row scratch fields
   protected newSkill = '';
-  protected mcpName = '';
-  protected mcpTransport: TemplateMcp['transport'] = 'stdio';
-  protected mcpUrl = '';
-  protected mcpCommand = '';
-  protected mcpArgs = '';
+  /** custom-definition form — templates most often carry a stdio command */
+  protected readonly mcpForm = new McpEndpointForm('stdio');
   protected mcpCatalogId = '';
   protected mcpCatalogAlias = '';
   protected secretKey = '';
@@ -246,20 +238,14 @@ export class AgentProfilesPage {
 
   // ── mcp servers ───────────────────────────────────────────────────────────────
   protected addMcp(): void {
-    const name = this.mcpName.trim();
-    if (!name) return;
-    const stdio = this.mcpTransport === 'stdio';
-    if (stdio && !this.mcpCommand.trim()) return;
-    if (!stdio && !this.mcpUrl.trim()) return;
+    const endpoint = this.mcpForm.endpoint();
+    if (!endpoint) return;
     const server: TemplateMcp = {
-      name, transport: this.mcpTransport, enabled: true,
-      url: stdio ? undefined : this.mcpUrl.trim(),
-      command: stdio ? this.mcpCommand.trim() : undefined,
-      args: stdio && this.mcpArgs.trim() ? this.mcpArgs.trim() : undefined,
+      name: this.mcpForm.trimmedName(), transport: this.mcpForm.transport, enabled: true,
+      ...endpoint,
     };
-    this.mcpServers.update(list => [...list.filter(m => m.name !== name), server]);
-    this.mcpName = this.mcpUrl = this.mcpCommand = this.mcpArgs = '';
-    this.mcpTransport = 'stdio';
+    this.mcpServers.update(list => [...list.filter(m => m.name !== server.name), server]);
+    this.mcpForm.reset();
   }
 
   protected removeMcp(name: string): void {
@@ -351,10 +337,10 @@ export class AgentProfilesPage {
   }
 
   private resetScratch(): void {
-    this.newSkill = this.mcpName = this.mcpUrl = this.mcpCommand = this.mcpArgs = '';
+    this.newSkill = '';
+    this.mcpForm.reset();
     this.mcpCatalogId = this.mcpCatalogAlias = '';
     this.secretKey = this.secretValue = '';
-    this.mcpTransport = 'stdio';
   }
 
 }

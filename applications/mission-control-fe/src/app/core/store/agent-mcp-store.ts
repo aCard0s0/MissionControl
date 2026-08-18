@@ -1,14 +1,9 @@
 import { McpCatalogServer, McpServer } from '../models';
+import { quoteMcpArgs } from '../../shared/mcp-args';
+import { McpEndpointOptions } from '../../shared/mcp-endpoint-form';
 import { AgentStore } from './agent-store';
 import { McpCatalogStore } from './mcp-catalog-store';
 import { StoreContext, nid } from './store-context';
-
-/** Transport-specific endpoint fields for a directly-configured server. */
-export interface McpEndpointOptions {
-  url?: string;
-  command?: string;
-  args?: string;
-}
 
 /**
  * The MCP servers one profile connects to. Two kinds live side by side: servers
@@ -242,6 +237,6 @@ function catalogDefinition(
     error: null, checkedAt: null,
     url: catalog.kind === 'stdio' ? undefined : (catalog.connectionUrl ?? catalog.url ?? undefined),
     command: catalog.kind === 'stdio' ? (catalog.stdioCommand ?? undefined) : undefined,
-    args: catalog.kind === 'stdio' && catalog.args.length ? catalog.args.join(' ') : undefined,
+    args: catalog.kind === 'stdio' ? quoteMcpArgs(catalog.args) : undefined,
   };
 }

@@ -51,6 +51,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -149,7 +150,8 @@ class ApiContractTest {
       "TemplateMcp", Set.of("sourceServerId", "environment", "headers"));
 
   /** The frontend files that declare the wire types. */
-  private static final List<String> SOURCES = List.of("hermes-api.ts", "models.ts");
+  private static final List<String> SOURCES =
+      List.of("api/api-types.ts", "hermes-api.ts", "models.ts");
 
   @Test
   void everyResponseTypeCarriesTheKeysTheFrontendReads() {
@@ -203,7 +205,7 @@ class ApiContractTest {
     Path core = frontendCoreDir();
     assumeTrue(core != null, "mission-control-fe is not in this checkout");
 
-    String api = read(core.resolve("hermes-api.ts"));
+    String api = clientSources(core);
     Map<String, String> aliases = parseAliases(api);
     Set<String> responseTypes = new TreeSet<>();
     Matcher m = Pattern.compile("Promise<([A-Za-z_]\\w*)(?:\\[\\])?(?:\\s*\\|\\s*undefined)?>")
@@ -213,13 +215,36 @@ class ApiContractTest {
       responseTypes.add(type);
     }
     // not payload shapes: a bare value, nothing, or the python-built chat history
-    responseTypes.removeAll(Set.of("T", "void", "ChatMessage"));
+    responseTypes.removeAll(Set.of("T", "void", "boolean", "string", "number", "ChatMessage"));
 
     Set<String> uncovered = new TreeSet<>(responseTypes);
     uncovered.removeAll(CONTRACT.keySet());
 
     assertTrue(uncovered.isEmpty(), () -> "these response types are pinned by nothing: " + uncovered
         + " — add them to CONTRACT so a rename cannot pass unnoticed");
+  }
+
+  /**
+   * Every {@code Api*} interface has to sit in a file {@link #SOURCES} names, or the contract
+   * check above silently passes over it. Splitting the client across files is fine; moving a
+   * wire type out of sight is what this refuses.
+   */
+  @Test
+  void everyWireInterfaceSitsInAFileTheContractReads() {
+    Path core = frontendCoreDir();
+    assumeTrue(core != null, "mission-control-fe is not in this checkout");
+
+    Set<String> scanned = parseInterfaces(core).keySet();
+    Set<String> unscanned = new TreeSet<>();
+    for (Path file : frontendSources(core)) {
+      Matcher m = Pattern.compile("export interface (Api\\w+)").matcher(stripComments(read(file)));
+      while (m.find()) {
+        if (!scanned.contains(m.group(1))) unscanned.add(m.group(1) + " (" + core.relativize(file) + ")");
+      }
+    }
+
+    assertTrue(unscanned.isEmpty(), () -> "wire interfaces the contract cannot see: " + unscanned
+        + " — add the file to SOURCES");
   }
 
   // ── frontend parsing ────────────────────────────────────────────────────────
@@ -238,6 +263,29 @@ class ApiContractTest {
       }
     }
     return out;
+  }
+
+  /** Every TypeScript source under core, excluding specs. */
+  private static List<Path> frontendSources(Path core) {
+    try (Stream<Path> files = Files.walk(core)) {
+      return files
+          .filter(path -> path.toString().endsWith(".ts"))
+          .filter(path -> !path.toString().endsWith(".spec.ts"))
+          .sorted()
+          .toList();
+    } catch (IOException e) {
+      throw new UncheckedIOException("could not walk " + core, e);
+    }
+  }
+
+  /** The API client, however many files it is split across, as one text to scan. */
+  private static String clientSources(Path core) {
+    StringBuilder out = new StringBuilder(read(core.resolve("hermes-api.ts")));
+    Path clients = core.resolve("api");
+    if (Files.isDirectory(clients)) {
+      for (Path file : frontendSources(clients)) out.append('\n').append(read(file));
+    }
+    return out.toString();
   }
 
   /** {@code export type ApiSkillContent = SkillContent;} → alias to target. */

@@ -23,8 +23,10 @@ import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.SocketException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -280,8 +282,23 @@ class McpHealthProbeRequestTest {
 
     probe.check(row("external", "running", REMOTE_HOST));
 
-    assertTrue(errorWrittenToTheRecord() != null);
+    // the reason has to survive an exception that carries no message of its own,
+    // which is what a refused connection often is
+    String error = errorWrittenToTheRecord();
+    assertTrue(error != null && !error.isBlank(), "recorded reason: " + error);
     verify(repository, never()).updateCheck(anyString(), eq("connected"), isNull(), anyLong(), anyLong());
+  }
+
+  @Test
+  void aFailureCarryingNoMessageIsStillRecordedWithItsType() {
+    // ConnectException from the JDK client is frequently message-less; "error" with a
+    // blank reason tells an operator nothing
+    assertEquals("ConnectException", McpHealthProbe.rootMessage(new ConnectException()));
+    assertEquals("Connection refused",
+        McpHealthProbe.rootMessage(new ConnectException("Connection refused")));
+    // the cause is what carries the detail when the wrapper itself has no message
+    assertEquals("Network is unreachable",
+        McpHealthProbe.rootMessage(new IOException((String) null, new SocketException("Network is unreachable"))));
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────

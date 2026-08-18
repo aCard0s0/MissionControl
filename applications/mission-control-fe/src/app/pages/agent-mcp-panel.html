@@ -42,19 +42,19 @@
   </div>
   <div class="panel-b">
     <div class="mcp-add">
-      <input class="input name-in" [(ngModel)]="mcpName" placeholder="server name e.g. github" />
-      <select class="select transport-in" [(ngModel)]="mcpTransport">
+      <input class="input name-in" [(ngModel)]="form.name" placeholder="server name e.g. github" />
+      <select class="select transport-in" [(ngModel)]="form.transport">
         <option value="http">http</option>
         <option value="sse">sse</option>
         <option value="stdio">stdio</option>
       </select>
-      @if (mcpTransport === 'stdio') {
-        <input class="input cmd-in" [(ngModel)]="mcpCommand" placeholder="command e.g. npx" />
-        <input class="input args-in" [(ngModel)]="mcpArgs" placeholder="args e.g. @modelcontextprotocol/server-github" />
+      @if (form.stdio) {
+        <input class="input cmd-in" [(ngModel)]="form.command" placeholder="command e.g. npx" />
+        <input class="input args-in" [(ngModel)]="form.args" placeholder="args e.g. @modelcontextprotocol/server-github" />
       } @else {
-        <input class="input url-in" [(ngModel)]="mcpUrl" placeholder="url e.g. https://mcp.example.com" />
+        <input class="input url-in" [(ngModel)]="form.url" placeholder="url e.g. https://mcp.example.com" />
       }
-      <button class="btn primary" [disabled]="!mcpFormValid()" (click)="saveMcp()">
+      <button class="btn primary" [disabled]="!form.valid()" (click)="saveMcp()">
         {{ editingMcp() ? 'update' : 'connect' }}
       </button>
       @if (editingMcp()) {
