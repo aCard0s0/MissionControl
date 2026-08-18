@@ -280,8 +280,12 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
     teardown(shells.remove(session.getId()), status, "ws-closed");
   }
 
-  /** Reaper tick: ping each live session and reap the stale ones. */
-  private void sweep() {
+  /**
+   * Reaper tick: ping each live session and reap the stale ones. Package-private so a test can
+   * drive one tick directly: on the scheduler this only runs once per heartbeat interval, and
+   * the leak it exists to prevent is invisible until it has.
+   */
+  void sweep() {
     long now = System.currentTimeMillis();
     for (Shell shell : shells.values()) {   // ConcurrentHashMap iterator is weakly consistent — safe
       try {

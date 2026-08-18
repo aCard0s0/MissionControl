@@ -127,7 +127,10 @@ final class McpRequestValidator {
   }
 
   private static String requireTransport(String transport) {
-    if (!Set.of("http", "sse").contains(transport)) {
+    // not Set.of(...).contains(transport): an omitted transport is null, and Set.of rejects a
+    // null argument with an NPE — which leaves the handler no IllegalArgumentException to turn
+    // into a 400 and reports a missing field as a 500
+    if (!("http".equals(transport) || "sse".equals(transport))) {
       throw new IllegalArgumentException("transport must be http or sse");
     }
     return transport;
