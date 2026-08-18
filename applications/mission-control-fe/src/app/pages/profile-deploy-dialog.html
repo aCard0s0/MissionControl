@@ -1,0 +1,28 @@
+<div class="scrim" (click)="closed.emit()">
+  <div class="modal" (click)="$event.stopPropagation()">
+    <div class="panel-h">deploy — {{ template().name }}</div>
+    <div class="modal-b">
+      <p class="dim">Creates a new agent in the chosen container and applies this blueprint —
+        soul, memory, skills, MCP servers, and keys.</p>
+      <div class="field">
+        <label>target container</label>
+        <select class="select" [(ngModel)]="containerId">
+          @for (c of store.containers(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+        </select>
+      </div>
+      <div class="field">
+        <label>agent name</label>
+        <input class="input" [(ngModel)]="name" placeholder="ops-bot" />
+      </div>
+      @if (!store.containers().length) {
+        <p class="lock-hint">no containers available — deploy one from the Containers page first.</p>
+      }
+      <div class="modal-actions">
+        <button class="btn ghost" (click)="closed.emit()">cancel</button>
+        <button class="btn primary"
+                [disabled]="!containerId || !name.trim() || busy()"
+                (click)="deploy()">{{ busy() ? 'deploying…' : 'deploy agent' }}</button>
+      </div>
+    </div>
+  </div>
+</div>

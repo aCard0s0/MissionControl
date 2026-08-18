@@ -20,7 +20,7 @@
       </div>
     }
     @for (t of store.profileTemplates(); track t.id) {
-      <div class="panel tmpl" [class.active]="editingId() === t.id" (click)="edit(t)">
+      <div class="panel tmpl" [class.active]="draft.id === t.id" (click)="edit(t)">
         <div class="panel-h">
           <span class="nm mono">{{ t.name }}</span>
           <span class="spacer"></span>
@@ -44,9 +44,10 @@
 
   <!-- ── editor ──────────────────────────────────────────────────────────── -->
   @if (open()) {
+    @let edited = editing();
     <div class="panel editor">
       <div class="panel-h">
-        {{ editingName() ? 'edit — ' + editingName() : 'new profile template' }}
+        {{ edited ? 'edit — ' + edited.name : 'new profile template' }}
         <span class="spacer"></span>
         <button class="btn ghost sm" (click)="closeEditor()">✕</button>
       </div>
@@ -54,56 +55,56 @@
         <div class="row">
           <div class="field">
             <label>name</label>
-            <input class="input" [(ngModel)]="name" placeholder="ops-sre" />
+            <input class="input" [(ngModel)]="draft.name" placeholder="ops-sre" />
           </div>
           <div class="field">
             <label>description</label>
-            <input class="input" [(ngModel)]="description" placeholder="what this agent does" />
+            <input class="input" [(ngModel)]="draft.description" placeholder="what this agent does" />
           </div>
         </div>
 
         <div class="row">
           <div class="field">
             <label>provider</label>
-            <select class="select" [(ngModel)]="provider">
-              @for (p of providerOptions(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
+            <select class="select" [(ngModel)]="draft.provider">
+              @for (p of providers(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
             </select>
           </div>
           <div class="field">
             <label>model</label>
-            <input class="input" [(ngModel)]="model" placeholder="Hermes-4-405B" />
+            <input class="input" [(ngModel)]="draft.model" placeholder="Hermes-4-405B" />
           </div>
         </div>
 
         <div class="row">
           <div class="field">
             <label>base url — optional (ollama / custom endpoints)</label>
-            <input class="input" [(ngModel)]="baseUrl" placeholder="http://host:11434/v1" />
+            <input class="input" [(ngModel)]="draft.baseUrl" placeholder="http://host:11434/v1" />
           </div>
           <div class="field">
             <label>working dir</label>
-            <input class="input" [(ngModel)]="cwd" placeholder="/opt/data" />
+            <input class="input" [(ngModel)]="draft.cwd" placeholder="/opt/data" />
           </div>
         </div>
 
         <div class="field">
           <label>soul — SOUL.md</label>
-          <textarea class="input mono code" rows="6" [(ngModel)]="soul"></textarea>
+          <textarea class="input mono code" rows="6" [(ngModel)]="draft.soul"></textarea>
         </div>
 
         <div class="field">
           <label>memory — MEMORY.md seed</label>
-          <textarea class="input mono code" rows="4" [(ngModel)]="memory"></textarea>
+          <textarea class="input mono code" rows="4" [(ngModel)]="draft.memory"></textarea>
         </div>
 
         <!-- skills -->
         <div class="field">
           <label>skills</label>
           <div class="chips edit-chips">
-            @for (s of skills(); track s) {
+            @for (s of draft.skills; track s) {
               <span class="chip on">{{ s }}<button class="x" type="button" (click)="removeSkill(s)">×</button></span>
             }
-            @if (!skills().length) { <span class="faint mono empty-note">no skills</span> }
+            @if (!draft.skills.length) { <span class="faint mono empty-note">no skills</span> }
           </div>
           <div class="add-row">
             <input class="input" [(ngModel)]="newSkill" placeholder="skill-id e.g. web-research"
@@ -115,7 +116,7 @@
         <!-- mcp servers -->
         <div class="field">
           <label>tools — mcp servers</label>
-          @for (m of mcpServers(); track m.name) {
+          @for (m of draft.mcpServers; track m.name) {
             <div class="line mono">
               <span class="ln-name">{{ m.name }}</span>
               <span class="chip info">{{ m.transport }}</span>
@@ -124,7 +125,7 @@
               <button class="btn ghost sm" type="button" (click)="removeMcp(m.name)">remove</button>
             </div>
           }
-          @if (!mcpServers().length) { <span class="faint mono empty-note">no mcp servers</span> }
+          @if (!draft.mcpServers.length) { <span class="faint mono empty-note">no mcp servers</span> }
 
           <div class="catalog-mcp">
             <div class="catalog-copy">
@@ -169,7 +170,7 @@
         <!-- keys -->
         <div class="field">
           <label>keys — stored encrypted in the dashboard db</label>
-          @for (s of secrets(); track s.key) {
+          @for (s of draft.secrets; track s.key) {
             <div class="line mono">
               <span class="ln-name">{{ s.key }}</span>
               <mc-status [status]="s.set ? (s.recoverable ? 'connected' : 'error') : 'off'"
@@ -181,7 +182,7 @@
               <button class="btn ghost sm" type="button" (click)="removeSecret(s.key)">remove</button>
             </div>
           }
-          @if (!secrets().length) { <span class="faint mono empty-note">no keys</span> }
+          @if (!draft.secrets.length) { <span class="faint mono empty-note">no keys</span> }
           <div class="add-row">
             <input class="input" [(ngModel)]="secretKey" placeholder="ANTHROPIC_API_KEY" />
             <input class="input" type="password" [(ngModel)]="secretValue" placeholder="value" />
@@ -192,14 +193,14 @@
         <p class="lock-hint">deploy with the button below, or from the <a routerLink="/agents">Agents</a> page under "from profile".</p>
 
         <div class="editor-actions">
-          @if (store.templateById(editingId()); as t) {
-            <button class="btn danger" type="button" (click)="remove(t)">delete</button>
-            <button class="btn" type="button" (click)="openDeploy(t)">deploy →</button>
+          @if (edited) {
+            <button class="btn danger" type="button" (click)="remove(edited)">delete</button>
+            <button class="btn" type="button" (click)="openDeploy(edited)">deploy →</button>
           }
           <span class="spacer"></span>
           <button class="btn ghost" type="button" (click)="closeEditor()">cancel</button>
           <button class="btn primary" type="button" [disabled]="!canSave() || saving()" (click)="save()">
-            {{ saving() ? 'saving…' : (editingId() ? 'save changes' : 'create template') }}
+            {{ saving() ? 'saving…' : (draft.id ? 'save changes' : 'create template') }}
           </button>
         </div>
       </div>
@@ -212,32 +213,7 @@
 </div>
 
 @if (deployFor(); as t) {
-  <div class="scrim" (click)="closeDeploy()">
-    <div class="modal" (click)="$event.stopPropagation()">
-      <div class="panel-h">deploy — {{ t.name }}</div>
-      <div class="modal-b">
-        <p class="dim">Creates a new agent in the chosen container and applies this blueprint —
-          soul, memory, skills, MCP servers, and keys.</p>
-        <div class="field">
-          <label>target container</label>
-          <select class="select" [(ngModel)]="deployContainer">
-            @for (c of store.containers(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
-          </select>
-        </div>
-        <div class="field">
-          <label>agent name</label>
-          <input class="input" [(ngModel)]="deployName" placeholder="ops-bot" />
-        </div>
-        @if (!store.containers().length) {
-          <p class="lock-hint">no containers available — deploy one from the Containers page first.</p>
-        }
-        <div class="modal-actions">
-          <button class="btn ghost" (click)="closeDeploy()">cancel</button>
-          <button class="btn primary"
-                  [disabled]="!deployContainer || !deployName.trim() || deploying()"
-                  (click)="doDeploy()">{{ deploying() ? 'deploying…' : 'deploy agent' }}</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <mc-profile-deploy-dialog [template]="t"
+                            (deployed)="onDeployed($event)"
+                            (closed)="deployFor.set(null)" />
 }

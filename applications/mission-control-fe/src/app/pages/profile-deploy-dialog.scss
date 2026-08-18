@@ -1,0 +1,11 @@
+// The deploy dialog. `.scrim`, `.modal`, `.panel-h`, `.field`, `.input`,
+// `.select`, `.btn` and `.lock-hint` are global (src/styles.scss); the modal body
+// lays itself out the same way every other modal in the app does.
+.modal-b {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  > p { margin: 0; }
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
