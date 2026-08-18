@@ -1,0 +1,699 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HermesStore } from './hermes-store';
+
+/**
+ * Flips a constructed store onto live mode against a stubbed backend — see the
+ * same helper in hermes-store.spec.ts. `api` is shaped like {@link HermesApi},
+ * carrying only the calls a test reaches.
+ */
+const goLive = (store: HermesStore, api: unknown): void => {
+  const ctx = (store as any).ctx;
+  ctx.mock = false;
+  ctx.api = api;
+};
+
+// Live mode had no coverage below the action level: the probe, the first load
+// fan-out, and the pollers all ran only against a real backend. These drive the
+// real HermesApi against a stubbed fetch, so the URL composition and the wire
+// mapping are exercised together with the slice that asked for them.
+describe('HermesStore live bootstrap', () => {
+  const CONTAINER = {
+    id: 'c-live', shortId: 'aa11bb2', name: 'hermes-live', hostId: 'dh-remote',
+    status: 'running', image: 'nousresearch/hermes-agent', version: 'v2026.8.3',
+    startedAt: 10, sizeRootFsGb: 2, profiles: ['atlas'],
+  };
+  const PROFILE = {
+    id: 'a-live', containerId: 'c-live', name: 'atlas', role: 'Ops', state: 'active',
+    provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…9f2c', cwd: '/srv/ops',
+    soul: '# SOUL', memoryMd: '# MEMORY', configYaml: 'provider: anthropic',
+    skills: [{ id: 's1', name: 'ops', source: 'bundled', version: '1', description: '', enabled: true }],
+    mcp: [{ id: 'm1', name: 'github', transport: 'http', status: 'connected', tools: 4, latencyMs: 30 }],
+    integrations: [{ kind: 'filesystem', status: 'up', detail: '/srv/ops (rw)' }],
+    lastActive: 20,
+  };
+
+  /** Answers the endpoints the first live load touches; anything else 404s so a
+   *  missing route shows up as a failure rather than as empty state. */
+  const backend = (overrides: Record<string, unknown> = {}) => {
+    const routes: Record<string, unknown> = {
+      '/health': { status: 'ok', version: '1.0.0', dockerConnected: true },
+      '/api/hosts': [{
+        id: 'dh-remote', name: 'remote', url: 'tcp://10.0.0.2:2375', kind: 'remote',
+        status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, note: null,
+      }],
+      '/api/model-providers': [],
+      '/api/providers': [{ key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true, envVar: 'ANTHROPIC_API_KEY' }],
+      '/api/containers': [CONTAINER],
+      '/api/board/tasks': [{ id: 't1', containerId: 'c-live', agentId: null, title: 'Ship it', column: 'queued', priority: 'high', tags: null, createdAt: 1 }],
+      '/api/profile-templates': [{ id: 'pt1', name: 'ops-template', createdAt: 1, updatedAt: 2 }],
+      '/api/mcp-servers': [],
+      '/api/mcp-servers/retained-resources': [],
+      '/api/agents': [PROFILE],
+      '/api/containers/dh-remote/c-live/stats': {
+        cpuPercent: 12, ramMb: 512, ramTotalMb: 4096, rxBytes: 1_024_000, txBytes: 512_000,
+        sampledAt: 1_000,
+      },
+      '/api/containers/dh-remote/c-live/logs': [{ ts: 5, level: 'info', source: 'system', msg: 'ready' }],
+      '/api/images/tags': { repository: 'nousresearch/hermes-agent', tags: ['v2026.8.3'], registryStatus: 'ok' },
+      ...overrides,
+    };
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      calls.push(url);
+      const path = url.split('?')[0];
+      const body = routes[path];
+      return Promise.resolve(body === undefined
+        ? new Response(JSON.stringify({ error: `no route for ${path}` }), { status: 404 })
+        : new Response(JSON.stringify(body)));
+    }));
+    return calls;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'live', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('starts empty and says it is connecting, before any answer arrives', () => {
+    backend();
+    const store = new HermesStore();
+
+    expect(store.backendStatus()).toBe('connecting');
+    expect(store.containers()).toEqual([]);
+    expect(store.agents()).toEqual([]);
+    expect(store.liveNotice()).toBe('live mode — connecting to backend…');
+    // the local docker row is a placeholder until the backend reports hosts
+    expect(store.dockerHosts()).toHaveLength(1);
+    expect(store.dockerOverall()).toBe('disconnected');
+  });
+
+  it('reports an unreachable backend and keeps retrying', async () => {
+    const fetchMock = vi.fn(() => Promise.reject(new Error('connection refused')));
+    vi.stubGlobal('fetch', fetchMock);
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.backendStatus()).toBe('unreachable');
+    expect(store.liveNotice()).toContain('backend unreachable');
+    const attempts = fetchMock.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(attempts);
+  });
+
+  it('names the configured base url in the banner, so a wrong one is visible', async () => {
+    window.__MC_CONFIG__ = {
+      dataMode: 'live', apiBaseUrl: 'http://mc.internal:9999', dockerSocket: 'unix:///x',
+    };
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('refused'))));
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.liveNotice()).toContain('http://mc.internal:9999');
+  });
+
+  it('loads every domain once the backend answers, and drops the banner', async () => {
+    backend();
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.backendStatus()).toBe('connected');
+    expect(store.liveNotice()).toBeNull();
+    expect(store.dockerHosts()[0]).toMatchObject({ id: 'dh-remote', status: 'connected' });
+    expect(store.dockerOverall()).toBe('connected');
+    expect(store.containers()[0]).toMatchObject({ id: 'c-live', version: 'v2026.8.3', disk: 2 });
+    expect(store.llmProviders()[0]).toMatchObject({ key: 'anthropic' });
+    expect(store.profileTemplates()[0]).toMatchObject({ id: 'pt1', name: 'ops-template' });
+    expect(store.selectedContainerId()).toBe('c-live');
+  });
+
+  it('adopts the profiles of every container it found', async () => {
+    backend();
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.containerAgents()[0]).toMatchObject({
+      id: 'a-live', name: 'atlas', provider: 'anthropic', soul: '# SOUL',
+    });
+    // absent wire fields become the model's defaults rather than undefined
+    expect(store.agentById('a-live')).toMatchObject({
+      sessions: [], msgsToday: 0, errorRate: 0,
+    });
+    expect(store.agentById('a-live')?.mcp[0]).toMatchObject({
+      name: 'github', enabled: true, origin: 'custom', error: null, checkedAt: null,
+    });
+  });
+
+  it('fills the board and the logs of the container it selected', async () => {
+    backend();
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.containerTasks()[0]).toMatchObject({ id: 't1', agentId: '', tags: [] });
+    expect(store.containerLogs()[0]).toMatchObject({ msg: 'ready', agentId: null });
+    expect(store.logsUpdatedAt()).not.toBeNull();
+  });
+
+  it('keeps polling each domain on its own period', async () => {
+    const calls = backend();
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+    const containerPolls = calls.filter(u => u === '/api/containers').length;
+    const statsPolls = calls.filter(u => u.includes('/stats')).length;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(calls.filter(u => u === '/api/containers').length).toBeGreaterThan(containerPolls);
+    // stats run far more often than the inventory
+    expect(calls.filter(u => u.includes('/stats')).length).toBeGreaterThan(statsPolls + 1);
+    expect(store.backendStatus()).toBe('connected');
+  });
+
+  it('survives a backend that answers health and then falls over', async () => {
+    const routes = backend();
+    const store = new HermesStore();
+    await vi.advanceTimersByTimeAsync(0);
+    const loaded = store.containers();
+    expect(loaded).toHaveLength(1);
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('gone'))));
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    // a failed refresh keeps the last known inventory rather than blanking the UI
+    expect(store.containers()).toEqual(loaded);
+    expect(store.agents()).toHaveLength(1);
+    expect(routes.length).toBeGreaterThan(0);
+  });
+});
+
+// The pollers and the catalog lifecycle carry the arithmetic and the state
+// machines that a pass-through action does not.
+describe('HermesStore live pollers', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('derives network rate from the byte counters, not from the counters', async () => {
+    const store = new HermesStore();
+    const target = store.containers().find(c => c.status === 'running')!;
+    // every running container is sampled each tick, so the queue is per container
+    const queued = [
+      { cpuPercent: 10, ramMb: 400, ramTotalMb: 4096, rxBytes: 0, txBytes: 0, sampledAt: 1_000 },
+      { cpuPercent: 20, ramMb: 500, ramTotalMb: 4096, rxBytes: 1_024_000, txBytes: 512_000, sampledAt: 2_000 },
+    ];
+    const idle = { cpuPercent: 1, ramMb: 1, ramTotalMb: 2, rxBytes: 0, txBytes: 0, sampledAt: 1_000 };
+    const stats = vi.fn((_hostId: string, id: string) =>
+      Promise.resolve(id === target.id ? queued.shift() ?? idle : idle));
+    goLive(store, { containers: { stats } });
+    const pollStats = () => (store as any).containerStore.pollStats();
+
+    // the first sample has nothing to compare against, so the rate reads zero
+    await pollStats();
+    expect(store.containers().find(c => c.id === target.id)).toMatchObject({
+      cpu: 10, ram: 400, netIn: 0, netOut: 0,
+    });
+
+    await pollStats();
+    // 1,024,000 bytes over one second, in KB/s
+    expect(store.containers().find(c => c.id === target.id)).toMatchObject({
+      cpu: 20, netIn: 1_000, netOut: 500,
+    });
+  });
+
+  it('never reports a negative rate when a counter resets', async () => {
+    const store = new HermesStore();
+    // a restarted container reports counters below the last sample
+    const counters = [5_000_000, 0];
+    let tick = 0;
+    const stats = vi.fn(() => Promise.resolve({
+      cpuPercent: 5, ramMb: 1, ramTotalMb: 2,
+      rxBytes: counters[Math.min(tick, 1)], txBytes: counters[Math.min(tick, 1)],
+      sampledAt: 1_000 + tick * 1_000,
+    }));
+    goLive(store, { containers: { stats } });
+    const pollStats = () => (store as any).containerStore.pollStats();
+
+    await pollStats();
+    tick = 1;
+    await pollStats();
+
+    expect(store.containers().every(c => c.netIn >= 0 && c.netOut >= 0)).toBe(true);
+  });
+
+  it('does not ask a stopped container for its profiles, and keeps the ones it had', async () => {
+    const store = new HermesStore();
+    const stopped = store.containers().find(c => c.status === 'stopped')!;
+    const kept = store.agents().filter(a => a.containerId === stopped.id);
+    expect(kept.length).toBeGreaterThan(0);
+    const list = vi.fn().mockResolvedValue([]);
+    goLive(store, { agents: { list } });
+
+    await (store as any).agentStore.refresh();
+
+    expect(list.mock.calls.some(call => call[1] === stopped.id)).toBe(false);
+    expect(store.agents().filter(a => a.containerId === stopped.id)).toEqual(kept);
+  });
+
+  it('keeps the last known profiles of a container that failed this tick', async () => {
+    const store = new HermesStore();
+    const running = store.containers().find(c => c.status === 'running')!;
+    const kept = store.agents().filter(a => a.containerId === running.id);
+    goLive(store, { agents: { list: vi.fn().mockRejectedValue(new Error('daemon busy')) } });
+
+    await (store as any).agentStore.refresh();
+
+    expect(store.agents().filter(a => a.containerId === running.id)).toEqual(kept);
+  });
+
+  it('leaves an in-flight MCP probe alone while a refresh lands', async () => {
+    const store = new HermesStore();
+    const agent = store.agents().find(a => a.mcp.length)!;
+    const container = store.containers().find(c => c.id === agent.containerId)!;
+    (store as any).agentStore.update(agent.id, (a: any) => ({
+      ...a, mcp: a.mcp.map((m: any, i: number) => i === 0 ? { ...m, status: 'checking' } : m),
+    }));
+    const probing = agent.mcp[0].name;
+    goLive(store, {
+      agents: {
+        list: vi.fn().mockImplementation((_host: string, containerId: string) => Promise.resolve(
+          containerId === container.id
+            ? [{ ...agent, mcp: agent.mcp.map(m => ({ ...m, status: 'unknown' })) }]
+            : [])),
+      },
+    });
+
+    await (store as any).agentStore.refresh();
+
+    const refreshed = store.agentById(agent.id)!;
+    expect(refreshed.mcp.find(m => m.name === probing)?.status).toBe('checking');
+    expect(refreshed.mcp.filter(m => m.name !== probing).every(m => m.status === 'unknown')).toBe(true);
+  });
+});
+
+describe('HermesStore live MCP catalog lifecycle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('shows the operation as in flight, then polls until the backend settles', async () => {
+    const store = new HermesStore();
+    const server = store.mcpServers().find(s => s.kind === 'managed')!;
+    const run = vi.fn().mockResolvedValue({ ...server, operationState: 'pulling' });
+    const list = vi.fn().mockResolvedValue([{
+      ...server, operationState: 'idle', runtimeState: 'running', desiredState: 'running',
+    }]);
+    goLive(store, { mcp: { run, list } });
+
+    const started = store.startCatalogMcpServer(server.id);
+    await vi.advanceTimersByTimeAsync(0);
+    // the row reports the pull the backend is doing, not a finished start
+    expect(store.mcpServerById(server.id)?.operationState).toBe('pulling');
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(await started).toBe(true);
+    expect(store.mcpServerById(server.id)).toMatchObject({
+      operationState: 'idle', runtimeState: 'running',
+    });
+    expect(list).toHaveBeenCalled();
+  });
+
+  it('records why an operation failed, on the row and in a toast', async () => {
+    const store = new HermesStore();
+    const server = store.mcpServers().find(s => s.kind === 'managed')!;
+    goLive(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('port 5432 already published')) } });
+
+    expect(await store.startCatalogMcpServer(server.id)).toBe(false);
+
+    expect(store.mcpServerById(server.id)).toMatchObject({
+      operationState: 'error', operationError: 'port 5432 already published',
+    });
+    expect(store.liveError()).toBe('MCP server start failed: port 5432 already published');
+  });
+
+  it('answers a check with what the probe found, leaving the operation state alone', async () => {
+    const store = new HermesStore();
+    const server = store.mcpServers().find(s => s.kind === 'managed')!;
+    goLive(store, {
+      mcp: {
+        run: vi.fn().mockResolvedValue({
+          ...server, checkStatus: 'connected', latencyMs: 18, checkedAt: 99,
+        }),
+      },
+    });
+
+    expect(await store.checkCatalogMcpServer(server.id)).toBe(true);
+    expect(store.mcpServerById(server.id)).toMatchObject({
+      checkStatus: 'connected', latencyMs: 18, checkedAt: 99, operationState: 'idle',
+    });
+  });
+
+  it('reports a failed check without claiming the server stopped', async () => {
+    const store = new HermesStore();
+    const server = store.mcpServers().find(s => s.kind === 'managed')!;
+    goLive(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('handshake timeout')) } });
+
+    expect(await store.checkCatalogMcpServer(server.id)).toBe(false);
+    expect(store.mcpServerById(server.id)).toMatchObject({
+      checkStatus: 'error', checkError: 'handshake timeout',
+      operationState: 'idle', operationError: null,
+    });
+  });
+
+  it('refuses to write an Agent config against a server that never came up', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const container = store.containers().find(c => c.id === agent.containerId)!;
+    const server = store.mcpServers().find(s => s.kind === 'managed' && s.hostId === container.hostId)!;
+    const connectCatalog = vi.fn();
+    goLive(store, {
+      mcp: {
+        run: vi.fn().mockResolvedValue({ ...server, operationState: 'starting' }),
+        list: vi.fn().mockResolvedValue([{
+          ...server, operationState: 'error', runtimeState: 'error',
+          operationError: 'image pull failed',
+        }]),
+      },
+      agents: { mcp: { connectCatalog } },
+    });
+
+    const connecting = store.connectCatalogMcp(agent.id, server.id, 'browser');
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(await connecting).toBe(false);
+    expect(connectCatalog).not.toHaveBeenCalled();
+    expect(store.liveError()).toContain('MCP server start failed: image pull failed');
+  });
+});
+
+// The registries and the profile-scoped writes share one shape: apply what the
+// backend answered, or toast and leave the last known state alone.
+describe('HermesStore live registries', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('adds a docker host by asking the backend, then re-reading the list', async () => {
+    const store = new HermesStore();
+    const add = vi.fn().mockResolvedValue({});
+    const list = vi.fn().mockResolvedValue([{
+      id: 'dh-new', name: 'prod', url: 'tcp://10.0.0.2:2375', kind: 'remote',
+      status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 9, note: null,
+    }]);
+    goLive(store, { hosts: { add, list } });
+
+    store.addDockerHost('prod', 'tcp://10.0.0.2:2375');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(add).toHaveBeenCalledWith('prod', 'tcp://10.0.0.2:2375');
+    expect(store.dockerHosts()).toEqual([expect.objectContaining({ id: 'dh-new' })]);
+  });
+
+  it('reports a refused host and re-reads rather than inventing a state', async () => {
+    const store = new HermesStore();
+    const list = vi.fn().mockResolvedValue([]);
+    goLive(store, {
+      hosts: { check: vi.fn().mockRejectedValue(new Error('x509: certificate expired')), list },
+    });
+
+    store.checkDockerHost('dh-local');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.liveError()).toBe('host check failed: x509: certificate expired');
+    expect(list).toHaveBeenCalled();
+  });
+
+  it('never removes the local socket, backend or not', () => {
+    const store = new HermesStore();
+    const remove = vi.fn();
+    goLive(store, { hosts: { remove } });
+
+    store.removeDockerHost('dh-local');
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the bootstrap provider mirror when the registry cannot be read', async () => {
+    const store = new HermesStore();
+    const mirrored = store.llmProviders();
+    goLive(store, { providers: { registry: vi.fn().mockRejectedValue(new Error('offline')) } });
+
+    await store.refreshProviderRegistry();
+
+    expect(store.llmProviders()).toEqual(mirrored);
+  });
+
+  it('ignores an empty registry, which would leave the picker unusable', async () => {
+    const store = new HermesStore();
+    const mirrored = store.llmProviders();
+    goLive(store, { providers: { registry: vi.fn().mockResolvedValue([]) } });
+
+    await store.refreshProviderRegistry();
+
+    expect(store.llmProviders()).toEqual(mirrored);
+  });
+
+  it('falls back to the offline model list when a catalog lookup fails', async () => {
+    const store = new HermesStore();
+    goLive(store, {
+      providers: {
+        modelCatalog: vi.fn().mockRejectedValue(new Error('provider 502')),
+        modelCatalogLive: vi.fn().mockRejectedValue(new Error('bad key')),
+      },
+    });
+
+    const fromConfig = await store.modelCatalog('anthropic');
+    const fromKey = await store.modelCatalogLive('anthropic', 'sk-ant-x');
+
+    expect(fromConfig).toContain('claude-fable-5');
+    expect(fromKey).toEqual(fromConfig);
+  });
+
+  it('answers an empty model list rather than throwing at a page', async () => {
+    const store = new HermesStore();
+    goLive(store, {
+      providers: {
+        models: vi.fn().mockRejectedValue(new Error('ollama down')),
+        pullStatus: vi.fn().mockRejectedValue(new Error('ollama down')),
+      },
+    });
+
+    expect(await store.providerModels('mp-local')).toEqual([]);
+    expect(await store.pullStatus('mp-local')).toEqual([]);
+    expect(store.liveError()).toBe('model list failed: ollama down');
+  });
+
+  it('creates a template, then updates that same one', async () => {
+    const store = new HermesStore();
+    const create = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops', createdAt: 1, updatedAt: 1 });
+    const update = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops v2', createdAt: 1, updatedAt: 2 });
+    goLive(store, { templates: { create, update } });
+    const input = {
+      name: 'ops', description: '', provider: 'anthropic', model: 'claude-fable-5',
+      baseUrl: '', cwd: '', soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
+    };
+
+    expect(await store.saveTemplate(input)).toBe('pt-new');
+    expect(create).toHaveBeenCalledWith(input);
+
+    expect(await store.saveTemplate({ ...input, name: 'ops v2' }, 'pt-new')).toBe('pt-new');
+    expect(update).toHaveBeenCalledWith('pt-new', expect.objectContaining({ name: 'ops v2' }));
+    // the row is replaced, not duplicated
+    expect(store.profileTemplates().filter(t => t.id === 'pt-new')).toHaveLength(1);
+    expect(store.templateById('pt-new')?.name).toBe('ops v2');
+  });
+
+  it('reports a failed template save as an empty id, so the editor stays open', async () => {
+    const store = new HermesStore();
+    const before = store.profileTemplates().length;
+    goLive(store, { templates: { create: vi.fn().mockRejectedValue(new Error('name taken')) } });
+
+    expect(await store.saveTemplate({
+      name: 'ops', description: '', provider: '', model: '', baseUrl: '', cwd: '',
+      soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
+    })).toBe('');
+    expect(store.liveError()).toBe('save template failed: name taken');
+    expect(store.profileTemplates()).toHaveLength(before);
+  });
+
+  it('keeps a template the backend refused to delete', async () => {
+    const store = new HermesStore();
+    const target = store.profileTemplates()[0];
+    goLive(store, { templates: { remove: vi.fn().mockRejectedValue(new Error('in use')) } });
+
+    await store.deleteTemplate(target.id);
+
+    expect(store.templateById(target.id)).not.toBeNull();
+    expect(store.liveError()).toBe('delete template failed: in use');
+  });
+
+  it('adopts the profile a template deploy created', async () => {
+    const store = new HermesStore();
+    const template = store.profileTemplates()[0];
+    const container = store.containers()[0];
+    const deploy = vi.fn().mockResolvedValue({
+      id: 'a-deployed', containerId: container.id, name: 'from-template', role: 'ops',
+      state: 'idle', provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '',
+      cwd: '/srv', soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [],
+      integrations: [], lastActive: 1,
+    });
+    goLive(store, { templates: { deploy } });
+
+    expect(await store.deployTemplate(template.id, container.id, 'from-template')).toBe('a-deployed');
+    expect(deploy).toHaveBeenCalledWith(template.id, {
+      hostId: container.hostId, containerId: container.id, name: 'from-template',
+    });
+    expect(store.agentById('a-deployed')).toMatchObject({ name: 'from-template' });
+  });
+});
+
+describe('HermesStore live profile writes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  /** A profile payload shaped like the backend's, echoing one field back. */
+  const echo = (agent: { id: string; containerId: string; name: string }, patch: object = {}) => ({
+    id: agent.id, containerId: agent.containerId, name: agent.name, role: 'ops', state: 'idle',
+    provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…key', cwd: '/srv',
+    soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [], integrations: [], lastActive: 1,
+    ...patch,
+  });
+
+  it('applies the profile a config save answered with', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    goLive(store, {
+      agents: {
+        updateConfig: vi.fn().mockResolvedValue(echo(agent, { configYaml: 'model: from-backend' })),
+      },
+    });
+
+    expect(await store.updateAgentConfig(agent.id, 'model: typed')).toBe(true);
+    // what lands is the backend's version, not the text that was typed
+    expect(store.agentById(agent.id)?.configYaml).toBe('model: from-backend');
+  });
+
+  it('reports a rejected config save and keeps the file as it was', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const original = agent.configYaml;
+    goLive(store, {
+      agents: { updateConfig: vi.fn().mockRejectedValue(new Error('invalid yaml at line 3')) },
+    });
+
+    expect(await store.updateAgentConfig(agent.id, 'broken: [')).toBe(false);
+    expect(store.agentById(agent.id)?.configYaml).toBe(original);
+    expect(store.liveError()).toBe('config save failed: invalid yaml at line 3');
+  });
+
+  it('applies the skill list a toggle answered with', async () => {
+    const store = new HermesStore();
+    const agent = store.agents().find(a => a.skills.length)!;
+    const skill = agent.skills[0];
+    const setEnabled = vi.fn().mockResolvedValue(echo(agent, {
+      skills: [{ ...skill, enabled: !skill.enabled }],
+    }));
+    goLive(store, { agents: { skills: { setEnabled } } });
+
+    store.toggleSkill(agent.id, skill.id);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(setEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({ name: agent.name }), skill.name, !skill.enabled);
+    expect(store.agentById(agent.id)?.skills).toEqual([
+      expect.objectContaining({ name: skill.name, enabled: !skill.enabled }),
+    ]);
+  });
+
+  it('answers null for a failed setup read, and says why', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    goLive(store, {
+      agents: { setup: vi.fn().mockRejectedValue(new Error('hermes status timed out')) },
+    });
+
+    expect(await store.agentSetup(agent.id)).toBeNull();
+    expect(store.liveError()).toBe('setup load failed: hermes status timed out');
+  });
+
+  it('returns the refreshed setup an env write answered with', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const answered = {
+      envPath: `/opt/data/profiles/${agent.name}/.env`, envExists: true,
+      apiKeys: [{ label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', set: true, masked: '…9f2c' }],
+      authProviders: [], apiKeyProviders: [], messaging: [],
+    };
+    const setEnv = vi.fn().mockResolvedValue(answered);
+    goLive(store, { agents: { setEnv } });
+
+    expect(await store.setAgentEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]))
+      .toEqual(answered);
+    expect(setEnv).toHaveBeenCalledWith(
+      expect.objectContaining({ name: agent.name }),
+      [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]);
+  });
+
+  it('degrades an auth-provider read to an empty list, so the modal still opens', async () => {
+    const store = new HermesStore();
+    const container = store.containers()[0];
+    goLive(store, {
+      agents: { authProviders: vi.fn().mockRejectedValue(new Error('no default profile')) },
+    });
+
+    expect(await store.authProviders(container.id)).toEqual([]);
+    expect(store.liveError()).toBeNull();
+  });
+
+  it('drops a removed profile only after the backend confirms it', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    goLive(store, { agents: { remove: vi.fn().mockRejectedValue(new Error('profile busy')) } });
+
+    store.removeAgent(agent.id);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.agentById(agent.id)).not.toBeNull();
+    expect(store.liveError()).toBe('remove profile failed: profile busy');
+  });
+});

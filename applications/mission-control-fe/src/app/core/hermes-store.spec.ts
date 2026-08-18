@@ -479,4 +479,3 @@ describe('HermesStore catalog MCP links', () => {
     expect(store.agentById(agent.id)?.mcp.find(m => m.name === 'bare')?.args).toBeUndefined();
   });
 });
-
