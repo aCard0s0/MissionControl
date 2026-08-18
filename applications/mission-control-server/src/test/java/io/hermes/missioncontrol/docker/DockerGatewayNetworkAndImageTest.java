@@ -21,7 +21,7 @@ import com.github.dockerjava.api.model.ContainerNetwork;
 import com.github.dockerjava.api.model.Image;
 import com.github.dockerjava.api.model.Network;
 import com.github.dockerjava.api.model.NetworkSettings;
-import io.hermes.missioncontrol.AppProperties;
+import io.hermes.missioncontrol.config.AppProperties;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

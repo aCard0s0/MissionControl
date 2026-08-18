@@ -1,6 +1,6 @@
 package io.hermes.missioncontrol.hosts;
 
-import io.hermes.missioncontrol.AppProperties;
+import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
 import io.hermes.missioncontrol.web.UpstreamUnavailableException;

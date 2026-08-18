@@ -9,11 +9,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.hermes.missioncontrol.AppProperties;
+import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
-import io.hermes.missioncontrol.hermes.SecretCipher;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
+import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
 import java.util.concurrent.AbstractExecutorService;

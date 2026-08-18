@@ -1,6 +1,6 @@
 package io.hermes.missioncontrol.support;
 
-import io.hermes.missioncontrol.SqliteExceptionTranslator;
+import io.hermes.missioncontrol.config.SqliteExceptionTranslator;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import javax.sql.DataSource;

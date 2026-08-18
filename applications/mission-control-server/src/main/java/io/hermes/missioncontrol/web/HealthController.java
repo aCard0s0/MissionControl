@@ -1,6 +1,6 @@
 package io.hermes.missioncontrol.web;
 
-import io.hermes.missioncontrol.AppProperties;
+import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;

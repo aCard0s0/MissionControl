@@ -18,7 +18,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.docker.LogLineDto;
-import io.hermes.missioncontrol.hermes.AgentMcpCatalogService;
 import io.hermes.missioncontrol.web.ApiExceptionHandler;
 import io.hermes.missioncontrol.web.ResourceConflictException;
 import java.util.List;
@@ -40,15 +39,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class McpServersControllerTest {
 
   private McpRegistryService registry;
-  private AgentMcpCatalogService agentCatalog;
+  private McpServerDeletionListener deletionListener;
   private MockMvc mvc;
 
   @BeforeEach
   void setUp() {
     registry = mock(McpRegistryService.class);
-    agentCatalog = mock(AgentMcpCatalogService.class);
+    deletionListener = mock(McpServerDeletionListener.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new McpServersController(registry, agentCatalog))
+        .standaloneSetup(new McpServersController(registry, List.of(deletionListener)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -77,10 +76,10 @@ class McpServersControllerTest {
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.error").value("an MCP server operation is already in progress"));
 
-    // disableAndUnlinkForDeletion rewrites config.yaml on every agent holding this server
+    // the unlink rewrites config.yaml on every agent holding this server
     // and drops the link rows, and nothing puts them back. Running it before the refusal
     // is ruled out means a rejected request still destroyed the caller's setup.
-    verifyNoInteractions(agentCatalog);
+    verifyNoInteractions(deletionListener);
     verify(registry, never()).delete(anyString());
   }
 
@@ -90,10 +89,10 @@ class McpServersControllerTest {
 
     mvc.perform(delete("/api/mcp-servers/mcp-1")).andExpect(status().isAccepted());
 
-    InOrder order = inOrder(registry, agentCatalog);
+    InOrder order = inOrder(registry, deletionListener);
     // the authorisation check has to run first, then the unlink, then the delete
     order.verify(registry).assertDeletable("mcp-1");
-    order.verify(agentCatalog).disableAndUnlinkForDeletion("mcp-1");
+    order.verify(deletionListener).beforeServerDeleted("mcp-1");
     order.verify(registry).delete("mcp-1");
   }
 
@@ -197,7 +196,7 @@ class McpServersControllerTest {
     // one of them deletes a catalog entry rather than a leftover volume record
     verify(registry).purgeRetainedResource("rr-1");
     verify(registry, never()).delete(anyString());
-    verifyNoInteractions(agentCatalog);
+    verifyNoInteractions(deletionListener);
   }
 
   @Test

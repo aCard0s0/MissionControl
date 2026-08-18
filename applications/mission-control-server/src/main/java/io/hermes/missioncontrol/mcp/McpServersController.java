@@ -1,7 +1,6 @@
 package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.docker.LogLineDto;
-import io.hermes.missioncontrol.hermes.AgentMcpCatalogService;
 import java.net.URI;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -20,11 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class McpServersController {
 
   private final McpRegistryService registry;
-  private final AgentMcpCatalogService agentCatalog;
+  private final List<McpServerDeletionListener> deletionListeners;
 
-  public McpServersController(McpRegistryService registry, AgentMcpCatalogService agentCatalog) {
+  public McpServersController(
+      McpRegistryService registry, List<McpServerDeletionListener> deletionListeners) {
     this.registry = registry;
-    this.agentCatalog = agentCatalog;
+    this.deletionListeners = deletionListeners;
   }
 
   @GetMapping
@@ -56,7 +56,9 @@ public class McpServersController {
     // holding it and drops the link rows. Ask the registry whether the deletion can go
     // ahead at all first, so a refused DELETE leaves the caller's Agents untouched.
     registry.assertDeletable(id);
-    agentCatalog.disableAndUnlinkForDeletion(id);
+    for (McpServerDeletionListener listener : deletionListeners) {
+      listener.beforeServerDeleted(id);
+    }
     McpServerDto result = registry.delete(id);
     return "managed".equals(result.kind()) ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
   }
