@@ -167,10 +167,40 @@ It needs `src/test/resources/static/index.html`, a stand-in for the Angular buil
 copies into `classpath:/static` at build time. Without it the fallback resolves to nothing and the
 deep-link assertions cannot run.
 
-Two tiers deliberately do **not** exist yet, and their absence is a known blind spot rather than
-an oversight: nothing verifies that Docker accepts the argv we build (mocks pin our decisions, not
-the daemon's acceptance of them), and every hermes CLI parser is pinned to fixtures we wrote
-ourselves rather than captured from a real container.
+## The tests that need a real Docker daemon
+
+Tagged `docker`, excluded from `mvn test`, and run as their own CI job:
+
+```bash
+mvn test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true
+```
+
+`ComposeStackDockerAcceptanceTest` exists because the mocked tier pins the argv Mission Control
+builds and never asks Docker whether it accepts it. If `compose rm --stop --force` carried a wrong
+flag, or `--pull always` were unsupported by the installed Compose, the whole 1042-test suite would
+still pass. It drives one managed MCP record through provision → start → stop → delete → purge and
+asserts against the daemon (queried with plain `docker` commands, deliberately not the code under
+test) that the container appears stopped, comes up, goes down, disappears, and that **the named
+volume survives the delete and only goes on an explicit purge**. It also proves the ownership
+guard's `{{ index .Labels "io.hermes.mission-control.owner" }}` format string reads real
+`docker inspect` output — including what an *unlabelled* resource returns, which is the case that
+decides whether Mission Control adopts somebody else's volume.
+
+Safety, since the Compose project name is a production constant and cannot be isolated: the test
+never names anything it did not create. The service key carries a random suffix, the stack file
+goes to a temp directory, the record lives in a throwaway in-memory database (so the host render
+describes only that one service), and teardown removes only that container and volume. It never
+runs `compose down` and never passes `--remove-orphans` — either would take a real deployment's
+services with it.
+
+Two assumptions make it skip rather than fail where it cannot run: no daemon/Compose plugin, and
+no registry access for the one flow that pulls (on macOS that is usually a locked keychain
+blocking the credential helper — `security -v unlock-keychain ~/Library/Keychains/login.keychain-db`).
+
+One tier still does **not** exist, and its absence is a known blind spot rather than an oversight:
+every hermes CLI parser is pinned to fixtures we wrote ourselves rather than captured from a real
+container, so a hermes release can change `status`, `mcp test` or the gateway log format and every
+parser test stays green.
 
 ## Test names and comments
 

@@ -22,6 +22,8 @@
     <docker-java.version>3.4.2</docker-java.version>
     <!-- not managed by spring-boot-starter-parent, so pin it here -->
     <jacoco.version>0.8.13</jacoco.version>
+    <!-- overridden to empty by the docker acceptance job, which selects that group instead -->
+    <surefire.excludedGroups>docker</surefire.excludedGroups>
   </properties>
 
   <dependencies>
@@ -76,6 +78,16 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- the docker-tagged acceptance tests need a daemon and pull an image, so they stay out
+               of `mvn test` and run as their own CI job:
+               mvn test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true -->
+          <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.jacoco</groupId>
