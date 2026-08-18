@@ -52,6 +52,12 @@ final class ProfilePaths {
     return profileDir(profileName) + "/cron/jobs.json";
   }
 
+  /** And its webhook routes here, keyed by route name — including their HMAC secrets,
+   *  in plaintext, which is why nothing reads this straight out to the browser. */
+  static String webhookSubscriptionsFile(String profileName) {
+    return profileDir(profileName) + "/webhook_subscriptions.json";
+  }
+
   /**
    * The argv prefix that scopes a hermes command to one profile. Hermes takes {@code -p}
    * only for named profiles — {@code default} lives at the hermes home and is invoked bare.

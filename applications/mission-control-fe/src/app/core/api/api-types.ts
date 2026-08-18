@@ -275,3 +275,41 @@ export interface ApiCronJobRequest {
   repeat?: number | null;
   skills?: string[];
 }
+
+/** One webhook route. The HMAC secret is never part of a listing. */
+export interface ApiWebhookSubscription {
+  name: string;
+  description: string | null;
+  url: string;
+  events: string[];
+  prompt: string | null;
+  skills: string[];
+  deliver: string | null;
+  deliverOnly: boolean;
+  secretMasked: string;
+  createdAt: number | null;
+}
+
+/** The listener a route arrives on. */
+export interface ApiWebhookPlatform {
+  enabled: boolean;
+  host: string | null;
+  port: number | null;
+  published: boolean;
+}
+
+export interface ApiWebhooks {
+  subscriptions: ApiWebhookSubscription[];
+  platform: ApiWebhookPlatform;
+}
+
+export interface ApiSubscribeWebhookRequest {
+  name: string;
+  prompt?: string;
+  description?: string;
+  events?: string[];
+  skills?: string[];
+  deliver?: string;
+  deliverChatId?: string;
+  deliverOnly?: boolean;
+}

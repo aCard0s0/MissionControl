@@ -393,20 +393,34 @@ export interface BoardTask {
   createdAt: number;
 }
 
-export interface WebhookDelivery {
-  ts: number;
-  event: string;
-  status: 'ok' | 'fail';
-  code: number;
+/**
+ * One inbound webhook route on a profile, as hermes holds it.
+ *
+ * `secretMasked` is all a listing carries: hermes stores the HMAC secret in plaintext and
+ * the sending provider needs it, so revealing it in full is a separate request.
+ */
+export interface WebhookRoute {
+  name: string;
+  description: string;
+  url: string;
+  events: string[];               // empty means every event
+  prompt: string;
+  skills: string[];
+  deliver: string;
+  deliverOnly: boolean;
+  secretMasked: string;
+  createdAt: number | null;
+  /** the profile that owns the route, and the container it runs in */
+  agentId: string;
+  containerId: string;
 }
 
-export interface Webhook {
-  id: string;
+/** A profile's webhook listener, which must be on before any route can fire. */
+export interface WebhookListener {
   agentId: string;
-  name: string;
-  slug: string;                   // path under the gateway base url
-  secretMasked: string;
-  events: string[];
-  active: boolean;
-  deliveries: WebhookDelivery[];
+  enabled: boolean;
+  host: string | null;
+  port: number | null;
+  /** false whenever nothing outside the docker network can reach the listener */
+  published: boolean;
 }

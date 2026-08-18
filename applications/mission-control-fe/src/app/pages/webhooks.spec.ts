@@ -1,26 +1,36 @@
 import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
-import { Webhook } from '../core/models';
+import { WebhookListener, WebhookRoute } from '../core/models';
 import { WebhooksPage } from './webhooks';
-
-const hook = (id: string, agentId: string, patch: Partial<Webhook> = {}): Webhook => ({
-  id, agentId, name: `hook ${id}`, slug: `/hooks/${id}`, secretMasked: '…abcd',
-  events: ['*'], active: true, deliveries: [], ...patch,
-});
 
 const agents = [{ id: 'a-1', name: 'atlas' }, { id: 'a-2', name: 'scribe' }];
 
-const storeStub = (hooks: Webhook[]) => ({
-  containerWebhooks: signal(hooks),
+const route = (name: string, agentId: string, patch: Partial<WebhookRoute> = {}): WebhookRoute => ({
+  name, description: `${name} hook`, url: `http://<agent-host>:8644/webhooks/${name}`,
+  events: ['alert.firing'], prompt: 'Alert', skills: [], deliver: 'log', deliverOnly: false,
+  secretMasked: '...Wjd0', createdAt: 1_000, agentId, containerId: 'c-1', ...patch,
+});
+
+const listener = (agentId: string, enabled = true): WebhookListener =>
+  ({ agentId, enabled, host: '0.0.0.0', port: 8644, published: false });
+
+/** Only what the page reaches for on the store. */
+const storeStub = (routes: WebhookRoute[], listeners: WebhookListener[]) => ({
+  containerWebhooks: signal(routes),
+  webhookListeners: signal(listeners),
   containerAgents: signal(agents),
   selectedContainer: signal({ id: 'c-1', name: 'hermes-prod' }),
   agentById: (id: string) => agents.find(a => a.id === id) ?? null,
-  addWebhook: vi.fn(),
-  toggleWebhook: vi.fn(),
-  removeWebhook: vi.fn(),
+  webhookListenerOf: (id: string) => listeners.find(l => l.agentId === id) ?? null,
+  refreshWebhooks: vi.fn().mockResolvedValue(undefined),
+  setWebhookListener: vi.fn().mockResolvedValue(true),
+  addWebhook: vi.fn().mockResolvedValue(true),
+  removeWebhook: vi.fn().mockResolvedValue(true),
+  webhookSecret: vi.fn().mockResolvedValue('the-real-secret'),
+  testWebhook: vi.fn().mockResolvedValue('delivered 200'),
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -32,7 +42,12 @@ const render = (store: ReturnType<typeof storeStub>) => {
 
 const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
 
-type Fixture = { nativeElement: unknown; detectChanges(): void; whenStable(): Promise<unknown> };
+type Fixture = { nativeElement: unknown; detectChanges(): void };
+
+const settle = async (fixture: Fixture): Promise<void> => {
+  await vi.advanceTimersByTimeAsync(0);
+  fixture.detectChanges();
+};
 
 const press = (fixture: Fixture, label: string, within?: string): void => {
   const scope = within ? el(fixture).querySelector(within) : el(fixture);
@@ -44,7 +59,6 @@ const press = (fixture: Fixture, label: string, within?: string): void => {
   fixture.detectChanges();
 };
 
-/** The `.field` whose label starts with this text. */
 const field = (fixture: Fixture, label: string): HTMLElement => {
   const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.field'))
     .find(f => (f.querySelector('label')?.textContent ?? '').trim().toLowerCase()
@@ -57,116 +71,103 @@ const fill = async (fixture: Fixture, label: string, value: string): Promise<voi
   const input = field(fixture, label).querySelector<HTMLInputElement>('.input')!;
   input.value = value;
   input.dispatchEvent(new Event('input'));
-  await fixture.whenStable();
-  fixture.detectChanges();
+  await settle(fixture);
 };
 
-describe('WebhooksPage list', () => {
-  it('shows each hook with its endpoint, secret and events', () => {
-    const { fixture } = render(storeStub([hook('h-1', 'a-1', { events: ['alert.firing'] })]));
+describe('WebhooksPage', () => {
+  beforeEach(() => vi.useFakeTimers());
 
-    expect(el(fixture).textContent).toContain('hook h-1');
-    expect(el(fixture).textContent).toContain('https://gateway.local/hooks/h-1');
-    expect(el(fixture).textContent).toContain('…abcd');
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('reads the routes when it opens', () => {
+    const { store } = render(storeStub([], []));
+
+    expect(store.refreshWebhooks).toHaveBeenCalled();
+  });
+
+  it('shows each route with the endpoint a provider would post to', () => {
+    const { fixture } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+
+    expect(el(fixture).textContent).toContain('grafana');
+    expect(el(fixture).textContent).toContain('http://<agent-host>:8644/webhooks/grafana');
     expect(el(fixture).textContent).toContain('alert.firing');
     expect(el(fixture).textContent).toContain('atlas');
   });
 
-  it('says a hook has never fired rather than leaving the panel blank', () => {
-    const { fixture } = render(storeStub([hook('h-1', 'a-1')]));
+  it('says a route accepts everything when it filters no events', () => {
+    const { fixture } = render(
+      storeStub([route('grafana', 'a-1', { events: [] })], [listener('a-1')]));
 
-    expect(el(fixture).textContent).toContain('no deliveries yet');
+    expect(el(fixture).textContent).toContain('all events');
   });
 
-  it('lists deliveries newest-label first, with the status the gateway reported', () => {
-    const { fixture } = render(storeStub([hook('h-1', 'a-1', {
-      deliveries: [{ ts: 1, event: 'alert.firing', status: 'fail', code: 502 }],
-    })]));
+  it('shows only a masked secret until it is asked for', async () => {
+    const { fixture, store } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+    expect(el(fixture).textContent).toContain('...Wjd0');
+    expect(el(fixture).textContent).not.toContain('the-real-secret');
 
-    expect(el(fixture).textContent).toContain('alert.firing');
-    expect(el(fixture).textContent).toContain('HTTP 502');
+    press(fixture, 'reveal', '.hook');
+    await settle(fixture);
+
+    expect(store.webhookSecret).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(el(fixture).textContent).toContain('the-real-secret');
+
+    press(fixture, 'hide', '.hook');
+    expect(el(fixture).textContent).not.toContain('the-real-secret');
   });
 
-  it('narrows the list to one agent, and says which filter is empty', () => {
-    const { fixture } = render(storeStub([hook('h-1', 'a-1'), hook('h-2', 'a-2')]));
+  it('offers to turn on a listener that is off, and says routes cannot fire', () => {
+    const { fixture, store } = render(
+      storeStub([route('grafana', 'a-1')], [listener('a-1', false)]));
+
+    expect(el(fixture).textContent).toContain('has no webhook listener');
+    press(fixture, 'enable listener', '.listener-off');
+
+    expect(store.setWebhookListener).toHaveBeenCalledWith('a-1', true);
+  });
+
+  it('warns that nothing outside the docker network can reach a route yet', () => {
+    const { fixture } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+
+    expect(el(fixture).textContent).toContain('does not');
+    expect(el(fixture).textContent).toContain('publish an agent port');
+  });
+
+  it('narrows the list to one agent', () => {
+    const { fixture } = render(storeStub(
+      [route('grafana', 'a-1'), route('github', 'a-2')],
+      [listener('a-1'), listener('a-2')]));
     expect(el(fixture).querySelectorAll('.hook').length).toBe(2);
 
     press(fixture, '@scribe');
+
     expect(el(fixture).querySelectorAll('.hook').length).toBe(1);
-    expect(el(fixture).textContent).toContain('hook h-2');
-
-    press(fixture, '@atlas');
-    expect(el(fixture).textContent).toContain('hook h-1');
+    expect(el(fixture).textContent).toContain('github');
   });
 
-  it('says so when the container has no hooks at all', () => {
-    const { fixture } = render(storeStub([]));
-
-    expect(el(fixture).textContent).toContain('No webhooks in this container');
-  });
-
-  it('sends enable, disable and remove to the store', () => {
-    const { fixture, store } = render(storeStub([hook('h-1', 'a-1', { active: true })]));
-
-    press(fixture, 'disable', '.hook');
-    expect(store.toggleWebhook).toHaveBeenCalledWith('h-1');
-
-    press(fixture, 'remove', '.hook');
-    expect(store.removeWebhook).toHaveBeenCalledWith('h-1');
-  });
-});
-
-describe('WebhooksPage add form', () => {
-  it('starts on the agent the list is filtered to', async () => {
-    const { fixture } = render(storeStub([]));
-    press(fixture, '@scribe');
-
+  it('subscribes a route on the agent the form names', async () => {
+    const { fixture, store } = render(storeStub([], [listener('a-1')]));
     press(fixture, '+ add webhook');
-    await fixture.whenStable();
-    fixture.detectChanges();
 
-    expect(field(fixture, 'agent').querySelector<HTMLSelectElement>('.select')!.value).toBe('a-2');
-  });
-
-  it('falls back to the first agent when no filter is set', async () => {
-    const { fixture } = render(storeStub([]));
-
-    press(fixture, '+ add webhook');
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(field(fixture, 'agent').querySelector<HTMLSelectElement>('.select')!.value).toBe('a-1');
-  });
-
-  it('derives a path from the agent and the name when none is given', async () => {
-    const { fixture, store } = render(storeStub([]));
-    press(fixture, '+ add webhook');
-    await fill(fixture, 'name', 'Grafana Alerts');
-
+    await fill(fixture, 'route name', 'grafana');
+    await fill(fixture, 'prompt', 'Alert fired');
+    await fill(fixture, 'event filters', 'alert.firing, alert.resolved');
     press(fixture, 'create', '.form-actions');
+    await settle(fixture);
 
-    expect(store.addWebhook).toHaveBeenCalledWith(
-      'a-1', 'Grafana Alerts', '/hooks/atlas/grafana-alerts', ['*']);
+    expect(store.addWebhook).toHaveBeenCalledWith('a-1', {
+      name: 'grafana', prompt: 'Alert fired', description: undefined,
+      events: ['alert.firing', 'alert.resolved'], deliver: undefined,
+    });
   });
 
-  it('keeps a path the operator typed, and splits the event filters', async () => {
-    const { fixture, store } = render(storeStub([]));
+  it('refuses a route with no name', async () => {
+    const { fixture, store } = render(storeStub([], [listener('a-1')]));
     press(fixture, '+ add webhook');
-    await fill(fixture, 'name', 'alerts');
-    await fill(fixture, 'path', '/custom/path');
-    await fill(fixture, 'event filters', 'alert.firing, alert.resolved , ');
-
-    press(fixture, 'create', '.form-actions');
-
-    expect(store.addWebhook).toHaveBeenCalledWith(
-      'a-1', 'alerts', '/custom/path', ['alert.firing', 'alert.resolved']);
-  });
-
-  it('refuses a hook with no name', async () => {
-    const { fixture, store } = render(storeStub([]));
-    press(fixture, '+ add webhook');
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await settle(fixture);
 
     const create = el(fixture).querySelector<HTMLButtonElement>('.form-actions .btn.primary')!;
     expect(create.disabled).toBe(true);
@@ -174,8 +175,54 @@ describe('WebhooksPage add form', () => {
     expect(store.addWebhook).not.toHaveBeenCalled();
   });
 
-  it('offers nothing to add when the container has no agents to attach one to', () => {
-    const store = storeStub([]);
+  it('keeps the form open when the write is refused', async () => {
+    const store = storeStub([], [listener('a-1')]);
+    store.addWebhook.mockResolvedValue(false);
+    const { fixture } = render(store);
+    press(fixture, '+ add webhook');
+    await fill(fixture, 'route name', 'grafana');
+
+    press(fixture, 'create', '.form-actions');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.form-panel')).not.toBeNull();
+  });
+
+  it('shows what a test fire printed', async () => {
+    const { fixture, store } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+
+    press(fixture, 'test', '.hook');
+    await settle(fixture);
+
+    expect(store.testWebhook).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(el(fixture).querySelector('.test-output')?.textContent).toContain('delivered 200');
+  });
+
+  it('asks before removing a route, because senders break silently', async () => {
+    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { fixture, store } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+
+    press(fixture, 'remove', '.hook');
+    await settle(fixture);
+
+    expect(confirmed).toHaveBeenCalled();
+    expect(store.removeWebhook).not.toHaveBeenCalled();
+
+    confirmed.mockReturnValue(true);
+    press(fixture, 'remove', '.hook');
+    await settle(fixture);
+    expect(store.removeWebhook).toHaveBeenCalledWith('a-1', 'grafana');
+    confirmed.mockRestore();
+  });
+
+  it('says so when there are no routes at all', () => {
+    const { fixture } = render(storeStub([], []));
+
+    expect(el(fixture).textContent).toContain('No webhooks in this container');
+  });
+
+  it('offers nothing to add when the container has no agents', () => {
+    const store = storeStub([], []);
     store.containerAgents.set([]);
     const { fixture } = render(store);
 

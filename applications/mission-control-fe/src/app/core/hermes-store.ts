@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { runtimeConfig } from './app-config';
 import {
   ApiAgentSetup, ApiAuxiliaryModel, ApiImageTags, ApiPullState, ApiSetupAuthProvider,
+  ApiSubscribeWebhookRequest,
 } from './hermes-api';
 import {
   BoardColumn, ContainerStatus, CronJob, McpCatalogServerInput, McpServer, ProfileTemplateInput,
@@ -61,12 +62,13 @@ export class HermesStore {
     new TemplateStore(this.ctx, this.containerStore, this.agentStore);
   private readonly jobStore = new JobStore(this.ctx, this.containerStore, this.agentStore);
   private readonly boardStore = new BoardStore(this.ctx, this.containerStore);
-  private readonly webhookStore = new WebhookStore(this.ctx, this.agentStore);
+  private readonly webhookStore =
+    new WebhookStore(this.ctx, this.agentStore, listener => this.containerStore.onSelect(listener));
   private readonly lifecycle = new ContainerLifecycle(this.ctx, this.containerStore, this.imageStore);
   private readonly terminal = new TerminalRequestStore();
   private readonly liveSync = new LiveSync(
     this.ctx, this.hostStore, this.containerStore, this.agentStore, this.logStore, this.boardStore,
-    this.templateStore, this.catalogStore, this.providerStore, this.imageStore, this.jobStore);
+    this.templateStore, this.catalogStore, this.providerStore, this.imageStore, this.jobStore, this.webhookStore);
 
   constructor() {
     void this.liveSync.probeBackend();
@@ -256,8 +258,17 @@ export class HermesStore {
 
   // ── webhooks ───────────────────────────────────────────────────────────
   readonly containerWebhooks = this.webhookStore.forSelectedContainer;
-  addWebhook = (agentId: string, name: string, slug: string, events: string[]): void =>
-    this.webhookStore.add(agentId, name, slug, events);
-  toggleWebhook = (id: string): void => this.webhookStore.toggle(id);
-  removeWebhook = (id: string): void => this.webhookStore.remove(id);
+  readonly webhookListeners = this.webhookStore.containerListeners;
+  refreshWebhooks = (): Promise<void> => this.webhookStore.refresh();
+  webhookListenerOf = (agentId: string) => this.webhookStore.listenerOf(agentId);
+  setWebhookListener = (agentId: string, enabled: boolean, port?: number): Promise<boolean> =>
+    this.webhookStore.setListenerEnabled(agentId, enabled, port);
+  addWebhook = (agentId: string, request: ApiSubscribeWebhookRequest): Promise<boolean> =>
+    this.webhookStore.subscribe(agentId, request);
+  removeWebhook = (agentId: string, route: string): Promise<boolean> =>
+    this.webhookStore.remove(agentId, route);
+  webhookSecret = (agentId: string, route: string): Promise<string | null> =>
+    this.webhookStore.secretOf(agentId, route);
+  testWebhook = (agentId: string, route: string): Promise<string | null> =>
+    this.webhookStore.test(agentId, route);
 }

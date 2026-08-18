@@ -3,8 +3,22 @@
     <div class="crumb mono">{{ store.selectedContainer()?.name ?? '—' }} · INBOUND</div>
     <h2>Webhooks</h2>
   </div>
-  <button class="btn primary" [disabled]="!store.containerAgents().length" (click)="startAdd()">+ add webhook</button>
+  <button class="btn primary" [disabled]="!store.containerAgents().length" (click)="startAdd()">
+    + add webhook
+  </button>
 </div>
+
+@for (listener of listenersOff(); track listener.agentId) {
+  <div class="panel listener-off" data-reveal>
+    <div class="panel-b mono">
+      <mc-status status="off" label="listener off" />
+      <span>@{{ agentName(listener.agentId) }} has no webhook listener — routes cannot fire.</span>
+      <span class="spacer"></span>
+      <button class="btn sm" [disabled]="busy()"
+              (click)="toggleListener(listener.agentId, true)">enable listener</button>
+    </div>
+  </div>
+}
 
 <div class="filter mono" data-reveal>
   <button class="chip" [class.on]="agentFilter() === 'all'" (click)="agentFilter.set('all')">all agents</button>
@@ -18,7 +32,10 @@
     <div class="panel-h">NEW WEBHOOK</div>
     <div class="panel-b form">
       <div class="row">
-        <div class="field"><label>name</label><input class="input" [(ngModel)]="fName" placeholder="Grafana alerts" /></div>
+        <div class="field">
+          <label>route name — becomes /webhooks/&lt;name&gt;</label>
+          <input class="input" [(ngModel)]="fName" placeholder="grafana" />
+        </div>
         <div class="field">
           <label>agent</label>
           <select class="select" [(ngModel)]="fAgent">
@@ -26,47 +43,89 @@
           </select>
         </div>
       </div>
-      <div class="field"><label>path — blank to auto-generate</label><input class="input" [(ngModel)]="fSlug" placeholder="/hooks/atlas/grafana" /></div>
-      <div class="field"><label>event filters — comma separated, blank = all</label><input class="input" [(ngModel)]="fEvents" placeholder="alert.firing, alert.resolved" /></div>
+      <div class="field">
+        <label>prompt — dotted references pull values out of the payload</label>
+        <input class="input" [(ngModel)]="fPrompt" [placeholder]="promptExample" />
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>event filters — comma separated, blank = all</label>
+          <input class="input" [(ngModel)]="fEvents" placeholder="alert.firing, alert.resolved" />
+        </div>
+        <div class="field">
+          <label>deliver to — blank keeps it in the log</label>
+          <input class="input" [(ngModel)]="fDeliver" placeholder="telegram" />
+        </div>
+      </div>
+      <div class="field">
+        <label>description — optional</label>
+        <input class="input" [(ngModel)]="fDescription" placeholder="Grafana alerting" />
+      </div>
+      <p class="lock-hint">hermes generates the signing secret; read it from the route once it exists.</p>
       <div class="form-actions">
-        <button class="btn ghost" (click)="adding.set(false)">cancel</button>
-        <button class="btn primary" [disabled]="!fName.trim()" (click)="add()">create</button>
+        <button class="btn ghost" [disabled]="busy()" (click)="adding.set(false)">cancel</button>
+        <button class="btn primary" [disabled]="!fName.trim() || busy()" (click)="add()">
+          {{ busy() ? 'adding…' : 'create' }}
+        </button>
       </div>
     </div>
   </div>
 }
 
 <div class="list" data-reveal>
-  @for (w of hooks(); track w.id) {
+  @for (w of hooks(); track w.name) {
     <div class="panel hook">
       <div class="panel-h">
-        <mc-status [status]="w.active ? 'up' : 'off'" [label]="w.active ? 'active' : 'disabled'" />
+        @if (listenerOf(w.agentId)?.enabled) {
+          <mc-status status="up" label="listening" />
+        } @else {
+          <mc-status status="off" label="listener off" />
+        }
         <span class="name">{{ w.name }}</span>
         <span class="chip info">@{{ agentName(w.agentId) }}</span>
+        @if (w.deliverOnly) { <span class="chip">deliver only</span> }
         <span class="spacer"></span>
-        <button class="btn sm ghost" (click)="store.toggleWebhook(w.id)">{{ w.active ? 'disable' : 'enable' }}</button>
-        <button class="btn sm danger ghost" (click)="store.removeWebhook(w.id)">remove</button>
+        <button class="btn sm ghost" (click)="test(w)">test</button>
+        <button class="btn sm danger ghost" (click)="remove(w)">remove</button>
       </div>
       <div class="panel-b">
+        @if (w.description) { <p class="description dim">{{ w.description }}</p> }
         <div class="kv mono">
-          <div><span class="k">endpoint</span><span class="v">https://gateway.local{{ w.slug }}</span></div>
-          <div><span class="k">secret</span><span class="v">{{ w.secretMasked }}</span></div>
+          <div><span class="k">endpoint</span><span class="v">{{ w.url }}</span></div>
+          <div>
+            <span class="k">secret</span>
+            <span class="v">
+              @if (revealed()[w.name]; as secret) {
+                <code class="secret">{{ secret }}</code>
+                <button class="btn sm ghost" (click)="hide(w)">hide</button>
+              } @else {
+                {{ w.secretMasked }}
+                <button class="btn sm ghost" (click)="reveal(w)">reveal</button>
+              }
+            </span>
+          </div>
           <div><span class="k">events</span><span class="v">
             @for (e of w.events; track e) { <span class="chip off">{{ e }}</span> }
+            @if (!w.events.length) { <span class="faint">all events</span> }
           </span></div>
-        </div>
-        <div class="deliveries mono">
-          <div class="dl-head faint">RECENT DELIVERIES</div>
-          @for (d of w.deliveries; track $index) {
-            <div class="dl-row">
-              <mc-status [status]="d.status" label=" " />
-              <span>{{ d.event }}</span>
-              <span class="faint">HTTP {{ d.code }}</span>
-              <span class="faint right">{{ ago(d.ts) }}</span>
-            </div>
+          @if (w.prompt) {
+            <div><span class="k">prompt</span><span class="v">{{ w.prompt }}</span></div>
           }
-          @if (!w.deliveries.length) { <div class="dl-row faint">no deliveries yet</div> }
+          <div><span class="k">deliver</span><span class="v">{{ w.deliver }}</span></div>
+          @if (w.createdAt) {
+            <div><span class="k">created</span><span class="v faint">{{ ago(w.createdAt) }}</span></div>
+          }
         </div>
+        @if (!listenerOf(w.agentId)?.published) {
+          <p class="lock-hint warn">
+            Nothing outside the docker network can reach this yet — Mission Control does not
+            publish an agent port. Expose the listener yourself, or run the sender inside the
+            same network.
+          </p>
+        }
+        @if (tested()[w.name]; as output) {
+          <pre class="test-output mono">{{ output }}</pre>
+        }
       </div>
     </div>
   }
@@ -75,6 +134,6 @@
 @if (!hooks().length && !adding()) {
   <div class="panel empty" data-reveal>
     <p class="mono dim">No webhooks {{ agentFilter() === 'all' ? 'in this container' : 'for this agent' }}.</p>
-    <p class="lock-hint">inbound hooks post to the profile's gateway — <code>hermes gateway hooks</code></p>
+    <p class="lock-hint">equivalent CLI: <code>hermes webhook subscribe &lt;name&gt;</code></p>
   </div>
 }

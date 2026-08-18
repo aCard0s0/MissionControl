@@ -5,6 +5,7 @@ import { ContainerStore } from './container-store';
 import { HostStore } from './host-store';
 import { ImageCatalogStore } from './image-catalog-store';
 import { JobStore } from './job-store';
+import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
 import { ProviderStore } from './provider-store';
@@ -59,6 +60,7 @@ export class LiveSync {
     private readonly providers: ProviderStore,
     private readonly images: ImageCatalogStore,
     private readonly jobs: JobStore,
+    private readonly webhooks: WebhookStore,
   ) {}
 
   async probeBackend(): Promise<void> {
@@ -83,9 +85,11 @@ export class LiveSync {
     await this.agents.refresh();   // needs the container list
     void this.images.refreshAll();
     void this.jobs.refresh();      // needs the profile list
+    void this.webhooks.refresh();
     setInterval(() => this.containers.refresh(), POLL.containers);
     setInterval(() => this.agents.refresh(), POLL.agents);
     setInterval(() => this.jobs.refresh(), POLL.jobs);
+    setInterval(() => this.webhooks.refresh(), POLL.jobs);
     setInterval(() => this.images.refreshAll(), POLL.imageCatalogs);
     setInterval(() => this.containers.pollStats(), POLL.stats);
     setInterval(() => this.logs.poll(), POLL.logs);

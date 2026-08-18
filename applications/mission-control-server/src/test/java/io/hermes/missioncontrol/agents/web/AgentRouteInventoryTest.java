@@ -30,6 +30,7 @@ class AgentRouteInventoryTest {
       "DELETE /api/agents/{hostId}/{containerId}/{name}/cron/{jobId}",
       "DELETE /api/agents/{hostId}/{containerId}/{name}/sessions/{sessionId}",
       "DELETE /api/agents/{hostId}/{containerId}/{name}/skills/{skillName}",
+      "DELETE /api/agents/{hostId}/{containerId}/{name}/webhooks/{route}",
       "GET /api/agents",
       "GET /api/agents/{hostId}/{containerId}/auth-providers",
       "GET /api/agents/{hostId}/{containerId}/{name}/cron",
@@ -39,6 +40,8 @@ class AgentRouteInventoryTest {
       "GET /api/agents/{hostId}/{containerId}/{name}/sessions/{sessionId}",
       "GET /api/agents/{hostId}/{containerId}/{name}/setup",
       "GET /api/agents/{hostId}/{containerId}/{name}/skills/{skillName}/content",
+      "GET /api/agents/{hostId}/{containerId}/{name}/webhooks",
+      "GET /api/agents/{hostId}/{containerId}/{name}/webhooks/{route}/secret",
       "PATCH /api/agents/{hostId}/{containerId}/{name}/cron/{jobId}",
       "POST /api/agents",
       "POST /api/agents/{hostId}/{containerId}/{name}/cron",
@@ -51,13 +54,16 @@ class AgentRouteInventoryTest {
       "POST /api/agents/{hostId}/{containerId}/{name}/mcp/{serverName}/sync",
       "POST /api/agents/{hostId}/{containerId}/{name}/mcp/{serverName}/test",
       "POST /api/agents/{hostId}/{containerId}/{name}/skills",
+      "POST /api/agents/{hostId}/{containerId}/{name}/webhooks",
+      "POST /api/agents/{hostId}/{containerId}/{name}/webhooks/{route}/test",
       "PUT /api/agents/{hostId}/{containerId}/{name}/config",
       "PUT /api/agents/{hostId}/{containerId}/{name}/env",
       "PUT /api/agents/{hostId}/{containerId}/{name}/mcp/{serverName}",
       "PUT /api/agents/{hostId}/{containerId}/{name}/mcp/{serverName}/enabled",
       "PUT /api/agents/{hostId}/{containerId}/{name}/skills/{skillName}",
       "PUT /api/agents/{hostId}/{containerId}/{name}/skills/{skillName}/content",
-      "PUT /api/agents/{hostId}/{containerId}/{name}/soul");
+      "PUT /api/agents/{hostId}/{containerId}/{name}/soul",
+      "PUT /api/agents/{hostId}/{containerId}/{name}/webhooks/platform");
 
   @Autowired
   private RequestMappingHandlerMapping mappings;

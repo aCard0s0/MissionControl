@@ -92,9 +92,39 @@ all read from the container. Each agent Activity tab polls its own supervised
 gateway log under `/opt/data/logs/gateways/{profile}` every five seconds; it does
 not reuse the container-wide Docker stream.
 
-Two features have no backend behind them yet — **calendar jobs** and **webhooks**.
-Their pages render empty and creating one toasts that it is unavailable. They are
-the only surfaces in the app whose store slice holds nothing.
+### Scheduled jobs and inbound webhooks
+
+Both are hermes' own features, driven the way profiles are: **reads come from the
+files hermes owns, writes go through its CLI.**
+
+- **Jobs** live in `<profile>/cron/jobs.json`. Listing reads that file rather than
+  parsing the table `hermes cron list` prints; `hermes cron create/edit/pause/
+  resume/run/remove` does the writing, because hermes parses the schedule
+  expression, mints the job id and computes the next run. Only a `cron` schedule
+  carries an expression — `once` stores a timestamp and `interval` a minute count —
+  so the UI shows hermes' own display string, which is the one form every kind has.
+  The page also reports when the gateway is down: hermes stores jobs either way,
+  but nothing fires them.
+- **Webhooks** live in `<profile>/webhook_subscriptions.json`, keyed by route name.
+  A route needs the profile's `platforms.webhook` listener enabled first, which is
+  a config write. Hermes generates each route's HMAC secret, so no secret ever
+  travels through the dashboard to reach it.
+
+Both are **per profile** while their pages are per container, so each listing fans
+out over the container's profiles — one read each, capped like the other pollers —
+and a profile that cannot be read loses only its own entries.
+
+**Mission Control never carries webhook traffic.** It manages the listener and the
+routes and nothing else. An agent container publishes no port, so a route is
+configured but unreachable from outside the docker network until an operator
+exposes it deliberately; the page says so rather than implying it is live. Proxying
+inbound hooks through the dashboard was considered and rejected: Mission Control has
+no authentication, and that would make it an unauthenticated public trigger for
+agent runs.
+
+A route's HMAC secret is stored by hermes in plaintext and the sending provider
+needs it, so the listing carries only a masked tail and revealing it in full is a
+separate, deliberate request.
 
 ## Terminal
 
