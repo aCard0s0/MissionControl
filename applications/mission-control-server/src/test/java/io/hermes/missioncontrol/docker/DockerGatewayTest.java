@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.docker;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,6 +34,7 @@ import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
 import com.github.dockerjava.api.command.WaitContainerCmd;
 import com.github.dockerjava.api.command.WaitContainerResultCallback;
+import com.github.dockerjava.api.exception.DockerClientException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.AccessMode;
@@ -48,6 +50,7 @@ import com.github.dockerjava.api.model.NetworkSettings;
 import com.github.dockerjava.api.model.StreamType;
 import io.hermes.missioncontrol.AppProperties;
 import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -61,6 +64,8 @@ class DockerGatewayTest {
 
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
+  /** Separate client for endpoints that stream or long-poll — see DockerClients. */
+  private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
   private final DockerGateway gateway = new DockerGateway(
       clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
@@ -68,6 +73,7 @@ class DockerGatewayTest {
   @BeforeEach
   void setUp() {
     when(clients.forUrl("unix:///sock")).thenReturn(client);
+    when(clients.streamingForUrl("unix:///sock")).thenReturn(streamingClient);
   }
 
   @Test
@@ -134,14 +140,60 @@ class DockerGatewayTest {
     CreateContainerResponse created = mock(CreateContainerResponse.class);
     when(created.getId()).thenReturn("helper-id");
     when(helper.exec()).thenReturn(created);
-    stubOneShot("helper-id", null);
+    // how docker-java actually reports an expired wait — awaitStatusCode never returns null,
+    // so stubbing null would only exercise a branch the real callback cannot reach
+    stubOneShotExhausted("helper-id");
 
-    RuntimeException failure = assertThrows(RuntimeException.class,
-        () -> gateway.runOneShot(client, "hermes/image:latest", HostConfig.newHostConfig(),
-            List.of("true"), "initialize Hermes data volume"));
+    RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
+        () -> gateway.runOneShot("unix:///sock", client, "hermes/image:latest",
+            HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     assertEquals("initialize Hermes data volume timed out", failure.getMessage());
     verify(client).removeContainerCmd("helper-id");
+  }
+
+  @Test
+  void aHelperThatCannotBeReapedDoesNotFailAnOtherwiseSuccessfulStep() {
+    CreateContainerCmd helper = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.createContainerCmd("hermes/image:latest")).thenReturn(helper);
+    CreateContainerResponse created = mock(CreateContainerResponse.class);
+    when(created.getId()).thenReturn("helper-id");
+    when(helper.exec()).thenReturn(created);
+    stubOneShot("helper-id", 0);
+    RemoveContainerCmd reap = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("helper-id")).thenReturn(reap);
+    when(reap.exec()).thenThrow(new RuntimeException("removal already in progress"));
+
+    // the volume is seeded by this point. Failing here would roll the whole deploy back —
+    // and the surviving helper still holds the data volume, so that rollback could not
+    // delete it either, leaving a half-removed deploy nothing can retry over.
+    assertDoesNotThrow(() -> gateway.runOneShot("unix:///sock", client, "hermes/image:latest",
+        HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
+
+    verify(reap).exec();
+  }
+
+  @Test
+  void aHelperCleanupFailureStillSurfacesWhenTheStepItselfFailed() {
+    CreateContainerCmd helper = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.createContainerCmd("hermes/image:latest")).thenReturn(helper);
+    CreateContainerResponse created = mock(CreateContainerResponse.class);
+    when(created.getId()).thenReturn("helper-id");
+    when(helper.exec()).thenReturn(created);
+    stubOneShot("helper-id", 1);
+    RemoveContainerCmd reap = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("helper-id")).thenReturn(reap);
+    when(reap.exec()).thenThrow(new RuntimeException("removal already in progress"));
+
+    RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
+        () -> gateway.runOneShot("unix:///sock", client, "hermes/image:latest",
+            HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
+
+    // the seeding failure is the diagnosis an operator needs; the tidy-up error must not
+    // displace it, only ride along
+    assertEquals("initialize Hermes data volume failed with exit code 1", failure.getMessage());
+    assertEquals(1, failure.getSuppressed().length);
+    assertEquals("removal already in progress", failure.getSuppressed()[0].getMessage());
   }
 
   @Test
@@ -336,6 +388,42 @@ class DockerGatewayTest {
     verify(connect).withContainerId("new-id");
     verify(connect).withNetworkId("network-id");
     verify(connect).exec();
+
+    // and the aliases are the half that matters: an MCP server reaches the Agent by name,
+    // so reattaching the network without them leaves the membership cosmetic
+    ArgumentCaptor<ContainerNetwork> attached = ArgumentCaptor.forClass(ContainerNetwork.class);
+    verify(connect).withContainerNetwork(attached.capture());
+    assertEquals(List.of("demo"), attached.getValue().getAliases());
+  }
+
+  @Test
+  void upgradeDropsOnlyTheAutoGeneratedShortIdAlias() {
+    // Docker adds the container's own short id as an alias; carrying it onto a container
+    // with a different id would publish a name nothing resolves.
+    stubManagedInspect("cid1234abcd", "hermes/image:v2026.7.1", true, managedLabels(),
+        Map.of("mission-control-mcp-net", networkWith("demo", "cid1234")));
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    stubRename("cid1234abcd");
+    stubStop("cid1234abcd");
+    stubCreate("hermes/image:v2026.8.3", "new-id");
+    stubStartAndReady("new-id");
+    when(client.removeContainerCmd("cid1234abcd"))
+        .thenReturn(mock(RemoveContainerCmd.class, Answers.RETURNS_SELF));
+
+    ListNetworksCmd listNetworks = mock(ListNetworksCmd.class, Answers.RETURNS_SELF);
+    Network network = mock(Network.class);
+    when(network.getName()).thenReturn("mission-control-mcp-net");
+    when(network.getId()).thenReturn("network-id");
+    when(client.listNetworksCmd()).thenReturn(listNetworks);
+    when(listNetworks.exec()).thenReturn(List.of(network));
+    ConnectToNetworkCmd connect = mock(ConnectToNetworkCmd.class, Answers.RETURNS_SELF);
+    when(client.connectToNetworkCmd()).thenReturn(connect);
+
+    gateway.upgrade("unix:///sock", "cid1234abcd", "v2026.8.3");
+
+    ArgumentCaptor<ContainerNetwork> attached = ArgumentCaptor.forClass(ContainerNetwork.class);
+    verify(connect).withContainerNetwork(attached.capture());
+    assertEquals(List.of("demo"), attached.getValue().getAliases());
   }
 
   @Test
@@ -406,6 +494,90 @@ class DockerGatewayTest {
   }
 
   @Test
+  void aRollbackThatCannotRemoveTheReplacementLeavesTheOriginalStoppedRatherThanRunningTwoGateways() {
+    stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    RenameContainerCmd rename = stubRename("cid");
+    stubStop("cid");
+    stubCreate("hermes/image:v2026.8.3", "new-id");
+    stubStartAndReady("new-id");
+    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+        anyBoolean(), any(Duration.class))).thenThrow(new RuntimeException("gateway never came up"));
+    RemoveContainerCmd removeNew = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("new-id")).thenReturn(removeNew);
+    when(removeNew.exec()).thenThrow(new RuntimeException("removal already in progress"));
+    // stubStartAndReady leaves the replacement's inspect answering, so the rollback's
+    // confirmation still finds it — the replacement demonstrably survived the failed removal
+    StartContainerCmd startOriginal = mock(StartContainerCmd.class);
+    when(client.startContainerCmd("cid")).thenReturn(startOriginal);
+
+    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+
+    // both containers mount mc-hermes-demo at /opt/data and both run 'gateway run', so
+    // starting the original alongside a surviving replacement puts two Hermes gateways on
+    // one profile tree. A stopped Agent is recoverable; a corrupted profile tree is not.
+    verify(startOriginal, never()).exec();
+    verify(rename).withName("demo");
+    verify(client, never()).removeContainerCmd("cid");
+    verify(client, never()).removeVolumeCmd(anyString());
+  }
+
+  @Test
+  void aRollbackRestartsTheOriginalOnceTheReplacementIsConfirmedGone() {
+    stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    RenameContainerCmd rename = stubRename("cid");
+    stubStop("cid");
+    stubCreate("hermes/image:v2026.8.3", "new-id");
+    StartContainerCmd startNew = mock(StartContainerCmd.class);
+    when(client.startContainerCmd("new-id")).thenReturn(startNew);
+    // the readiness inspect finds the replacement running; the rollback's confirmation
+    // inspect no longer does, so the removal landed despite the error it reported
+    InspectContainerCmd inspectNew = mock(InspectContainerCmd.class);
+    InspectContainerResponse inspectedNew = mock(InspectContainerResponse.class);
+    ContainerState newState = mock(ContainerState.class);
+    when(client.inspectContainerCmd("new-id")).thenReturn(inspectNew);
+    when(inspectNew.exec()).thenReturn(inspectedNew)
+        .thenThrow(new NotFoundException("no such container: new-id"));
+    when(inspectedNew.getState()).thenReturn(newState);
+    when(newState.getRunning()).thenReturn(true);
+    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+        anyBoolean(), any(Duration.class))).thenThrow(new RuntimeException("gateway never came up"));
+    RemoveContainerCmd removeNew = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("new-id")).thenReturn(removeNew);
+    when(removeNew.exec()).thenThrow(new RuntimeException("removal already in progress"));
+    StartContainerCmd startOriginal = mock(StartContainerCmd.class);
+    when(client.startContainerCmd("cid")).thenReturn(startOriginal);
+
+    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+
+    // nothing else holds the data volume now, so the Agent must come back up
+    verify(startOriginal).exec();
+    verify(rename).withName("demo");
+  }
+
+  @Test
+  void aFailedStopDuringAnUpgradeStartsTheAgentBackUpBeforeGivingUp() {
+    stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
+    stubImage("hermes/image:v2026.8.3", "new-sha");
+    StopContainerCmd stop = mock(StopContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.stopContainerCmd("cid")).thenReturn(stop);
+    when(stop.exec()).thenThrow(new RuntimeException("daemon refused the stop"));
+    StartContainerCmd restartOld = mock(StartContainerCmd.class);
+    when(client.startContainerCmd("cid")).thenReturn(restartOld);
+
+    RuntimeException failure = assertThrows(RuntimeException.class,
+        () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+
+    assertEquals("daemon refused the stop", failure.getMessage());
+    // the daemon may well have killed it before failing to answer, and an explicitly
+    // stopped container is not covered by its restart policy — nothing else would
+    // bring the Agent back
+    verify(restartOld).exec();
+    verify(client, never()).renameContainerCmd(anyString());
+  }
+
+  @Test
   void aTransientRemovalFailureDoesNotDestroyTheValidatedReplacement() {
     stubManagedInspect("cid", "hermes/image:v2026.7.1", true, managedLabels(), Map.of());
     stubImage("hermes/image:v2026.8.3", "new-sha");
@@ -448,7 +620,8 @@ class DockerGatewayTest {
   }
 
   @Test
-  void containersParkedByAnInterruptedUpgradeAreHiddenFromTheFleet() {
+  void isUpgradeLeftoverMatchesOnlyTheGeneratedSuffix() {
+    // the fleet-level behaviour this feeds is asserted in DockerGatewayInventoryTest
     assertTrue(DockerGateway.isUpgradeLeftover("demo-mc-upgrade-0a1b2c3d"));
     assertFalse(DockerGateway.isUpgradeLeftover("demo"));
     assertFalse(DockerGateway.isUpgradeLeftover("demo-mc-upgrade-nothex"));
@@ -544,14 +717,30 @@ class DockerGatewayTest {
   }
 
   private void stubOneShot(String id, Integer exitCode) {
+    when(callbackFor(id).awaitStatusCode(90, java.util.concurrent.TimeUnit.SECONDS))
+        .thenReturn(exitCode);
+  }
+
+  /** The wait budget expiring, as docker-java really reports it. */
+  private void stubOneShotExhausted(String id) {
+    when(callbackFor(id).awaitStatusCode(90, java.util.concurrent.TimeUnit.SECONDS))
+        .thenThrow(new DockerClientException("Awaiting status code timeout."));
+  }
+
+  /**
+   * The helper container's start/wait/remove chain. The wait is taken from the streaming
+   * client — /wait emits nothing until the container exits, so it must not run on a client
+   * carrying a socket timeout.
+   */
+  private WaitContainerResultCallback callbackFor(String id) {
     StartContainerCmd start = mock(StartContainerCmd.class);
     WaitContainerCmd wait = mock(WaitContainerCmd.class);
     WaitContainerResultCallback callback = mock(WaitContainerResultCallback.class);
     RemoveContainerCmd remove = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     when(client.startContainerCmd(id)).thenReturn(start);
-    when(client.waitContainerCmd(id)).thenReturn(wait);
+    when(streamingClient.waitContainerCmd(id)).thenReturn(wait);
     when(wait.start()).thenReturn(callback);
-    when(callback.awaitStatusCode(90, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(exitCode);
     when(client.removeContainerCmd(id)).thenReturn(remove);
+    return callback;
   }
 }

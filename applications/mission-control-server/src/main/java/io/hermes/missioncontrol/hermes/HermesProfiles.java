@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.exception.ConflictException;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.web.ResourceConflictException;
 import java.util.ArrayList;
@@ -1213,21 +1214,21 @@ public class HermesProfiles {
     return exec(url, containerId, command, true);
   }
 
-  /** check=false callers (e.g. dirExists) interpret the exit code themselves. */
+  /**
+   * check=false callers (e.g. dirExists) interpret the exit code themselves — and an exit
+   * code of {@link DockerExecService#EXIT_STATUS_UNAVAILABLE} means the daemon never
+   * reported one, so "did the command succeed" has no answer.
+   */
   private ExecResult exec(String url, String containerId, List<String> command, boolean check) {
-    var result = dockerExec.runAsUser(
+    return dockerExec.runAsUser(
         url, containerId, "hermes", command, "Hermes command", check, false, Duration.ofSeconds(30));
-    return new ExecResult(result.exitCode(), result.stdout(), result.stderr());
   }
 
   private ExecResult execSensitive(
       String url, String containerId, List<String> command, String operation) {
-    var result = dockerExec.runAsUser(
+    return dockerExec.runAsUser(
         url, containerId, "hermes", command, operation, true, true, Duration.ofSeconds(30));
-    return new ExecResult(result.exitCode(), result.stdout(), result.stderr());
   }
-
-  record ExecResult(int exitCode, String stdout, String stderr) {}
 
   private record McpCacheKey(String url, String containerId, String profileName, String serverName) {}
 

@@ -43,7 +43,7 @@ class HermesSetupTest {
 
   private void statusOutput(String stdout) {
     when(profiles.exec(anyString(), anyString(), any()))
-        .thenReturn(new HermesProfiles.ExecResult(0, stdout, ""));
+        .thenReturn(new io.hermes.missioncontrol.docker.DockerExecService.ExecResult(0, stdout, ""));
   }
 
   private void envFile(String contents) {

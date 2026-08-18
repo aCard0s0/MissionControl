@@ -13,8 +13,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -55,19 +57,55 @@ public class RegistryTagService {
   private record Cached(List<ImageTagDto> tags, String detail, long at, boolean ok) {
   }
 
+  /**
+   * The single outbound call this service makes, as a seam.
+   *
+   * <p>Everything worth testing here — the TTLs, the negative cache, serving a stale list
+   * through an outage, the page-link guard — is reachable only by driving responses. With
+   * the {@link HttpClient} built inline as a field, none of it was.
+   */
+  interface PageFetcher {
+    /** @return the response body, or throws for any non-200 / transport failure */
+    String get(String url) throws Exception;
+  }
+
   private final ObjectMapper json;
-  private final HttpClient http = HttpClient.newBuilder()
-      .connectTimeout(CONNECT_TIMEOUT)
-      .followRedirects(HttpClient.Redirect.NEVER)
-      .build();
+  private final PageFetcher fetcher;
+  private final LongSupplier clock;
   private final Map<String, Cached> cache = new ConcurrentHashMap<>();
   private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
   private final boolean enabled;
 
+  // @Autowired is load-bearing: the test seam below makes this a multi-constructor bean, and
+  // Spring then looks for a no-arg constructor instead of choosing one.
+  @Autowired
   public RegistryTagService(ObjectMapper json, @Value("${mc.registry-tags:true}") boolean enabled) {
+    this(json, enabled, httpFetcher(), System::currentTimeMillis);
+  }
+
+  RegistryTagService(ObjectMapper json, boolean enabled, PageFetcher fetcher, LongSupplier clock) {
     this.json = json;
     this.enabled = enabled;
+    this.fetcher = fetcher;
+    this.clock = clock;
+  }
+
+  /** The production fetcher: one bounded, non-redirecting GET per page. */
+  private static PageFetcher httpFetcher() {
+    HttpClient http = HttpClient.newBuilder()
+        .connectTimeout(CONNECT_TIMEOUT)
+        .followRedirects(HttpClient.Redirect.NEVER)
+        .build();
+    return url -> {
+      HttpResponse<String> response = http.send(
+          HttpRequest.newBuilder(URI.create(url)).timeout(PAGE_TIMEOUT).GET().build(),
+          HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() != 200) {
+        throw new IllegalStateException("registry responded " + response.statusCode());
+      }
+      return response.body();
+    };
   }
 
   /** Published tags for {@code repository}. Degrades to an empty list with a status. */
@@ -82,7 +120,7 @@ public class RegistryTagService {
     }
 
     Cached hit = cache.get(path);
-    long now = System.currentTimeMillis();
+    long now = clock.getAsLong();
     if (hit != null && now - hit.at() < (hit.ok() ? OK_TTL_MS : ERROR_TTL_MS)) {
       return hit.ok()
           ? new RemoteTags(hit.tags(), OK, null, hit.at())
@@ -123,13 +161,7 @@ public class RegistryTagService {
         log.warn("registry tag lookup for {} stopped after {} page(s) — time budget spent", path, page);
         break;
       }
-      HttpResponse<String> response = http.send(
-          HttpRequest.newBuilder(URI.create(url)).timeout(PAGE_TIMEOUT).GET().build(),
-          HttpResponse.BodyHandlers.ofString());
-      if (response.statusCode() != 200) {
-        throw new IllegalStateException("registry responded " + response.statusCode());
-      }
-      JsonNode body = json.readTree(response.body());
+      JsonNode body = json.readTree(fetcher.get(url));
       all.addAll(parseHubPage(body));
       url = nextHubPage(body);
     }

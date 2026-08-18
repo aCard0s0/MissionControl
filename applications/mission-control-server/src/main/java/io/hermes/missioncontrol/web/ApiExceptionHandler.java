@@ -1,9 +1,12 @@
 package io.hermes.missioncontrol.web;
 
+import com.github.dockerjava.api.exception.BadRequestException;
 import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.exception.DockerException;
+import com.github.dockerjava.api.exception.NotAcceptableException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
+import com.github.dockerjava.api.exception.UnauthorizedException;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.slf4j.Logger;
@@ -55,6 +58,24 @@ public class ApiExceptionHandler {
   @ExceptionHandler({ConflictException.class, NotModifiedException.class})
   public ResponseEntity<Map<String, String>> dockerConflict(DockerException e) {
     return error(HttpStatus.CONFLICT, brief(e.getMessage()));
+  }
+
+  /**
+   * The daemon rejecting our request is a client error, not a daemon failure. Without
+   * this these land on the {@link DockerException} catch-all and a bad image tag is
+   * reported as '502 docker daemon error', which reads as "the daemon is broken" and
+   * trips any alerting keyed on 5xx.
+   */
+  @ExceptionHandler({BadRequestException.class, NotAcceptableException.class})
+  public ResponseEntity<Map<String, String>> dockerRejectedRequest(DockerException e) {
+    return error(HttpStatus.BAD_REQUEST, brief(e.getMessage()));
+  }
+
+  /** A registry refusing our credentials — a configuration problem, not a bad request. */
+  @ExceptionHandler(UnauthorizedException.class)
+  public ResponseEntity<Map<String, String>> dockerUnauthorized(UnauthorizedException e) {
+    log.warn("docker registry rejected our credentials: {}", e.getMessage());
+    return error(HttpStatus.BAD_GATEWAY, "registry credentials were rejected: " + brief(e.getMessage()));
   }
 
   @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
