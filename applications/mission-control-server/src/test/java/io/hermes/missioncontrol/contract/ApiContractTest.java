@@ -1,0 +1,292 @@
+package io.hermes.missioncontrol.contract;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
+import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.AgentSetupDto;
+import io.hermes.missioncontrol.agents.api.ApiKeyProviderDto;
+import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
+import io.hermes.missioncontrol.agents.api.AuthProviderDto;
+import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
+import io.hermes.missioncontrol.agents.api.IntegrationDto;
+import io.hermes.missioncontrol.agents.api.McpTestResult;
+import io.hermes.missioncontrol.agents.api.MessagingStatusDto;
+import io.hermes.missioncontrol.agents.api.ProviderOptionDto;
+import io.hermes.missioncontrol.agents.api.SessionDto;
+import io.hermes.missioncontrol.agents.api.SkillContentDto;
+import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.agents.templates.McpServerSpec;
+import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
+import io.hermes.missioncontrol.board.BoardTask;
+import io.hermes.missioncontrol.docker.ContainerDto;
+import io.hermes.missioncontrol.docker.ImageTagDto;
+import io.hermes.missioncontrol.docker.ImageTagsDto;
+import io.hermes.missioncontrol.docker.LogLineDto;
+import io.hermes.missioncontrol.docker.StatsDto;
+import io.hermes.missioncontrol.hosts.DockerHostDto;
+import io.hermes.missioncontrol.mcp.ConfigValueDto;
+import io.hermes.missioncontrol.mcp.HealthcheckSpec;
+import io.hermes.missioncontrol.mcp.McpServerDto;
+import io.hermes.missioncontrol.mcp.RetainedResourceDto;
+import io.hermes.missioncontrol.mcp.SupportServiceDto;
+import io.hermes.missioncontrol.mcp.VolumeSpec;
+import io.hermes.missioncontrol.models.ModelCatalogDto;
+import io.hermes.missioncontrol.modelproviders.ModelProviderDto;
+import io.hermes.missioncontrol.modelproviders.OllamaModelDto;
+import io.hermes.missioncontrol.modelproviders.PullStatusDto;
+import io.hermes.missioncontrol.secrets.SecretRef;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.lang.reflect.RecordComponent;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The wire contract between this service and the Angular frontend.
+ *
+ * <p>Nothing else can see a break in it. The frontend's types are hand-written TypeScript,
+ * not generated from anything here, so renaming a record component compiles, passes every
+ * test on both sides, and renders {@code undefined} in the browser. That is the one class of
+ * mistake a large backend refactor makes easy and a green suite hides.
+ *
+ * <p>This test reads the frontend's own interface declarations and compares each one against
+ * the record it is written for. Jackson serializes a record by component name — this codebase
+ * carries no {@code @Json*} annotations and no null-inclusion override — so a record's
+ * components are exactly the JSON keys a response carries.
+ *
+ * <p>{@link #CONTRACT} states the contract once. Only one direction can break the UI — the
+ * frontend reading a key no response carries — so that fails hard; a response carrying a key
+ * the frontend ignores is reported too, but as {@link #UNREAD_PAYLOAD}. When a divergence is
+ * genuine, record it in the matching map with its reason rather than loosening the check.
+ */
+class ApiContractTest {
+
+  /** Frontend interface name → the record whose JSON it reads. */
+  private static final Map<String, Class<?>> CONTRACT = new LinkedHashMap<>();
+
+  static {
+    // docker / fleet
+    CONTRACT.put("ApiContainer", ContainerDto.class);
+    CONTRACT.put("ApiStats", StatsDto.class);
+    CONTRACT.put("ApiLogLine", LogLineDto.class);
+    CONTRACT.put("ApiImageTag", ImageTagDto.class);
+    CONTRACT.put("ApiImageTags", ImageTagsDto.class);
+    CONTRACT.put("DockerHost", DockerHostDto.class);
+    // agents
+    CONTRACT.put("ApiAgentProfile", AgentProfileDto.class);
+    CONTRACT.put("ApiSkillRef", SkillDto.class);
+    CONTRACT.put("SkillContent", SkillContentDto.class);
+    CONTRACT.put("ApiMcpServer", AgentMcpServerDto.class);
+    CONTRACT.put("ApiMcpTestResult", McpTestResult.class);
+    CONTRACT.put("ApiIntegration", IntegrationDto.class);
+    CONTRACT.put("ApiSession", SessionDto.class);
+    CONTRACT.put("ApiAuxiliaryModel", AuxiliaryModelSpec.class);
+    // agent setup
+    CONTRACT.put("ApiAgentSetup", AgentSetupDto.class);
+    CONTRACT.put("ApiSetupApiKey", ApiKeyStatusDto.class);
+    CONTRACT.put("ApiSetupAuthProvider", AuthProviderDto.class);
+    CONTRACT.put("ApiSetupKeyProvider", ApiKeyProviderDto.class);
+    CONTRACT.put("ApiSetupMessaging", MessagingStatusDto.class);
+    CONTRACT.put("ApiModelProvider", ProviderOptionDto.class);
+    // templates
+    CONTRACT.put("ApiProfileTemplate", ProfileTemplateDto.class);
+    CONTRACT.put("ApiTemplateSecret", SecretRef.class);
+    CONTRACT.put("TemplateMcp", McpServerSpec.class);
+    // mcp catalog
+    CONTRACT.put("McpCatalogServer", McpServerDto.class);
+    CONTRACT.put("McpConfigEntry", ConfigValueDto.class);
+    CONTRACT.put("McpSupportService", SupportServiceDto.class);
+    CONTRACT.put("McpNamedVolume", VolumeSpec.class);
+    CONTRACT.put("McpHealthcheck", HealthcheckSpec.class);
+    CONTRACT.put("McpRetainedResource", RetainedResourceDto.class);
+    // models / providers
+    CONTRACT.put("ApiModelCatalog", ModelCatalogDto.class);
+    CONTRACT.put("ApiPullState", PullStatusDto.class);
+    CONTRACT.put("ModelProvider", ModelProviderDto.class);
+    CONTRACT.put("OllamaModel", OllamaModelDto.class);
+    // board
+    CONTRACT.put("ApiBoardTask", BoardTask.class);
+  }
+
+  /**
+   * Fields a frontend interface declares that a response never carries, because the frontend
+   * reuses one interface per concept for both directions — these are request-only.
+   *
+   * <p>Harmless: the frontend sets them when posting and never reads them back. Listed so a
+   * genuinely missing response field cannot hide among them.
+   */
+  private static final Map<String, Set<String>> INPUT_ONLY = Map.of(
+      // ConfigValueInput.clear — "forget this value", meaningless on the way out
+      "McpConfigEntry", Set.of("clear"));
+
+  /**
+   * Fields a response carries that no frontend interface declares.
+   *
+   * <p>These cannot break the UI — an unread key is ignored — but each one is backend work
+   * whose result nothing renders, so they are listed rather than tolerated silently. A new
+   * entry appearing here fails this test, which is the point: adding a field without wiring
+   * it up should be a decision, not a drift.
+   */
+  private static final Map<String, Set<String>> UNREAD_PAYLOAD = Map.of(
+      // the registry lookup resolves these; the tag picker shows only tag/pulled/remote
+      "ApiImageTag", Set.of("digest", "lastUpdated", "sizeBytes"),
+      "ApiImageTags", Set.of("registryCheckedAt"),
+      // sourceServerId is request-only (the frontend extends TemplateMcp locally to send it,
+      // and strips it again); environment/headers are the redacted key lists of a captured
+      // snapshot, which the template editor does not surface yet
+      "TemplateMcp", Set.of("sourceServerId", "environment", "headers"));
+
+  /** The frontend files that declare the wire types. */
+  private static final List<String> SOURCES = List.of("hermes-api.ts", "models.ts");
+
+  @Test
+  void everyResponseTypeCarriesTheKeysTheFrontendReads() {
+    Path core = frontendCoreDir();
+    assumeTrue(core != null,
+        "mission-control-fe is not in this checkout — nothing to compare the contract against");
+
+    Map<String, Set<String>> frontend = parseInterfaces(core);
+    List<String> report = new ArrayList<>();
+
+    for (Map.Entry<String, Class<?>> entry : CONTRACT.entrySet()) {
+      String typeName = entry.getKey();
+      Set<String> declared = frontend.get(typeName);
+      if (declared == null) {
+        report.add(typeName + ": the frontend no longer declares this interface — "
+            + "either it was renamed, or " + entry.getValue().getSimpleName() + " is now unused");
+        continue;
+      }
+      Set<String> served = jsonKeys(entry.getValue());
+      String record = entry.getValue().getSimpleName();
+
+      Set<String> missing = new TreeSet<>(declared);
+      missing.removeAll(served);
+      missing.removeAll(INPUT_ONLY.getOrDefault(typeName, Set.of()));
+      if (!missing.isEmpty()) {
+        report.add(typeName + " reads " + missing + " but " + record + " does not serve them"
+            + " — the frontend sees undefined. If they are request-only, list them in INPUT_ONLY.");
+      }
+
+      Set<String> unread = new TreeSet<>(served);
+      unread.removeAll(declared);
+      unread.removeAll(UNREAD_PAYLOAD.getOrDefault(typeName, Set.of()));
+      if (!unread.isEmpty()) {
+        report.add(record + " serves " + unread + " which " + typeName + " does not declare"
+            + " — wire it up in the frontend, or record it in UNREAD_PAYLOAD with the reason.");
+      }
+
+      Set<String> stale = new TreeSet<>(UNREAD_PAYLOAD.getOrDefault(typeName, Set.of()));
+      stale.retainAll(declared);
+      if (!stale.isEmpty()) {
+        report.add(typeName + " now reads " + stale
+            + " — drop them from UNREAD_PAYLOAD so the contract stays honest.");
+      }
+    }
+
+    assertTrue(report.isEmpty(), () -> "wire contract drifted:\n  " + String.join("\n  ", report));
+  }
+
+  @Test
+  void theContractCoversEveryInterfaceTheFrontendUsesAsAResponseType() {
+    Path core = frontendCoreDir();
+    assumeTrue(core != null, "mission-control-fe is not in this checkout");
+
+    String api = read(core.resolve("hermes-api.ts"));
+    Map<String, String> aliases = parseAliases(api);
+    Set<String> responseTypes = new TreeSet<>();
+    Matcher m = Pattern.compile("Promise<([A-Za-z_]\\w*)(?:\\[\\])?(?:\\s*\\|\\s*undefined)?>")
+        .matcher(api);
+    while (m.find()) {
+      String type = aliases.getOrDefault(m.group(1), m.group(1));
+      responseTypes.add(type);
+    }
+    // not payload shapes: a bare value, nothing, or the python-built chat history
+    responseTypes.removeAll(Set.of("T", "void", "ChatMessage"));
+
+    Set<String> uncovered = new TreeSet<>(responseTypes);
+    uncovered.removeAll(CONTRACT.keySet());
+
+    assertTrue(uncovered.isEmpty(), () -> "these response types are pinned by nothing: " + uncovered
+        + " — add them to CONTRACT so a rename cannot pass unnoticed");
+  }
+
+  // ── frontend parsing ────────────────────────────────────────────────────────
+
+  /** Interface name → declared field names, across every frontend source. */
+  private static Map<String, Set<String>> parseInterfaces(Path core) {
+    Map<String, Set<String>> out = new LinkedHashMap<>();
+    for (String source : SOURCES) {
+      String text = stripComments(read(core.resolve(source)));
+      Matcher m = Pattern.compile("export interface (\\w+)\\s*\\{([^}]*)}").matcher(text);
+      while (m.find()) {
+        Set<String> fields = new TreeSet<>();
+        Matcher field = Pattern.compile("(?m)^\\s*(\\w+)\\??\\s*:").matcher(m.group(2));
+        while (field.find()) fields.add(field.group(1));
+        out.put(m.group(1), fields);
+      }
+    }
+    return out;
+  }
+
+  /** {@code export type ApiSkillContent = SkillContent;} → alias to target. */
+  private static Map<String, String> parseAliases(String text) {
+    Map<String, String> out = new LinkedHashMap<>();
+    Matcher m = Pattern.compile("export type (\\w+)\\s*=\\s*(\\w+);").matcher(text);
+    while (m.find()) out.put(m.group(1), m.group(2));
+    return out;
+  }
+
+  private static String stripComments(String text) {
+    return text.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\\n]*", "");
+  }
+
+  // ── backend introspection ───────────────────────────────────────────────────
+
+  /**
+   * The JSON keys a response of this type carries. Records serialize by component name, and
+   * this codebase applies no Jackson renaming or null exclusion, so the components are the keys.
+   */
+  private static Set<String> jsonKeys(Class<?> type) {
+    if (!type.isRecord()) {
+      throw new IllegalStateException(type.getSimpleName() + " is not a record; this test "
+          + "assumes component-name serialization and cannot introspect it");
+    }
+    return Arrays.stream(type.getRecordComponents())
+        .map(RecordComponent::getName)
+        .collect(TreeSet::new, Set::add, Set::addAll);
+  }
+
+  // ── locating the frontend ───────────────────────────────────────────────────
+
+  /** Walks up from the working directory, so this passes from the module or the repo root. */
+  private static Path frontendCoreDir() {
+    Path dir = Path.of("").toAbsolutePath();
+    for (int depth = 0; depth < 5 && dir != null; depth++, dir = dir.getParent()) {
+      Path core = dir.resolve("applications/mission-control-fe/src/app/core");
+      if (Files.isDirectory(core)) return core;
+      core = dir.resolve("mission-control-fe/src/app/core");
+      if (Files.isDirectory(core)) return core;
+    }
+    return null;
+  }
+
+  private static String read(Path path) {
+    try {
+      return Files.readString(path);
+    } catch (IOException e) {
+      throw new UncheckedIOException("could not read " + path, e);
+    }
+  }
+}
