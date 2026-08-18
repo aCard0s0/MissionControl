@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.board.BoardRepository;
-import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
@@ -22,6 +21,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 
 class ContainerUpdateServiceTest {
 
+  private static final String URL = "unix:///sock";
   private static final String HOST = "dh-local";
   private static final String OLD_ID = "old-container-id";
   private static final String NEW_ID = "new-container-id";
@@ -31,7 +31,6 @@ class ContainerUpdateServiceTest {
   private BoardRepository board;
   private AgentMcpLinkRepository links;
   private DockerGateway docker;
-  private HostService hosts;
   private DataSourceTransactionManager transactions;
   private ContainerUpdateService service;
 
@@ -42,11 +41,9 @@ class ContainerUpdateServiceTest {
     board = new BoardRepository(jdbc, new ObjectMapper());
     links = new AgentMcpLinkRepository(jdbc);
     docker = mock(DockerGateway.class);
-    hosts = mock(HostService.class);
-    when(hosts.urlOf(HOST)).thenReturn("unix:///sock");
     transactions = new DataSourceTransactionManager(database.dataSource());
 
-    service = new ContainerUpdateService(docker, hosts, List.of(board, links), transactions);
+    service = new ContainerUpdateService(docker, List.of(board, links), transactions);
   }
 
   @AfterEach
@@ -83,7 +80,7 @@ class ContainerUpdateServiceTest {
     seedBoardTask(OLD_ID);
     seedLink(HOST, OLD_ID);
 
-    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(1, board.findByContainer(NEW_ID).size());
     assertTrue(board.findByContainer(OLD_ID).isEmpty());
@@ -98,7 +95,7 @@ class ContainerUpdateServiceTest {
     // a different daemon can legitimately hold a link row with the same container id
     links.upsert(new AgentMcpLink("dh-remote", OLD_ID, "default", "files", "srv-1", 1, 1, 1));
 
-    service.update(HOST, OLD_ID, "v2026.8.3");
+    service.update(URL, HOST, OLD_ID, "v2026.8.3");
 
     assertEquals(1, links.list("dh-remote", OLD_ID, "default").size());
     assertTrue(links.list(HOST, OLD_ID, "default").isEmpty());
@@ -107,7 +104,7 @@ class ContainerUpdateServiceTest {
   @Test
   void anUpdateWithNothingToRemapStillSucceeds() {
     stubUpgrade();
-    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
   }
 
   @Test
@@ -116,11 +113,11 @@ class ContainerUpdateServiceTest {
     ContainerIdListener broken = (host, oldId, newId) -> {
       throw new IllegalStateException("database is locked");
     };
-    service = new ContainerUpdateService(docker, hosts, List.of(broken), transactions);
+    service = new ContainerUpdateService(docker, List.of(broken), transactions);
 
     // the container is already running the new image; refusing to report that
     // would trade a working Agent for a bookkeeping detail
-    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
   }
 
   @Test
@@ -129,7 +126,7 @@ class ContainerUpdateServiceTest {
         .thenThrow(new IllegalArgumentException("not a Mission Control-managed container"));
     seedBoardTask(OLD_ID);
 
-    assertThrows(IllegalArgumentException.class, () -> service.update(HOST, OLD_ID, "v2026.8.3"));
+    assertThrows(IllegalArgumentException.class, () -> service.update(URL, HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(1, board.findByContainer(OLD_ID).size());
   }
@@ -144,9 +141,9 @@ class ContainerUpdateServiceTest {
     FailingListener locked = new FailingListener(1);
     // first in the list: the first attempt dies before either store writes, so the rows
     // below can only have moved on the retry
-    service = new ContainerUpdateService(docker, hosts, List.of(locked, board, links), transactions);
+    service = new ContainerUpdateService(docker, List.of(locked, board, links), transactions);
 
-    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(2, locked.attempts());
     assertEquals(1, board.findByContainer(NEW_ID).size());
@@ -162,11 +159,11 @@ class ContainerUpdateServiceTest {
     seedLink(HOST, OLD_ID);
     FailingListener locked = new FailingListener(Integer.MAX_VALUE);
     // last in the list, so both stores have already written when it fails
-    service = new ContainerUpdateService(docker, hosts, List.of(board, links, locked), transactions);
+    service = new ContainerUpdateService(docker, List.of(board, links, locked), transactions);
 
     // undoing a working upgrade to preserve a bookkeeping row would trade a live Agent
     // for a link, so the caller still learns where its container went
-    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(2, locked.attempts());
     // every table moves in one transaction: an abandoned remap leaves the whole Agent on

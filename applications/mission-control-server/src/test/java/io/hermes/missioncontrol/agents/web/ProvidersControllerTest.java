@@ -5,7 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.agents.ModelProviderRegistry;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;

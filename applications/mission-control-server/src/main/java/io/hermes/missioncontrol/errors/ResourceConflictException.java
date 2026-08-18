@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.web;
+package io.hermes.missioncontrol.errors;
 
 /** A requested resource name conflicts with existing external/runtime state. */
 public class ResourceConflictException extends RuntimeException {

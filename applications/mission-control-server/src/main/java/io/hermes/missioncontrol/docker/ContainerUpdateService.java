@@ -1,6 +1,5 @@
 package io.hermes.missioncontrol.docker;
 
-import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,23 +20,26 @@ public class ContainerUpdateService {
   private static final Logger log = LoggerFactory.getLogger(ContainerUpdateService.class);
 
   private final DockerGateway docker;
-  private final HostService hosts;
   private final List<ContainerIdListener> listeners;
   private final TransactionTemplate transactions;
 
   public ContainerUpdateService(
-      DockerGateway docker, HostService hosts, List<ContainerIdListener> listeners,
+      DockerGateway docker, List<ContainerIdListener> listeners,
       PlatformTransactionManager transactionManager) {
     this.docker = docker;
-    this.hosts = hosts;
     this.listeners = listeners;
     this.transactions = new TransactionTemplate(transactionManager);
   }
 
-  /** @return the id of the replacement container */
-  public String update(String hostId, String containerId, String version) {
-    DockerGateway.UpgradeResult result =
-        docker.upgrade(hosts.urlOf(hostId), containerId, version);
+  /**
+   * Takes the daemon endpoint and the host id side by side, the way {@link
+   * DockerGateway#deploy} does: the caller already holds the host registry, and
+   * resolving it here would make this package depend on the one that owns hosts.
+   *
+   * @return the id of the replacement container
+   */
+  public String update(String hostUrl, String hostId, String containerId, String version) {
+    DockerGateway.UpgradeResult result = docker.upgrade(hostUrl, containerId, version);
     remap(hostId, result.oldContainerId(), result.newContainerId());
     return result.newContainerId();
   }

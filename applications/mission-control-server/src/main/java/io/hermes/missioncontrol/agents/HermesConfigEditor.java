@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

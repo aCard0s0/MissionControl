@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.web;
+package io.hermes.missioncontrol.errors;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;

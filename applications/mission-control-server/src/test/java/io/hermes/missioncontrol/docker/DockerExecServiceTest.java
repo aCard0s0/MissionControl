@@ -23,7 +23,7 @@ import com.github.dockerjava.api.command.InspectExecCmd;
 import com.github.dockerjava.api.command.InspectExecResponse;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;

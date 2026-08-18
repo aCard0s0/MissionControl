@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.HostService;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;

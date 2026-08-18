@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.web;
+package io.hermes.missioncontrol.errors;
 
 /**
  * Something Mission Control depends on — a Docker daemon, the MCP registry, an agent

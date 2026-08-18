@@ -21,7 +21,7 @@ import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
 import io.hermes.missioncontrol.docker.DockerExecService;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;

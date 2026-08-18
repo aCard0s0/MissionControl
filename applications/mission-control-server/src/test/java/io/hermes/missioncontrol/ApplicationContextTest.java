@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.hermes.missioncontrol.config.SqliteExceptionTranslator;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.docker;
+package io.hermes.missioncontrol.fleet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -14,9 +14,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.hermes.missioncontrol.docker.ContainerDto;
+import io.hermes.missioncontrol.docker.ContainerUpdateService;
+import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.LogLineDto;
+import io.hermes.missioncontrol.docker.StatsDto;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
 import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;
@@ -178,7 +183,8 @@ class ContainersControllerTest {
         .andExpect(status().isBadRequest());
     verifyNoInteractions(updates);
 
-    when(updates.update("dh-local", "abc123", "v2")).thenReturn("replacement456");
+    when(hosts.urlOf("dh-local")).thenReturn(URL);
+    when(updates.update(URL, "dh-local", "abc123", "v2")).thenReturn("replacement456");
 
     // the container id changes on an update, so the caller has to be told the new one
     mvc.perform(post("/api/containers/dh-local/abc123/update")

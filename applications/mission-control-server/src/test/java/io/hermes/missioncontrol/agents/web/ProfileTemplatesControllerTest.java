@@ -15,11 +15,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
-import io.hermes.missioncontrol.web.ResourceConflictException;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.web;
+package io.hermes.missioncontrol.errors;
 
 import com.github.dockerjava.api.exception.BadRequestException;
 import com.github.dockerjava.api.exception.ConflictException;

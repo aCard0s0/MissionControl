@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.mcp;
 
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

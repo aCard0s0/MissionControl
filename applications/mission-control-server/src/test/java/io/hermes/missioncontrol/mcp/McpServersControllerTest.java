@@ -18,8 +18,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.docker.LogLineDto;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;
