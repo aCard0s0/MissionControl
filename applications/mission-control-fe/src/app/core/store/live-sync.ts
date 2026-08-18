@@ -4,6 +4,7 @@ import { BoardStore } from './board-store';
 import { ContainerStore } from './container-store';
 import { HostStore } from './host-store';
 import { ImageCatalogStore } from './image-catalog-store';
+import { JobStore } from './job-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
 import { ProviderStore } from './provider-store';
@@ -16,6 +17,9 @@ import { TemplateStore } from './template-store';
 const POLL = {
   containers: 10_000,
   agents: 12_000,
+  // a schedule only changes when a job runs or an operator edits one, and reading it
+  // is one exec per profile — the slowest useful period, not the fastest
+  jobs: 30_000,
   imageCatalogs: 300_000,
   stats: 3_000,
   logs: 5_000,
@@ -54,6 +58,7 @@ export class LiveSync {
     private readonly mcp: McpCatalogStore,
     private readonly providers: ProviderStore,
     private readonly images: ImageCatalogStore,
+    private readonly jobs: JobStore,
   ) {}
 
   async probeBackend(): Promise<void> {
@@ -77,8 +82,10 @@ export class LiveSync {
     ]);
     await this.agents.refresh();   // needs the container list
     void this.images.refreshAll();
+    void this.jobs.refresh();      // needs the profile list
     setInterval(() => this.containers.refresh(), POLL.containers);
     setInterval(() => this.agents.refresh(), POLL.agents);
+    setInterval(() => this.jobs.refresh(), POLL.jobs);
     setInterval(() => this.images.refreshAll(), POLL.imageCatalogs);
     setInterval(() => this.containers.pollStats(), POLL.stats);
     setInterval(() => this.logs.poll(), POLL.logs);

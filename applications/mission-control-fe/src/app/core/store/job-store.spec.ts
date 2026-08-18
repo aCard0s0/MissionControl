@@ -1,96 +1,244 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CronJob } from '../models';
+import { ApiCronJob } from '../hermes-api';
+import { AgentProfile } from '../models';
+import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
 import { JobStore } from './job-store';
 import { StoreContext } from './store-context';
 
-const context = () =>
-  new StoreContext({ apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' });
-
-const job = (id: string, patch: Partial<CronJob> = {}): CronJob => ({
-  id, containerId: 'c-1', agentId: 'a-1', name: `job ${id}`, schedule: '0 9 * * *',
-  prompt: '', deliverTo: 'slack', enabled: true, nextRun: 2_000, lastRun: null,
-  lastStatus: 'ok', ...patch,
-} as CronJob);
-
-const store = (jobs: CronJob[] = []) => {
-  const ctx = context();
-  const containers = new ContainerStore(ctx);
-  const jobStore = new JobStore(ctx, containers);
-  jobStore.jobs.set(jobs);
-  return { ctx, containers, jobStore };
+const CONTAINER = {
+  id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
+  image: 'hermes', version: 'v1', startedAt: 1, sizeRootFsGb: 1, profiles: ['atlas'],
 };
 
-// Scheduling has no endpoint behind it yet. What this slice must not do is
-// pretend otherwise — a job that looks created but never runs is worse than a
-// refusal an operator can see.
-describe('JobStore', () => {
-  it('holds nothing, because nothing serves it', () => {
-    expect(new JobStore(context(), new ContainerStore(context())).jobs()).toEqual([]);
+const profile = (id: string, name: string, containerId = 'c-1') => ({
+  id, containerId, name, role: '', state: 'idle', provider: 'nous', model: 'm',
+  apiKeyMasked: '', cwd: '', soul: '', memoryMd: '', configYaml: '',
+  skills: [], mcp: [], integrations: [], lastActive: 1,
+});
+
+const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
+  id, name: `job ${id}`, prompt: 'do it', schedule: '0 9 * * *', scheduleKind: 'cron',
+  deliver: 'local', enabled: true, state: 'scheduled', repeatTimes: null, repeatDone: 0,
+  createdAt: 1_000, nextRunAt: 5_000, lastRunAt: null, lastStatus: null, lastError: null,
+  skills: [], ...patch,
+});
+
+/** A store holding one container and two profiles, with the cron API stubbed. */
+const loaded = async (cron: Record<string, unknown>, profiles = ['atlas', 'scribe']) => {
+  const ctx = new StoreContext({ apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' });
+  const containers = new ContainerStore(ctx);
+  const agents = new AgentStore(ctx, containers);
+  (ctx as unknown as { api: unknown }).api = {
+    containers: { list: vi.fn().mockResolvedValue([CONTAINER]) },
+    agents: {
+      list: vi.fn().mockResolvedValue(
+        profiles.map((name, i) => profile(`a-${name}`, name))),
+      cron,
+    },
+  };
+  await containers.refresh();
+  await agents.refresh();
+  containers.select('c-1');
+  const jobs = new JobStore(ctx, containers, agents);
+  return { ctx, containers, agents, jobs };
+};
+
+const answer = (jobs: ApiCronJob[], schedulerRunning = true) => ({ jobs, schedulerRunning });
+
+describe('JobStore listing', () => {
+  it('unions the schedules of every profile in the container', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('j-1')]))
+      .mockResolvedValueOnce(answer([job('j-2')]));
+    const { jobs } = await loaded({ list });
+
+    await jobs.refresh();
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(jobs.jobs().map(j => j.id)).toEqual(['j-1', 'j-2']);
+    // each job knows the profile it belongs to, which is how a mutation is addressed
+    expect(jobs.jobs().map(j => j.agentId)).toEqual(['a-atlas', 'a-scribe']);
   });
 
-  it('says so instead of creating a job that would never run', () => {
-    const { ctx, jobStore } = store();
+  it('orders the schedule by what runs next', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('late', { nextRunAt: 9_000 })]))
+      .mockResolvedValueOnce(answer([job('soon', { nextRunAt: 2_000 })]));
+    const { jobs } = await loaded({ list });
 
-    jobStore.create('c-1', 'a-1', 'nightly', '0 9 * * *', 'do it', 'slack');
+    await jobs.refresh();
 
-    expect(jobStore.jobs()).toEqual([]);
-    expect(ctx.liveError()).toContain('not available');
+    expect(jobs.jobs().map(j => j.id)).toEqual(['soon', 'late']);
   });
 
-  it('shows only the selected container\'s jobs', () => {
-    const { containers, jobStore } = store([job('j-1'), job('j-2', { containerId: 'c-2' })]);
+  it('shows a job that will never run again last, not as due now', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('done', { nextRunAt: null }), job('next')]))
+      .mockResolvedValueOnce(answer([]));
+    const { jobs } = await loaded({ list });
 
-    containers.select('c-1');
-    expect(jobStore.forSelectedContainer().map(j => j.id)).toEqual(['j-1']);
+    await jobs.refresh();
 
-    containers.select('c-2');
-    expect(jobStore.forSelectedContainer().map(j => j.id)).toEqual(['j-2']);
+    expect(jobs.jobs().map(j => j.id)).toEqual(['next', 'done']);
+    expect(jobs.jobs()[1].nextRun).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it('pauses and resumes one job without touching the rest', () => {
-    const { jobStore } = store([job('j-1'), job('j-2')]);
+  it('keeps the rest of the schedule when one profile cannot be read', async () => {
+    const list = vi.fn()
+      .mockRejectedValueOnce(new Error('container stopped'))
+      .mockResolvedValueOnce(answer([job('j-2')]));
+    const { jobs } = await loaded({ list });
 
-    jobStore.toggle('j-1');
-    expect(jobStore.jobs().map(j => j.enabled)).toEqual([false, true]);
+    await jobs.refresh();
 
-    jobStore.toggle('j-1');
-    expect(jobStore.jobs().map(j => j.enabled)).toEqual([true, true]);
+    expect(jobs.jobs().map(j => j.id)).toEqual(['j-2']);
   });
 
-  it('patches only the fields it was given', () => {
-    const { jobStore } = store([job('j-1')]);
+  it('reports the gateway being down, because stored jobs then never fire', async () => {
+    const list = vi.fn().mockResolvedValue(answer([job('j-1')], false));
+    const { jobs } = await loaded({ list });
 
-    jobStore.update('j-1', { name: 'renamed', schedule: '@daily' });
+    await jobs.refresh();
 
-    expect(jobStore.jobs()[0]).toMatchObject({
-      name: 'renamed', schedule: '@daily', prompt: '', deliverTo: 'slack',
-    });
+    expect(jobs.schedulerRunning()).toBe(false);
   });
 
-  it('drops jobs with the container or the profile they belonged to', () => {
-    const { jobStore } = store([job('j-1'), job('j-2', { agentId: 'a-2' }), job('j-3', { containerId: 'c-2' })]);
+  it('holds nothing when the container has no profiles to schedule against', async () => {
+    const list = vi.fn();
+    const { jobs } = await loaded({ list }, []);
 
-    jobStore.dropByAgent('a-2');
-    expect(jobStore.jobs().map(j => j.id)).toEqual(['j-1', 'j-3']);
+    await jobs.refresh();
 
-    jobStore.dropByContainer('c-1');
-    expect(jobStore.jobs().map(j => j.id)).toEqual(['j-3']);
+    expect(jobs.jobs()).toEqual([]);
+    expect(list).not.toHaveBeenCalled();
   });
 
-  it('removes one job by id', () => {
-    const { jobStore } = store([job('j-1'), job('j-2')]);
+  it('skips an overlapping fan-out rather than doubling the reads', async () => {
+    let release!: () => void;
+    const pending = new Promise<unknown>(resolve => { release = () => resolve(answer([])); });
+    const list = vi.fn().mockReturnValue(pending);
+    const { jobs } = await loaded({ list });
 
-    jobStore.remove('j-1');
+    const first = jobs.refresh();
+    await jobs.refresh();
+    expect(list).toHaveBeenCalledTimes(2);   // the two profiles of the first pass only
 
-    expect(jobStore.jobs().map(j => j.id)).toEqual(['j-2']);
+    release();
+    await first;
   });
 
-  it('re-keys jobs onto the id a container recreate minted', () => {
-    const { jobStore } = store([job('j-1'), job('j-2', { containerId: 'c-2' })]);
+  it('shows only the selected container\'s schedule', async () => {
+    const list = vi.fn().mockResolvedValue(answer([job('j-1')]));
+    const { containers, jobs } = await loaded({ list });
+    await jobs.refresh();
+    expect(jobs.forSelectedContainer().length).toBeGreaterThan(0);
 
-    jobStore.reassignContainer('c-1', 'c-new');
+    containers.select('c-other');
 
-    expect(jobStore.jobs().map(j => j.containerId)).toEqual(['c-new', 'c-2']);
+    expect(jobs.forSelectedContainer()).toEqual([]);
+  });
+});
+
+describe('JobStore mutations', () => {
+  it('creates the job on the profile it was assigned to', async () => {
+    const create = vi.fn().mockResolvedValue(answer([job('j-new')]));
+    const { jobs } = await loaded({ list: vi.fn().mockResolvedValue(answer([])), create },
+      ['atlas', 'scribe']);
+
+    expect(await jobs.create('c-1', 'a-scribe', 'digest', '0 9 * * *', 'summarize', 'telegram'))
+      .toBe(true);
+
+    expect(create).toHaveBeenCalledWith(
+      { hostId: 'dh-local', containerId: 'c-1', name: 'scribe' },
+      { schedule: '0 9 * * *', prompt: 'summarize', name: 'digest', deliver: 'telegram' });
+    expect(jobs.jobs().map(j => j.id)).toEqual(['j-new']);
+  });
+
+  it('sends only the fields an edit actually changed', async () => {
+    const update = vi.fn().mockResolvedValue(answer([job('j-1')]));
+    const { jobs } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([job('j-1')])), update,
+    }, ['atlas']);
+    await jobs.refresh();
+
+    await jobs.update('j-1', { prompt: 'new prompt' });
+
+    expect(update).toHaveBeenCalledWith(expect.anything(), 'j-1', { prompt: 'new prompt' });
+  });
+
+  it('pauses a running job and resumes a paused one', async () => {
+    const setEnabled = vi.fn().mockResolvedValue(answer([job('j-1', { enabled: false })]));
+    const { jobs } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([job('j-1')])), setEnabled,
+    }, ['atlas']);
+    await jobs.refresh();
+
+    await jobs.toggle('j-1');
+
+    expect(setEnabled).toHaveBeenCalledWith(expect.anything(), 'j-1', false);
+    expect(jobs.byId('j-1')?.enabled).toBe(false);
+  });
+
+  it('asks for a run on the next tick without changing the schedule', async () => {
+    const runNow = vi.fn().mockResolvedValue(answer([job('j-1')]));
+    const { jobs } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([job('j-1')])), runNow,
+    }, ['atlas']);
+    await jobs.refresh();
+
+    expect(await jobs.runNow('j-1')).toBe(true);
+    expect(runNow).toHaveBeenCalledWith(expect.anything(), 'j-1');
+  });
+
+  it('replaces only the owning profile\'s jobs with what the write answered', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('atlas-1')]))
+      .mockResolvedValueOnce(answer([job('scribe-1')]));
+    const remove = vi.fn().mockResolvedValue(answer([]));
+    const { jobs } = await loaded({ list, remove });
+    await jobs.refresh();
+
+    await jobs.remove('atlas-1');
+
+    // the other profile's schedule is not this answer's to speak for
+    expect(jobs.jobs().map(j => j.id)).toEqual(['scribe-1']);
+  });
+
+  it('reports a refused write and leaves the schedule alone', async () => {
+    const remove = vi.fn().mockRejectedValue(new Error('job is running'));
+    const { ctx, jobs } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([job('j-1')])), remove,
+    }, ['atlas']);
+    await jobs.refresh();
+
+    expect(await jobs.remove('j-1')).toBe(false);
+    expect(ctx.liveError()).toContain('remove job failed: job is running');
+    expect(jobs.byId('j-1')).not.toBeNull();
+  });
+
+  it('does nothing for a job it does not hold', async () => {
+    const remove = vi.fn();
+    const { jobs } = await loaded({ list: vi.fn().mockResolvedValue(answer([])), remove },
+      ['atlas']);
+
+    expect(await jobs.remove('gone')).toBe(false);
+    expect(await jobs.toggle('gone')).toBe(false);
+    expect(await jobs.runNow('gone')).toBe(false);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('drops the jobs of a profile or container that is gone', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('atlas-1')]))
+      .mockResolvedValueOnce(answer([job('scribe-1')]));
+    const { jobs } = await loaded({ list });
+    await jobs.refresh();
+
+    jobs.dropByAgent('a-atlas');
+    expect(jobs.jobs().map(j => j.id)).toEqual(['scribe-1']);
+
+    jobs.dropByContainer('c-1');
+    expect(jobs.jobs()).toEqual([]);
   });
 });

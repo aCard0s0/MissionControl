@@ -20,13 +20,15 @@ const job = (id: string, nextRun: number, patch: Partial<CronJob> = {}): CronJob
 
 const storeStub = (jobs: CronJob[] = []) => ({
   containerJobs: signal(jobs),
+  schedulerRunning: signal(true),
   containerAgents: signal(agents),
   selectedContainer: signal({ id: 'c-1', name: 'hermes-prod' }),
   agentById: (id: string) => agents.find(a => a.id === id) ?? null,
-  toggleJob: vi.fn(),
-  updateJob: vi.fn(),
-  createJob: vi.fn(),
-  removeJob: vi.fn(),
+  toggleJob: vi.fn().mockResolvedValue(true),
+  updateJob: vi.fn().mockResolvedValue(true),
+  createJob: vi.fn().mockResolvedValue(true),
+  runJobNow: vi.fn().mockResolvedValue(true),
+  removeJob: vi.fn().mockResolvedValue(true),
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -184,9 +186,10 @@ describe('CalendarPage job form', () => {
     await fill(fixture, 'schedule', '0 9 * * *');
 
     press(fixture, 'create', '.form-actions');
+    await settle(fixture);
 
     expect(store.createJob).toHaveBeenCalledWith(
-      'c-1', 'a-1', 'nightly digest', '0 9 * * *', '', 'cli');
+      'c-1', 'a-1', 'nightly digest', '0 9 * * *', '', 'local');
   });
 
   it('refuses a job with no name or an unreadable schedule', async () => {
@@ -210,10 +213,10 @@ describe('CalendarPage job form', () => {
 
     await fill(fixture, 'name', 'renamed');
     press(fixture, 'save', '.form-actions');
+    await settle(fixture);
 
     expect(store.updateJob).toHaveBeenCalledWith('j-1', {
-      name: 'renamed', schedule: '0 9 * * *', prompt: 'do the thing',
-      deliverTo: 'slack', agentId: 'a-1',
+      name: 'renamed', schedule: '0 9 * * *', prompt: 'do the thing', deliverTo: 'slack',
     });
     expect(store.createJob).not.toHaveBeenCalled();
   });

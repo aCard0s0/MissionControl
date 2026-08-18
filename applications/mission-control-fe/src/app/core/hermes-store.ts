@@ -59,14 +59,14 @@ export class HermesStore {
   private readonly imageStore = new ImageCatalogStore(this.ctx, this.containerStore, this.hostStore);
   private readonly templateStore =
     new TemplateStore(this.ctx, this.containerStore, this.agentStore);
-  private readonly jobStore = new JobStore(this.ctx, this.containerStore);
+  private readonly jobStore = new JobStore(this.ctx, this.containerStore, this.agentStore);
   private readonly boardStore = new BoardStore(this.ctx, this.containerStore);
   private readonly webhookStore = new WebhookStore(this.ctx, this.agentStore);
   private readonly lifecycle = new ContainerLifecycle(this.ctx, this.containerStore, this.imageStore);
   private readonly terminal = new TerminalRequestStore();
   private readonly liveSync = new LiveSync(
     this.ctx, this.hostStore, this.containerStore, this.agentStore, this.logStore, this.boardStore,
-    this.templateStore, this.catalogStore, this.providerStore, this.imageStore);
+    this.templateStore, this.catalogStore, this.providerStore, this.imageStore, this.jobStore);
 
   constructor() {
     void this.liveSync.probeBackend();
@@ -236,13 +236,19 @@ export class HermesStore {
 
   // ── scheduled jobs ─────────────────────────────────────────────────────
   readonly containerJobs = this.jobStore.forSelectedContainer;
-  toggleJob = (id: string): void => this.jobStore.toggle(id);
-  updateJob = (id: string, patch: Partial<CronJob>): void => this.jobStore.update(id, patch);
+  /** False when the gateway is down: hermes keeps the jobs, but nothing fires them. */
+  readonly schedulerRunning = this.jobStore.schedulerRunning;
+  refreshJobs = (): Promise<void> => this.jobStore.refresh();
+  toggleJob = (id: string): Promise<boolean> => this.jobStore.toggle(id);
+  updateJob = (id: string, patch: Partial<CronJob>): Promise<boolean> =>
+    this.jobStore.update(id, patch);
   createJob = (
     containerId: string, agentId: string, name: string, schedule: string, prompt: string,
     deliverTo: string,
-  ): void => this.jobStore.create(containerId, agentId, name, schedule, prompt, deliverTo);
-  removeJob = (id: string): void => this.jobStore.remove(id);
+  ): Promise<boolean> =>
+    this.jobStore.create(containerId, agentId, name, schedule, prompt, deliverTo);
+  runJobNow = (id: string): Promise<boolean> => this.jobStore.runNow(id);
+  removeJob = (id: string): Promise<boolean> => this.jobStore.remove(id);
 
   // ── board ──────────────────────────────────────────────────────────────
   readonly containerTasks = this.boardStore.forSelectedContainer;

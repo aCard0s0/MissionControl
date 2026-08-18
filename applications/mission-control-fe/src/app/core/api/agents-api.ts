@@ -3,6 +3,7 @@ import {
   ApiAgentProfile, ApiAgentSetup, ApiAuxiliaryModel, ApiIntegration, ApiLogLine, ApiSession,
   ApiSetupAuthProvider,
 } from './api-types';
+import { AgentCronApi } from './agent-cron-api';
 import { AgentMcpApi } from './agent-mcp-api';
 import { AgentRef, agentPath } from './agent-ref';
 import { AgentSkillsApi } from './agent-skills-api';
@@ -23,17 +24,19 @@ export interface CreateAgentRequest {
 }
 
 /**
- * `/api/agents` — profiles inside an Agent container. Skills and MCP servers are
- * large enough surfaces of their own to live on {@link AgentsApi.skills} and
- * {@link AgentsApi.mcp}.
+ * `/api/agents` — profiles inside an Agent container. Skills, MCP servers and
+ * scheduled jobs are large enough surfaces of their own to live on
+ * {@link AgentsApi.skills}, {@link AgentsApi.mcp} and {@link AgentsApi.cron}.
  */
 export class AgentsApi {
   readonly skills: AgentSkillsApi;
   readonly mcp: AgentMcpApi;
+  readonly cron: AgentCronApi;
 
   constructor(private readonly http: ApiHttp) {
     this.skills = new AgentSkillsApi(http);
     this.mcp = new AgentMcpApi(http);
+    this.cron = new AgentCronApi(http);
   }
 
   list(hostId: string, containerId: string): Promise<ApiAgentProfile[]> {

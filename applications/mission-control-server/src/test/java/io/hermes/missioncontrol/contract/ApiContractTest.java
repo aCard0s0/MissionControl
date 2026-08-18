@@ -9,6 +9,8 @@ import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyProviderDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
+import io.hermes.missioncontrol.agents.api.CronJobDto;
+import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
@@ -101,6 +103,9 @@ class ApiContractTest {
     CONTRACT.put("ApiSetupKeyProvider", ApiKeyProviderDto.class);
     CONTRACT.put("ApiSetupMessaging", MessagingStatusDto.class);
     CONTRACT.put("ApiModelProvider", ProviderOptionDto.class);
+    // scheduled jobs
+    CONTRACT.put("ApiCronJob", CronJobDto.class);
+    CONTRACT.put("ApiCronJobs", CronJobsDto.class);
     // templates
     CONTRACT.put("ApiProfileTemplate", ProfileTemplateDto.class);
     CONTRACT.put("ApiTemplateSecret", SecretRef.class);
