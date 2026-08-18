@@ -185,8 +185,12 @@ class McpHealthProbe {
    * shows up in mountinfo — this container normally, and the namespace owner when the deployment
    * shares one, as the Tailscale compose file does with {@code network_mode: service:tailscale}.
    * That is exactly the container a network has to be attached to for this process to use it.
+   *
+   * <p>Package-private and non-static so a test can substitute it: the answer comes from this
+   * process' own {@code /proc/self/mountinfo}, so what {@link #attachMcpNetwork} does with it is
+   * otherwise decided by whether the test run itself happens to be containerized.
    */
-  private static String ownNetworkContainerId() {
+  String ownNetworkContainerId() {
     try {
       return containerIdFrom(Files.readAllLines(Path.of("/proc/self/mountinfo")));
     } catch (Exception notContainerized) {

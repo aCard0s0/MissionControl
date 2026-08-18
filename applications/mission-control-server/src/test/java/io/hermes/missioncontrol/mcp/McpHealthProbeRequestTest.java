@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import static org.mockito.Mockito.when;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.io.IOException;
@@ -40,13 +42,15 @@ import org.mockito.ArgumentCaptor;
  * with a GET, configured headers have to travel with it, and every failure has to land on the
  * record as an operator-facing reason rather than escaping to the caller.
  *
- * <p>Not covered here: the local-host path, which attaches Mission Control's own container to
- * the MCP network and so depends on this process running inside one.
+ * <p>The local-host path is covered too, with the /proc lookup for Mission Control's own
+ * container id substituted so the verdict does not depend on whether the test run is itself
+ * containerized.
  */
 class McpHealthProbeRequestTest {
 
   private static final String ID = "srv-1";
   private static final String REMOTE_HOST = "dh-remote";
+  private static final String OWN_CONTAINER = "a".repeat(64);
 
   private HttpServer server;
   private String baseUrl;
@@ -194,6 +198,56 @@ class McpHealthProbeRequestTest {
     verify(repository, never()).updateCheck(anyString(), eq("connected"), isNull(), anyLong(), anyLong());
   }
 
+  // ── the local-host path: attaching to the MCP network ───────────────────
+  //
+  // On the local daemon a managed server is probed by its Compose service name, which only
+  // resolves once Mission Control's own container has joined the MCP network. The container id
+  // comes from this process' /proc/self/mountinfo, so it is substituted here rather than left to
+  // decide the outcome by whether the test run happens to be containerized.
+
+  @Test
+  void aLocalManagedServerIsAttachedToTheMcpNetworkAndProbedByItsServiceName() {
+    route("/mcp", 200, "application/json", "{}");
+    when(hosts.urlOf(HostService.LOCAL_HOST_ID)).thenReturn("unix:///sock");
+    McpHealthProbe attaching = probeOwnedBy(OWN_CONTAINER);
+    // 'localhost' stands in for the Compose service name so the probe reaches the stub without
+    // needing a Docker network to make a service name resolvable
+    localManagedConfig();
+
+    attaching.check(row("managed", "running", HostService.LOCAL_HOST_ID, "localhost"));
+
+    verify(docker).connectNetwork("unix:///sock", OWN_CONTAINER, ComposeStackRenderer.NETWORK);
+    assertEquals(List.of("POST /mcp"), requests);
+    verify(repository).updateCheck(eq(ID), eq("connected"), isNull(), anyLong(), anyLong());
+  }
+
+  @Test
+  void aLocalProbeWithNoContainerToAttachIsReportedRatherThanThrown() {
+    // running Mission Control outside a container is a supported development mode; the check
+    // simply cannot work there, and that has to reach the operator as a verdict
+    localManagedConfig();
+
+    probeOwnedBy(null).check(row("managed", "running", HostService.LOCAL_HOST_ID, "mcp-files"));
+
+    assertEquals("cannot reach the MCP network: Mission Control is not running inside a container",
+        errorWrittenToTheRecord());
+    verifyNoInteractions(docker);
+    assertTrue(requests.isEmpty());
+  }
+
+  @Test
+  void aFailedNetworkAttachIsRecordedAndStopsTheProbe() {
+    when(hosts.urlOf(HostService.LOCAL_HOST_ID)).thenReturn("unix:///sock");
+    doThrow(new UpstreamUnavailableException("docker host not connected"))
+        .when(docker).connectNetwork(anyString(), anyString(), anyString());
+    localManagedConfig();
+
+    probeOwnedBy(OWN_CONTAINER).check(row("managed", "running", HostService.LOCAL_HOST_ID, "localhost"));
+
+    assertEquals("docker host not connected", errorWrittenToTheRecord());
+    assertTrue(requests.isEmpty(), "nothing may be probed once the network attach failed");
+  }
+
   // ── external servers ────────────────────────────────────────────────────
 
   @Test
@@ -233,8 +287,33 @@ class McpHealthProbeRequestTest {
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private static ServerRow row(String kind, String runtimeState, String hostId) {
-    return new ServerRow(ID, "Files", null, kind, hostId, "mcp-files", "{}",
+    return row(kind, runtimeState, hostId, "mcp-files");
+  }
+
+  private static ServerRow row(String kind, String runtimeState, String hostId, String serviceKey) {
+    return new ServerRow(ID, "Files", null, kind, hostId, serviceKey, "{}",
         "running", runtimeState, "idle", null, 1L, 1L, null, "unknown", null, null, null, 0L, 0L);
+  }
+
+  /** A probe whose own container id is decided by the test rather than by /proc. */
+  private McpHealthProbe probeOwnedBy(String containerId) {
+    return new McpHealthProbe(repository, configs, hosts, docker) {
+      @Override
+      String ownNetworkContainerId() {
+        return containerId;
+      }
+    };
+  }
+
+  /**
+   * A managed record on the local daemon. The connection URL the probe builds is
+   * {@code http://<serviceKey>:<internalPort><path>}, with the service key coming from the row,
+   * so the port here is what points it at the stub.
+   */
+  private void localManagedConfig() {
+    when(configs.read(any())).thenReturn(new StoredConfig("http", null, "example/files:1", null,
+        List.of(), List.of(), null, List.of(), server.getAddress().getPort(), null, "/mcp", null,
+        List.of(), List.of(), List.of(), null, List.of()));
   }
 
   private void managedConfig(String transport, String crossHostUrl) {

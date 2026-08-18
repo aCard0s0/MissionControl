@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -408,6 +409,64 @@ class ComposeStackManagerTest {
             Map.of(), Duration.ofSeconds(10)));
 
     assertTrue(failure.getMessage().startsWith("could not start Docker CLI:"), failure.getMessage());
+  }
+
+  @Test
+  @EnabledOnOs({OS.LINUX, OS.MAC})
+  void aFloodOfOutputIsCappedSoOneBadRunCannotExhaustTheHeap() {
+    // Compose can emit megabytes on a failing pull; the whole string ends up in an exception
+    // message and then in an HTTP error body
+    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+
+    String output = manager.run(
+        List.of("/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' x"),
+        Map.of(), Duration.ofSeconds(20));
+
+    assertEquals(32_768, output.length());
+  }
+
+  @Test
+  void mutationsOnOneDaemonAreSerialisedSoTwoStacksCannotInterleave() throws Exception {
+    // both writes target the same compose.yaml and the same Docker resources; overlapping them
+    // is how a half-written file gets handed to Compose
+    AtomicInteger inFlight = new AtomicInteger();
+    AtomicInteger overlaps = new AtomicInteger();
+    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString()) {
+      @Override
+      String run(List<String> command, Map<String, String> environment, Duration timeout) {
+        if (inFlight.incrementAndGet() > 1) overlaps.incrementAndGet();
+        try {
+          Thread.sleep(20);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        } finally {
+          inFlight.decrementAndGet();
+        }
+        return isInspect(command) ? ComposeStackRenderer.PROJECT : "";
+      }
+    };
+
+    List<Thread> writers = new ArrayList<>();
+    for (int i = 0; i < 4; i++) {
+      writers.add(Thread.ofPlatform().start(() ->
+          manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1))));
+    }
+    for (Thread writer : writers) writer.join(Duration.ofSeconds(30));
+
+    assertEquals(0, overlaps.get(), "two Compose runs for one daemon overlapped");
+    assertEquals(YAML, readComposeFile());
+  }
+
+  @Test
+  void aDifferentHostGetsItsOwnLockAndItsOwnStackFile() {
+    ComposeStackManager manager = managerReturning(command -> "");
+
+    manager.writeOnly("dh-local", rendered());
+    manager.writeOnly("dh-remote", new ComposeStackRenderer.Rendered(
+        "services: {remote}\n", Map.of(), Map.of(), Map.of()));
+
+    assertEquals(YAML, readComposeFile());
+    assertTrue(Files.exists(stackDirectory.resolve("dh-remote").resolve("compose.yaml")));
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────
