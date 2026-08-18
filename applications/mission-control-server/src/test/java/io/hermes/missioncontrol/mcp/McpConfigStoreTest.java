@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import java.util.List;
@@ -135,7 +136,7 @@ class McpConfigStoreTest {
 
     assertEquals("", storeWithWrongKey.materializeForRender(foreign.environment()).get("API_TOKEN"));
 
-    IllegalStateException blocked = assertThrows(IllegalStateException.class,
+    ResourceConflictException blocked = assertThrows(ResourceConflictException.class,
         () -> storeWithWrongKey.assertRecoverable(foreign));
     assertTrue(blocked.getMessage().contains("unrecoverable"));
     assertTrue(blocked.getMessage().contains("API_TOKEN"));
@@ -147,8 +148,8 @@ class McpConfigStoreTest {
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(new StoredValue("API_TOKEN", null, true)), List.of(), List.of(), null, List.of());
 
-    IllegalStateException blocked =
-        assertThrows(IllegalStateException.class, () -> store.assertRecoverable(config));
+    ResourceConflictException blocked =
+        assertThrows(ResourceConflictException.class, () -> store.assertRecoverable(config));
     assertTrue(blocked.getMessage().contains("not set"));
   }
 
@@ -159,7 +160,7 @@ class McpConfigStoreTest {
 
     assertEquals("pg-secret",
         store.materialize(foreign.supportServices().getFirst().environment()).get("POSTGRES_PASSWORD"));
-    assertThrows(IllegalStateException.class, () -> storeWithWrongKey.assertRecoverable(foreign));
+    assertThrows(ResourceConflictException.class, () -> storeWithWrongKey.assertRecoverable(foreign));
   }
 
   @Test
@@ -195,8 +196,10 @@ class McpConfigStoreTest {
   }
 
   @Test
-  void anUnreadableEnvelopeIsAnIllegalStateRatherThanAJacksonError() {
-    IllegalStateException failure = assertThrows(IllegalStateException.class,
+  void anUnreadableEnvelopeIsAConflictRatherThanAJacksonError() {
+    // 409, not 500: the operator can delete and recreate the record, and a corrupt row must not
+    // page whoever watches the 5xx rate
+    ResourceConflictException failure = assertThrows(ResourceConflictException.class,
         () -> store.read(new ServerRowFixture("{not json").asRow()));
 
     assertTrue(failure.getMessage().contains("unreadable"));
@@ -386,7 +389,7 @@ class McpConfigStoreTest {
     StoredConfig config = configWith(List.of(new StoredValue("TOKEN", "enc:v1:not-mine", true)));
 
     assertEquals("secret value is unrecoverable: TOKEN",
-        assertThrows(IllegalStateException.class, () -> store.assertRecoverable(config)).getMessage());
+        assertThrows(ResourceConflictException.class, () -> store.assertRecoverable(config)).getMessage());
   }
 
   private StoredConfig configWith(List<StoredValue> environment) {

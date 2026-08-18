@@ -38,7 +38,7 @@ class HermesConfigEditor {
     Map<Object, Object> servers = mcpServersForEdit(root);
     Object existing = servers.get(name);
     if (existing != null && !(existing instanceof Map<?, ?>)) {
-      throw new IllegalStateException("refusing to overwrite malformed MCP server: " + name);
+      throw new ResourceConflictException("refusing to overwrite malformed MCP server: " + name);
     }
     Map<Object, Object> server = asMutableMap(existing);
     applyDefinition(server, request);
@@ -62,7 +62,7 @@ class HermesConfigEditor {
     }
     Object existing = servers.get(currentName);
     if (!(existing instanceof Map<?, ?>)) {
-      throw new IllegalStateException("refusing to rewrite malformed MCP server: " + currentName);
+      throw new ResourceConflictException("refusing to rewrite malformed MCP server: " + currentName);
     }
     Map<Object, Object> server = asMutableMap(existing);
     applyDefinition(server, request);
@@ -84,7 +84,7 @@ class HermesConfigEditor {
     Object existing = servers.get(name);
     if (!(existing instanceof Map<?, ?>)) {
       if (existing == null) throw new NoSuchElementException("unknown MCP server: " + name);
-      throw new IllegalStateException("refusing to rewrite malformed MCP server: " + name);
+      throw new ResourceConflictException("refusing to rewrite malformed MCP server: " + name);
     }
     Map<Object, Object> server = asMutableMap(existing);
     server.put("enabled", enabled);
@@ -106,7 +106,7 @@ class HermesConfigEditor {
   Map<Object, Object> mcpServersForEdit(Map<Object, Object> root) {
     Object node = root.get("mcp_servers");
     if (node != null && !(node instanceof Map<?, ?>)) {
-      throw new IllegalStateException("refusing to rewrite malformed mcp_servers config");
+      throw new ResourceConflictException("refusing to rewrite malformed mcp_servers config");
     }
     return asMutableMap(node);
   }
@@ -210,9 +210,9 @@ class HermesConfigEditor {
       Object loaded = yaml().load(yamlText);
       if (loaded instanceof Map<?, ?> map) return new LinkedHashMap<>(map);
     } catch (Exception e) {
-      throw new IllegalStateException("refusing to rewrite unparseable " + configPath, e);
+      throw new ResourceConflictException("refusing to rewrite unparseable " + configPath, e);
     }
-    throw new IllegalStateException("refusing to rewrite unparseable " + configPath);
+    throw new ResourceConflictException("refusing to rewrite unparseable " + configPath);
   }
 
   Map<Object, Object> asMutableMap(Object node) {

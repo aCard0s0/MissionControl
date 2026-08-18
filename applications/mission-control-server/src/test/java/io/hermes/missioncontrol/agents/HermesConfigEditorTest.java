@@ -172,24 +172,24 @@ class HermesConfigEditorTest {
   @Test
   void anUnparseableOrMalformedConfigIsRefusedRatherThanRewritten() {
     // the guard that stops an edit from wiping a profile's whole config
-    IllegalStateException unparseable = assertThrows(IllegalStateException.class, () ->
+    ResourceConflictException unparseable = assertThrows(ResourceConflictException.class, () ->
         editor.parseForEdit("\tkey: [unterminated", PATH));
     assertTrue(unparseable.getMessage().contains(PATH), "the message must name the file it refused");
 
     // a valid YAML document that is not a mapping is equally unusable
-    assertThrows(IllegalStateException.class, () -> editor.parseForEdit("- a\n- b", PATH));
+    assertThrows(ResourceConflictException.class, () -> editor.parseForEdit("- a\n- b", PATH));
 
     // mcp_servers present but not a map
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.addMcpServer("mcp_servers: oops\n", PATH, http("files", "https://x.internal/mcp")));
 
     // one entry present but not a map — refuse rather than overwrite it
     String malformedEntry = "mcp_servers:\n  files: oops\n";
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.addMcpServer(malformedEntry, PATH, http("files", "https://x.internal/mcp")));
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.updateMcpServer(malformedEntry, PATH, "files", http("files", "https://x.internal/mcp")));
-    assertThrows(IllegalStateException.class, () ->
+    assertThrows(ResourceConflictException.class, () ->
         editor.setMcpServerEnabled(malformedEntry, PATH, "files", false));
   }
 
@@ -381,11 +381,11 @@ class HermesConfigEditorTest {
   void anUnparseableConfigIsNeverRewritten() {
     // rewriting a file we cannot parse would drop whatever else the operator had in it
     assertEquals("refusing to rewrite unparseable " + PATH,
-        assertThrows(IllegalStateException.class,
+        assertThrows(ResourceConflictException.class,
             () -> editor.parseForEdit("mcp_servers: [unclosed\n", PATH)).getMessage());
     // a document that parses but is not a mapping is equally unsafe to edit
     assertEquals("refusing to rewrite unparseable " + PATH,
-        assertThrows(IllegalStateException.class,
+        assertThrows(ResourceConflictException.class,
             () -> editor.parseForEdit("- a list\n", PATH)).getMessage());
   }
 

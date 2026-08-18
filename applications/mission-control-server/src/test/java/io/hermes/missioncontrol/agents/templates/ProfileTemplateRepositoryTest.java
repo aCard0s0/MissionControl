@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.secrets.StoredSecret;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
@@ -136,7 +137,7 @@ class ProfileTemplateRepositoryTest {
         "{not json at all", "pt-1");
 
     // findById feeds update(), so returning an empty list here would write the loss back
-    assertThrows(IllegalStateException.class, () -> repository.findById("pt-1"));
+    assertThrows(ResourceConflictException.class, () -> repository.findById("pt-1"));
 
     assertEquals("{not json at all", database.jdbc().queryForObject(
         "SELECT secrets FROM profile_templates WHERE id = ?", String.class, "pt-1"));
@@ -196,7 +197,7 @@ class ProfileTemplateRepositoryTest {
     repository.insert(template("pt-1", "Ops"));
     database.jdbc().update("UPDATE profile_templates SET mcp_servers = ? WHERE id = ?", "{not json", "pt-1");
 
-    assertThrows(IllegalStateException.class, () -> repository.findById("pt-1"));
+    assertThrows(ResourceConflictException.class, () -> repository.findById("pt-1"));
   }
 
   @Test

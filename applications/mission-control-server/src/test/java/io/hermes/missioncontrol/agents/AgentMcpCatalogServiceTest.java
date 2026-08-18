@@ -429,7 +429,7 @@ class AgentMcpCatalogServiceTest {
         .thenReturn(profile(List.of(custom("tools"))));
 
     assertEquals("could not disable MCP entry tools",
-        assertThrows(IllegalStateException.class,
+        assertThrows(ResourceConflictException.class,
             () -> service.disableAndUnlinkForDeletion("mcp-1")).getMessage());
     verify(links, never()).delete(anyString(), anyString(), anyString(), anyString());
   }
