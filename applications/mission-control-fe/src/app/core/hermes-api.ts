@@ -29,8 +29,9 @@ export class HermesApi {
   readonly templates: TemplatesApi;
   readonly board: BoardApi;
 
-  constructor(apiBaseUrl: string) {
-    this.http = new ApiHttp(apiBaseUrl);
+  /** `http` is the seam mock data mode substitutes — see {@link MockHttp}. */
+  constructor(apiBaseUrl: string, http: ApiHttp = new ApiHttp(apiBaseUrl)) {
+    this.http = http;
     this.hosts = new HostsApi(this.http);
     this.containers = new ContainersApi(this.http);
     this.agents = new AgentsApi(this.http);

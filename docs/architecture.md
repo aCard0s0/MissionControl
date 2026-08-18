@@ -93,6 +93,43 @@ supervised gateway log under `/opt/data/logs/gateways/{profile}` every five
 seconds; it does not reuse the container-wide Docker stream. Calendar jobs and
 webhooks remain mock-only.
 
+### How mock mode is served
+
+Mock mode is being moved from a branch inside every store slice to a fake HTTP
+layer. `MockHttp` (`core/api/mock-http.ts`) stands in for `ApiHttp`, the one class
+that talks to `fetch`, so in mock mode the resource clients under `core/api` run
+exactly as they do against the server — same paths, same bodies, same error
+unwrapping — and a converted slice has one code path instead of a live half and a
+mock half that can drift.
+
+Converted so far: **docker hosts**, **board tasks**. A path `MockHttp` has no
+route for throws, so an unconverted slice reaching it fails loudly rather than
+reading empty state; those slices still answer from their own `ctx.mock` branch
+and never get there.
+
+Why this order, and what is left:
+
+1. **Dual implementations** — around 45 sites where a live call and a local
+   mutation express the same operation twice (`agent-mcp-store`,
+   `agent-setup-store`, `agent-skill-store`, `container-lifecycle`, `agent-store`,
+   `provider-store`, `template-store`, `mcp-catalog-store`). These are the
+   duplication worth removing, and each is one domain's routes plus its seed.
+2. **Simulations** — the fake daemon probe, `pingIntegrations`, the mock MCP
+   operation results and log tails. They belong to the fake backend, not to the
+   store; the host probe already moved.
+3. **Seeds** — `signal(ctx.mock ? seedX() : [])` in ten slices. These move with
+   their domain, and each conversion trades synchronous seeding for a read on
+   startup, so a mock-mode page paints one tick before its data.
+4. **Not this at all** — calendar jobs and webhooks have no backend to be a fake
+   of. Their `ctx.mock` is not a duplicated implementation, it is a capability
+   flag ("live mode cannot do this yet"). Collapsing those into `MockHttp` would
+   invent an endpoint the server does not serve; they need a feature flag, or a
+   backend.
+
+`MockTelemetry` stays where it is until the container and agent domains convert:
+it drifts stats and emits log lines by writing into slice signals directly, which
+is the fake backend's job once those slices read through one.
+
 ## Terminal
 
 A VSCode-style panel pinned to the bottom of the dashboard

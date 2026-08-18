@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { McRuntimeConfig } from '../app-config';
 import { HermesApi } from '../hermes-api';
+import { MockHttp } from '../api/mock-http';
 
 let uid = 0;
 
@@ -33,7 +34,12 @@ export class StoreContext {
 
   constructor(readonly config: McRuntimeConfig) {
     this.mock = config.dataMode === 'mock';
-    this.api = new HermesApi(config.apiBaseUrl);
+    // mock mode answers through a fake HTTP layer, so a converted slice makes the
+    // same call in both modes; the slices still carrying a mock branch never
+    // reach it. See MockHttp for which domains have moved.
+    this.api = new HermesApi(
+      config.apiBaseUrl,
+      this.mock ? new MockHttp(config.dockerSocket) : undefined);
     this.backendStatus.set(this.mock ? 'mock' : 'connecting');
   }
 

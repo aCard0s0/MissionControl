@@ -305,6 +305,8 @@ describe('HermesStore cross-slice wiring', () => {
 
   it('drops every profile, job, task and webhook a removed container owned', async () => {
     const store = new HermesStore();
+    // the board is served by the fake backend, so its first read is a call away
+    await vi.advanceTimersByTimeAsync(0);
     store.selectContainer('c-prod');
     const agentIds = new Set(store.containerAgents().map(a => a.id));
     expect(store.containerJobs().length).toBeGreaterThan(0);

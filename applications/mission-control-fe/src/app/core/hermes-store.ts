@@ -74,8 +74,14 @@ export class HermesStore {
     this.templateStore, this.catalogStore, this.providerStore, this.imageStore);
 
   constructor() {
-    if (this.ctx.mock) this.telemetry.start();
-    else void this.liveSync.probeBackend();
+    if (this.ctx.mock) {
+      // the domains served by MockHttp are read the same way live mode reads them
+      void this.hostStore.refresh();
+      void this.boardStore.refresh();
+      this.telemetry.start();
+    } else {
+      void this.liveSync.probeBackend();
+    }
   }
 
   // ── app-wide state ─────────────────────────────────────────────────────

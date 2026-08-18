@@ -1,5 +1,5 @@
 import {
-  AgentProfile, BoardTask, ChatMessage, CronJob, DockerHost, HermesContainer, LogEntry,
+  AgentProfile, BoardTask, ChatMessage, CronJob, HermesContainer, LogEntry,
   McpCatalogServer, ProfileTemplate, SessionInfo, Webhook,
 } from './models';
 
@@ -72,13 +72,6 @@ export const seedTemplates = (): ProfileTemplate[] => [
       { key: 'TAVILY_API_KEY', set: false, recoverable: false },
     ],
     createdAt: NOW - 5 * DAY, updatedAt: NOW - 5 * DAY,
-  },
-];
-
-export const seedDockerHosts = (localSocket: string): DockerHost[] => [
-  {
-    id: 'dh-local', name: 'localhost', url: localSocket, kind: 'local',
-    status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 2, note: null,
   },
 ];
 
