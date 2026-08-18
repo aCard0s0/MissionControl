@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest';
+import { ModelPicker } from './model-picker';
+
+/** A promise plus the handle to settle it, so a load can be left in flight. */
+const deferred = () => {
+  let resolve!: (list: string[]) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<string[]>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+};
+
+describe('ModelPicker', () => {
+  it('lists what the catalog answered and selects the first of them', async () => {
+    const picker = new ModelPicker();
+
+    await picker.load(Promise.resolve(['claude-opus-5', 'claude-sonnet-5']));
+
+    expect(picker.suggestions()).toEqual(['claude-opus-5', 'claude-sonnet-5']);
+    expect(picker.model).toBe('claude-opus-5');
+    expect(picker.loading()).toBe(false);
+  });
+
+  it('keeps a selection the new list still offers', async () => {
+    const picker = new ModelPicker();
+    picker.model = 'claude-sonnet-5';
+
+    await picker.load(Promise.resolve(['claude-opus-5', 'claude-sonnet-5']));
+
+    expect(picker.model).toBe('claude-sonnet-5');
+  });
+
+  it('leaves a typed model alone when the provider has no catalog', async () => {
+    const picker = new ModelPicker();
+    picker.model = 'some-local-build';
+
+    await picker.load(Promise.resolve([]));
+
+    expect(picker.model).toBe('some-local-build');
+    expect(picker.suggestions()).toEqual([]);
+  });
+
+  it('takes a preferred model over the first suggestion', async () => {
+    const picker = new ModelPicker();
+
+    await picker.load(Promise.resolve(['a', 'b']), { preferred: 'b' });
+
+    expect(picker.model).toBe('b');
+  });
+
+  it('reports that it is loading until the catalog answers', async () => {
+    const picker = new ModelPicker();
+    const catalog = deferred();
+
+    const load = picker.load(catalog.promise);
+    expect(picker.loading()).toBe(true);
+
+    catalog.resolve(['a']);
+    await load;
+    expect(picker.loading()).toBe(false);
+  });
+
+  it('clears the list when a provider switch fails, so no stale models are offered', async () => {
+    const picker = new ModelPicker();
+    await picker.load(Promise.resolve(['from-provider-a']));
+
+    await picker.load(Promise.reject(new Error('provider unreachable')));
+
+    expect(picker.suggestions()).toEqual([]);
+  });
+
+  it('keeps the list when a plain refresh fails', async () => {
+    const picker = new ModelPicker();
+    await picker.load(Promise.resolve(['a', 'b']));
+
+    await picker.load(Promise.reject(new Error('bad key')), { keepOnError: true });
+
+    expect(picker.suggestions()).toEqual(['a', 'b']);
+  });
+
+  it('never lets a superseded load land on the provider that replaced it', async () => {
+    const picker = new ModelPicker();
+    const slow = deferred();
+
+    const first = picker.load(slow.promise, { preferred: 'slow-model' });
+    await picker.load(Promise.resolve(['fast-model']));
+
+    slow.resolve(['slow-model']);
+    await first;
+
+    expect(picker.suggestions()).toEqual(['fast-model']);
+    expect(picker.model).toBe('fast-model');
+  });
+
+  it('abandons a load in flight when it is reset', async () => {
+    const picker = new ModelPicker();
+    const slow = deferred();
+
+    const load = picker.load(slow.promise);
+    picker.reset();
+    slow.resolve(['late']);
+    await load;
+
+    expect(picker.suggestions()).toEqual([]);
+    expect(picker.model).toBe('');
+    expect(picker.loading()).toBe(false);
+  });
+});
