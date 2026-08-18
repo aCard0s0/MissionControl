@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.hosts;
 
 import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DaemonInfo;
+import io.hermes.missioncontrol.docker.DockerClients;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
@@ -28,12 +29,15 @@ public class HostService {
 
   private final HostRepository repository;
   private final DockerGateway docker;
+  private final DockerClients clients;
   private final AppProperties props;
   private final Map<String, Probe> probeCache = new ConcurrentHashMap<>();
 
-  public HostService(HostRepository repository, DockerGateway docker, AppProperties props) {
+  public HostService(
+      HostRepository repository, DockerGateway docker, DockerClients clients, AppProperties props) {
     this.repository = repository;
     this.docker = docker;
+    this.clients = clients;
     this.props = props;
   }
 
@@ -86,6 +90,8 @@ public class HostService {
     }
     repository.delete(id);
     probeCache.remove(id);
+    // the url is read from the row above, because it is no longer resolvable from the id
+    clients.release(row.url());
   }
 
   public String urlOf(String hostId) {

@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.hosts;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerClients;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
@@ -37,6 +39,7 @@ class HostsControllerTest {
 
   private SqliteTestDatabase database;
   private DockerGateway docker;
+  private DockerClients clients;
   private HostRepository repository;
   private HostService hosts;
   private MockMvc mvc;
@@ -45,9 +48,10 @@ class HostsControllerTest {
   void setUp() throws Exception {
     database = SqliteTestDatabase.open();
     docker = mock(DockerGateway.class);
+    clients = mock(DockerClients.class);
     repository = new HostRepository(database.jdbc());
     hosts = new HostService(
-        repository, docker,
+        repository, docker, clients,
         new AppProperties("live", "", SOCKET, "hermes/agent:latest", "hermes", "test"));
     mvc = MockMvcBuilders
         .standaloneSetup(new HostsController(hosts))
@@ -202,6 +206,10 @@ class HostsControllerTest {
     mvc.perform(delete("/api/hosts/dh-ghost"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error").value("unknown docker host: dh-ghost"));
+
+    // a refused delete must not close anything: the local socket's client is the one every
+    // other container operation in the app runs through
+    verify(clients, never()).release(anyString());
   }
 
   @Test
@@ -211,6 +219,9 @@ class HostsControllerTest {
     mvc.perform(delete("/api/hosts/dh-remote")).andExpect(status().isOk());
 
     assertEquals(0, repository.findAll().size());
+    // the row is only half of it — the host's two Docker clients hold pooled sockets that
+    // nothing else will ever reach, since the url is no longer resolvable from any row
+    verify(clients).release("tcp://10.0.0.7:2375");
   }
 
   @Test

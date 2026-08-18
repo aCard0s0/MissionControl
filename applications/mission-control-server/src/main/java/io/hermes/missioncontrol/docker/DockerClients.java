@@ -7,6 +7,8 @@ import com.github.dockerjava.zerodep.ZerodepDockerHttpClient;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,6 +35,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class DockerClients {
 
+  private static final Logger log = LoggerFactory.getLogger(DockerClients.class);
+
   /**
    * Ceiling for a command that answers in one shot. Worth keeping: a wedged daemon then
    * fails a request instead of pinning the request thread indefinitely.
@@ -41,12 +45,36 @@ public class DockerClients {
 
   private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
 
+  /**
+   * How a client is built, as a seam.
+   *
+   * <p>Only {@link #release} needs it. Building a client talks to no daemon, so the caching
+   * tests drive the real thing — but a real {@code close()} is silent, and the one thing
+   * worth asserting about release is that the pool was actually closed and not merely
+   * dropped from the map.
+   */
+  interface ClientFactory {
+    DockerClient create(String url, Duration responseTimeout);
+  }
+
+  private final ClientFactory factory;
   private final Map<String, DockerClient> unary = new ConcurrentHashMap<>();
   private final Map<String, DockerClient> streaming = new ConcurrentHashMap<>();
 
+  // Spring instantiates through the no-arg constructor: with no @Autowired anywhere it takes
+  // the default one, which here is the production one. (RegistryTagService needs the opposite
+  // annotation because it has no no-arg constructor to fall back to.)
+  public DockerClients() {
+    this(DockerClients::build);
+  }
+
+  DockerClients(ClientFactory factory) {
+    this.factory = factory;
+  }
+
   /** For request/response commands — inspect, list, create, start, stop, rename, remove. */
   public DockerClient forUrl(String url) {
-    return unary.computeIfAbsent(url, u -> build(u, UNARY_RESPONSE_TIMEOUT));
+    return unary.computeIfAbsent(url, u -> factory.create(u, UNARY_RESPONSE_TIMEOUT));
   }
 
   /**
@@ -55,7 +83,51 @@ public class DockerClients {
    * bound — {@code awaitCompletion(timeout)}, an idle-session reaper — is the real limit.
    */
   public DockerClient streamingForUrl(String url) {
-    return streaming.computeIfAbsent(url, u -> build(u, null));
+    return streaming.computeIfAbsent(url, u -> factory.create(u, null));
+  }
+
+  /**
+   * Drops both clients for a daemon url and closes their connection pools.
+   *
+   * <p>Called when a host is removed. Without it the two clients — each holding pooled
+   * sockets, and the threads Apache HttpClient runs them on — stay for the life of the
+   * process, keyed by a url nothing references any more. Idempotent, so a repeated or
+   * unknown url is a no-op.
+   *
+   * <p>A close failure is logged and the release continues. The host row is already gone by
+   * then, so there is nothing useful to abort: refusing to finish would only strand the
+   * other client.
+   *
+   * <p>Known narrow race: a request that resolved this url just before the row was deleted
+   * can rebuild a client afterwards, re-adding one entry. It cannot grow beyond the requests
+   * already in flight at that moment, because the row is deleted first and every later
+   * request fails on the unknown host id before it reaches a url.
+   */
+  public void release(String url) {
+    closeQuietly(url, unary.remove(url));
+    closeQuietly(url, streaming.remove(url));
+  }
+
+  private static void closeQuietly(String url, DockerClient client) {
+    if (client == null) {
+      return;
+    }
+    try {
+      client.close();
+    } catch (Exception e) {
+      log.warn("closing the docker client for {} failed: {}", url, e.toString());
+    }
+  }
+
+  /**
+   * How many clients are cached across both flavours.
+   *
+   * <p>Exists for the test that pins the bound: {@link #forUrl} hands back the same instance
+   * whether or not the map is leaking, so nothing else distinguishes a released client from a
+   * retained one.
+   */
+  int cachedClientCount() {
+    return unary.size() + streaming.size();
   }
 
   private static DockerClient build(String url, Duration responseTimeout) {
