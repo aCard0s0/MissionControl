@@ -12,6 +12,14 @@ export interface McpEditorEntry extends McpConfigEntry {
   value: string;
 }
 
+/** A support service being edited. The wire type leaves its lists optional; the
+ *  editor always materializes them, so every "+ row" button can append to one
+ *  without first having to create it. */
+export interface McpEditorSupportService extends Omit<McpSupportService, 'environment' | 'volumes'> {
+  environment: McpEditorEntry[];
+  volumes: McpNamedVolume[];
+}
+
 /** The form state behind the editor panel — strings where the wire wants lists,
  *  because a textarea is what the operator actually types into. */
 export interface McpEditorDraft {
@@ -37,7 +45,7 @@ export interface McpEditorDraft {
   environment: McpEditorEntry[];
   volumes: McpNamedVolume[];
   healthcheck: McpHealthcheck | null;
-  supportServices: McpSupportService[];
+  supportServices: McpEditorSupportService[];
 }
 
 /** Defaults for a managed server's HTTP endpoint. */
@@ -116,7 +124,7 @@ export function mcpDraftFromServer(server: McpCatalogServer, duplicate = false):
     supportServices: server.supportServices.map(service => ({
       ...service,
       environment: entries(service.environment ?? []),
-      volumes: service.volumes?.map(volume => ({ ...volume })),
+      volumes: (service.volumes ?? []).map(volume => ({ ...volume })),
       healthcheck: copyHealthcheck(service.healthcheck),
     })),
   };
@@ -149,11 +157,11 @@ export function mcpDraftToInput(draft: McpEditorDraft): McpCatalogServerInput {
     healthcheck: managed ? draft.healthcheck : null,
     supportServices: managed ? draft.supportServices.map(service => ({
       ...service,
-      environment: (service.environment ?? []).map(entry => ({
+      environment: service.environment.map(entry => ({
         key: entry.key, value: entry.value ?? '', secret: entry.secret,
         clear: entry.clear,
       })),
-      volumes: (service.volumes ?? []).map(volume => ({ ...volume })),
+      volumes: service.volumes.map(volume => ({ ...volume })),
     })) : [],
   };
 }
@@ -185,8 +193,8 @@ function managedValid(draft: McpEditorDraft): boolean {
     const name = service.name.trim();
     if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(name) || names.has(name) || !service.image.trim()) return false;
     names.add(name);
-    if (!entriesValid((service.environment ?? []) as McpEditorEntry[], false)
-        || (service.volumes ?? []).some(volume => !volumeValid(volume))
+    if (!entriesValid(service.environment, false)
+        || service.volumes.some(volume => !volumeValid(volume))
         || !healthcheckValid(service.healthcheck ?? null)) return false;
   }
   return true;
@@ -253,4 +261,21 @@ function copyHealthcheck(value: McpHealthcheck | null | undefined): McpHealthche
 /** The healthcheck a fresh toggle starts from. */
 export function defaultHealthcheck(): McpHealthcheck {
   return { test: ['CMD'], interval: '30s', timeout: '5s', retries: 3, startPeriod: '5s' };
+}
+
+// The blank rows the editor's "+ …" buttons append. A new row is recoverable and
+// unset: nothing is stored behind it yet, so a secret must be typed to count.
+export function blankConfigEntry(): McpEditorEntry {
+  return { key: '', value: '', secret: false, set: false, recoverable: true };
+}
+
+export function blankVolume(): McpNamedVolume {
+  return { name: '', target: '' };
+}
+
+export function blankSupportService(): McpEditorSupportService {
+  return {
+    name: '', image: '', platform: null, entrypoint: [], command: [],
+    environment: [], volumes: [], healthcheck: null,
+  };
 }
