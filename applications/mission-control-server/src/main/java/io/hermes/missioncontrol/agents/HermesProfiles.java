@@ -185,6 +185,7 @@ public class HermesProfiles {
 
   public void delete(String url, String containerId, String name) {
     files.exec(url, containerId, List.of("hermes", "profile", "delete", name, "--yes"));
+    mcp.evictProfile(url, containerId, name);
   }
 
   // ── documents ──────────────────────────────────────────────────────────────

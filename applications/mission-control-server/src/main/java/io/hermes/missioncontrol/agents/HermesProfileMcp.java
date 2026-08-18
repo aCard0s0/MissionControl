@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.agents;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
+import io.hermes.missioncontrol.docker.ContainerIdListener;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,8 +12,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,9 +26,15 @@ import org.springframework.stereotype.Component;
  * container exec, so a listing reports the last probe rather than re-running one. That
  * cache is only correct while it is invalidated by the same code that edits the config,
  * which is why both halves live here.
+ *
+ * <p>The cache is also bounded by {@link #PROBE_TTL_MS}, because nothing guarantees the
+ * key a probe was filed under is ever visited again: a profile can be deleted, a container
+ * can be removed with {@code docker rm}, a host can be dropped from the dashboard. The
+ * explicit evictions ({@link #evictProfile}, {@link #onContainerReplaced}) cover the paths
+ * that do run through Mission Control; the TTL covers the rest.
  */
 @Component
-class HermesProfileMcp {
+class HermesProfileMcp implements ContainerIdListener {
 
   private static final Pattern ANSI = Pattern.compile("\\u001B\\[[;\\d]*m");
   private static final Pattern TOOL_COUNT = Pattern.compile("(?i)\\b(\\d+)\\s+tools?\\b");
@@ -33,9 +42,15 @@ class HermesProfileMcp {
       Pattern.compile("(?i)tools discovered:\\s*(\\d+)");
   private static final Pattern MCP_CONNECTED = Pattern.compile("(?m)^\\s*[✓✔]\\s+Connected \\(");
 
+  /** As in {@code HostService}: a reachability probe is evidence for about this long. */
+  private static final long PROBE_TTL_MS = 10_000;
+
   private record CacheKey(String url, String containerId, String profileName, String serverName) {}
 
-  private record CachedProbe(String fingerprint, McpTestResult result) {}
+  /** A probe, the definition it was taken against, and when it was filed — {@code at} is
+   *  stamped on caching rather than read from {@code result.checkedAt()} so a slow
+   *  handshake does not produce an entry that is already expired. */
+  private record CachedProbe(String fingerprint, McpTestResult result, long at) {}
 
   /** One {@code mcp_servers} entry, as both the listing and the probe need to read it. */
   private record Entry(
@@ -48,11 +63,20 @@ class HermesProfileMcp {
 
   private final HermesContainerFiles files;
   private final HermesConfigEditor config;
+  private final LongSupplier clock;
   private final ConcurrentMap<CacheKey, CachedProbe> probeCache = new ConcurrentHashMap<>();
 
+  // @Autowired is load-bearing: the test seam below makes this a multi-constructor bean, and
+  // Spring then looks for a no-arg constructor instead of choosing one.
+  @Autowired
   HermesProfileMcp(HermesContainerFiles files, HermesConfigEditor config) {
+    this(files, config, System::currentTimeMillis);
+  }
+
+  HermesProfileMcp(HermesContainerFiles files, HermesConfigEditor config, LongSupplier clock) {
     this.files = files;
     this.config = config;
+    this.clock = clock;
   }
 
   // ── config edits ───────────────────────────────────────────────────────────
@@ -110,6 +134,67 @@ class HermesProfileMcp {
     String apply(String configYaml, String configPath);
   }
 
+  // ── eviction ───────────────────────────────────────────────────────────────
+
+  /** Drops every probe filed against a profile that no longer exists. Called after the
+   *  delete succeeds: while the profile is still there, so are its probes. */
+  void evictProfile(String url, String containerId, String profileName) {
+    probeCache.keySet().removeIf(key -> Objects.equals(key.url(), url)
+        && Objects.equals(key.containerId(), containerId)
+        && Objects.equals(key.profileName(), profileName));
+  }
+
+  /**
+   * Drops every probe filed against the replaced container. The old id is matched on its
+   * own — Docker container ids are globally unique, so {@code hostId} adds nothing here
+   * and this cache needs no host lookup to use it.
+   *
+   * <p>The probes are dropped rather than moved to the new id: they are evidence that a
+   * server was reachable from the container that no longer exists. Whether the replacement
+   * can reach it is unproven until something probes it.
+   *
+   * <p>Listeners run inside the remap transaction, and this one cannot roll back with it —
+   * but dropping a probe only costs a badge that reads "unknown" until the next test, and
+   * the retry re-runs the same eviction harmlessly.
+   *
+   * @return 0 — this is a cache, so it moves no dashboard rows for the update log to count
+   */
+  @Override
+  public int onContainerReplaced(String hostId, String oldContainerId, String newContainerId) {
+    probeCache.keySet().removeIf(key -> Objects.equals(key.containerId(), oldContainerId));
+    return 0;
+  }
+
+  /**
+   * Files a probe, first dropping everything the TTL has expired.
+   *
+   * <p>Sweeping on write is what bounds the map. {@link #validCache} expires an entry when
+   * it is read, but an entry whose profile, container, or host is gone is never read again —
+   * nothing lists it — so the read path alone would never reach it. After a write, the map
+   * holds only what was probed in the last {@link #PROBE_TTL_MS}; between writes it cannot
+   * grow, because this is the only place anything is added.
+   *
+   * <p>The sweep is O(size) per write, which is affordable because a write is one explicit
+   * {@code POST …/test} — a person clicking one server — and each entry is a handful of
+   * fields.
+   */
+  private void cache(CacheKey key, Entry entry, McpTestResult result) {
+    long now = clock.getAsLong();
+    probeCache.values().removeIf(cached -> now - cached.at() >= PROBE_TTL_MS);
+    probeCache.put(key, new CachedProbe(entry.fingerprint(), result, now));
+  }
+
+  /**
+   * How many probes are cached right now.
+   *
+   * <p>Exists for the test that pins the bound. Eviction is otherwise unobservable from
+   * outside: a listing reports "unknown" whether the entry was swept, expired on read, or
+   * never taken, so nothing else can tell a bounded map from one that only ever grows.
+   */
+  int cachedProbeCount() {
+    return probeCache.size();
+  }
+
   // ── listing ────────────────────────────────────────────────────────────────
 
   List<AgentMcpServerDto> list(
@@ -137,10 +222,22 @@ class HermesProfileMcp {
     return result;
   }
 
-  /** The cached probe for this entry, dropping one taken against a since-edited definition. */
+  /**
+   * The cached probe for this entry, dropping one taken against a since-edited definition
+   * or one the TTL has expired.
+   *
+   * <p>An expired entry means the badge reads "unknown" rather than re-probing, because
+   * {@link #list} is the listing path: a read-through probe here would cost one container
+   * exec per configured server on every page load. "Unknown" is the honest answer — a
+   * reachability check from ten seconds ago is not evidence that the server is up now.
+   */
   private CachedProbe validCache(CacheKey key, Entry entry) {
     CachedProbe cached = probeCache.get(key);
-    if (cached != null && !cached.fingerprint().equals(entry.fingerprint())) {
+    if (cached == null) {
+      return null;
+    }
+    if (!cached.fingerprint().equals(entry.fingerprint())
+        || clock.getAsLong() - cached.at() >= PROBE_TTL_MS) {
       probeCache.remove(key, cached);
       return null;
     }
@@ -176,7 +273,7 @@ class HermesProfileMcp {
     if (serverName == null || serverName.isBlank()) {
       throw new IllegalArgumentException("missing server name");
     }
-    long checkedAt = System.currentTimeMillis();
+    long checkedAt = clock.getAsLong();
     Map<?, ?> configMap = YamlValues.parseMap(
         files.readFile(url, containerId, ProfilePaths.configFile(profileName)));
     if (!(configMap.get("mcp_servers") instanceof Map<?, ?> servers)
@@ -189,7 +286,7 @@ class HermesProfileMcp {
     if (!entry.enabled()) {
       McpTestResult disabled =
           new McpTestResult(serverName, "disabled", entry.tools(), null, null, checkedAt);
-      probeCache.put(cacheKey, new CachedProbe(entry.fingerprint(), disabled));
+      cache(cacheKey, entry, disabled);
       return disabled;
     }
 
@@ -206,7 +303,7 @@ class HermesProfileMcp {
         ? new McpTestResult(serverName, "connected", discoveredTools, latencyMs, null, checkedAt)
         : new McpTestResult(serverName, "error", discoveredTools, null,
             probeError(probe.stdout(), probe.stderr()), checkedAt);
-    probeCache.put(cacheKey, new CachedProbe(entry.fingerprint(), result));
+    cache(cacheKey, entry, result);
     return result;
   }
 
