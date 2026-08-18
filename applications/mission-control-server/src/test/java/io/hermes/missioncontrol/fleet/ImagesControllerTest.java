@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.docker;
+package io.hermes.missioncontrol.fleet;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -8,10 +8,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.hermes.missioncontrol.docker.ImageCatalogService;
+import io.hermes.missioncontrol.docker.ImageTagsDto;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;

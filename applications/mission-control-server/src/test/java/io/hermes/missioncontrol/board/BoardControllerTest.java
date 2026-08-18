@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

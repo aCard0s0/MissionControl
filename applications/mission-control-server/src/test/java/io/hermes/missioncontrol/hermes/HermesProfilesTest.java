@@ -18,7 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.exception.ConflictException;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.hermes.HermesProfiles.ConfigInfo;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;

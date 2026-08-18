@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

@@ -1,5 +1,7 @@
-package io.hermes.missioncontrol.docker;
+package io.hermes.missioncontrol.fleet;
 
+import io.hermes.missioncontrol.docker.ImageCatalogService;
+import io.hermes.missioncontrol.docker.ImageTagsDto;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.hermes.missioncontrol.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -186,7 +186,7 @@ class HostsControllerTest {
     // every endpoint that is about to talk to a container goes through this, so that a
     // dead daemon is a 503 rather than an obscure exec failure later
     org.junit.jupiter.api.Assertions.assertThrows(
-        io.hermes.missioncontrol.web.UpstreamUnavailableException.class,
+        io.hermes.missioncontrol.errors.UpstreamUnavailableException.class,
         () -> hosts.requireConnected(HostService.LOCAL_HOST_ID));
   }
 

@@ -3,7 +3,7 @@ package io.hermes.missioncontrol.modelproviders;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.modelproviders.ModelProviderRepository.ProviderRow;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

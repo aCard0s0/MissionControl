@@ -11,7 +11,7 @@ import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.ComposeStackRenderer.Deployment;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
 import java.net.http.HttpClient;

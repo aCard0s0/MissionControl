@@ -5,7 +5,7 @@ import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

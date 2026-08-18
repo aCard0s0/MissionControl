@@ -3,7 +3,7 @@ package io.hermes.missioncontrol.hosts;
 import io.hermes.missioncontrol.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;

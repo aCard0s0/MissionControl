@@ -1,6 +1,6 @@
 package io.hermes.missioncontrol.hermes;
 
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

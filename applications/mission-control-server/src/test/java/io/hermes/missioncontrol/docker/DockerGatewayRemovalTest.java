@@ -19,7 +19,7 @@ import com.github.dockerjava.api.command.RemoveVolumeCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ContainerConfig;
 import io.hermes.missioncontrol.AppProperties;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

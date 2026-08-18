@@ -6,7 +6,7 @@ import com.github.dockerjava.api.exception.ConflictException;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.LogLineDto;
-import io.hermes.missioncontrol.web.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;

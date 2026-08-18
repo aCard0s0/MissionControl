@@ -14,9 +14,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.web.ApiExceptionHandler;
-import io.hermes.missioncontrol.web.ResourceConflictException;
-import io.hermes.missioncontrol.web.UpstreamUnavailableException;
+import io.hermes.missioncontrol.errors.ApiExceptionHandler;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;

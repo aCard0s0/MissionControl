@@ -1,5 +1,12 @@
-package io.hermes.missioncontrol.docker;
+package io.hermes.missioncontrol.fleet;
 
+import io.hermes.missioncontrol.docker.ContainerDto;
+import io.hermes.missioncontrol.docker.ContainerUpdateService;
+import io.hermes.missioncontrol.docker.DeployRequest;
+import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.LogLineDto;
+import io.hermes.missioncontrol.docker.StatsDto;
+import io.hermes.missioncontrol.docker.UpdateContainerRequest;
 import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import java.util.ArrayList;
@@ -95,7 +102,7 @@ public class ContainersController {
       @PathVariable String hostId,
       @PathVariable String id,
       @Valid @RequestBody UpdateContainerRequest request) {
-    return Map.of("id", updates.update(hostId, id, request.version()));
+    return Map.of("id", updates.update(hosts.urlOf(hostId), hostId, id, request.version()));
   }
 
   @DeleteMapping("/{hostId}/{id}")
