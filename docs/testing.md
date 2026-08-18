@@ -142,6 +142,36 @@ cover for free without proving anything. Coverage percentage is a smoke detector
 when a threshold and a delegation-heavy class disagree, exclude the class rather than writing
 tests that assert a mock was called.
 
+## The one test that runs the whole application
+
+`HttpSurfaceTest` boots the app (`@SpringBootTest` on a random port, `@ActiveProfiles("test")`,
+so `data-mode: mock` keeps startup away from any daemon) and asserts what only the assembled
+stack decides:
+
+- **No mutating route answers 5xx to a body it should reject.** This is a sweep, not a list: it
+  walks every POST/PUT/PATCH/DELETE the application maps, sends an empty body and `{}`, and fails
+  on any 5xx. A 500 there reports a client mistake as a Mission Control defect, logs a stack trace
+  at ERROR, and pages whoever watches the 5xx rate — that is how the `transport` NPE behaved
+  before it was fixed. New endpoints are covered the day they are added, with nothing to update.
+- **The SPA fallback and the API do not shadow each other** — a deep link gets `index.html`, an
+  unknown `/api/...` path gets 404, and `/health` and `/config.js` reach their controllers. That
+  needs the real resource chain; calling the resolver directly cannot see it.
+- **CORS still admits the dev origin** and refuses others, because losing that breaks `ng serve`
+  while the combined image keeps working.
+- **The terminal's origin guard is attached to its endpoint**, proved over a real WebSocket
+  handshake against the running server. `TerminalOriginGuardTest` proves the rule; this proves it
+  is installed — the endpoint hands out an interactive shell and there is no authentication
+  anywhere in this application.
+
+It needs `src/test/resources/static/index.html`, a stand-in for the Angular build that the image
+copies into `classpath:/static` at build time. Without it the fallback resolves to nothing and the
+deep-link assertions cannot run.
+
+Two tiers deliberately do **not** exist yet, and their absence is a known blind spot rather than
+an oversight: nothing verifies that Docker accepts the argv we build (mocks pin our decisions, not
+the daemon's acceptance of them), and every hermes CLI parser is pinned to fixtures we wrote
+ourselves rather than captured from a real container.
+
 ## Test names and comments
 
 Names are sentences describing the rule, not the method under test:
@@ -163,10 +193,17 @@ JaCoCo runs on `mvn test` (the report goal is rebound from `verify`, because CI 
 `mvn test`). The CSV is at `target/site/jacoco/jacoco.csv`, the HTML at
 `target/site/jacoco/index.html`.
 
-Two traps when reading local numbers:
+`jacoco:check` runs in the same phase and **fails the build on a regression**. Its minimums are a
+ratchet, each sitting just under what the suite covers today, so a refactor passes and a
+regression does not. Raise them after a deliberate push; do not lower them to make a build green.
 
-- The agent **appends** to `jacoco.exec`, so a partial `mvn test -Dtest=Foo` inflates the next
-  report. Use `mvn clean test` for any number you intend to quote.
+Three things to know when running it locally:
+
+- A subset run (`mvn test -Dtest=Foo`) covers almost nothing, so the gate fails at the end even
+  though the tests passed. Add `-Djacoco.skip=true` while iterating.
+- `<append>false</append>` is set on the agent. The default appends, which meant a partial run
+  left its coverage in `jacoco.exec` and inflated the next report — every number quoted from a
+  dirty `target/` was wrong. Still prefer `mvn clean test` for anything you intend to quote.
 - `target/surefire-reports/` keeps XML files from renamed or deleted test classes forever, so
   summing them over a dirty `target/` overcounts. Trust surefire's own `Tests run:` line.
 
@@ -193,5 +230,6 @@ Two settings do the load-bearing work:
   backend's JaCoCo line figure. Drop the entry to count render paths instead; expect the total
   to fall sharply until component tests exist.
 
-No threshold is enforced, matching JaCoCo's setup on the backend — the number is reported, not
-gated.
+No threshold is enforced yet — unlike the backend, where `jacoco:check` fails the build below
+its ratchet. Worth adding the same once there is a baseline worth defending; until then the
+number is reported, not gated.
