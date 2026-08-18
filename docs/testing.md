@@ -4,7 +4,8 @@ How the backend tests are built, and why. Written down because most of the code 
 here sits behind a boundary — a Docker daemon, a provider API, an async executor, a database —
 and the four patterns below are what make that code reachable without one.
 
-Frontend testing (Angular/Karma) is not covered here.
+The conventions below are backend-only. The frontend runs Vitest through the Angular
+`@angular/build:unit-test` builder; its coverage setup is at the end of this file.
 
 ## The rule these follow
 
@@ -156,7 +157,7 @@ not the mechanics:
 // its first call with an auth error instead of saying the key is not configured
 ```
 
-## Coverage
+## Coverage — backend
 
 JaCoCo runs on `mvn test` (the report goal is rebound from `verify`, because CI runs bare
 `mvn test`). The CSV is at `target/site/jacoco/jacoco.csv`, the HTML at
@@ -168,3 +169,29 @@ Two traps when reading local numbers:
   report. Use `mvn clean test` for any number you intend to quote.
 - `target/surefire-reports/` keeps XML files from renamed or deleted test classes forever, so
   summing them over a dirty `target/` overcounts. Trust surefire's own `Tests run:` line.
+
+## Coverage — frontend
+
+```bash
+npm run test:coverage   # in applications/mission-control-fe
+```
+
+Vitest's v8 provider, configured on the `test` target in `angular.json` rather than in a
+runner config file, so `ng test` stays the single entry point. Reports land in
+`coverage/mission-control/` — `index.html` to browse, `lcov.info` for editors, and
+`coverage-summary.json`, which is what CI reads for its step summary. Plain `npm test` leaves
+coverage off, so the watch loop stays fast.
+
+Two settings do the load-bearing work:
+
+- `coverageInclude: ["src/**/*.ts"]` — without it, V8 only reports files a test happened to
+  import, so a page with no spec at all is *absent* from the report rather than counted at
+  zero. That turns the total into a measure of the files you already test.
+- `coverageExclude: ["src/**/*.html"]` — Angular compiles templates into instructions that V8
+  maps back to the `.html`, so an untested template lands as several hundred missed lines of
+  markup. Excluding them makes the number mean *TypeScript logic covered*, comparable to the
+  backend's JaCoCo line figure. Drop the entry to count render paths instead; expect the total
+  to fall sharply until component tests exist.
+
+No threshold is enforced, matching JaCoCo's setup on the backend — the number is reported, not
+gated.
