@@ -32,7 +32,7 @@
             <div><span class="k">model</span><span>{{ a.model }}</span></div>
             <div><span class="k">api key</span><span>{{ a.apiKeyMasked }}</span></div>
             <div><span class="k">terminal.cwd</span><span>{{ a.cwd }}</span></div>
-            <div><span class="k">skills enabled</span><span>{{ enabledSkills(a) }}</span></div>
+            <div><span class="k">skills enabled</span><span>{{ enabledSkills() }}</span></div>
             <div><span class="k">mcp servers</span><span>{{ a.mcp.length }}</span></div>
             <p class="lock-hint">full edits via <code>hermes -p {{ a.name }} setup</code></p>
           </div>
@@ -208,187 +208,11 @@
     }
 
     @case ('skills') {
-      <div class="panel" data-reveal>
-        <div class="panel-h">SKILLS <span class="spacer"></span><span class="faint">{{ enabledSkills(a) }}/{{ a.skills.length }} enabled</span></div>
-        <div class="panel-b">
-          @for (s of a.skills; track s.id) {
-            <div class="skill-item" [class.expanded]="expandedSkill() === s.id">
-              <div class="skill-row">
-                <button class="toggle mono" [class.on]="s.enabled" (click)="store.toggleSkill(a.id, s.id)">
-                  {{ s.enabled ? 'ON' : 'OFF' }}
-                </button>
-                <div class="skill-id">
-                  <span class="mono name">{{ s.name }}</span>
-                  <span class="chip"
-                        [class.info]="s.source === 'hub'"
-                        [class.custom]="s.source === 'user'"
-                        [class.off]="s.source === 'bundled'"
-                        [title]="s.source === 'user' ? 'agent-authored skill' : s.source === 'hub' ? 'installed from Skills Hub' : 'ships with Hermes'">{{ s.source }} · v{{ s.version }}</span>
-                </div>
-                <span class="dim desc">{{ s.description }}</span>
-                <button class="btn sm ghost" (click)="viewSkill(s)">{{ expandedSkill() === s.id ? 'close' : 'view / edit' }}</button>
-                <button class="btn sm danger ghost" (click)="store.removeSkill(a.id, s.id)">remove</button>
-              </div>
-              @if (expandedSkill() === s.id) {
-                <div class="skill-editor">
-                  @if (skillLoading()) {
-                    <p class="dim mono">loading SKILL.md…</p>
-                  } @else if (skillContent(); as c) {
-                    <div class="skill-editor-meta mono">
-                      <span class="faint">{{ c.path }}/SKILL.md</span>
-                      @if (c.files.length > 1) {
-                        <span class="spacer"></span>
-                        <span class="faint">{{ c.files.length }} files: {{ c.files.join(', ') }}</span>
-                      }
-                    </div>
-                    <textarea class="input soul" [ngModel]="skillBody()" (ngModelChange)="skillBody.set($event)" spellcheck="false"></textarea>
-                    <div class="editor-actions">
-                      <button class="btn primary" [disabled]="!skillDirty() || skillSaving()" (click)="saveSkill(s)">
-                        {{ skillSaving() ? 'saving…' : 'save SKILL.md' }}
-                      </button>
-                      <button class="btn sm ghost" [disabled]="!skillDirty()" (click)="skillBody.set(c.body)">revert</button>
-                      @if (skillSaved()) { <span class="chip on">saved ✓</span> }
-                      @else if (skillDirty()) { <span class="chip off">unsaved changes</span> }
-                    </div>
-                  } @else {
-                    <p class="dim mono">SKILL.md not available for this skill.</p>
-                  }
-                </div>
-              }
-            </div>
-          }
-          <div class="add-row">
-            <input class="input" [(ngModel)]="skillName" placeholder="skill name e.g. pdf-tools" />
-            <select class="select" [(ngModel)]="skillSource">
-              <option value="hub">skills hub</option>
-              <option value="user">local / user</option>
-            </select>
-            <button class="btn primary" [disabled]="!skillName.trim()" (click)="addSkill()">add skill</button>
-          </div>
-          <p class="lock-hint">skills follow the agentskills.io standard — also <code>hermes skills install &lt;name&gt;</code></p>
-        </div>
-      </div>
+      <mc-agent-skills-panel [agent]="a" />
     }
 
     @case ('mcp') {
-      <div class="panel" data-reveal>
-        <div class="panel-h">CONNECT FROM MCP CATALOG</div>
-        <div class="panel-b">
-          <div class="catalog-connect">
-            <select class="select" [ngModel]="catalogServerId"
-                    (ngModelChange)="selectCatalogServer($event)">
-              <option value="">select a saved server…</option>
-              @for (server of store.mcpServers(); track server.id) {
-                <option [value]="server.id">
-                  {{ server.name }} · {{ server.kind }}{{ server.hostId ? ' · ' + (store.hostById(server.hostId)?.name ?? server.hostId) : '' }}
-                </option>
-              }
-            </select>
-            <input class="input" [(ngModel)]="catalogAlias" placeholder="agent alias" />
-            <button class="btn primary"
-                    [disabled]="!catalogServerId || !catalogAlias.trim() || catalogConnecting()"
-                    (click)="connectCatalogMcp()">
-              {{ catalogConnecting() ? 'connecting…' : catalogConnectLabel() }}
-            </button>
-          </div>
-          @if (selectedCatalogServer(); as selected) {
-            <p class="lock-hint">
-              @if (selected.kind === 'managed') {
-                {{ selected.runtimeState }} on {{ store.hostById(selected.hostId ?? '')?.name ?? selected.hostId }} ·
-                {{ selected.connectionUrl ?? selected.crossHostUrl ?? 'no cross-host url configured' }}
-              } @else if (selected.kind === 'external') {
-                {{ selected.url }}
-              } @else {
-                {{ selected.stdioCommand }} {{ selected.args.join(' ') }}
-              }
-            </p>
-          } @else {
-            <p class="lock-hint">Manage reusable servers, containers and logs from <a routerLink="/mcp-servers">MCP Servers</a>.</p>
-          }
-        </div>
-      </div>
-
-      <div class="panel" data-reveal>
-        <div class="panel-h">
-          {{ editingMcp() ? 'EDIT CUSTOM MCP SERVER' : 'ADD CUSTOM MCP SERVER' }}
-          @if (editingMcp(); as e) { <span class="chip info">{{ e }}</span> }
-        </div>
-        <div class="panel-b">
-          <div class="mcp-add">
-            <input class="input name-in" [(ngModel)]="mcpName" placeholder="server name e.g. github" />
-            <select class="select transport-in" [(ngModel)]="mcpTransport">
-              <option value="http">http</option>
-              <option value="sse">sse</option>
-              <option value="stdio">stdio</option>
-            </select>
-            @if (mcpTransport === 'stdio') {
-              <input class="input cmd-in" [(ngModel)]="mcpCommand" placeholder="command e.g. npx" />
-              <input class="input args-in" [(ngModel)]="mcpArgs" placeholder="args e.g. @modelcontextprotocol/server-github" />
-            } @else {
-              <input class="input url-in" [(ngModel)]="mcpUrl" placeholder="url e.g. https://mcp.example.com" />
-            }
-            <button class="btn primary" [disabled]="!mcpFormValid()" (click)="saveMcp()">
-              {{ editingMcp() ? 'update' : 'connect' }}
-            </button>
-            @if (editingMcp()) {
-              <button class="btn ghost" (click)="resetMcpForm()">cancel</button>
-            }
-          </div>
-          <p class="lock-hint">equivalent CLI: <code>hermes -p {{ a.name }} mcp install &lt;server&gt;</code></p>
-        </div>
-      </div>
-
-      <div class="panel" data-reveal>
-        <div class="panel-h">
-          MCP SERVERS
-          <span class="spacer"></span>
-          @if (mcpProbeBusy()) { <span class="faint">checking configured servers…</span> }
-          <span class="faint">{{ mcpCount(a, 'connected') }} connected · {{ mcpCount(a, 'disabled') }} disabled · {{ mcpCount(a, 'error') }} failing · {{ mcpCount(a, 'unchecked') }} unchecked</span>
-        </div>
-        <div class="panel-b">
-          @for (m of a.mcp; track m.id) {
-            <div class="mcp-row mono">
-              <mc-status [status]="m.status" />
-              <span class="name">{{ m.name }}</span>
-              <span class="chip off">{{ m.transport }}</span>
-              @if (m.catalogServerId) { <span class="chip info">catalog</span> }
-              @if (m.updateAvailable) { <span class="chip crit">update available</span> }
-              <span class="faint">{{ m.tools }} tools</span>
-              <span class="faint">{{ m.latencyMs !== null ? m.latencyMs + 'ms' : '—' }}</span>
-              @if (m.error) { <span class="faint bad" [title]="m.error">{{ m.error }}</span> }
-              <span class="spacer"></span>
-              @if (m.updateAvailable) {
-                <button class="btn sm ghost" (click)="syncMcp(m)">sync</button>
-              }
-              @if (m.enabled) {
-                <button class="btn sm ghost" [disabled]="mcpTesting() === m.id" (click)="testMcp(m)">
-                  {{ mcpTesting() === m.id ? 'testing…' : 'retest' }}
-                </button>
-                <button class="btn sm ghost" (click)="setMcpConnected(m, false)">disconnect</button>
-              } @else {
-                <button class="btn sm primary" (click)="setMcpConnected(m, true)">reconnect</button>
-              }
-              @if (m.catalogServerId) {
-                @if (customizingMcp() === m.id) {
-                  <button class="btn sm" (click)="customizeMcp(m)">confirm customize</button>
-                  <button class="btn sm ghost" (click)="customizingMcp.set(null)">cancel</button>
-                } @else {
-                  <button class="btn sm ghost" (click)="customizingMcp.set(m.id)">customize</button>
-                }
-              } @else {
-                <button class="btn sm ghost" (click)="editMcp(m)">edit</button>
-              }
-              @if (forgettingMcp() === m.id) {
-                <button class="btn sm danger" (click)="forgetMcp(m)">confirm forget</button>
-                <button class="btn sm ghost" (click)="forgettingMcp.set(null)">cancel</button>
-              } @else {
-                <button class="btn sm danger ghost" (click)="forgettingMcp.set(m.id)">forget</button>
-              }
-            </div>
-          }
-          @if (!a.mcp.length) { <p class="dim">No MCP servers configured.</p> }
-        </div>
-      </div>
+      <mc-agent-mcp-panel [agent]="a" />
     }
 
     @case ('jobs') {
@@ -499,85 +323,9 @@
   }
 
   @if (viewingSession(); as v) {
-    <div class="scrim" (click)="viewingSession.set(null)">
-      <div class="modal wide session-modal" (click)="$event.stopPropagation()">
-        <div class="panel-h">
-          SESSION · {{ v.title }}
-          <span class="chip off mono">{{ v.session.platform }}</span>
-          <span class="spacer"></span>
-          <button class="btn sm ghost" (click)="downloadSession(v.session)">download</button>
-          <button class="btn sm ghost" (click)="viewingSession.set(null)">close</button>
-        </div>
-
-        @if (!v.loading) {
-          <div class="session-toolbar">
-            <div class="seg mono">
-              <button [class.on]="sessionView() === 'chat'" (click)="setSessionView('chat')">chat</button>
-              <button [class.on]="sessionView() === 'json'" (click)="setSessionView('json')">json</button>
-            </div>
-            <div class="search">
-              <input class="input" [ngModel]="sessionSearch()" (ngModelChange)="onSessionSearch($event)"
-                     placeholder="search transcript…" spellcheck="false" />
-              @if (sessionSearch().trim()) {
-                <span class="count mono">{{ matchPos() }}/{{ matchCount() }}</span>
-                <button class="btn sm ghost" [disabled]="!matchCount()" (click)="gotoMatch(-1)">↑</button>
-                <button class="btn sm ghost" [disabled]="!matchCount()" (click)="gotoMatch(1)">↓</button>
-              }
-            </div>
-            @if (sessionRoles().length > 1) {
-              <div class="role-filter mono">
-                <span class="rf-label">show</span>
-                @for (r of sessionRoles(); track r) {
-                  <button class="rchip" [class.on]="roleVisible(r)" (click)="toggleRole(r)">{{ r }}</button>
-                }
-              </div>
-            }
-          </div>
-        }
-
-        <div class="modal-b session-body">
-          @if (v.loading) {
-            <p class="dim">loading chat history…</p>
-          } @else if (!v.messages.length) {
-            <p class="dim">No messages recorded for this session.</p>
-          } @else if (sessionView() === 'chat') {
-            <div class="term">
-              @for (m of renderedMessages(); track m.idx) {
-                <div class="trow trow-{{ m.role }}"
-                     [class.clamped]="m.long && !isMsgExpanded(m.idx) && !sessionSearch().trim()">
-                  <div class="thead">
-                    <span class="pr">{{ msgGlyph(m.role) }}</span>
-                    <span class="rname">{{ m.role }}</span>
-                    @if (m.toolName) { <span class="tname">{{ m.toolName }}</span> }
-                    <span class="spacer"></span>
-                    <span class="tts">{{ clock(m.ts) }}</span>
-                  </div>
-                  @if (m.contentHtml) { <div class="tbody" [innerHTML]="m.contentHtml"></div> }
-                  @if (m.reasoningHtml) {
-                    <details class="tx" [attr.open]="sessionSearch().trim() ? '' : null">
-                      <summary>reasoning</summary>
-                      <pre [innerHTML]="m.reasoningHtml"></pre>
-                    </details>
-                  }
-                  @if (m.toolCallsHtml) {
-                    <details class="tx" [attr.open]="sessionSearch().trim() ? '' : null">
-                      <summary>tool calls</summary>
-                      <pre [innerHTML]="m.toolCallsHtml"></pre>
-                    </details>
-                  }
-                  @if (m.long && !sessionSearch().trim()) {
-                    <button class="more" (click)="expandMsg(m.idx)">{{ isMsgExpanded(m.idx) ? '⋀ show less' : '⋁ show more' }}</button>
-                  }
-                </div>
-              }
-              @if (!renderedMessages().length) { <p class="dim">No messages match the role filter.</p> }
-            </div>
-          } @else {
-            <mc-json-tree [data]="visibleRawMessages()" [query]="sessionSearch()" />
-          }
-        </div>
-      </div>
-    </div>
+    <mc-session-viewer [session]="v.session" [messages]="v.messages" [loading]="v.loading"
+                       (closed)="viewingSession.set(null)"
+                       (downloadRequested)="downloadSession(v.session)" />
   }
 
   @if (removing()) {

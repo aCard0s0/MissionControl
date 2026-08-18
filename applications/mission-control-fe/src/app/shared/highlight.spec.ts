@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { highlightHtml } from './highlight';
+import { countJsonMatches, countMatches, highlightHtml } from './highlight';
 
 // This output is handed to DomSanitizer.bypassSecurityTrustHtml and rendered via
 // [innerHTML] in json-tree and agent-detail — so it is the only thing standing
@@ -68,5 +68,66 @@ describe('highlightHtml matching', () => {
     expect(highlightHtml(null, 'q')).toBe('');
     expect(highlightHtml(undefined, 'q')).toBe('');
     expect(highlightHtml(null, '')).toBe('');
+  });
+});
+
+// The toolbar renders "3/7" from these counts while the marks are painted by
+// highlightHtml (chat) or json-tree (JSON view). If they disagree, the operator
+// pages past hits that don't exist — so the counts are pinned to the markup.
+describe('countMatches', () => {
+  const marks = (html: string): number => (html.match(/<mark class="jt-hit">/g) ?? []).length;
+
+  it('agrees with the number of marks highlightHtml paints', () => {
+    for (const [text, query] of [
+      ['alpha beta alpha', 'alpha'],
+      ['aaaa', 'aa'],
+      ['<script>x</script>', 'script'],
+      ['Ends with hit', 'hit'],
+    ] as const) {
+      expect(countMatches(text, query)).toBe(marks(highlightHtml(text, query)));
+    }
+  });
+
+  it('counts non-overlapping hits, as the highlighter consumes them', () => {
+    expect(countMatches('aaaa', 'aa')).toBe(2);
+  });
+
+  it('ignores case on both sides', () => {
+    expect(countMatches('Hermes hermes HERMES', 'hermes')).toBe(3);
+  });
+
+  it('counts nothing for an empty query or absent text', () => {
+    expect(countMatches('anything', '')).toBe(0);
+    expect(countMatches(null, 'x')).toBe(0);
+    expect(countMatches(undefined, 'x')).toBe(0);
+  });
+});
+
+describe('countJsonMatches', () => {
+  it('counts the collapsed summaries the tree shows, not just the data', () => {
+    // the array row renders "[2]", so a query of "2" hits the summary and the value
+    expect(countJsonMatches([1, 2], null, '2')).toBe(2);
+    expect(countJsonMatches({ a: 1, b: 2, c: 3 }, null, '3')).toBe(2);
+  });
+
+  it('counts string values quoted, the way the tree prints them', () => {
+    expect(countJsonMatches({ role: 'user' }, null, 'user')).toBe(1);
+    expect(countJsonMatches({ role: 'user' }, null, '"user"')).toBe(1);
+  });
+
+  it('counts keys, including array indices', () => {
+    expect(countJsonMatches({ tool: null }, null, 'tool')).toBe(1);
+    expect(countJsonMatches(['zero'], null, '0')).toBe(1);
+  });
+
+  it('skips the root key, which the tree renders without one', () => {
+    expect(countJsonMatches('x', null, 'x')).toBe(1);
+    expect(countJsonMatches('x', 'x', 'x')).toBe(2);
+  });
+
+  it('renders null and numbers unquoted, so those spellings are what match', () => {
+    expect(countJsonMatches({ error: null }, null, 'null')).toBe(1);
+    expect(countJsonMatches({ latencyMs: 120 }, null, '120')).toBe(1);
+    expect(countJsonMatches({ latencyMs: 120 }, null, '"120"')).toBe(0);
   });
 });
