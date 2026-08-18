@@ -9,10 +9,10 @@ import { HermesStore } from '../core/hermes-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { AgentMcpPanel } from './agent-mcp-panel';
+import { AgentSetupPanel } from './agent-setup-panel';
 import { AgentSkillsPanel } from './agent-skills-panel';
 import { ago, clock, until } from '../core/format';
 import { ChatMessage, LogEntry, SessionInfo } from '../core/models';
-import { ApiAgentSetup } from '../core/hermes-api';
 import { SessionViewer } from './session-viewer';
 
 type Tab = 'overview' | 'setup' | 'skills' | 'mcp' | 'jobs' | 'activity' | 'files' | 'sessions';
@@ -28,7 +28,8 @@ interface SessionView {
   selector: 'mc-agent-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    FormsModule, RouterLink, StatusDot, Reveal, AgentMcpPanel, AgentSkillsPanel, SessionViewer,
+    FormsModule, RouterLink, StatusDot, Reveal,
+    AgentMcpPanel, AgentSetupPanel, AgentSkillsPanel, SessionViewer,
   ],
   templateUrl: './agent-detail.html',
   styleUrl: './agent-detail.scss',
@@ -48,15 +49,6 @@ export class AgentDetailPage {
 
   protected readonly tab = signal<Tab>('overview');
   protected readonly tabs: Tab[] = ['overview', 'setup', 'skills', 'mcp', 'jobs', 'activity', 'files', 'sessions'];
-
-  // setup tab — loaded on first entry, refreshed on demand (hermes status is slow)
-  protected readonly setup = signal<ApiAgentSetup | null>(null);
-  protected readonly setupLoading = signal(false);
-  /** env var (or '.env' for the init call) with a write in flight. */
-  protected readonly envBusy = signal<string | null>(null);
-  /** tokenVar of the expanded messaging row. */
-  protected readonly msgOpen = signal<string | null>(null);
-  protected envDrafts: Record<string, string> = {};
 
   protected soulDraft = signal('');
   protected readonly soulDirty = computed(() => this.soulDraft() !== (this.agent()?.soul ?? ''));
@@ -117,12 +109,8 @@ export class AgentDetailPage {
         this.configDraft.set(config);
       }
       if (id !== lastId) {
-        this.setup.set(null);
-        this.envDrafts = {};
-        this.msgOpen.set(null);
         this.sessions.set(null);
         this.viewingSession.set(null);
-        if (untracked(this.tab) === 'setup') untracked(() => void this.loadSetup());
         if (untracked(this.tab) === 'sessions') untracked(() => void this.loadSessions());
       }
       lastId = id;
@@ -149,7 +137,6 @@ export class AgentDetailPage {
 
   protected selectTab(t: Tab): void {
     this.tab.set(t);
-    if (t === 'setup' && !this.setup() && !this.setupLoading()) void this.loadSetup();
     if (t === 'sessions' && this.sessions() === null && !this.sessionsLoading()) void this.loadSessions();
   }
 
@@ -173,22 +160,6 @@ export class AgentDetailPage {
       this.agentLogsInFlight.delete(a.id);
       if (this.agent()?.id === a.id) this.agentLogsLoading.set(false);
     }
-  }
-
-  protected async loadSetup(): Promise<void> {
-    const a = this.agent();
-    if (!a || this.setupLoading()) return;
-    this.setupLoading.set(true);
-    try {
-      const s = await this.store.agentSetup(a.id).catch(() => null);
-      if (this.agent()?.id === a.id) this.setup.set(s);
-    } finally {
-      this.setupLoading.set(false);
-    }
-    // The agent switched while hermes status ran — the effect's reload attempt
-    // was blocked by setupLoading, so load the new agent's setup now.
-    const current = this.agent();
-    if (current && current.id !== a.id && this.tab() === 'setup') void this.loadSetup();
   }
 
   protected async loadSessions(): Promise<void> {
@@ -246,44 +217,6 @@ export class AgentDetailPage {
         if (this.viewingSession()?.session.id === s.id) this.viewingSession.set(null);
       })
       .catch(e => this.store.toast(`session delete failed: ${e.message}`));
-  }
-
-  protected initEnv(): void {
-    const a = this.agent();
-    if (!a) return;
-    this.envBusy.set('.env');
-    this.store.initAgentEnv(a.id)
-      .catch(() => null)
-      .then(s => { if (s) this.setup.set(s); })
-      .finally(() => this.envBusy.set(null));
-  }
-
-  protected setEnv(key: string): void {
-    const value = (this.envDrafts[key] ?? '').trim();
-    if (!value) return;
-    this.applyEnv(key, value);
-  }
-
-  protected clearEnv(key: string): void {
-    this.applyEnv(key, null);
-  }
-
-  private applyEnv(key: string, value: string | null): void {
-    const a = this.agent();
-    if (!a) return;
-    this.envBusy.set(key);
-    this.store.setAgentEnv(a.id, [{ key, value }])
-      .catch(() => null)
-      .then(s => {
-        if (!s) return;
-        this.setup.set(s);
-        delete this.envDrafts[key];
-      })
-      .finally(() => this.envBusy.set(null));
-  }
-
-  protected toggleMsg(tokenVar: string): void {
-    this.msgOpen.update(v => v === tokenVar ? null : tokenVar);
   }
 
   protected fileContent(): string {

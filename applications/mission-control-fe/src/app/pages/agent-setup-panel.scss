@@ -1,0 +1,64 @@
+// Setup tab. `.panel`, `.btn`, `.input`, `.chip` and `.lock-hint` are global
+// (src/styles.scss); the .env strip, credential rows and messaging blocks are here.
+.setup-head { margin-bottom: 12px; }
+
+.env-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  .path { font-size: 11.5px; }
+  p { margin: 0; }
+}
+
+.env-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  &:last-child { border-bottom: 0; }
+  .spacer { flex: 1; }
+  .var { font-size: 10.5px; }
+  .masked { font-size: 11px; }
+  .status-text { font-size: 11.5px; }
+  .key-in { width: 180px; flex: none; }
+}
+
+.msg-block {
+  border-bottom: 1px solid var(--line);
+  &:last-of-type { border-bottom: 0; }
+  .env-row { border-bottom: 0; }
+}
+
+.msg-label {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.msg-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 0 14px 19px;
+
+  .msg-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    label { font-size: 10.5px; min-width: 160px; }
+    .input { max-width: 220px; }
+  }
+}
+
+.grid { display: grid; gap: 12px; &.cols-2 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 1100px) { .grid.cols-2 { grid-template-columns: 1fr; } }
+
+@media (max-width: 760px) {
+  .env-strip { flex-wrap: wrap; row-gap: 6px; }
+  .env-row { flex-wrap: wrap; row-gap: 6px; .key-in { width: 100%; } }
+  .msg-config { padding-left: 0; .msg-field { flex-wrap: wrap; row-gap: 6px; label { min-width: 0; } .input { max-width: none; } } }
+}

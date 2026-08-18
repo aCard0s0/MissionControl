@@ -697,3 +697,140 @@ describe('HermesStore live profile writes', () => {
     expect(store.liveError()).toBe('remove profile failed: profile busy');
   });
 });
+
+// Reading a profile's setup runs `hermes status` inside the container, which
+// takes seconds. The cache is what keeps a tab switch from paying for it again,
+// so its rules are worth pinning: read once, replace on write, force on refresh.
+describe('HermesStore setup cache', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.__MC_CONFIG__ = {
+      dataMode: 'mock', apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  const answer = (name: string, patch: object = {}) => ({
+    envPath: `/opt/data/profiles/${name}/.env`, envExists: true,
+    apiKeys: [], authProviders: [], apiKeyProviders: [], messaging: [], ...patch,
+  });
+
+  it('reads a profile once and serves the cached copy after that', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const setup = vi.fn().mockResolvedValue(answer(agent.name));
+    goLive(store, { agents: { setup } });
+
+    expect(store.agentSetupOf(agent.id)).toBeNull();
+    await store.agentSetup(agent.id);
+    await store.agentSetup(agent.id);
+
+    expect(setup).toHaveBeenCalledTimes(1);
+    expect(store.agentSetupOf(agent.id)).toMatchObject({ envExists: true });
+  });
+
+  it('re-reads only when the caller forces it', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const setup = vi.fn()
+      .mockResolvedValueOnce(answer(agent.name, { envExists: false }))
+      .mockResolvedValueOnce(answer(agent.name, { envExists: true }));
+    goLive(store, { agents: { setup } });
+
+    await store.agentSetup(agent.id);
+    expect(store.agentSetupOf(agent.id)?.envExists).toBe(false);
+
+    await store.agentSetup(agent.id, true);
+    expect(setup).toHaveBeenCalledTimes(2);
+    expect(store.agentSetupOf(agent.id)?.envExists).toBe(true);
+  });
+
+  it('caches each profile separately', async () => {
+    const store = new HermesStore();
+    const [first, second] = store.agents();
+    goLive(store, {
+      agents: {
+        setup: vi.fn().mockImplementation((ref: { name: string }) =>
+          Promise.resolve(answer(ref.name))),
+      },
+    });
+
+    await store.agentSetup(first.id);
+    await store.agentSetup(second.id);
+
+    expect(store.agentSetupOf(first.id)?.envPath).toContain(first.name);
+    expect(store.agentSetupOf(second.id)?.envPath).toContain(second.name);
+  });
+
+  it('collapses two concurrent reads of the same profile into one call', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    let release!: (value: unknown) => void;
+    const pending = new Promise(resolve => { release = resolve; });
+    const setup = vi.fn().mockReturnValue(pending.then(() => answer(agent.name)));
+    goLive(store, { agents: { setup } });
+
+    const first = store.agentSetup(agent.id);
+    const second = store.agentSetup(agent.id);
+    expect(store.agentSetupLoading(agent.id)).toBe(true);
+    release(null);
+    await first;
+    await second;
+
+    expect(setup).toHaveBeenCalledTimes(1);
+    expect(store.agentSetupLoading(agent.id)).toBe(false);
+  });
+
+  it('replaces the cached copy with what a write answered', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    goLive(store, {
+      agents: {
+        setup: vi.fn().mockResolvedValue(answer(agent.name, { envExists: false })),
+        setEnv: vi.fn().mockResolvedValue(answer(agent.name, {
+          envExists: true,
+          apiKeys: [{ label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', set: true, masked: '…9f2c' }],
+        })),
+        initEnv: vi.fn().mockResolvedValue(answer(agent.name, { envExists: true })),
+      },
+    });
+
+    await store.agentSetup(agent.id);
+    await store.setAgentEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]);
+
+    expect(store.agentSetupOf(agent.id)).toMatchObject({
+      envExists: true, apiKeys: [expect.objectContaining({ set: true })],
+    });
+  });
+
+  it('keeps the last good copy when a refresh fails', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    const setup = vi.fn()
+      .mockResolvedValueOnce(answer(agent.name))
+      .mockRejectedValueOnce(new Error('hermes status timed out'));
+    goLive(store, { agents: { setup } });
+
+    await store.agentSetup(agent.id);
+    expect(await store.agentSetup(agent.id, true)).toBeNull();
+
+    expect(store.agentSetupOf(agent.id)).toMatchObject({ envExists: true });
+    expect(store.liveError()).toBe('setup load failed: hermes status timed out');
+  });
+
+  it('forgets a deleted profile\'s credentials along with the profile', async () => {
+    const store = new HermesStore();
+    const agent = store.agents()[0];
+    await store.agentSetup(agent.id);
+    expect(store.agentSetupOf(agent.id)).not.toBeNull();
+
+    store.removeAgent(agent.id);
+
+    expect(store.agentSetupOf(agent.id)).toBeNull();
+  });
+});
+

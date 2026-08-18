@@ -138,6 +138,7 @@ export class HermesStore {
     this.jobStore.dropByAgent(agentId);
     this.boardStore.dropByAgent(agentId);
     this.webhookStore.dropByAgent(agentId);
+    this.setupStore.forget(agentId);
   });
   updateSoul = (id: string, soul: string): Promise<boolean> => this.agentStore.updateSoul(id, soul);
   updateAgentConfig = (id: string, configYaml: string): Promise<boolean> =>
@@ -210,7 +211,12 @@ export class HermesStore {
     this.providerStore.modelCatalogLive(provider, apiKey);
 
   // ── profile setup (.env) and sessions ──────────────────────────────────
-  agentSetup = (agentId: string): Promise<ApiAgentSetup | null> => this.setupStore.setup(agentId);
+  /** Last known setup per profile; null until one has been read. */
+  agentSetupOf = (agentId: string): ApiAgentSetup | null => this.setupStore.setupOf(agentId);
+  agentSetupLoading = (agentId: string): boolean => this.setupStore.isSetupLoading(agentId);
+  /** Reads a profile's setup, answering the cached copy unless `force`. */
+  agentSetup = (agentId: string, force?: boolean): Promise<ApiAgentSetup | null> =>
+    this.setupStore.setup(agentId, force);
   setAgentEnv = (agentId: string, entries: Array<{ key: string; value: string | null }>) =>
     this.setupStore.setEnv(agentId, entries);
   initAgentEnv = (agentId: string): Promise<ApiAgentSetup | null> => this.setupStore.initEnv(agentId);
