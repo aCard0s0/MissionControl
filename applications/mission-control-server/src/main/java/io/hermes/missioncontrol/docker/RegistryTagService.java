@@ -72,6 +72,21 @@ public class RegistryTagService {
   private final ObjectMapper json;
   private final PageFetcher fetcher;
   private final LongSupplier clock;
+  /*
+   * Neither map needs eviction, because both are keyed by one value for the life of the
+   * process. tags() has a single caller, ImageCatalogService, which always passes
+   * docker.hermesImageRepository() — the configured MC_HERMES_IMAGE, which takes no
+   * parameter. The host url varies per request; the repository does not. A repository that
+   * is not a Docker Hub path returns above, before either map is touched.
+   *
+   * Give this class a caller that passes a per-container or user-supplied repository and
+   * that stops holding. The TTLs below would then bound freshness but not size: the read
+   * path only revisits keys someone asks for again, and the keys that accumulate are the
+   * ones nobody asks for again, so the cache would need a sweep on write — see
+   * agents/HermesProfileMcp, which has that shape. The lock map would be the harder half,
+   * since removing a lock another thread already holds a reference to breaks the
+   * one-fetch-per-repository guarantee it exists to provide.
+   */
   private final Map<String, Cached> cache = new ConcurrentHashMap<>();
   private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
