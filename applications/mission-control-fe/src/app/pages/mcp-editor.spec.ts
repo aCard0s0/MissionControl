@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { McpCatalogServer } from '../core/models';
 import {
-  McpEditorDraft, httpEndpointValid, mcpDraftToInput, mcpOperationActive, splitMcpLines,
-} from './mcp-servers';
+  McpEditorDraft, httpEndpointValid, mcpDraftFromServer, mcpDraftToInput, mcpDraftValid,
+  splitMcpLines,
+} from './mcp-editor';
 
 const draft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
   id: null, hostLocked: false, name: ' Example ', description: ' server ', kind: 'managed',
@@ -83,9 +85,123 @@ describe('MCP Servers editor', () => {
     expect(input.supportServices[0].environment?.[0]).not.toHaveProperty('set');
   });
 
-  it('recognizes only non-terminal lifecycle states as active', () => {
-    expect(mcpOperationActive('pulling')).toBe(true);
-    expect(mcpOperationActive('idle')).toBe(false);
-    expect(mcpOperationActive('error')).toBe(false);
+});
+
+const storedServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer => ({
+  id: 'mcp-1', name: 'Example', description: 'server', kind: 'managed', hostId: 'dh-local',
+  transport: 'http', url: null, image: 'image:latest', platform: null,
+  entrypoint: ['node'], command: ['server.js'], stdioCommand: null, args: [],
+  internalPort: 1100, publishedPort: null, path: '/mcp', crossHostUrl: null,
+  connectionUrl: 'http://example:1100/mcp',
+  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
+  desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle',
+  operationError: null, checkStatus: 'unknown', checkError: null, checkedAt: null,
+  latencyMs: null, revision: 3, appliedRevision: 3, pendingChanges: false,
+  serviceKey: 'example', createdAt: 1, updatedAt: 2,
+  ...patch,
+});
+
+describe('MCP Servers draft loading', () => {
+  it('edits in place, keeping the id and the host the stack already runs on', () => {
+    const loaded = mcpDraftFromServer(storedServer());
+
+    expect(loaded).toMatchObject({ id: 'mcp-1', hostLocked: true, name: 'Example' });
+    expect(loaded.entrypoint).toBe('node');
+  });
+
+  it('duplicates as a new entry and forgets which secrets were stored', () => {
+    const loaded = mcpDraftFromServer(storedServer({
+      environment: [{ key: 'TOKEN', value: null, secret: true, set: true, recoverable: true }],
+    }), true);
+
+    expect(loaded).toMatchObject({ id: null, hostLocked: false, name: 'Example copy' });
+    expect(loaded.environment[0]).toMatchObject({ value: '', set: false, recoverable: false });
+  });
+
+  it('copies nested structures so cancelling an edit cannot mutate the catalog', () => {
+    const server = storedServer({
+      volumes: [{ name: 'data', target: '/data' }],
+      healthcheck: { test: ['CMD', 'true'], interval: '30s', timeout: '5s', retries: 3 },
+    });
+    const loaded = mcpDraftFromServer(server);
+    loaded.volumes[0].name = 'edited';
+    loaded.healthcheck!.test.push('extra');
+
+    expect(server.volumes[0].name).toBe('data');
+    expect(server.healthcheck!.test).toEqual(['CMD', 'true']);
+  });
+});
+
+describe('MCP Servers draft validation', () => {
+  const valid = (patch: Partial<McpEditorDraft> = {}, existing: McpCatalogServer[] = []) =>
+    mcpDraftValid(draft(patch), existing);
+
+  it('accepts a complete managed draft', () => {
+    expect(valid()).toBe(true);
+  });
+
+  it('refuses a name another catalog entry already answers to', () => {
+    expect(valid({}, [storedServer({ id: 'other', name: 'example' })])).toBe(false);
+    // the entry being edited is not its own duplicate
+    expect(valid({ id: 'mcp-1' }, [storedServer({ id: 'mcp-1', name: 'Example' })])).toBe(true);
+  });
+
+  it('requires a host, an image and a port in range for a managed server', () => {
+    expect(valid({ hostId: '' })).toBe(false);
+    expect(valid({ image: '  ' })).toBe(false);
+    expect(valid({ internalPort: 0 })).toBe(false);
+    expect(valid({ internalPort: 70_000 })).toBe(false);
+    expect(valid({ publishedPort: 65_536 })).toBe(false);
+  });
+
+  it('requires an absolute single-slash path with no fragment', () => {
+    expect(valid({ path: 'mcp' })).toBe(false);
+    expect(valid({ path: '//mcp' })).toBe(false);
+    expect(valid({ path: '/mcp#x' })).toBe(false);
+  });
+
+  it('rejects a volume that could escape its mount or shadow the daemon socket', () => {
+    expect(valid({ volumes: [{ name: 'data', target: '/var/run/docker.sock' }] })).toBe(false);
+    expect(valid({ volumes: [{ name: 'data', target: '/data/../etc' }] })).toBe(false);
+    expect(valid({ volumes: [{ name: 'Data', target: '/data' }] })).toBe(false);
+    expect(valid({ volumes: [{ name: 'data', target: 'data' }] })).toBe(false);
+  });
+
+  it('refuses duplicate keys, illegal keys, and a secret with nothing behind it', () => {
+    const entry = (key: string, patch = {}) =>
+      ({ key, value: 'v', secret: false, set: false, recoverable: true, ...patch });
+    expect(valid({ environment: [entry('A'), entry('A')] })).toBe(false);
+    expect(valid({ environment: [entry('1BAD')] })).toBe(false);
+    expect(valid({ environment: [entry('TOKEN', { secret: true, value: '' })] })).toBe(false);
+    // a stored secret needs no re-typed value
+    expect(valid({ environment: [entry('TOKEN', { secret: true, value: '', set: true })] })).toBe(true);
+    // header names are case-insensitive, so these two collide
+    expect(valid({ headers: [entry('X-Key'), entry('x-key')] })).toBe(false);
+  });
+
+  it('validates healthcheck verbs, durations and retry bounds', () => {
+    expect(valid({ healthcheck: { test: ['SHELL'], retries: 3 } })).toBe(false);
+    expect(valid({ healthcheck: { test: ['NONE', 'true'], retries: 3 } })).toBe(false);
+    expect(valid({ healthcheck: { test: ['CMD', 'true'], interval: '30 seconds' } })).toBe(false);
+    expect(valid({ healthcheck: { test: ['CMD', 'true'], retries: 0 } })).toBe(false);
+    expect(valid({ healthcheck: { test: ['CMD', 'true'], interval: '1500ms', retries: 5 } })).toBe(true);
+  });
+
+  it('requires each support service to be named like a Compose service, once', () => {
+    const service = (name: string) => ({
+      name, image: 'postgres:16', platform: null, entrypoint: [], command: [],
+      environment: [], volumes: [], healthcheck: null,
+    });
+    expect(valid({ supportServices: [service('database')] })).toBe(true);
+    expect(valid({ supportServices: [service('Database')] })).toBe(false);
+    expect(valid({ supportServices: [service('database'), service('database')] })).toBe(false);
+    expect(valid({ supportServices: [{ ...service('database'), image: '' }] })).toBe(false);
+  });
+
+  it('holds each other kind to its own single requirement', () => {
+    expect(valid({ kind: 'external', url: 'https://mcp.example.test/mcp' })).toBe(true);
+    expect(valid({ kind: 'external', url: 'ftp://mcp.example.test' })).toBe(false);
+    expect(valid({ kind: 'stdio', stdioCommand: 'npx' })).toBe(true);
+    expect(valid({ kind: 'stdio', stdioCommand: ' ' })).toBe(false);
   });
 });
