@@ -23,6 +23,16 @@ final class AgentsWiring {
   }
 
   static HermesProfiles profiles(DockerExecService dockerExec) {
+    return profiles(
+        dockerExec, new HermesProfileMcp(files(dockerExec), new HermesConfigEditor()));
+  }
+
+  /**
+   * As {@link #profiles(DockerExecService)}, with the MCP collaborator supplied. It is the
+   * one holding a cache, so a test that drives the cache's lifetime builds it with its own
+   * clock and keeps the reference to read the cache back through.
+   */
+  static HermesProfiles profiles(DockerExecService dockerExec, HermesProfileMcp mcp) {
     ObjectMapper json = new ObjectMapper();
     HermesConfigEditor editor = new HermesConfigEditor();
     HermesContainerFiles files = files(dockerExec);
@@ -32,7 +42,7 @@ final class AgentsWiring {
         env,
         new HermesModelConfig(files, env),
         new HermesSkills(files, editor),
-        new HermesProfileMcp(files, editor),
+        mcp,
         new HermesSessions(files, json),
         new HermesGatewayLogs(files),
         new HermesIntegrations(files, json));
