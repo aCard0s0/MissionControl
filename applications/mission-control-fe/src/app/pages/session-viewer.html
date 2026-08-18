@@ -1,0 +1,79 @@
+<div class="scrim" (click)="closed.emit()">
+  <div class="modal wide session-modal" (click)="$event.stopPropagation()">
+    <div class="panel-h">
+      SESSION · {{ session().title }}
+      <span class="chip off mono">{{ session().platform }}</span>
+      <span class="spacer"></span>
+      <button class="btn sm ghost" (click)="downloadRequested.emit()">download</button>
+      <button class="btn sm ghost" (click)="closed.emit()">close</button>
+    </div>
+
+    @if (!loading()) {
+      <div class="session-toolbar">
+        <div class="seg mono">
+          <button [class.on]="view() === 'chat'" (click)="setView('chat')">chat</button>
+          <button [class.on]="view() === 'json'" (click)="setView('json')">json</button>
+        </div>
+        <div class="search">
+          <input class="input" [value]="search()" (input)="onSearch($any($event.target).value)"
+                 placeholder="search transcript…" spellcheck="false" />
+          @if (search().trim()) {
+            <span class="count mono">{{ matchPos() }}/{{ matchCount() }}</span>
+            <button class="btn sm ghost" [disabled]="!matchCount()" (click)="gotoMatch(-1)">↑</button>
+            <button class="btn sm ghost" [disabled]="!matchCount()" (click)="gotoMatch(1)">↓</button>
+          }
+        </div>
+        @if (roles().length > 1) {
+          <div class="role-filter mono">
+            <span class="rf-label">show</span>
+            @for (r of roles(); track r) {
+              <button class="rchip" [class.on]="roleVisible(r)" (click)="toggleRole(r)">{{ r }}</button>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <div #body class="modal-b session-body">
+      @if (loading()) {
+        <p class="dim">loading chat history…</p>
+      } @else if (!messages().length) {
+        <p class="dim">No messages recorded for this session.</p>
+      } @else if (view() === 'chat') {
+        <div class="term">
+          @for (m of renderedMessages(); track m.idx) {
+            <div class="trow trow-{{ m.role }}"
+                 [class.clamped]="m.long && !isMsgExpanded(m.idx) && !search().trim()">
+              <div class="thead">
+                <span class="pr">{{ msgGlyph(m.role) }}</span>
+                <span class="rname">{{ m.role }}</span>
+                @if (m.toolName) { <span class="tname">{{ m.toolName }}</span> }
+                <span class="spacer"></span>
+                <span class="tts">{{ clock(m.ts) }}</span>
+              </div>
+              @if (m.contentHtml) { <div class="tbody" [innerHTML]="m.contentHtml"></div> }
+              @if (m.reasoningHtml) {
+                <details class="tx" [attr.open]="search().trim() ? '' : null">
+                  <summary>reasoning</summary>
+                  <pre [innerHTML]="m.reasoningHtml"></pre>
+                </details>
+              }
+              @if (m.toolCallsHtml) {
+                <details class="tx" [attr.open]="search().trim() ? '' : null">
+                  <summary>tool calls</summary>
+                  <pre [innerHTML]="m.toolCallsHtml"></pre>
+                </details>
+              }
+              @if (m.long && !search().trim()) {
+                <button class="more" (click)="expandMsg(m.idx)">{{ isMsgExpanded(m.idx) ? '⋀ show less' : '⋁ show more' }}</button>
+              }
+            </div>
+          }
+          @if (!renderedMessages().length) { <p class="dim">No messages match the role filter.</p> }
+        </div>
+      } @else {
+        <mc-json-tree [data]="rawMessages()" [query]="search()" />
+      }
+    </div>
+  </div>
+</div>
