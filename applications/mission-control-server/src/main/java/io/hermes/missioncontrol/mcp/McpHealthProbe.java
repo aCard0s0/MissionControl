@@ -85,7 +85,10 @@ class McpHealthProbe {
       Thread.currentThread().interrupt();
       repository.updateCheck(id, "error", "reachability check interrupted", checkedAt, null);
     } catch (Exception e) {
-      repository.updateCheck(id, "error", e.getMessage(), checkedAt, null);
+      // a refused connection often carries no message at all; the managed path has
+      // always fallen back to the exception type, and an operator needs the same
+      // detail here rather than an "error" row with a blank reason
+      repository.updateCheck(id, "error", rootMessage(e), checkedAt, null);
     }
   }
 
@@ -211,7 +214,13 @@ class McpHealthProbe {
     return null;
   }
 
-  private static String rootMessage(Throwable e) {
+  /**
+   * The reason an operator sees for a failed probe: the first message in the cause chain, or
+   * the exception's type when nothing in it carries one — a refused connection frequently
+   * does not. Package-private and non-static so the fallback is reachable without a network
+   * failure to provoke; both probe paths record through it.
+   */
+  static String rootMessage(Throwable e) {
     Throwable cause = e;
     while (cause.getCause() != null && cause.getMessage() == null) cause = cause.getCause();
     return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
