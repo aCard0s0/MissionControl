@@ -1,0 +1,228 @@
+import {
+  ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { HermesStore } from '../core/hermes-store';
+import { ApiAuxiliaryModel, ApiSetupAuthProvider } from '../core/hermes-api';
+import { HermesContainer, ModelProvider } from '../core/models';
+import { ModelPicker } from '../shared/model-picker';
+import {
+  OLLAMA_PREFIX, providerOptions, providerOptionFor, resolveProviderOption, templateProvidesKey,
+} from '../shared/provider-resolve';
+
+/**
+ * The new-agent form. Everything it collects is provider-shaped: which provider
+ * serves the main model, whether that provider needs a key, and whether the
+ * cheap side tasks should run somewhere else. Each model field is a
+ * {@link ModelPicker}, so the two never share a load guard.
+ *
+ * The dialog owns its own state and reports only the outcome — a profile id, or
+ * a plain close — so the page never has to reset a field.
+ */
+@Component({
+  selector: 'mc-agent-create-dialog',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule],
+  templateUrl: './agent-create-dialog.html',
+  styleUrl: './agent-create-dialog.scss',
+})
+export class AgentCreateDialog {
+  /** The container the profile is created in — the page only opens on one. */
+  readonly container = input.required<HermesContainer>();
+
+  /** The id of the profile the backend created. */
+  readonly created = output<string>();
+  readonly closed = output<void>();
+
+  private readonly store = inject(HermesStore);
+
+  protected readonly templates = this.store.profileTemplates;
+  protected readonly agents = this.store.containerAgents;
+
+  /** The LLM registry plus one entry per registered ollama instance. */
+  protected readonly providers = computed(() =>
+    providerOptions(this.store.llmProviders(), this.store.modelProviders()));
+
+  protected name = '';
+  protected provider = 'nous';
+  protected apiKey = '';
+  protected cloneFrom = '';
+  protected fromTemplate = '';
+
+  // Auxiliary side tasks (compression, summarization, memory flush, …) run on the
+  // main model unless this override is on — worth turning on when the main model
+  // is expensive, since side tasks are frequent, short and mechanical.
+  protected auxOverride = false;
+  protected auxProvider = '';
+  protected auxApiKey = '';
+
+  protected readonly main = new ModelPicker();
+  protected readonly aux = new ModelPicker();
+
+  // Nous Portal OAuth status for this container — Nous needs an out-of-band
+  // `hermes portal` login, so warn when it is missing.
+  private readonly authProviders = signal<ApiSetupAuthProvider[]>([]);
+  protected readonly nousAuth = computed(() =>
+    this.authProviders().find(p => /nous/i.test(p.label)) ?? null);
+
+  constructor() {
+    void this.main.load(this.catalogFor(this.provider));
+    // the container arrives with the input, which is bound after construction
+    effect(() => {
+      const containerId = this.container().id;
+      untracked(() => void this.loadAuthProviders(containerId));
+    });
+  }
+
+  private async loadAuthProviders(containerId: string): Promise<void> {
+    this.authProviders.set(await this.store.authProviders(containerId));
+  }
+
+  protected onProvider(option: string): void {
+    this.provider = option;
+    this.main.model = '';   // drop the prior provider's model; the load re-selects
+    void this.main.load(this.catalogFor(option));
+  }
+
+  /** Prefill provider and model from the chosen template (keys come with it). */
+  protected onTemplate(id: string): void {
+    this.fromTemplate = id;
+    const template = this.store.templateById(id);
+    if (!template) return;
+    const option = providerOptionFor(
+      template.provider, template.baseUrl, this.providers(), this.store.modelProviders());
+    if (option) {
+      this.provider = option;
+      // hand the template's model in as the preferred selection, so the catalog
+      // load's guard governs it too — a provider switch mid-load cannot let this
+      // stale model land on the new provider
+      void this.main.load(this.catalogFor(option), { preferred: template.model });
+    } else if (template.model) {
+      this.main.model = template.model;
+    }
+  }
+
+  /** Live catalog refresh straight from the provider API, for a catalog-backed
+   *  provider the operator has just typed a key for. */
+  protected refreshLive(): void {
+    const key = this.apiKey.trim();
+    if (!this.apiKeyRequired() || !key || !this.hasCatalog(this.provider)) return;
+    void this.main.load(
+      this.store.modelCatalogLive(this.provider, key), { keepOnError: true });
+  }
+
+  /** Turning the override on starts it from the main provider, so the common case
+   *  — same provider, cheaper model — is one field away. Turning it off clears the
+   *  fields rather than leaving them to be silently re-sent. */
+  protected onAuxOverride(on: boolean): void {
+    this.auxOverride = on;
+    if (!on) {
+      this.auxProvider = this.auxApiKey = '';
+      this.aux.reset();
+      return;
+    }
+    this.auxProvider = this.auxProvider || this.provider;
+    void this.aux.load(this.catalogFor(this.auxProvider));
+  }
+
+  protected onAuxProvider(option: string): void {
+    this.auxProvider = option;
+    this.aux.model = '';
+    void this.aux.load(this.catalogFor(option));
+  }
+
+  protected apiKeyRequired(): boolean {
+    const info = this.providerInfo(this.provider);
+    if (!info?.needsKey) return false;   // ollama/nous → false
+    // a template can carry the provider key — but only skip the prompt when it
+    // holds a usable one for THIS provider's env var
+    if (this.fromTemplate) {
+      return !templateProvidesKey(this.store.templateById(this.fromTemplate), info);
+    }
+    return true;
+  }
+
+  /** The override needs its own key only when it introduces a provider the main
+   *  model does not already authenticate. */
+  protected auxApiKeyRequired(): boolean {
+    if (!this.auxOverride || this.auxProvider === this.provider) return false;
+    if (this.auxProvider.startsWith(OLLAMA_PREFIX)) return false;
+    return this.providerInfo(this.auxProvider)?.needsKey ?? false;
+  }
+
+  /** An override that names no model is not an override — the toggle is on but the
+   *  form is incomplete, which the create button refuses. */
+  protected auxIncomplete(): boolean {
+    if (!this.auxOverride) return false;
+    return !this.aux.model.trim() || (this.auxApiKeyRequired() && !this.auxApiKey.trim());
+  }
+
+  protected async create(): Promise<void> {
+    const name = this.name.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!name || !this.main.model) return;
+    if (this.apiKeyRequired() && !this.apiKey.trim()) return;
+    if (this.auxIncomplete()) return;
+    const primary = resolveProviderOption(this.provider, this.store.modelProviders());
+    if (!primary) return;
+    const auxiliary = this.auxiliaryOverride();
+    if (this.auxOverride && !auxiliary) return;   // named an ollama instance that vanished
+
+    const id = await this.store.createAgent(
+      this.container().id, name, primary.provider, this.main.model,
+      this.apiKey.trim(),
+      this.cloneFrom || undefined,
+      primary.baseUrl,
+      this.fromTemplate || undefined,
+      auxiliary,
+    );
+    // the store has already reported why a failed create failed
+    if (id) this.created.emit(id);
+    else this.closed.emit();
+  }
+
+  /** The auxiliary payload, or undefined when side tasks should follow the main
+   *  model. An override on the main provider sends no provider or endpoint of its
+   *  own — the backend then inherits the main ones, so switching only the model
+   *  cannot drift the two apart. */
+  private auxiliaryOverride(): ApiAuxiliaryModel | undefined {
+    if (!this.auxOverride || !this.aux.model.trim()) return undefined;
+    if (this.auxProvider === this.provider) return { model: this.aux.model.trim() };
+    const resolved = resolveProviderOption(this.auxProvider, this.store.modelProviders());
+    if (!resolved) return undefined;
+    return {
+      provider: resolved.provider,
+      model: this.aux.model.trim(),
+      baseUrl: resolved.baseUrl,
+      apiKey: this.auxApiKey.trim() || undefined,
+    };
+  }
+
+  /** Registry entry for a provider option (null for an ollama instance). */
+  private providerInfo(option: string) {
+    return this.store.llmProviders().find(p => p.key === option) ?? null;
+  }
+
+  /** Whether Mission Control can list models for this provider: ollama instances
+   *  and the catalog-backed cloud providers can, the rest take a free-text id. */
+  private hasCatalog(option: string): boolean {
+    if (option.startsWith(OLLAMA_PREFIX)) return true;
+    return this.providerInfo(option)?.hasCatalog ?? false;
+  }
+
+  private ollamaInstance(option: string): ModelProvider | null {
+    return this.store.modelProviders().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
+  }
+
+  /** Where a picker's suggestions come from: an ollama instance's installed
+   *  models, a cloud provider's catalog, or nothing for a free-text provider. */
+  private catalogFor(option: string): Promise<string[]> {
+    if (option.startsWith(OLLAMA_PREFIX)) {
+      const instance = this.ollamaInstance(option);
+      return instance
+        ? this.store.providerModels(instance.id).then(list => list.map(m => m.name))
+        : Promise.resolve([]);
+    }
+    if (!this.hasCatalog(option)) return Promise.resolve([]);
+    return this.store.modelCatalog(option);
+  }
+}
