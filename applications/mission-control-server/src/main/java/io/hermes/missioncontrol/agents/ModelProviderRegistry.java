@@ -40,6 +40,17 @@ public final class ModelProviderRegistry {
       new Provider("minimax", "MiniMax", "MINIMAX_API_KEY", false, false),
       new Provider("stepfun", "StepFun", "STEPFUN_API_KEY", false, false));
 
+  /**
+   * Collapses a provider name to the key this registry lists it under. Hermes accepts
+   * several spellings of the Nous provider ({@code nous}, {@code nous-portal}, …); every
+   * path that resolves an env var or writes {@code model.provider} must agree on one.
+   */
+  public static String normalizeKey(String provider) {
+    if (provider == null) return "";
+    String trimmed = provider.trim().toLowerCase(Locale.ROOT);
+    return trimmed.startsWith("nous") ? "nous" : trimmed;
+  }
+
   public static Provider byKey(String key) {
     if (key == null) return null;
     String k = key.trim().toLowerCase(Locale.ROOT);

@@ -4,7 +4,7 @@ package io.hermes.missioncontrol.agents.api;
 /**
  * An optional override for the model hermes' auxiliary side tasks run on —
  * compression, summarization, memory flush and the other slots listed in
- * {@code HermesProfiles.AUXILIARY_TASKS}.
+ * {@code HermesModelConfig.AUXILIARY_TASKS}.
  *
  * <p>These tasks default to the profile's main model, which is usually what you
  * want and always what you get when this is absent. An override earns its keep

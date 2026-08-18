@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class DockerGatewayLogParsingTest {
+class ContainerLogReaderTest {
 
   private static Frame frame(StreamType stream, String payload) {
     return new Frame(stream, payload.getBytes(StandardCharsets.UTF_8));
@@ -30,7 +30,7 @@ class DockerGatewayLogParsingTest {
     Frame frame = frame(StreamType.STDERR,
         "2026-08-14T10:00:00.000000000Z INFO tools.mcp: retrying after exception: connection reset\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(1, lines.size());
     assertEquals("info", lines.get(0).level());
@@ -46,7 +46,7 @@ class DockerGatewayLogParsingTest {
     Frame frame = frame(StreamType.STDOUT,
         "2026-08-14T10:00:01.000000000Z WARNING tools.mcp: connection failed with error, exception: broken pipe\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(1, lines.size());
     assertEquals("warn", lines.get(0).level());
@@ -56,8 +56,8 @@ class DockerGatewayLogParsingTest {
   void anUnprefixedStderrLineDefaultsToWarnAndAnUnprefixedStdoutLineDefaultsToInfo() {
     String payload = "2026-08-14T10:00:02.000000000Z listening on 0.0.0.0:8080\n";
 
-    List<LogLineDto> onStderr = DockerGateway.parseLogFrame(frame(StreamType.STDERR, payload));
-    List<LogLineDto> onStdout = DockerGateway.parseLogFrame(frame(StreamType.STDOUT, payload));
+    List<LogLineDto> onStderr = ContainerLogReader.parseLogFrame(frame(StreamType.STDERR, payload));
+    List<LogLineDto> onStdout = ContainerLogReader.parseLogFrame(frame(StreamType.STDOUT, payload));
 
     assertEquals(1, onStderr.size());
     assertEquals(1, onStdout.size());
@@ -73,7 +73,7 @@ class DockerGatewayLogParsingTest {
     Frame frame = frame(StreamType.STDOUT,
         "2026-08-14T10:00:03.000000000Z PermissionError: denied\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(1, lines.size());
     assertEquals("error", lines.get(0).level());
@@ -88,7 +88,7 @@ class DockerGatewayLogParsingTest {
         + "2026-08-14T10:00:07.000000000Z [emerg] worker process exited\n"
         + "2026-08-14T10:00:08.000000000Z Traceback (most recent call last):\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(List.of("debug", "error", "error", "error", "error"), levelsOf(lines));
   }
@@ -99,7 +99,7 @@ class DockerGatewayLogParsingTest {
         + "2026-08-14T10:00:10.000000000Z second\n"
         + "2026-08-14T10:00:11.000000000Z third\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(List.of("first", "second", "third"), lines.stream().map(LogLineDto::msg).toList());
   }
@@ -109,14 +109,14 @@ class DockerGatewayLogParsingTest {
   void aRecordThatIsOnlyATimestampIsDroppedRatherThanStampedNow() {
     Frame frame = frame(StreamType.STDERR, "2026-07-10T17:14:39.902148126Z\n");
 
-    assertTrue(DockerGateway.parseLogFrame(frame).isEmpty());
+    assertTrue(ContainerLogReader.parseLogFrame(frame).isEmpty());
   }
 
   @Test
   void theDockerTimestampIsParsedIntoEpochMillisAndStrippedFromTheMessage() {
     Frame frame = frame(StreamType.STDOUT, "2026-08-14T10:17:03.128456000Z tools.mcp: ready\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(1, lines.size());
     LogLineDto line = lines.get(0);
@@ -131,7 +131,7 @@ class DockerGatewayLogParsingTest {
     long before = System.currentTimeMillis();
     Frame frame = frame(StreamType.STDOUT, "no timestamp here at all\n");
 
-    List<LogLineDto> lines = DockerGateway.parseLogFrame(frame);
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
 
     assertEquals(1, lines.size());
     assertEquals("no timestamp here at all", lines.get(0).msg());
@@ -142,6 +142,6 @@ class DockerGatewayLogParsingTest {
   void blankLinesProduceNoEntries() {
     Frame frame = frame(StreamType.STDOUT, "\n   \n\n");
 
-    assertTrue(DockerGateway.parseLogFrame(frame).isEmpty());
+    assertTrue(ContainerLogReader.parseLogFrame(frame).isEmpty());
   }
 }

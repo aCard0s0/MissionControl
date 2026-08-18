@@ -1,0 +1,208 @@
+package io.hermes.missioncontrol.docker;
+
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.exception.DockerClientException;
+import com.github.dockerjava.api.exception.NotFoundException;
+import com.github.dockerjava.api.model.AccessMode;
+import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.RestartPolicy;
+import com.github.dockerjava.api.model.Volume;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
+import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+/**
+ * Creating a new Hermes container, its data volume, and its seed profiles.
+ *
+ * <p>Split out of {@link DockerGateway} because a deploy is a multi-resource transaction:
+ * a volume, one or more one-shot bootstrap containers, then the gateway itself. Everything
+ * after the volume creation runs inside a rollback guard, and keeping that guard readable
+ * is the point of the split.
+ */
+@Component
+public class HermesDeployer {
+
+  private static final Logger log = LoggerFactory.getLogger(HermesDeployer.class);
+
+  private final DockerClients clients;
+  private final ImageStore images;
+  private final DeploymentReadiness readiness;
+
+  public HermesDeployer(
+      DockerClients clients, ImageStore images, DeploymentReadiness readiness) {
+    this.clients = clients;
+    this.images = images;
+    this.readiness = readiness;
+  }
+
+  public String deploy(
+      String url, String hostId, String name, String version, List<String> profiles) {
+    DockerClient client = clients.forUrl(url);
+    String tag = ImageStore.tagOf(version);
+    String image = images.reference(tag);
+    String volumeName = "mc-hermes-" + name;
+    List<String> seedProfiles = normalizeProfiles(profiles);
+
+    try {
+      client.inspectVolumeCmd(volumeName).exec();
+      throw new ResourceConflictException(
+          "managed data volume already exists: " + volumeName + "; recover or remove it before redeploying");
+    } catch (NotFoundException expected) {
+      // no legacy data to attach accidentally
+    }
+
+    Map<String, String> labels = Map.of(
+        "mc.managed", "true",
+        "mc.profiles", String.join(",", seedProfiles),
+        "mc.dataVolume", volumeName);
+
+    String containerId = null;
+    boolean volumeCreated = false;
+    try {
+      client.createVolumeCmd().withName(volumeName).exec();
+      volumeCreated = true;
+      HostConfig dataHostConfig = HostConfig.newHostConfig()
+          .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw));
+      // One-shot containers run the image's normal init hooks before their main
+      // command. This seeds the default profile and creates named profiles while
+      // the long-running gateway is still stopped, avoiding restart/exec races.
+      runOneShot(url, client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
+      for (String profile : seedProfiles) {
+        runOneShot(url, client, image, dataHostConfig,
+            List.of("profile", "create", profile, "--no-alias"),
+            "create seed profile " + profile);
+      }
+
+      HostConfig hostConfig = HostConfig.newHostConfig()
+          .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw))
+          .withRestartPolicy(RestartPolicy.unlessStoppedRestart());
+
+      CreateContainerResponse created;
+      try {
+        created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
+      } catch (NotFoundException missingImage) {
+        images.pull(url, images.hermesRepository(), tag);
+        created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
+      }
+      containerId = created.getId();
+      client.startContainerCmd(containerId).exec();
+      readiness.validate(url, client, containerId, seedProfiles);
+      return containerId;
+    } catch (RuntimeException failure) {
+      rollback(client, containerId, volumeCreated ? volumeName : null, failure);
+      throw failure;
+    }
+  }
+
+  private static CreateContainerResponse createContainer(
+      DockerClient client, String image, String name, Map<String, String> labels,
+      HostConfig hostConfig, List<String> command) {
+    var create = client.createContainerCmd(image)
+        .withName(name)
+        .withLabels(labels)
+        .withHostConfig(hostConfig);
+    return create.withCmd(command).exec();
+  }
+
+  static List<String> normalizeProfiles(List<String> profiles) {
+    if (profiles == null || profiles.isEmpty()) return List.of();
+    Set<String> unique = new LinkedHashSet<>();
+    for (String profile : profiles) {
+      if (profile == null) continue;
+      String normalized = profile.trim();
+      if (!normalized.isEmpty() && !"default".equals(normalized)) unique.add(normalized);
+    }
+    return List.copyOf(unique);
+  }
+
+  void runOneShot(
+      String url, DockerClient client, String image, HostConfig hostConfig,
+      List<String> command, String operation) {
+    String helperId = null;
+    RuntimeException failure = null;
+    try {
+      CreateContainerResponse helper;
+      try {
+        helper = createHelper(client, image, hostConfig, command);
+      } catch (NotFoundException missingImage) {
+        String[] parts = ImageRef.splitImage(image);
+        images.pull(url, parts[0], parts[1]);
+        helper = createHelper(client, image, hostConfig, command);
+      }
+      helperId = helper.getId();
+      client.startContainerCmd(helperId).exec();
+      // /wait emits nothing until the container exits, so it must not run on a client
+      // carrying a socket timeout — the 90s budget below is the real bound
+      var callback = clients.streamingForUrl(url).waitContainerCmd(helperId).start();
+      try {
+        Integer exitCode = callback.awaitStatusCode(90, TimeUnit.SECONDS);
+        if (exitCode == null) throw new UpstreamUnavailableException(operation + " timed out");
+        if (exitCode != 0) throw new UpstreamUnavailableException(operation + " failed with exit code " + exitCode);
+      } catch (DockerClientException exhausted) {
+        // how docker-java actually reports an expired wait: a DockerClientException, which is
+        // not a DockerException, so it would otherwise reach the advice's catch-all as a 500
+        throw new UpstreamUnavailableException(operation + " timed out", exhausted);
+      } finally {
+        try {
+          callback.close();
+        } catch (Exception ignored) { }
+      }
+    } catch (RuntimeException e) {
+      failure = e;
+      throw e;
+    } finally {
+      if (helperId != null) {
+        try {
+          client.removeContainerCmd(helperId).withForce(true).exec();
+        } catch (RuntimeException cleanup) {
+          if (failure != null) {
+            failure.addSuppressed(cleanup);
+          } else {
+            // the step itself succeeded. Failing the deploy over a transient cleanup error
+            // would roll back working state — and the surviving helper still mounts the data
+            // volume, so the rollback could not remove that either. It is labelled
+            // mc.bootstrap and can be reaped later.
+            log.warn("{} succeeded but its bootstrap helper {} could not be removed: {}",
+                operation, helperId, cleanup.getMessage());
+          }
+        }
+      }
+    }
+  }
+
+  private static CreateContainerResponse createHelper(
+      DockerClient client, String image, HostConfig hostConfig, List<String> command) {
+    return client.createContainerCmd(image)
+        .withLabels(Map.of("mc.bootstrap", "true"))
+        .withHostConfig(hostConfig)
+        .withCmd(command)
+        .exec();
+  }
+
+  private void rollback(
+      DockerClient client, String containerId, String volumeName, RuntimeException failure) {
+    if (containerId != null) {
+      try {
+        client.removeContainerCmd(containerId).withForce(true).exec();
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+    }
+    if (volumeName != null) {
+      try {
+        client.removeVolumeCmd(volumeName).exec();
+      } catch (RuntimeException cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+    }
+  }
+}

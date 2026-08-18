@@ -46,15 +46,14 @@ import org.mockito.ArgumentCaptor;
  * What a deploy that actually reaches the end builds: the labels, bind and restart
  * policy the running Agent inherits, and the readiness gate it has to clear.
  */
-class DockerGatewayDeployTest {
+class HermesDeployerTest {
 
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   /** Endpoints that stream or long-poll (/wait, image pull) run on their own client. */
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = new DockerGateway(
-      clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final HermesDeployer subject = DockerWiring.deployer(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
 
   @BeforeEach
   void setUp() {
@@ -82,7 +81,7 @@ class DockerGatewayDeployTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    String containerId = gateway.deploy(
+    String containerId = subject.deploy(
         "unix:///sock", "dh-local", "demo", "latest", List.of("ops"));
 
     assertEquals("main-id", containerId);
@@ -128,7 +127,7 @@ class DockerGatewayDeployTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    String containerId = gateway.deploy(
+    String containerId = subject.deploy(
         "unix:///sock", "dh-local", "demo", "latest", List.of("ops", "research"));
 
     assertEquals("main-id", containerId);
@@ -169,7 +168,7 @@ class DockerGatewayDeployTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    String containerId = gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of());
+    String containerId = subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of());
 
     assertEquals("main-id", containerId);
     // the repository must be pulled without the tag glued on twice, and at the tag
@@ -199,7 +198,7 @@ class DockerGatewayDeployTest {
     stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
+        () -> subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
 
     assertTrue(failure.getMessage().contains("exited before readiness checks"), failure.getMessage());
     // an exec against a dead container blocks or reports a confusing daemon error
@@ -228,7 +227,7 @@ class DockerGatewayDeployTest {
     RemoveVolumeCmd removeVolume = stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
+        () -> subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
 
     assertTrue(failure.getMessage().contains("stopped during readiness checks"), failure.getMessage());
     // a half-deployed Agent left behind would block the next deploy on its volume
@@ -252,7 +251,7 @@ class DockerGatewayDeployTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of());
+    subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of());
 
     ArgumentCaptor<List<String>> command = ArgumentCaptor.forClass(List.class);
     verify(dockerExec).runAsUser(eq("unix:///sock"), eq("main-id"), eq("hermes"), command.capture(),

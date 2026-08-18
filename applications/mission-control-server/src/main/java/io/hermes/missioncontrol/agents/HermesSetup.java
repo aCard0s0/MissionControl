@@ -78,16 +78,18 @@ public class HermesSetup {
   private static final Pattern RUN_HINT = Pattern.compile("run:\\s*([^)]+)");
   private static final Pattern ANSI = Pattern.compile("\u001B\\[[;\\d]*m");
 
-  private final HermesProfiles profiles;
+  private final HermesContainerFiles files;
+  private final HermesEnvFile envFile;
 
-  public HermesSetup(HermesProfiles profiles) {
-    this.profiles = profiles;
+  public HermesSetup(HermesContainerFiles files, HermesEnvFile envFile) {
+    this.files = files;
+    this.envFile = envFile;
   }
 
   public AgentSetupDto setup(String url, String containerId, String name) {
-    String envPath = profiles.profileDir(name) + "/.env";
-    boolean envExists = profiles.fileExists(url, containerId, envPath);
-    Map<String, String> env = parseEnv(profiles.readFile(url, containerId, envPath));
+    String envPath = ProfilePaths.profileDir(name) + "/.env";
+    boolean envExists = files.fileExists(url, containerId, envPath);
+    Map<String, String> env = parseEnv(files.readFile(url, containerId, envPath));
     StatusReport report = runStatus(url, containerId, name);
 
     List<ApiKeyStatusDto> apiKeys = new ArrayList<>();
@@ -143,16 +145,16 @@ public class HermesSetup {
     }
     for (EnvEntry entry : toApply) {
       if (entry.value() == null || entry.value().isBlank()) {
-        profiles.removeEnvVar(url, containerId, name, entry.key());
+        envFile.remove(url, containerId, name, entry.key());
       } else {
-        profiles.writeEnvVar(url, containerId, name, entry.key(), entry.value());
+        envFile.write(url, containerId, name, entry.key(), entry.value());
       }
     }
     return setup(url, containerId, name);
   }
 
   public AgentSetupDto initEnv(String url, String containerId, String name) {
-    profiles.seedEnvIfMissing(url, containerId, name);
+    envFile.seedIfMissing(url, containerId, name);
     return setup(url, containerId, name);
   }
 
@@ -193,7 +195,7 @@ public class HermesSetup {
         ? List.of("hermes", "status")
         : List.of("hermes", "-p", name, "status");
     try {
-      return parseStatus(profiles.exec(url, containerId, command).stdout());
+      return parseStatus(files.exec(url, containerId, command).stdout());
     } catch (RuntimeException e) {
       // degrading to the .env alone makes every externally-configured provider look
       // unconfigured, which is indistinguishable from "not set up" without this line

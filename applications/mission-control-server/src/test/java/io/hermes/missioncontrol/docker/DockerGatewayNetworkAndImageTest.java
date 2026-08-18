@@ -36,8 +36,7 @@ class DockerGatewayNetworkAndImageTest {
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = new DockerGateway(
-      clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final DockerGateway gateway = DockerWiring.gateway(clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
 
   @BeforeEach
   void setUp() {
@@ -154,8 +153,7 @@ class DockerGatewayNetworkAndImageTest {
 
   @Test
   void noHermesImageConfiguredYieldsNoLocalTagsAndNeverAsksTheDaemon() {
-    DockerGateway unconfigured = new DockerGateway(
-        clients, new AppProperties("live", "", "unix:///sock", "", "hermes", "test"), dockerExec);
+    DockerGateway unconfigured = DockerWiring.gateway(clients, new AppProperties("live", "", "unix:///sock", "", "hermes", "test"), dockerExec);
 
     assertEquals(Set.of(), unconfigured.localImageTags("unix:///sock"));
     verifyNoInteractions(client);

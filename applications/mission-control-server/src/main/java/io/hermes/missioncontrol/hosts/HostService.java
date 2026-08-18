@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.hosts;
 
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DaemonInfo;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
@@ -109,7 +110,7 @@ public class HostService {
     }
     Probe fresh;
     try {
-      DockerGateway.DaemonInfo info = docker.ping(row.url());
+      DaemonInfo info = docker.ping(row.url());
       fresh = new Probe("connected", info.engine(), info.apiVersion(), info.latencyMs(), null,
           System.currentTimeMillis());
     } catch (Exception e) {

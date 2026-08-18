@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  * Every CPU, RAM and network number the dashboard draws comes out of
  * {@link DockerGateway#toStats} and {@link DockerGateway#usageWithoutCache}.
  */
-class DockerGatewayStatsTest {
+class ContainerStatsReaderTest {
 
   private static final long MIB = 1_048_576L;
   private static final long GIB = 1024 * MIB;
@@ -33,7 +33,7 @@ class DockerGatewayStatsTest {
 
     // half of one core's worth of the sampling window, on a 4-core machine, is 200% the
     // way docker stats reports it — the pill is per-core, not capped at 100.
-    assertEquals(200.0, DockerGateway.toStats(stats).cpuPercent(), 1e-9);
+    assertEquals(200.0, ContainerStatsReader.toStats(stats).cpuPercent(), 1e-9);
   }
 
   @Test
@@ -45,7 +45,7 @@ class DockerGatewayStatsTest {
 
     // the container's usage counter restarted under us; a negative delta would render
     // as a nonsense CPU pill instead of the idle container it actually is.
-    assertEquals(0.0, DockerGateway.toStats(stats).cpuPercent(), 1e-9);
+    assertEquals(0.0, ContainerStatsReader.toStats(stats).cpuPercent(), 1e-9);
   }
 
   @Test
@@ -55,7 +55,7 @@ class DockerGatewayStatsTest {
         cpuSample(1_000_000_000L, 10_000_000_000L, null),
         null, null);
 
-    assertEquals(50.0, DockerGateway.toStats(stats).cpuPercent(), 1e-9);
+    assertEquals(50.0, ContainerStatsReader.toStats(stats).cpuPercent(), 1e-9);
   }
 
   @Test
@@ -67,7 +67,7 @@ class DockerGatewayStatsTest {
 
     // two samples landing inside the same host tick; dividing anyway yields Infinity,
     // which serialises to a JSON number the dashboard cannot plot.
-    StatsDto dto = assertDoesNotThrow(() -> DockerGateway.toStats(stats));
+    StatsDto dto = assertDoesNotThrow(() -> ContainerStatsReader.toStats(stats));
 
     assertTrue(Double.isFinite(dto.cpuPercent()), "cpu must stay a finite number");
     assertEquals(0.0, dto.cpuPercent(), 1e-9);
@@ -79,7 +79,7 @@ class DockerGatewayStatsTest {
     Statistics stats = mock(Statistics.class);
     long before = System.currentTimeMillis();
 
-    StatsDto dto = assertDoesNotThrow(() -> DockerGateway.toStats(stats));
+    StatsDto dto = assertDoesNotThrow(() -> ContainerStatsReader.toStats(stats));
 
     assertEquals(0.0, dto.cpuPercent(), 1e-9);
     assertEquals(0.0, dto.ramMb(), 1e-9);
@@ -95,7 +95,7 @@ class DockerGatewayStatsTest {
     Statistics stats = sample(null, null,
         memorySample(2 * GIB, 2 * GIB, cacheSample(1536 * MIB, null)), null);
 
-    StatsDto dto = DockerGateway.toStats(stats);
+    StatsDto dto = ContainerStatsReader.toStats(stats);
 
     // without the subtraction an Agent that merely read 1.5 GiB of skills shows as
     // pinned at its 2 GiB limit and about to OOM
@@ -108,7 +108,7 @@ class DockerGatewayStatsTest {
     Statistics stats = sample(null, null,
         memorySample(2 * GIB, 2 * GIB, cacheSample(null, 1536 * MIB)), null);
 
-    StatsDto dto = DockerGateway.toStats(stats);
+    StatsDto dto = ContainerStatsReader.toStats(stats);
 
     assertEquals(512.0, dto.ramMb(), 0.001);
     assertEquals(2048.0, dto.ramTotalMb(), 0.001);
@@ -119,7 +119,7 @@ class DockerGatewayStatsTest {
     // a partial sample can pair a stale usage with a fresher cache figure
     MemoryStatsConfig memory = memorySample(100 * MIB, 512 * MIB, cacheSample(300 * MIB, null));
 
-    long usage = DockerGateway.usageWithoutCache(memory);
+    long usage = ContainerStatsReader.usageWithoutCache(memory);
 
     assertEquals(100 * MIB, usage);
   }
@@ -128,7 +128,7 @@ class DockerGatewayStatsTest {
   void memoryWithNoCacheBreakdownFallsBackToRawUsage() {
     MemoryStatsConfig memory = memorySample(700 * MIB, 2 * GIB, null);
 
-    assertEquals(700 * MIB, DockerGateway.usageWithoutCache(memory));
+    assertEquals(700 * MIB, ContainerStatsReader.usageWithoutCache(memory));
   }
 
   @Test
@@ -137,7 +137,7 @@ class DockerGatewayStatsTest {
         "eth0", networkSample(1_000_000L, 250_000L),
         "eth1", networkSample(30L, 7L)));
 
-    StatsDto dto = DockerGateway.toStats(stats);
+    StatsDto dto = ContainerStatsReader.toStats(stats);
 
     // an Agent on both the bridge and the managed MCP network must report its whole
     // traffic, not whichever interface the daemon happened to list first
@@ -152,7 +152,7 @@ class DockerGatewayStatsTest {
         cpuSample(1_000_000_000L, 10_000_000_000L, 1L),
         memorySample(700 * MIB, 2 * GIB, null), null);
 
-    StatsDto dto = assertDoesNotThrow(() -> DockerGateway.toStats(stats));
+    StatsDto dto = assertDoesNotThrow(() -> ContainerStatsReader.toStats(stats));
 
     assertEquals(0L, dto.rxBytes());
     assertEquals(0L, dto.txBytes());

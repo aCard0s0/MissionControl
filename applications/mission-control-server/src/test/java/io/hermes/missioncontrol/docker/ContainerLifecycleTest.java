@@ -18,7 +18,6 @@ import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.RemoveVolumeCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ContainerConfig;
-import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,13 +31,12 @@ import org.mockito.InOrder;
  * nothing restores it. These tests pin the two guards that decide whether a volume is
  * Mission Control's to destroy.
  */
-class DockerGatewayRemovalTest {
+class ContainerLifecycleTest {
 
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final DockerGateway gateway = new DockerGateway(
-      clients, new AppProperties("live", "", "unix:///sock", "hermes/image", "hermes", "test"), dockerExec);
+  private final ContainerLifecycle subject = new ContainerLifecycle(clients);
 
   @BeforeEach
   void setUp() {
@@ -53,7 +51,7 @@ class DockerGatewayRemovalTest {
     stubLabels("cid", Map.of("mc.dataVolume", "mc-hermes-demo"));
     RemoveContainerCmd removeContainer = stubRemoveContainer("cid");
 
-    gateway.remove("unix:///sock", "cid");
+    subject.remove("unix:///sock", "cid");
 
     verify(client, never()).removeVolumeCmd(anyString());
     // the container itself is still removed, and forcibly, so a running agent does not
@@ -69,7 +67,7 @@ class DockerGatewayRemovalTest {
     stubLabels("cid", Map.of("mc.managed", "true", "mc.dataVolume", "postgres-data"));
     RemoveContainerCmd removeContainer = stubRemoveContainer("cid");
 
-    gateway.remove("unix:///sock", "cid");
+    subject.remove("unix:///sock", "cid");
 
     verify(client, never()).removeVolumeCmd(anyString());
     verify(removeContainer).exec();
@@ -86,7 +84,7 @@ class DockerGatewayRemovalTest {
     when(config.getLabels()).thenReturn(null);
     RemoveContainerCmd removeContainer = stubRemoveContainer("cid");
 
-    gateway.remove("unix:///sock", "cid");
+    subject.remove("unix:///sock", "cid");
 
     verify(removeContainer).exec();
     verify(client, never()).inspectVolumeCmd(anyString());
@@ -103,7 +101,7 @@ class DockerGatewayRemovalTest {
     // is the actual state, so the request must succeed
     when(removeVolume.exec()).thenThrow(new NotFoundException("no such volume"));
 
-    assertDoesNotThrow(() -> gateway.remove("unix:///sock", "cid"));
+    assertDoesNotThrow(() -> subject.remove("unix:///sock", "cid"));
 
     // the removal must still have been attempted — silently skipping it would leak the
     // volume on every real delete and pass this test anyway
@@ -121,7 +119,7 @@ class DockerGatewayRemovalTest {
     when(removeVolume.exec()).thenThrow(daemonFailure);
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> gateway.remove("unix:///sock", "cid"));
+        () -> subject.remove("unix:///sock", "cid"));
 
     // the operator is left with an orphaned volume and has to clean it up by hand, so
     // the message has to say which one
@@ -138,7 +136,7 @@ class DockerGatewayRemovalTest {
     RemoveVolumeCmd removeVolume = mock(RemoveVolumeCmd.class);
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
-    gateway.remove("unix:///sock", "cid");
+    subject.remove("unix:///sock", "cid");
 
     // the daemon refuses to remove a volume that is still attached, so the reverse order
     // leaves the volume behind on every delete of a live agent

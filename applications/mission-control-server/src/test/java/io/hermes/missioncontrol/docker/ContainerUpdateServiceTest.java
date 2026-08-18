@@ -53,7 +53,7 @@ class ContainerUpdateServiceTest {
 
   private void stubUpgrade() {
     when(docker.upgrade(anyString(), anyString(), anyString()))
-        .thenReturn(new DockerGateway.UpgradeResult(OLD_ID, NEW_ID, "v2026.7.1", "v2026.8.3", true));
+        .thenReturn(new UpgradeResult(OLD_ID, NEW_ID, "v2026.7.1", "v2026.8.3", true));
   }
 
   private void seedBoardTask(String containerId) {
