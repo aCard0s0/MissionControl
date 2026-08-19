@@ -8,6 +8,7 @@ import java.util.Base64;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * The default catalog entries a fresh install ships with, and the repairs for entries an
@@ -18,6 +19,7 @@ import org.slf4j.LoggerFactory;
  * once, keyed by seed key". Each repair is guarded on the exact broken shape, so an entry
  * the operator has since customized is left untouched rather than silently reverted.
  */
+@Component
 class McpCatalogSeeder {
 
   private static final Logger log = LoggerFactory.getLogger(McpCatalogSeeder.class);

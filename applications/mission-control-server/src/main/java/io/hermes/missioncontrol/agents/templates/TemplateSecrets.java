@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * The secrets a reusable template carries: template-owned API keys and the MCP snapshot
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory;
  * envelope this key can no longer open degrades to "unrecoverable" rather than failing a
  * whole read or deploy — a loss the operator has to be able to see and act on.
  */
+@Component
 class TemplateSecrets {
 
   private static final Logger log = LoggerFactory.getLogger(TemplateSecrets.class);

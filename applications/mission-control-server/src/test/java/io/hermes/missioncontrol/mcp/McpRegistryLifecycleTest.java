@@ -68,9 +68,8 @@ class McpRegistryLifecycleTest {
     compose = mock(ComposeStackManager.class);
     operations = new QueuedOperations();
     when(hosts.ref("dh-local")).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
-    service = new McpRegistryService(repository, retained, links, hosts, mock(DockerGateway.class),
-        new SecretCipher("test-secret", "", false), new ObjectMapper(), compose, LIVE_MODE,
-        operations);
+    service = McpWiring.registry(repository, retained, links, hosts, mock(DockerGateway.class),
+        compose, LIVE_MODE, operations);
   }
 
   @AfterEach

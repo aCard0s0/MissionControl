@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.util.List;
+import org.springframework.stereotype.Component;
 
 /**
  * A catalog row rendered for the API, with every secret redacted.
@@ -10,6 +11,7 @@ import java.util.List;
  * becomes an outbound payload is a single method — the redaction is not something to
  * rediscover in each caller.
  */
+@Component
 class McpServerDtoMapper {
 
   private final McpConfigStore configs;

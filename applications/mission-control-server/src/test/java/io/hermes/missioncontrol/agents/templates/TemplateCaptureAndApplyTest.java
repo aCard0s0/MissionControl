@@ -59,7 +59,7 @@ class TemplateCaptureAndApplyTest {
   private final HermesSetup setup = mock(HermesSetup.class);
   private final SecretCipher cipher = new SecretCipher("unit-test-key", "", true);
   private final ProfileTemplateService service =
-      new ProfileTemplateService(repository, cipher, profiles, setup);
+      TemplatesWiring.service(repository, cipher, profiles, setup);
 
   // ── capture ─────────────────────────────────────────────────────────────
 

@@ -7,8 +7,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import org.springframework.stereotype.Component;
 
 /** Renders the deliberately narrow managed-server model into non-secret Compose YAML. */
+@Component
 final class ComposeStackRenderer {
 
   static final String PROJECT = "mission-control-mcp";

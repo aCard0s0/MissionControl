@@ -14,6 +14,7 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * The managed half of the catalog: rendering a host's Compose stack, running
@@ -24,6 +25,7 @@ import org.slf4j.LoggerFactory;
  * {@code applied_revision} are the only evidence a caller has that a Compose run finished,
  * so each of these methods owns writing all three.
  */
+@Component
 class McpComposeLifecycle {
 
   private static final Logger log = LoggerFactory.getLogger(McpComposeLifecycle.class);

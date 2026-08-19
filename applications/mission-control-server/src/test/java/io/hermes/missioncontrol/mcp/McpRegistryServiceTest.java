@@ -17,6 +17,7 @@ import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,10 +40,9 @@ class McpRegistryServiceTest {
     JdbcTemplate jdbc = database.jdbc();
     repository = new McpServerRepository(jdbc);
     links = new AgentMcpLinkRepository(jdbc);
-    service = new McpRegistryService(repository, new RetainedResourceRepository(jdbc), links,
-        mock(HostService.class), mock(DockerGateway.class),
-        new SecretCipher("test-secret", "", false), new ObjectMapper(), mock(ComposeStackManager.class),
-        PROPS);
+    service = McpWiring.registry(repository, new RetainedResourceRepository(jdbc), links,
+        mock(HostService.class), mock(DockerGateway.class), mock(ComposeStackManager.class),
+        PROPS, Executors.newVirtualThreadPerTaskExecutor());
   }
 
   // one @AfterEach, not two: JUnit 5 does not order sibling teardown methods, and the
@@ -62,10 +62,10 @@ class McpRegistryServiceTest {
     AppProperties noReconcile =
         new AppProperties("", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test", false);
 
-    McpRegistryService quiet = new McpRegistryService(repository,
+    McpRegistryService quiet = McpWiring.registry(repository,
         new RetainedResourceRepository(database.jdbc()), links, hosts, docker,
-        new SecretCipher("test-secret", "", false), new ObjectMapper(),
-        mock(ComposeStackManager.class), noReconcile);
+        mock(ComposeStackManager.class), noReconcile,
+        Executors.newVirtualThreadPerTaskExecutor());
     try {
       quiet.initialize();
 

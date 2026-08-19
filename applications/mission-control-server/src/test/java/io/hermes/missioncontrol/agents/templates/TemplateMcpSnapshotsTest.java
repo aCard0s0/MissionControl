@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.secrets.SecretCipher;
@@ -208,17 +207,6 @@ class TemplateMcpSnapshotsTest {
     snapshots.materialize(List.of(fromCatalog("  mcp-1  ", "tools")), null);
 
     verify(registry).require("mcp-1");
-  }
-
-  @Test
-  void aCatalogIdCannotBeResolvedOnTheCrudOnlyWiring() {
-    // ProfileTemplateService's narrow constructor has no registry; a save that needs one is a 503
-    // rather than a null-pointer on the way to the database
-    TemplateMcpSnapshots withoutRegistry = new TemplateMcpSnapshots(null, secrets);
-
-    assertEquals("MCP registry is unavailable",
-        assertThrows(UpstreamUnavailableException.class, () -> withoutRegistry
-            .materialize(List.of(fromCatalog("mcp-1", "tools")), null)).getMessage());
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────

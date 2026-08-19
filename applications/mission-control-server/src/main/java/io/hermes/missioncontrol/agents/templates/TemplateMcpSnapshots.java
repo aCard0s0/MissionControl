@@ -1,6 +1,5 @@
 package io.hermes.missioncontrol.agents.templates;
 
-import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import java.util.ArrayList;
@@ -8,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.stereotype.Component;
 
 /**
  * Turning the MCP entries in a template save into stored snapshots.
@@ -20,6 +20,7 @@ import java.util.Objects;
  * unchanged — replacing an entry with a different server must not inherit the old
  * credentials.
  */
+@Component
 class TemplateMcpSnapshots {
 
   /** Null outside the full wiring — the CRUD-only paths never resolve a catalog id. */
@@ -64,9 +65,6 @@ class TemplateMcpSnapshots {
 
   /** A detached copy of a catalog server, with its environment or headers captured now. */
   private McpServerSpec fromCatalog(McpServerSpec requested) {
-    if (registry == null) {
-      throw new UpstreamUnavailableException("MCP registry is unavailable");
-    }
     String sourceId = requested.sourceServerId().trim();
     McpServerDto source = registry.require(sourceId);
     String alias = requested.name() == null || requested.name().isBlank()
