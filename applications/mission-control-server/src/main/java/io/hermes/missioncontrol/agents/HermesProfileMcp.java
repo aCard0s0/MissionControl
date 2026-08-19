@@ -291,9 +291,7 @@ class HermesProfileMcp implements ContainerIdListener {
     }
 
     long start = System.nanoTime();
-    List<String> probeCommand = "default".equals(profileName)
-        ? List.of("hermes", "mcp", "test", serverName)
-        : List.of("hermes", "-p", profileName, "mcp", "test", serverName);
+    List<String> probeCommand = ProfilePaths.hermesCli(profileName, "mcp", "test", serverName);
     ExecResult probe = files.exec(url, containerId, probeCommand, false);
     long latencyMs = (System.nanoTime() - start) / 1_000_000L;
     String probeOutput = probe.stdout() + "\n" + probe.stderr();

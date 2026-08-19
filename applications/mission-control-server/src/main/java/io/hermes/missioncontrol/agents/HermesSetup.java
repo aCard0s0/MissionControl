@@ -191,9 +191,7 @@ public class HermesSetup {
   /** Degrades to null when `hermes status` cannot run — callers then report
    *  from the .env alone. */
   private StatusReport runStatus(String url, String containerId, String name) {
-    List<String> command = "default".equals(name)
-        ? List.of("hermes", "status")
-        : List.of("hermes", "-p", name, "status");
+    List<String> command = ProfilePaths.hermesCli(name, "status");
     try {
       return parseStatus(files.exec(url, containerId, command).stdout());
     } catch (RuntimeException e) {

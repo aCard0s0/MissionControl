@@ -7,6 +7,7 @@ import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhookPlatformDto;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.secrets.Secrets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -14,6 +15,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -27,9 +29,11 @@ import org.springframework.stereotype.Component;
  * <p>Two things have to be true before a route can fire: the profile's {@code webhook}
  * platform is enabled in its config (that is the listener, with its own bind address and
  * port), and a route exists under it. Mission Control manages both and nothing more — it
- * never carries webhook traffic itself. An agent container publishes no port, so a route is
- * configured but unreachable from outside the docker network until an operator exposes it
- * deliberately; {@link WebhookPlatformDto#published()} is how the page says so.
+ * never carries webhook traffic itself, and never publishes a port for one. An agent
+ * container therefore has no port mapped, so a route is configured but unreachable from
+ * outside the docker network until an operator exposes it deliberately;
+ * {@link WebhookPlatformDto#published()} is how the page says so, and
+ * docs/architecture.md records why that is a decision rather than a gap.
  *
  * <p>Reads come from {@code webhook_subscriptions.json}, writes from {@code hermes webhook},
  * for the same reasons as the schedule: the file is the data, the CLI owns generating the
@@ -52,14 +56,21 @@ public class HermesWebhooks {
   private static final Pattern ROUTE = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}");
 
   private static final String PLATFORM_KEY = "platforms.webhook";
+  private static final String DEFAULT_HOST = "0.0.0.0";
   private static final int DEFAULT_PORT = 8644;
+
+  /** How far above {@link #DEFAULT_PORT} a defaulted listener will look for a free port. */
+  private static final int PORT_SEARCH_RANGE = 64;
 
   private final HermesContainerFiles files;
   private final ObjectMapper objectMapper;
+  private final ProfileInventory inventory;
 
-  HermesWebhooks(HermesContainerFiles files, ObjectMapper objectMapper) {
+  HermesWebhooks(
+      HermesContainerFiles files, ObjectMapper objectMapper, ProfileInventory inventory) {
     this.files = files;
     this.objectMapper = objectMapper;
+    this.inventory = inventory;
   }
 
   public WebhooksDto list(String url, String containerId, String profileName) {
@@ -71,19 +82,79 @@ public class HermesWebhooks {
    * Turns the listener on or off. Enabling mints a global HMAC secret only when the profile
    * has none, so toggling the listener twice does not invalidate secrets an operator has
    * already given to a provider.
+   *
+   * <p>The address is resolved <em>before</em> anything is written: a refused port used to
+   * leave the listener switched on with whatever port it had before, which is a listener an
+   * operator turned on and that never binds.
    */
   public WebhooksDto setPlatformEnabled(
       String url, String containerId, String profileName, EnableWebhookPlatformRequest request) {
+    ProfilePaths.profileDir(profileName);   // before a URL-sourced name reaches a read below
+    String host = null;
+    Integer port = null;
+    if (request.enabled()) {
+      host = notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
+      port = resolvePort(url, containerId, profileName, request.port());
+    }
     setConfig(url, containerId, profileName, PLATFORM_KEY + ".enabled",
         String.valueOf(request.enabled()));
     if (request.enabled()) {
-      String host = notBlank(request.host()) ? request.host().trim() : "0.0.0.0";
-      int port = request.port() != null ? request.port() : DEFAULT_PORT;
-      requirePort(port);
       setConfig(url, containerId, profileName, PLATFORM_KEY + ".extra.host", host);
       setConfig(url, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
     }
     return list(url, containerId, profileName);
+  }
+
+  /**
+   * The port this profile's listener will bind — never one another profile in the same
+   * container already holds.
+   *
+   * <p>Every profile's listener defaults to {@value #DEFAULT_PORT} and every profile in a
+   * container shares one network namespace, so two enabled profiles on the default collide.
+   * The second listener simply fails to bind, and hermes says so only in the gateway log of a
+   * profile nobody has open — the page would show the route as configured and the provider's
+   * POSTs would go nowhere.
+   *
+   * <p>An explicitly chosen port that is taken is refused rather than moved: the operator
+   * picked it because something outside is already pointed at it. A defaulted one walks up
+   * from {@value #DEFAULT_PORT} to the first free port instead, because there is no choice
+   * to respect.
+   */
+  private int resolvePort(String url, String containerId, String profileName, Integer requested) {
+    if (requested != null) requirePort(requested);
+    Map<Integer, String> taken = portsHeldByOtherProfiles(url, containerId, profileName);
+    if (requested != null) {
+      String holder = taken.get(requested);
+      if (holder != null) {
+        throw new ResourceConflictException("webhook port " + requested
+            + " is already used by profile " + holder + " in this container");
+      }
+      return requested;
+    }
+    for (int port = DEFAULT_PORT; port <= DEFAULT_PORT + PORT_SEARCH_RANGE; port++) {
+      if (!taken.containsKey(port)) return port;
+    }
+    throw new ResourceConflictException("no free webhook port between " + DEFAULT_PORT + " and "
+        + (DEFAULT_PORT + PORT_SEARCH_RANGE) + " — choose one explicitly");
+  }
+
+  /**
+   * Port to profile, for every <em>other</em> profile whose listener is on.
+   *
+   * <p>An enabled listener with no port recorded counts as holding {@value #DEFAULT_PORT}:
+   * that is what hermes binds when its config says nothing, and a profile enabled through the
+   * CLI rather than through here has no {@code extra.port} at all.
+   */
+  private Map<Integer, String> portsHeldByOtherProfiles(
+      String url, String containerId, String profileName) {
+    Map<Integer, String> taken = new LinkedHashMap<>();
+    for (String other : inventory.names(url, containerId)) {
+      if (other.equals(profileName)) continue;
+      WebhookPlatformDto platform = platform(url, containerId, other);
+      if (!platform.enabled()) continue;
+      taken.putIfAbsent(platform.port() == null ? DEFAULT_PORT : platform.port(), other);
+    }
+    return taken;
   }
 
   public WebhooksDto subscribe(

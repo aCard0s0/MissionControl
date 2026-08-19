@@ -178,7 +178,7 @@ mvn test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true
 
 `ComposeStackDockerAcceptanceTest` exists because the mocked tier pins the argv Mission Control
 builds and never asks Docker whether it accepts it. If `compose rm --stop --force` carried a wrong
-flag, or `--pull always` were unsupported by the installed Compose, the whole 1042-test suite would
+flag, or `--pull always` were unsupported by the installed Compose, the whole 1096-test suite would
 still pass. It drives one managed MCP record through provision → start → stop → delete → purge and
 asserts against the daemon (queried with plain `docker` commands, deliberately not the code under
 test) that the container appears stopped, comes up, goes down, disappears, and that **the named
@@ -200,8 +200,9 @@ blocking the credential helper — `security -v unlock-keychain ~/Library/Keycha
 
 ## Parsers pinned to captured hermes output
 
-`hermes status`, the gateway log, the bundled manifest and SKILL.md frontmatter are all read by
-parsers that were written against text we typed ourselves. `HermesSetupTest` says so in its own
+`hermes status`, the gateway log, the bundled manifest, SKILL.md frontmatter, and the `cron/jobs.json`
+and `webhook_subscriptions.json` documents hermes owns are all read by parsers that were written
+against text we typed ourselves. `HermesSetupTest` says so in its own
 javadoc: the fixtures prove the rules we believe hermes follows, not what it prints. A release can
 move a section heading or rename a row label, and every one of those tests stays green while the
 dashboard reports a configured agent as unconfigured.
@@ -214,18 +215,37 @@ dashboard reports a configured agent as unconfigured.
 
 The script reads only (`hermes --version`, `hermes status`, `cat`), redacts what belongs to the
 operator rather than to the output format, and writes into
-`src/test/resources/fixtures/hermes-<version>/`. The test parses every set present and asserts the
-parse is **non-degenerate** — sections yield rows, ✓/✗ resolves, indented detail lines stay detail,
-the frontmatter name beats the directory. A changed format makes these readers return empty rather
-than throw, and empty is the failure that is otherwise invisible.
+`src/test/resources/fixtures/hermes-<version>/`. It captures the CLI text *and* the two JSON
+documents Mission Control reads instead of parsing a CLI table — `cron/jobs.json` and
+`webhook_subscriptions.json` — so nothing in the set is a hand copy. That needs `python3`: the
+redaction is by field name on a parsed document, because guessing at hermes' JSON formatting with
+`sed` is not something to trust a committed fixture to.
+
+The test parses every set present and asserts the parse is **non-degenerate** — sections yield
+rows, ✓/✗ resolves, indented detail lines stay detail, the frontmatter name beats the directory,
+every job displays a schedule, every route renders a URL carrying its own name. A changed format
+makes these readers return empty rather than throw, and empty is the failure that is otherwise
+invisible.
+
+**What the redaction takes, and why the fixture is still worth having.** Prompts and route secrets
+go — a prompt is an operator's instructions to an agent, and a route secret is a live HMAC signing
+key. Secrets are replaced by a placeholder of the same shape (43 base64url characters) rather than
+removed, because the length is the only thing a parser reads. Job and route *names* are kept, since
+the tests look their rows up by name. So a test that needs real prompt text uses synthetic input,
+and the fixture pins shape: which fields exist, which are null rather than absent, and what nests
+inside what. One assertion is not about parsing at all — every captured `secret` must equal the
+placeholder, which fails a careless capture instead of letting a signing key sit in the repository.
 
 On a hermes bump: re-capture, read the diff, keep the old set. Drift then arrives as a reviewable
 diff and a failing test instead of a silent misread. With no fixtures present the test skips and
-names the script, so the mechanism is inert until someone captures.
+names the script, so the mechanism is inert until someone captures. Because the script normalizes
+the JSON it writes, re-running it against the same container reproduces the committed bytes — the
+set is script output, not something anyone edited by hand.
 
-`fixtures/README.md` records what each file pins. One output is deliberately absent: `hermes mcp
-test` is the only command here with a side effect — it opens a connection and can start a stdio
-server inside the agent — so its parsing stays covered by synthetic output only.
+`fixtures/README.md` records what each file pins and the full redaction policy. One output is
+deliberately absent: `hermes mcp test` is the only command here with a side effect — it opens a
+connection and can start a stdio server inside the agent — so its parsing stays covered by
+synthetic output only.
 
 ## Test names and comments
 

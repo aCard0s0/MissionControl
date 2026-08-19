@@ -172,10 +172,8 @@ pre.file {
 .linklike { background: none; border: 0; padding: 0; color: var(--cyan); cursor: pointer; font: inherit; &:hover { text-decoration: underline; } }
 
 .modal.wide { width: min(820px, calc(100vw - 48px)); }
-.modal-b { padding: 16px; display: flex; flex-direction: column; gap: 14px; p { margin: 0; } }
 .modal-b pre.file { max-height: 60vh; }
 
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .crit-h { color: var(--red); }
 .empty { align-items: center; gap: 8px; padding: 48px; text-align: center; }
 

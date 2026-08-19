@@ -3,7 +3,7 @@
     {
       "id": "f681ab60b86d",
       "name": "morning digest",
-      "prompt": "Summarize overnight alerts and page if anything is still firing",
+      "prompt": "<redacted>",
       "skills": [],
       "skill": null,
       "model": null,
@@ -40,7 +40,7 @@
     {
       "id": "edf52949adbf",
       "name": "watchdog",
-      "prompt": "Check disk headroom",
+      "prompt": "<redacted>",
       "skills": [],
       "skill": null,
       "model": null,
@@ -77,7 +77,7 @@
     {
       "id": "f4ab36846772",
       "name": "Sweep the review queue",
-      "prompt": "Sweep the review queue",
+      "prompt": "<redacted>",
       "skills": [],
       "skill": null,
       "model": null,

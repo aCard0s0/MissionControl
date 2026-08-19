@@ -1,6 +1,5 @@
-// The new-agent form. `.scrim`, `.modal`, `.panel-h`, `.btn`, `.input`,
-// `.select`, `.field` and `.lock-hint` are global (src/styles.scss).
-.modal-b { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+// The new-agent form. `.scrim`, `.modal`, `.modal-b`, `.modal-actions`, `.panel-h`,
+// `.btn`, `.input`, `.select`, `.field` and `.lock-hint` are global (src/styles.scss).
 .key-row {
   display: flex;
   gap: 8px;
@@ -10,7 +9,6 @@
 // a label that reads as one line with its checkbox, not as a stacked field label
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 
 @media (max-width: 760px) {
   .row { grid-template-columns: 1fr; }

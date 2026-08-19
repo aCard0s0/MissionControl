@@ -114,17 +114,53 @@ Both are **per profile** while their pages are per container, so each listing fa
 out over the container's profiles — one read each, capped like the other pollers —
 and a profile that cannot be read loses only its own entries.
 
-**Mission Control never carries webhook traffic.** It manages the listener and the
-routes and nothing else. An agent container publishes no port, so a route is
-configured but unreachable from outside the docker network until an operator
-exposes it deliberately; the page says so rather than implying it is live. Proxying
-inbound hooks through the dashboard was considered and rejected: Mission Control has
-no authentication, and that would make it an unauthenticated public trigger for
-agent runs.
-
 A route's HMAC secret is stored by hermes in plaintext and the sending provider
 needs it, so the listing carries only a masked tail and revealing it in full is a
 separate, deliberate request.
+
+#### Exposing a webhook listener is the operator's job, deliberately
+
+Mission Control never carries webhook traffic and **never publishes a port for it**.
+It manages the listener and the routes; the mapping that makes a route reachable is
+the operator's own `docker run -p`. That is a decision rather than a gap, for three
+reasons that all point the same way:
+
+- The listener is **per profile**, and every profile defaults to port 8644. A container
+  with three agents can have three listeners on three ports, and which ports those are
+  is only decided when an operator enables them — long after the container was created.
+  A deploy-time publish could only guess, and would reserve a host port for a feature
+  most agents never turn on.
+- **Docker cannot add a port mapping to a running container.** Publishing on demand, at
+  the moment a listener is enabled, would mean recreating the agent container and
+  restarting the agent every time someone toggles a webhook.
+- Host ports are **one namespace per host**. Two agent containers cannot both hold 8644,
+  so Mission Control would have to allocate and record host ports itself — a second
+  source of truth about a mapping the operator can change underneath it.
+
+Proxying inbound hooks through the dashboard was considered and rejected for a different
+reason: Mission Control has no authentication of any kind, so a proxy route would be an
+unauthenticated public trigger for agent runs. Note the asymmetry — hermes' own listener
+verifies an HMAC signature per route, which is why exposing *it* is a reasonable thing to
+ask an operator to do.
+
+Three things follow, and are implemented:
+
+- **The page never claims reachability.** It shows the route URL with the listener's own
+  port, not the `localhost` hermes prints, and says the route is unreachable until the
+  port is exposed. `WebhookPlatformDto.published` is always `false`: Mission Control
+  publishes nothing itself and does not inspect manual mappings.
+- **A manual `-p` survives an image update.** The upgrade copies port bindings, exposed
+  ports and `PublishAllPorts` onto the replacement container, alongside the binds and
+  networks. Without that, moving an agent to a newer tag would silently un-expose its
+  listener, with nothing on any page to say the hooks had stopped arriving.
+- **One listener port per container, not per profile.** Enabling a listener refuses a port
+  another profile in the same container already holds, and walks a defaulted one up from
+  8644 to the first free port. Profiles share one network namespace, so a second listener
+  on 8644 never binds — and hermes reports that only in the gateway log of a profile
+  nobody has open.
+
+Bind it deliberately when you do expose it: `-p 127.0.0.1:8644:8644` unless the sending
+provider is off-host, which is the same default `./mc` uses for the dashboard itself.
 
 ## Terminal
 
@@ -190,9 +226,10 @@ touching the Agent's data:
 - The target tag is **pulled first**, before anything is stopped, so a bad tag
   or an unreachable registry costs no downtime.
 - The old container is **renamed aside**, not removed. The replacement is created
-  under the original name with the same labels, binds, restart policy, command
-  and user-defined networks — notably the managed MCP network, which is attached
-  after deploy and would otherwise be silently lost. Only once the replacement
+  under the original name with the same labels, binds, restart policy, command,
+  user-defined networks and published ports — notably the managed MCP network, which
+  is attached after deploy and would otherwise be silently lost, and any port an
+  operator mapped by hand to reach a webhook listener. Only once the replacement
   passes readiness is the parked original removed; any failure restores it.
 - The `mc-hermes-<name>` volume is **reattached, never recreated or deleted**, so
   profiles, souls, memory, skills, sessions and credentials carry over. No
@@ -206,7 +243,9 @@ touching the Agent's data:
   suffix. They are hidden from the fleet listing and reachable via `?all=true`.
 
 Host-config customizations applied out of band (`docker update`, CPU or memory
-limits) are outside the copied set and are not preserved.
+limits) are outside the copied set and are not preserved. Port mappings are inside
+it, because a mapping cannot be re-applied to a running container and is the only
+way a webhook listener is reachable.
 
 ## Security notes
 
@@ -222,6 +261,10 @@ limits) are outside the copied set and are not preserved.
   and the backend refuses to delete the local socket host.
 - Plain `./mc start --ts=off` binds to `127.0.0.1`; setting `BIND_ADDRESS`
   explicitly can expose the unauthenticated dashboard and prints a warning.
+- Agent containers publish no ports at all. Exposing a profile's webhook listener is
+  the operator's own `docker run -p`, and `127.0.0.1` is the right bind unless the
+  sending provider is off-host. That listener does authenticate — hermes verifies an
+  HMAC signature per route — which the dashboard itself has no equivalent of.
 
 ## Development
 

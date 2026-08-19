@@ -15,11 +15,28 @@ the suite stays green while the dashboard reports a configured agent as unconfig
 It reads only — `hermes --version`, `hermes status`, and `cat` of files — and writes into a
 directory named after the version it found, so a new hermes release lands as a new set rather than
 overwriting the old one. Keep the old set: the test parses every set present, so the parsers stay
-honest about the versions still in the field.
+honest about the versions still in the field. It needs `python3`, for the two JSON documents only.
 
 Then read the diff. The script redacts what belongs to the operator rather than to hermes' output
-format — the Environment block's values, auth refresh timestamps, gateway PIDs — but only you know
-what is sensitive in your own deployment.
+format — but only you know what is sensitive in your own deployment.
+
+## What is redacted, and what is not
+
+| redacted | why |
+|---|---|
+| `status.txt`'s Environment values, `Refreshed:` timestamps, gateway `PID(s):` | operator state; the labels and ✓/✗ marks around them are hermes' vocabulary, which is what the parser reads |
+| every `prompt` | an operator's instructions to an agent, the one thing in these files with no business in a git repository |
+| every route `secret` | a **live HMAC signing key**. Replaced by a placeholder of the same shape — 43 base64url characters — because the length is all a parser reads, and the listing only ever shows a masked four-character tail |
+| `deliver_extra` values (chat ids), `workdir`, `base_url`, `context_from`, `script`, `last_error`, `last_delivery_error` | addresses of real people, and paths that name the operator's machine |
+
+Everything else is kept, because it is what the parsers read: ids, job and route names, schedule
+kinds and display strings, repeat counters, states, timestamps, deliver targets, skills, events.
+
+Job and route **names are kept on purpose** — the tests look their rows up by name, and a set whose
+rows cannot be told apart is not a fixture. One consequence to expect in the diff: a cron job
+created without `--name` takes its prompt as its name, so a row's name can read like a prompt while
+every `prompt` field reads `<redacted>`. And because prompts are scrubbed, any test that needs real
+prompt text — hermes' `{placeholder}` templating, for instance — has to use synthetic input.
 
 ## What is in a set, and why
 
@@ -30,13 +47,19 @@ what is sensitive in your own deployment.
 | `gateway.log` | the log line format: a timestamp, two spaces, a message — including the blank-message records hermes writes, which must be dropped |
 | `bundled_manifest.txt` | `name:hash` per line, which decides whether a skill reads as bundled or user-authored |
 | `skill.md` | SKILL.md frontmatter, whose `name` wins over the directory a skill sits in |
+| `cron-jobs.json` | the schedule the Jobs page renders straight out of the file — and the trap that only a `cron` schedule carries an `expr`, while `once` stores a timestamp and `interval` a minute count, so the set deliberately holds one job of each kind |
+| `webhook-subscriptions.json` | routes keyed by name rather than in an array, `deliver_only`/`deliver_extra`, and an empty `events` list meaning *all* events |
 
 ## What the assertions check
 
 That the parse is **non-degenerate** — every section yields rows, marks resolve to booleans, detail
-lines stay detail, the frontmatter name wins over the directory. A changed format makes these
-readers return empty rather than throw, and empty is exactly the failure that is otherwise
-invisible. Severity classification and the awkward inputs (malformed timestamps, ANSI-only lines,
+lines stay detail, the frontmatter name wins over the directory, every job displays a schedule and
+every route renders a URL carrying its own name. A changed format makes these readers return empty
+rather than throw, and empty is exactly the failure that is otherwise invisible.
+
+One assertion is not about parsing at all: every captured route's `secret` must equal the capture
+script's placeholder. It fails a careless capture rather than letting a live signing key sit in the
+repository unnoticed. Severity classification and the awkward inputs (malformed timestamps, ANSI-only lines,
 missing frontmatter) stay in the unit tests, which can construct cases a healthy container does not
 produce.
 

@@ -303,6 +303,21 @@ a:hover { text-decoration: underline; }
   }
 }
 
+// Every modal in the app is the same three parts: .panel-h, .modal-b, .modal-actions.
+// A paragraph placed *directly* in the body carries no margin of its own — the body's
+// 14px gap is the spacing. A hint nested inside a `.field` keeps its margin, which is
+// why this is `> p` and not `p`.
+.modal-b {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  > p { margin: 0; }
+}
+
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+
 // search-match highlight — injected via [innerHTML], so it must be a global
 // rule (component-scoped styles don't reach innerHTML-rendered nodes).
 .jt-hit {

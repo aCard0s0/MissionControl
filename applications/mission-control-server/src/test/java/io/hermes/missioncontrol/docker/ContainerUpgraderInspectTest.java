@@ -27,8 +27,10 @@ import com.github.dockerjava.api.command.StopContainerCmd;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.ContainerConfig;
 import com.github.dockerjava.api.model.ContainerNetwork;
+import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.NetworkSettings;
+import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.api.model.RestartPolicy;
 import io.hermes.missioncontrol.config.AppProperties;
 import java.util.LinkedHashMap;
@@ -36,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Answers;
 
 /**
@@ -51,6 +54,8 @@ class ContainerUpgraderInspectTest {
 
   private static final String URL = "unix:///sock";
   private static final String ID = "abc123def456";
+  /** The port a profile's webhook listener binds, which is why an Agent gets published at all. */
+  private static final ExposedPort WEBHOOK_PORT = ExposedPort.tcp(8644);
 
   private DockerClients clients;
   private DockerClient client;
@@ -161,6 +166,23 @@ class ContainerUpgraderInspectTest {
   }
 
   @Test
+  void aPortAnOperatorPublishedByHandIsPartOfTheSpec() {
+    // Mission Control publishes nothing for an Agent, so a mapping on one is the operator's
+    // own — the documented way to reach a profile's webhook listener from outside the docker
+    // network. It is a create-time setting, so it only survives if it is read here.
+    inspectReturns(container(managedLabels("mc-hermes-demo"),
+        HostConfig.newHostConfig()
+            .withPortBindings(new Ports(WEBHOOK_PORT, Ports.Binding.bindIpAndPort("127.0.0.1", 8644)))
+            .withPublishAllPorts(true),
+        null, null));
+
+    ManagedContainerSpec spec = upgrader.inspectManaged(URL, ID);
+
+    assertEquals(1, spec.portBindings().getBindings().size());
+    assertTrue(spec.publishAllPorts());
+  }
+
+  @Test
   void aContainerWithNothingOptionalSetProducesAUsableSpecAnyway() {
     // a hand-created container may carry no host config, no cmd and no state at all
     inspectReturns(container(managedLabels("mc-hermes-demo"), null, null, null));
@@ -173,6 +195,9 @@ class ContainerUpgraderInspectTest {
     assertNull(spec.env());
     assertNull(spec.primaryNetwork());
     assertNull(spec.restartPolicy());
+    assertNull(spec.portBindings(), "no host config means nothing was published");
+    assertTrue(spec.exposedPorts().isEmpty());
+    assertFalse(spec.publishAllPorts());
     assertTrue(spec.binds().isEmpty());
     assertFalse(spec.wasRunning(), "no state means not running");
     assertTrue(spec.extraNetworks().isEmpty());
@@ -233,9 +258,27 @@ class ContainerUpgraderInspectTest {
     verify(create).withEnv(List.of("TZ=UTC"));
     verify(create).withUser("hermes");
     verify(create).withWorkingDir("/opt/data");
+    verify(create).withExposedPorts(List.of(WEBHOOK_PORT));
     // the user-defined network is reconnected by hand with its aliases
     verify(networks).connect(URL, "new-id", "mission-control-mcp-net", List.of("mc-hermes-demo"));
     verify(client).startContainerCmd("new-id");
+  }
+
+  @Test
+  void anOperatorsOwnPortMappingSurvivesTheReplacement() {
+    // Docker cannot add a mapping to a running container, so an upgrade that dropped it would
+    // silently un-expose the operator's webhook listener with no way back but recreating the
+    // container by hand — and nothing on the page would say the routes had stopped arriving.
+    CreateContainerCmd create = upgradeHarness(true, true);
+
+    upgrader.upgrade(URL, ID, "1.3");
+
+    HostConfig replacement = hostConfigOf(create);
+    Ports.Binding[] bound = replacement.getPortBindings().getBindings().get(WEBHOOK_PORT);
+    assertEquals(1, bound.length);
+    assertEquals("127.0.0.1", bound[0].getHostIp());
+    assertEquals("8644", bound[0].getHostPortSpec());
+    assertTrue(replacement.getPublishAllPorts(), "`docker run -P` is carried over as well");
   }
 
   @Test
@@ -250,8 +293,18 @@ class ContainerUpgraderInspectTest {
     verify(create, never()).withEnv(any(List.class));
     verify(create, never()).withUser(anyString());
     verify(create, never()).withWorkingDir(anyString());
+    verify(create, never()).withExposedPorts(any(List.class));
+    assertNull(hostConfigOf(create).getPortBindings());
+    assertNull(hostConfigOf(create).getPublishAllPorts());
     // it was not running, so the replacement stays parked
     verify(client, never()).startContainerCmd(anyString());
+  }
+
+  /** The host config the replacement was actually created with. */
+  private static HostConfig hostConfigOf(CreateContainerCmd create) {
+    ArgumentCaptor<HostConfig> captured = ArgumentCaptor.forClass(HostConfig.class);
+    verify(create).withHostConfig(captured.capture());
+    return captured.getValue();
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────
@@ -310,6 +363,10 @@ class ContainerUpgraderInspectTest {
    * the original carried the optional settings, which is what the replacement has to mirror.
    */
   private CreateContainerCmd upgradeHarness(boolean fullySpecified) {
+    return upgradeHarness(fullySpecified, false);
+  }
+
+  private CreateContainerCmd upgradeHarness(boolean fullySpecified, boolean publishAllPorts) {
     ContainerConfig config = mock(ContainerConfig.class);
     when(config.getLabels()).thenReturn(managedLabels("mc-hermes-demo"));
     when(config.getImage()).thenReturn("hermes/agent:1.2");
@@ -319,6 +376,7 @@ class ContainerUpgraderInspectTest {
       when(config.getEnv()).thenReturn(new String[] {"TZ=UTC"});
       when(config.getUser()).thenReturn("hermes");
       when(config.getWorkingDir()).thenReturn("/opt/data");
+      when(config.getExposedPorts()).thenReturn(new ExposedPort[] {WEBHOOK_PORT});
     } else {
       when(config.getUser()).thenReturn("   ");
       when(config.getWorkingDir()).thenReturn("");
@@ -337,11 +395,17 @@ class ContainerUpgraderInspectTest {
     when(inspected.getNetworkSettings()).thenReturn(settings);
     InspectContainerResponse.ContainerState state = runningState(fullySpecified);
     when(inspected.getState()).thenReturn(state);
-    when(inspected.getHostConfig()).thenReturn(fullySpecified
+    HostConfig hostConfig = fullySpecified
         ? HostConfig.newHostConfig()
             .withBinds(Bind.parse("mc-hermes-demo:/opt/data"))
             .withRestartPolicy(RestartPolicy.unlessStoppedRestart())
-        : null);
+            .withPortBindings(new Ports(WEBHOOK_PORT, Ports.Binding.bindIpAndPort("127.0.0.1", 8644)))
+        : null;
+    if (publishAllPorts) {
+      hostConfig = (hostConfig == null ? HostConfig.newHostConfig() : hostConfig)
+          .withPublishAllPorts(true);
+    }
+    when(inspected.getHostConfig()).thenReturn(hostConfig);
     inspectReturns(inspected);
 
     // the target tag is already present locally and resolves to a different image id, so the

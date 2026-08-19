@@ -97,15 +97,9 @@
   margin-bottom: 14px;
 }
 
-.modal-b {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  p { margin: 0; }
-}
-
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+// the "loading image tags…" hint sits inside a `.field`, so the global `.modal-b > p`
+// rule does not reach it and it would otherwise carry a paragraph's own margin
+.modal-b .field p { margin: 0; }
 
 .crit-h { color: var(--red); }
 

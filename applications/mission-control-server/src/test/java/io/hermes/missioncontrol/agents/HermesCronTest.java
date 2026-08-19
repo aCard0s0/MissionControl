@@ -32,6 +32,9 @@ import org.junit.jupiter.api.Test;
  * {@code expr}. A {@code once} job stores {@code run_at} and an {@code interval} job stores
  * {@code minutes}, so reading {@code expr} reported no schedule at all for two of the three
  * kinds hermes can create.
+ *
+ * <p>Prompts in the captured set read {@code <redacted>}: {@code tools/capture-hermes-fixtures.sh}
+ * scrubs them, so a re-capture on a hermes bump stays committable without a human remembering to.
  */
 class HermesCronTest {
 
@@ -104,7 +107,10 @@ class HermesCronTest {
     CronJobDto digest = cron.list(URL, CONTAINER, "default").jobs().stream()
         .filter(j -> "morning digest".equals(j.name())).findFirst().orElseThrow();
 
-    assertEquals("Summarize overnight alerts and page if anything is still firing", digest.prompt());
+    // the capture script redacts every prompt — an operator's instructions to an agent are the
+    // one field in this file that has no business in a git repository. What is pinned here is
+    // that the field round-trips at all; the unit tests below carry real prompt text.
+    assertEquals("<redacted>", digest.prompt());
     assertEquals("telegram", digest.deliver());
     assertEquals("scheduled", digest.state());
     assertTrue(digest.enabled());

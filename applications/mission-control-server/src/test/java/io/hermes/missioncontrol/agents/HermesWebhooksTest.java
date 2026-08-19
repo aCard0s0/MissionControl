@@ -11,11 +11,14 @@ import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,7 +27,10 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The listing fixture is captured from {@code nousresearch/hermes-agent} v0.16.0 — the
  * file is keyed by route name rather than being an array, and it holds each route's HMAC
- * secret in plaintext, which is the reason a listing never carries one.
+ * secret in plaintext, which is the reason a listing never carries one. The captured secrets
+ * and prompts are scrubbed by {@code tools/capture-hermes-fixtures.sh}: a live signing key and
+ * an operator's prompt are the two things in this file that must not reach a git repository,
+ * and the placeholder keeps the shape a parser reads.
  */
 class HermesWebhooksTest {
 
@@ -43,6 +49,9 @@ class HermesWebhooksTest {
   /** Records every argv and answers reads from canned files. */
   private static final class Exec extends HermesContainerFiles {
     private final List<List<String>> commands = new ArrayList<>();
+    /** Per-profile config.yaml, for the container-wide port checks; falls back to {@link #config}. */
+    private final Map<String, String> configs = new HashMap<>();
+    private List<String> namedProfiles = List.of();
     private String subscriptions = "";
     private String config = "";
 
@@ -53,12 +62,20 @@ class HermesWebhooksTest {
     @Override
     String readFile(String url, String containerId, String path) {
       commands.add(List.of("readFile", path));
-      return path.endsWith("config.yaml") ? config : subscriptions;
+      if (!path.endsWith("config.yaml")) return subscriptions;
+      String profile = path.startsWith(PROFILES_PREFIX)
+          ? path.substring(PROFILES_PREFIX.length(), path.length() - "/config.yaml".length())
+          : "default";
+      return configs.getOrDefault(profile, config);
     }
 
     @Override
     ExecResult exec(String url, String containerId, List<String> command, boolean check) {
       commands.add(command);
+      // the profile inventory's own two reads: is the hermes home there, and what is beside it
+      if (command.size() > 2 && command.get(2).startsWith("ls -1")) {
+        return new ExecResult(0, String.join("\n", namedProfiles), "");
+      }
       return new ExecResult(0, "delivered", "");
     }
 
@@ -69,8 +86,11 @@ class HermesWebhooksTest {
     }
   }
 
+  private static final String PROFILES_PREFIX = "/opt/data/profiles/";
+
   private final Exec exec = new Exec();
-  private final HermesWebhooks webhooks = new HermesWebhooks(exec, new ObjectMapper());
+  private final HermesWebhooks webhooks =
+      new HermesWebhooks(exec, new ObjectMapper(), new ProfileInventory(exec));
 
   private static String fixture() throws IOException {
     return Files.readString(
@@ -100,7 +120,11 @@ class HermesWebhooksTest {
 
     String secret = webhooks.secret(URL, CONTAINER, "default", "grafana");
 
-    assertEquals("FfrKrfUrccoJwEDfeIW_t2brVGBacVyfK4IcNsFWjd0", secret);
+    // the capture script replaces the real secret with a placeholder of the same shape — 43
+    // base64url characters — so what is pinned is that this reads the field verbatim and
+    // unmasked, which is the whole difference between it and a listing
+    assertEquals("redacted-by-capture-hermes-fixtures-sh-0000", secret);
+    assertEquals(43, secret.length());
   }
 
   @Test
@@ -128,7 +152,7 @@ class HermesWebhooksTest {
 
     assertEquals("Grafana alerting", grafana.description());
     assertEquals(List.of("alert.firing", "alert.resolved"), grafana.events());
-    assertEquals("Alert {alert.name} is {status}", grafana.prompt());
+    assertEquals("<redacted>", grafana.prompt(), "the capture script scrubs prompts");
     assertEquals("log", grafana.deliver());
     assertFalse(grafana.deliverOnly());
     assertTrue(grafana.createdAt() > 0);
@@ -237,11 +261,87 @@ class HermesWebhooksTest {
   }
 
   @Test
-  void aPortOutsideTheLegalRangeIsRefused() {
+  void aPortOutsideTheLegalRangeIsRefusedBeforeTheListenerIsSwitchedOn() {
     for (int port : List.of(0, 65_536, -1)) {
       assertThrows(IllegalArgumentException.class, () -> webhooks.setPlatformEnabled(
           URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, port)));
     }
+
+    // writing `enabled: true` first would leave a listener an operator turned on and that
+    // never binds, on whatever port the profile happened to carry before
+    assertTrue(exec.hermesCommands().isEmpty());
+  }
+
+  // ── one listener port per container, not per profile ──────────────────────
+
+  /** A container with {@code default} enabled on {@code port}, plus one other profile. */
+  private void containerWhere(String otherProfile, String otherConfig) {
+    exec.namedProfiles = List.of(otherProfile);
+    exec.configs.put(otherProfile, otherConfig);
+    exec.configs.put("default", "platforms: {}\n");
+  }
+
+  @Test
+  void aPortAnotherProfileAlreadyListensOnIsRefused() {
+    // profiles in one container share a network namespace: the second listener never binds,
+    // and hermes says so only in the gateway log of a profile nobody has open
+    containerWhere("ops", ENABLED_CONFIG);
+
+    ResourceConflictException refused = assertThrows(ResourceConflictException.class,
+        () -> webhooks.setPlatformEnabled(URL, CONTAINER, "default",
+            new EnableWebhookPlatformRequest(true, null, 8644)));
+
+    assertTrue(refused.getMessage().contains("ops"), refused.getMessage());
+    assertTrue(exec.hermesCommands().isEmpty(), "nothing may be written before the refusal");
+  }
+
+  @Test
+  void aListenerWithNoPortChosenTakesTheFirstFreeOne() {
+    // every profile defaults to 8644, so the second one enabled has to move rather than fail
+    containerWhere("ops", ENABLED_CONFIG);
+
+    webhooks.setPlatformEnabled(
+        URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
+
+    assertTrue(exec.hermesCommands().contains(
+        List.of("hermes", "config", "set", "platforms.webhook.extra.port", "8645")));
+  }
+
+  @Test
+  void anEnabledListenerWithNoPortRecordedStillHoldsTheDefault() {
+    // a profile enabled through the hermes CLI rather than through here has no extra.port,
+    // and hermes binds 8644 anyway
+    containerWhere("ops", "platforms:\n  webhook:\n    enabled: true\n");
+
+    webhooks.setPlatformEnabled(
+        URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
+
+    assertTrue(exec.hermesCommands().contains(
+        List.of("hermes", "config", "set", "platforms.webhook.extra.port", "8645")));
+  }
+
+  @Test
+  void aPortHeldByAProfileWhoseListenerIsOffIsFree() {
+    containerWhere("ops", ENABLED_CONFIG.replace("enabled: true", "enabled: false"));
+
+    webhooks.setPlatformEnabled(
+        URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
+
+    assertTrue(exec.hermesCommands().contains(
+        List.of("hermes", "config", "set", "platforms.webhook.extra.port", "8644")));
+  }
+
+  @Test
+  void aProfileDoesNotCollideWithItsOwnListener() {
+    // re-enabling, or moving the bind address, must not read as a collision
+    exec.namedProfiles = List.of("ops");
+    exec.configs.put("ops", ENABLED_CONFIG);
+
+    webhooks.setPlatformEnabled(
+        URL, CONTAINER, "ops", new EnableWebhookPlatformRequest(true, "127.0.0.1", 8644));
+
+    assertTrue(exec.hermesCommands().contains(
+        List.of("hermes", "-p", "ops", "config", "set", "platforms.webhook.extra.port", "8644")));
   }
 
   // ── what each mutation asks hermes to do ──────────────────────────────────
@@ -287,7 +387,7 @@ class HermesWebhooksTest {
         exec.hermesCommands().getFirst());
 
     Exec other = new Exec();
-    HermesWebhooks fresh = new HermesWebhooks(other, new ObjectMapper());
+    HermesWebhooks fresh = new HermesWebhooks(other, new ObjectMapper(), new ProfileInventory(other));
     assertEquals("delivered", fresh.test(URL, CONTAINER, "default", "grafana"));
     assertEquals(List.of("hermes", "webhook", "test", "grafana"),
         other.hermesCommands().getFirst());
