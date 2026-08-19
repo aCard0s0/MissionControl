@@ -43,10 +43,12 @@ class HermesModelConfig {
   record ModelInfo(String provider, String model) {}
 
   private final HermesContainerFiles files;
+  private final HermesCli cli;
   private final HermesEnvFile env;
 
-  HermesModelConfig(HermesContainerFiles files, HermesEnvFile env) {
+  HermesModelConfig(HermesContainerFiles files, HermesCli cli, HermesEnvFile env) {
     this.files = files;
+    this.cli = cli;
     this.env = env;
   }
 
@@ -124,7 +126,7 @@ class HermesModelConfig {
   }
 
   private void setConfig(DockerHostRef host, String containerId, String name, String key, String value) {
-    files.exec(host, containerId, List.of("hermes", "-p", name, "config", "set", key, value));
+    cli.setConfig(host, containerId, name, key, value);
   }
 
   // ── pure write planners ────────────────────────────────────────────────────

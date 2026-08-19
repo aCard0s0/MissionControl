@@ -208,7 +208,7 @@ class HermesCliFixtureTest {
         .thenReturn(new ExecResult(0, "✓ Cron scheduler is running", ""));
 
     List<CronJobDto> jobs =
-        new HermesCron(files, new ObjectMapper()).list(HOST, CONTAINER, "default").jobs();
+        new HermesCron(files, new HermesCli(files), new ObjectMapper()).list(HOST, CONTAINER, "default").jobs();
 
     assertFalse(jobs.isEmpty(), version + ": the captured schedule parsed to no jobs");
     for (CronJobDto job : jobs) {
@@ -248,7 +248,7 @@ class HermesCliFixtureTest {
             ? WEBHOOK_LISTENER_CONFIG : captured);
 
     List<WebhookSubscriptionDto> routes =
-        new HermesWebhooks(files, json, new ProfileInventory(files))
+        new HermesWebhooks(files, new HermesCli(files), json, new ProfileInventory(files))
             .list(HOST, CONTAINER, "default").subscriptions();
 
     assertFalse(routes.isEmpty(), version + ": the captured routes parsed to nothing");

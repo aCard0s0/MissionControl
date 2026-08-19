@@ -40,7 +40,7 @@ final class AgentsWiring {
     return new HermesProfiles(
         files,
         env,
-        new HermesModelConfig(files, env),
+        new HermesModelConfig(files, new HermesCli(files), env),
         new HermesSkills(files, editor),
         mcp,
         new HermesSessions(files, json),

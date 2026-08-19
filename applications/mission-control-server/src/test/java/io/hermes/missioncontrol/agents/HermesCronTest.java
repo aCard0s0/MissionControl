@@ -77,7 +77,7 @@ class HermesCronTest {
   }
 
   private final Exec exec = new Exec();
-  private final HermesCron cron = new HermesCron(exec, new ObjectMapper());
+  private final HermesCron cron = new HermesCron(exec, new HermesCli(exec), new ObjectMapper());
 
   private static String fixture() throws IOException {
     return Files.readString(

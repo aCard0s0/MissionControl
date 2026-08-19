@@ -91,7 +91,7 @@ class HermesWebhooksTest {
 
   private final Exec exec = new Exec();
   private final HermesWebhooks webhooks =
-      new HermesWebhooks(exec, new ObjectMapper(), new ProfileInventory(exec));
+      new HermesWebhooks(exec, new HermesCli(exec), new ObjectMapper(), new ProfileInventory(exec));
 
   private static String fixture() throws IOException {
     return Files.readString(
@@ -388,7 +388,7 @@ class HermesWebhooksTest {
         exec.hermesCommands().getFirst());
 
     Exec other = new Exec();
-    HermesWebhooks fresh = new HermesWebhooks(other, new ObjectMapper(), new ProfileInventory(other));
+    HermesWebhooks fresh = new HermesWebhooks(other, new HermesCli(other), new ObjectMapper(), new ProfileInventory(other));
     assertEquals("delivered", fresh.test(HOST, CONTAINER, "default", "grafana"));
     assertEquals(List.of("hermes", "webhook", "test", "grafana"),
         other.hermesCommands().getFirst());
