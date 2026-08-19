@@ -72,6 +72,11 @@ import org.junit.jupiter.api.Test;
  * carries no {@code @Json*} annotations and no null-inclusion override — so a record's
  * components are exactly the JSON keys a response carries.
  *
+ * <p>{@link #CONTRACT} pins the interface that actually reads a response. Where the frontend
+ * maps a payload onto a domain model of its own, that is the {@code Api*} wire interface and
+ * not the model — the model is free to differ, and the mapper between them is where that
+ * difference is stated.
+ *
  * <p>{@link #CONTRACT} states the contract once. Only one direction can break the UI — the
  * frontend reading a key no response carries — so that fails hard; a response carrying a key
  * the frontend ignores is reported too, but as {@link #UNREAD_PAYLOAD}. When a divergence is
@@ -93,7 +98,7 @@ class ApiContractTest {
     // agents
     CONTRACT.put("ApiAgentProfile", AgentProfileDto.class);
     CONTRACT.put("ApiSkillRef", SkillDto.class);
-    CONTRACT.put("SkillContent", SkillContentDto.class);
+    CONTRACT.put("ApiSkillContent", SkillContentDto.class);
     CONTRACT.put("ApiMcpServer", AgentMcpServerDto.class);
     CONTRACT.put("ApiMcpTestResult", McpTestResult.class);
     CONTRACT.put("ApiIntegration", IntegrationDto.class);
@@ -118,12 +123,12 @@ class ApiContractTest {
     CONTRACT.put("ApiTemplateSecret", SecretRef.class);
     CONTRACT.put("TemplateMcp", McpServerSpec.class);
     // mcp catalog
-    CONTRACT.put("McpCatalogServer", McpServerDto.class);
-    CONTRACT.put("McpConfigEntry", ConfigValueDto.class);
-    CONTRACT.put("McpSupportService", SupportServiceDto.class);
-    CONTRACT.put("McpNamedVolume", VolumeSpec.class);
-    CONTRACT.put("McpHealthcheck", HealthcheckSpec.class);
-    CONTRACT.put("McpRetainedResource", RetainedResourceDto.class);
+    CONTRACT.put("ApiMcpCatalogServer", McpServerDto.class);
+    CONTRACT.put("ApiMcpConfigEntry", ConfigValueDto.class);
+    CONTRACT.put("ApiMcpSupportService", SupportServiceDto.class);
+    CONTRACT.put("ApiMcpNamedVolume", VolumeSpec.class);
+    CONTRACT.put("ApiMcpHealthcheck", HealthcheckSpec.class);
+    CONTRACT.put("ApiMcpRetainedResource", RetainedResourceDto.class);
     // models / providers
     CONTRACT.put("ApiModelCatalog", ModelCatalogDto.class);
     CONTRACT.put("ApiPullState", PullStatusDto.class);
@@ -140,9 +145,7 @@ class ApiContractTest {
    * <p>Harmless: the frontend sets them when posting and never reads them back. Listed so a
    * genuinely missing response field cannot hide among them.
    */
-  private static final Map<String, Set<String>> INPUT_ONLY = Map.of(
-      // ConfigValueInput.clear — "forget this value", meaningless on the way out
-      "McpConfigEntry", Set.of("clear"));
+  private static final Map<String, Set<String>> INPUT_ONLY = Map.of();
 
   /**
    * Fields a response carries that no frontend interface declares.
