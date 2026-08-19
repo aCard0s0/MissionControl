@@ -90,7 +90,7 @@ class AgentMcpCatalogServiceTest {
         org.mockito.ArgumentMatchers.eq(HOST),
         org.mockito.ArgumentMatchers.eq("container"),
         org.mockito.ArgumentMatchers.eq("default"),
-        org.mockito.ArgumentMatchers.any(AddMcpServerRequest.class)))
+        org.mockito.ArgumentMatchers.any(McpServerDefinition.class)))
         .thenReturn(profile(List.of(new AgentMcpServerDto(
             "tools", "tools", "http", true, "unknown", 0, null, null, null,
             "http://mcp-tools:1100/mcp", null, null))));
@@ -100,13 +100,14 @@ class AgentMcpCatalogServiceTest {
         new ConnectCatalogMcpRequest("mcp-1", "tools"));
 
     verify(docker).connectNetwork(HOST, "container", "mission-control-mcp-net");
-    ArgumentCaptor<AddMcpServerRequest> request = ArgumentCaptor.forClass(AddMcpServerRequest.class);
+    ArgumentCaptor<McpServerDefinition> definition =
+        ArgumentCaptor.forClass(McpServerDefinition.class);
     verify(profiles).addMcpServer(
         org.mockito.ArgumentMatchers.eq(HOST),
         org.mockito.ArgumentMatchers.eq("container"),
-        org.mockito.ArgumentMatchers.eq("default"), request.capture());
-    assertEquals("http://mcp-tools:1100/mcp", request.getValue().url());
-    assertEquals("Bearer secret", request.getValue().headers().get("Authorization"));
+        org.mockito.ArgumentMatchers.eq("default"), definition.capture());
+    assertEquals("http://mcp-tools:1100/mcp", definition.getValue().url());
+    assertEquals("Bearer secret", definition.getValue().headers().get("Authorization"));
     assertEquals("catalog", result.mcp().getFirst().origin());
     verify(links).upsert(org.mockito.ArgumentMatchers.argThat(
         value -> "mcp-1".equals(value.serverId()) && value.syncedRevision() == 7));
@@ -214,10 +215,10 @@ class AgentMcpCatalogServiceTest {
 
     service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
 
-    AddMcpServerRequest written = capturedAdd();
+    McpServerDefinition written = capturedAdd();
     assertEquals("https://tools.example.test/mcp", written.url());
     assertEquals("Bearer secret", written.headers().get("Authorization"));
-    assertTrue(written.environment().isEmpty(), "environment belongs to stdio servers only");
+    assertNull(written.environment(), "environment belongs to stdio servers only");
     verify(docker, never()).connectNetwork(any(), anyString(), anyString());
   }
 
@@ -232,9 +233,9 @@ class AgentMcpCatalogServiceTest {
 
     service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
-    AddMcpServerRequest written = capturedAdd();
+    McpServerDefinition written = capturedAdd();
     assertEquals("npx", written.command());
-    assertEquals("-y @example/files", written.args());
+    assertEquals(List.of("-y", "@example/files"), written.args());
     assertEquals("/data", written.environment().get("ROOT"));
     assertNull(written.url());
   }
@@ -252,9 +253,10 @@ class AgentMcpCatalogServiceTest {
   }
 
   @Test
-  void stdioArgumentsAreShellQuotedBecauseHermesRunsThemThroughAShell() {
-    // the joined string is written into config.yaml and executed by the Agent's shell, so an
-    // argument carrying a space or a quote must not become two arguments or close the quoting
+  void stdioArgumentsSurviveAsTheListTheCatalogHolds() {
+    // config.yaml carries args as a YAML list, and the catalog already holds one, so the
+    // definition passes it straight through. It used to be quoted into a single string and
+    // tokenized back, a round trip that silently dropped an empty argument.
     registryHas(stdioCatalog("npx", List.of(
         "-y", "my project", "it's", "say \"hi\"", "", "--flag=a b")));
     hostIsUp();
@@ -264,11 +266,12 @@ class AgentMcpCatalogServiceTest {
 
     service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
-    assertEquals("-y 'my project' 'it'\"'\"'s' 'say \"hi\"' '' '--flag=a b'", capturedAdd().args());
+    assertEquals(List.of("-y", "my project", "it's", "say \"hi\"", "", "--flag=a b"),
+        capturedAdd().args());
   }
 
   @Test
-  void aStdioServerWithNoArgumentsWritesNoArgumentString() {
+  void aStdioServerWithNoArgumentsCarriesNoArguments() {
     registryHas(stdioCatalog("npx", List.of()));
     hostIsUp();
     when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
@@ -277,7 +280,7 @@ class AgentMcpCatalogServiceTest {
 
     service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
-    assertNull(capturedAdd().args());
+    assertEquals(List.of(), capturedAdd().args());
   }
 
   // ── sync ────────────────────────────────────────────────────────────────
@@ -317,7 +320,8 @@ class AgentMcpCatalogServiceTest {
 
     service.sync(HOST, "container", "default", "tools");
 
-    ArgumentCaptor<AddMcpServerRequest> written = ArgumentCaptor.forClass(AddMcpServerRequest.class);
+    ArgumentCaptor<McpServerDefinition> written =
+        ArgumentCaptor.forClass(McpServerDefinition.class);
     verify(profiles).updateMcpServer(eq(HOST), eq("container"), eq("default"),
         eq("tools"), written.capture());
     assertEquals(Boolean.FALSE, written.getValue().enabled());
@@ -519,10 +523,11 @@ class AgentMcpCatalogServiceTest {
     return source;
   }
 
-  private AddMcpServerRequest capturedAdd() {
-    ArgumentCaptor<AddMcpServerRequest> request = ArgumentCaptor.forClass(AddMcpServerRequest.class);
-    verify(profiles).addMcpServer(any(), anyString(), anyString(), request.capture());
-    return request.getValue();
+  private McpServerDefinition capturedAdd() {
+    ArgumentCaptor<McpServerDefinition> definition =
+        ArgumentCaptor.forClass(McpServerDefinition.class);
+    verify(profiles).addMcpServer(any(), anyString(), anyString(), definition.capture());
+    return definition.getValue();
   }
 
   private static AgentMcpServerDto custom(String name) {
@@ -565,8 +570,8 @@ class AgentMcpCatalogServiceTest {
     service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
     assertNull(capturedAdd().url());
-    // one argument carrying a space must not become two
-    assertEquals("'a b'", capturedAdd().args());
+    // one argument carrying a space stays one argument
+    assertEquals(List.of("a b"), capturedAdd().args());
     verify(docker, never()).connectNetwork(any(), anyString(), anyString());
   }
 

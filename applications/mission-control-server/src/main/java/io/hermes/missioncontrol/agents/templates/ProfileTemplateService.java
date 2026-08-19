@@ -2,10 +2,10 @@ package io.hermes.missioncontrol.agents.templates;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
+import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
-import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
@@ -131,13 +131,13 @@ public class ProfileTemplateService {
    * it is created here and not by {@link TemplateApplier#deployNew} — but this call owns it,
    * so a failure while applying rolls it back.
    */
-  public AgentProfileDto createFromTemplate(String id, DockerHostRef host, CreateAgentRequest request) {
+  public AgentProfileDto createFromTemplate(String id, DockerHostRef host, ProfileSpec spec) {
     ProfileTemplate template = require(id);
-    profiles.createProfileBare(host, request);
+    profiles.createProfileBare(host, spec);
     try {
-      return applier.layerOnto(template, host, request.containerId(), request.name());
+      return applier.layerOnto(template, host, spec.containerId(), spec.name());
     } catch (RuntimeException failure) {
-      applier.rollback(host, request.containerId(), request.name(), failure);
+      applier.rollback(host, spec.containerId(), spec.name(), failure);
       throw failure;
     }
   }

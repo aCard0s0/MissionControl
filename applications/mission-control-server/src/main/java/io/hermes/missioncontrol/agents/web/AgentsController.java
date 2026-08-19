@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
+import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
@@ -62,13 +63,14 @@ public class AgentsController {
   @PostMapping
   public AgentProfileDto create(@Valid @RequestBody CreateAgentRequest request) {
     DockerHostRef host = endpoints.host(request.hostId());
+    ProfileSpec spec = ProfileSpec.from(request);
     String templateId = request.fromTemplateId();
     if (templateId != null && !templateId.isBlank()) {
       // Create the request-configured base and layer the template's
       // soul/memory/skills/mcp/secrets as one owned, rollback-safe operation.
-      return endpoints.linked(host, templates.createFromTemplate(templateId, host, request));
+      return endpoints.linked(host, templates.createFromTemplate(templateId, host, spec));
     }
-    return endpoints.linked(host, profiles.create(host, request));
+    return endpoints.linked(host, profiles.create(host, spec));
   }
 
   @DeleteMapping("/{hostId}/{containerId}/{name}")

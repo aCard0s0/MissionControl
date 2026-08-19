@@ -26,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
+import io.hermes.missioncontrol.agents.McpServerDefinition;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
@@ -82,7 +83,7 @@ class AgentMcpControllerTest {
 
     InOrder order = inOrder(mcpCatalog, profiles);
     order.verify(mcpCatalog).assertCustom(HOST, CONTAINER, PROFILE, SERVER);
-    order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq(PROFILE), any(AddMcpServerRequest.class));
+    order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq(PROFILE), any(McpServerDefinition.class));
   }
 
   @Test

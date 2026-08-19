@@ -1,6 +1,5 @@
 package io.hermes.missioncontrol.agents;
 
-import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.docker.ContainerIdListener;
@@ -82,10 +81,10 @@ class HermesProfileMcp implements ContainerIdListener {
 
   // ── config edits ───────────────────────────────────────────────────────────
 
-  void add(DockerHostRef host, String containerId, String profileName, AddMcpServerRequest request) {
-    String name = config.serverName(request.name());
-    rewriteConfig(host, containerId, profileName, List.of(name),
-        (yaml, path) -> config.addMcpServer(yaml, path, request));
+  void add(DockerHostRef host, String containerId, String profileName,
+      McpServerDefinition definition) {
+    rewriteConfig(host, containerId, profileName, List.of(definition.name()),
+        (yaml, path) -> config.addMcpServer(yaml, path, definition));
   }
 
   /** Updates (and optionally renames) an existing MCP entry with a single
@@ -93,11 +92,10 @@ class HermesProfileMcp implements ContainerIdListener {
    * container write, so the original definition is never lost. */
   void update(
       DockerHostRef host, String containerId, String profileName, String serverName,
-      AddMcpServerRequest request) {
+      McpServerDefinition definition) {
     String currentName = config.serverName(serverName);
-    String newName = config.serverName(request.name());
-    rewriteConfig(host, containerId, profileName, List.of(currentName, newName),
-        (yaml, path) -> config.updateMcpServer(yaml, path, currentName, request));
+    rewriteConfig(host, containerId, profileName, List.of(currentName, definition.name()),
+        (yaml, path) -> config.updateMcpServer(yaml, path, currentName, definition));
   }
 
   /** Toggles only {@code enabled}; URL, command, args, headers, tool filters,

@@ -188,18 +188,19 @@ class HermesProfilesDelegationTest {
 
   @Test
   void everyMcpEndpointHandsOffToTheMcpCollaboratorAndReturnsTheFreshProfile() {
-    AddMcpServerRequest request = new AddMcpServerRequest("files", "http", "http://x:1/mcp", null, null, true);
+    McpServerDefinition definition = McpServerDefinition.from(new AddMcpServerRequest(
+        "files", "http", "http://x:1/mcp", null, null, true, null, null));
     when(mcp.test(HOST, CONTAINER, PROFILE, "files"))
         .thenReturn(new McpTestResult("files", "connected", 3, 12L, null, 1L));
 
-    assertEquals(PROFILE, profiles.addMcpServer(HOST, CONTAINER, PROFILE, request).name());
-    assertEquals(PROFILE, profiles.updateMcpServer(HOST, CONTAINER, PROFILE, "files", request).name());
+    assertEquals(PROFILE, profiles.addMcpServer(HOST, CONTAINER, PROFILE, definition).name());
+    assertEquals(PROFILE, profiles.updateMcpServer(HOST, CONTAINER, PROFILE, "files", definition).name());
     assertEquals(PROFILE, profiles.setMcpServerEnabled(HOST, CONTAINER, PROFILE, "files", false).name());
     assertEquals(PROFILE, profiles.removeMcpServer(HOST, CONTAINER, PROFILE, "files").name());
     assertEquals("connected", profiles.testMcpServer(HOST, CONTAINER, PROFILE, "files").status());
 
-    verify(mcp).add(HOST, CONTAINER, PROFILE, request);
-    verify(mcp).update(HOST, CONTAINER, PROFILE, "files", request);
+    verify(mcp).add(HOST, CONTAINER, PROFILE, definition);
+    verify(mcp).update(HOST, CONTAINER, PROFILE, "files", definition);
     verify(mcp).setEnabled(HOST, CONTAINER, PROFILE, "files", false);
     verify(mcp).remove(HOST, CONTAINER, PROFILE, "files");
   }

@@ -19,12 +19,13 @@ import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
+import io.hermes.missioncontrol.agents.McpServerDefinition;
+import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
-import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -149,7 +150,7 @@ class TemplateCaptureAndApplyTest {
 
     service.deploy("pt-1", HOST, CONTAINER, "scout");
 
-    ArgumentCaptor<CreateAgentRequest> created = ArgumentCaptor.forClass(CreateAgentRequest.class);
+    ArgumentCaptor<ProfileSpec> created = ArgumentCaptor.forClass(ProfileSpec.class);
     verify(profiles).create(eq(HOST), created.capture());
     assertEquals("openai", created.getValue().provider());
     assertEquals("gpt-5.2", created.getValue().model());
@@ -169,7 +170,7 @@ class TemplateCaptureAndApplyTest {
 
     service.deploy("pt-1", HOST, CONTAINER, "scout");
 
-    ArgumentCaptor<CreateAgentRequest> created = ArgumentCaptor.forClass(CreateAgentRequest.class);
+    ArgumentCaptor<ProfileSpec> created = ArgumentCaptor.forClass(ProfileSpec.class);
     verify(profiles).create(eq(HOST), created.capture());
     assertEquals("nous", created.getValue().provider());
     assertEquals("Hermes-4-405B", created.getValue().model());
@@ -194,7 +195,7 @@ class TemplateCaptureAndApplyTest {
     order.verify(profiles).create(eq(HOST), any());
     order.verify(profiles).updateSoul(HOST, CONTAINER, "scout", "be useful");
     order.verify(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
-    order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq("scout"), any(AddMcpServerRequest.class));
+    order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq("scout"), any(McpServerDefinition.class));
     order.verify(setup).putEnv(HOST, CONTAINER, "scout",
         List.of(new EnvEntry("ANTHROPIC_API_KEY", "sk-ant-real")));
     // a blank memory is not a memory: writing it would overwrite whatever the profile had
@@ -268,12 +269,12 @@ class TemplateCaptureAndApplyTest {
     templateIs(template(t -> t.skills = List.of("refactor")));
     doThrow(new IllegalStateException("skill not found"))
         .when(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
-    CreateAgentRequest request = new CreateAgentRequest(
-        "dh-local", CONTAINER, "scout", "anthropic", "claude-opus-5", null, null, null, "pt-1", null);
+    ProfileSpec spec = new ProfileSpec(
+        CONTAINER, "scout", "anthropic", "claude-opus-5", null, null, null, null);
 
-    assertThrows(IllegalStateException.class, () -> service.createFromTemplate("pt-1", HOST, request));
+    assertThrows(IllegalStateException.class, () -> service.createFromTemplate("pt-1", HOST, spec));
 
-    verify(profiles).createProfileBare(HOST, request);
+    verify(profiles).createProfileBare(HOST, spec);
     verify(profiles).delete(HOST, CONTAINER, "scout");
     verify(profiles, never()).create(any(), any());
   }

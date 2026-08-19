@@ -284,10 +284,10 @@ class HermesProfileMcpTest {
 
   @Test
   void sseTransportIsPersistedAndReadBackAsSse() {
-    AddMcpServerRequest request = new AddMcpServerRequest(
-        "events", "sse", "https://mcp.example.test/sse", null, null, true);
+    McpServerDefinition definition = McpServerDefinition.from(new AddMcpServerRequest(
+        "events", "sse", "https://mcp.example.test/sse", null, null, true, null, null));
     String config = EDITOR.addMcpServer(
-        "model: nous/Hermes-4-405B\n", "/opt/data/config.yaml", request);
+        "model: nous/Hermes-4-405B\n", "/opt/data/config.yaml", definition);
 
     Map<String, Object> root = yamlMap(config);
     assertEquals("sse", mcpServer(config, "events").get("transport"));
@@ -309,7 +309,7 @@ class HermesProfileMcpTest {
         """;
     String argsCleared = EDITOR.updateMcpServer(
         stdio, "/opt/data/config.yaml", "tools",
-        new AddMcpServerRequest("tools", "stdio", null, "uvx", "  ", null));
+        McpServerDefinition.from(new AddMcpServerRequest("tools", "stdio", null, "uvx", "  ", null, null, null)));
     Map<String, Object> cleared = mcpServer(argsCleared, "tools");
     assertFalse(cleared.containsKey("args"));
     assertEquals(false, cleared.get("enabled"), "an omitted enabled value preserves current state");
@@ -317,8 +317,8 @@ class HermesProfileMcpTest {
 
     String switchedToSse = EDITOR.updateMcpServer(
         argsCleared, "/opt/data/config.yaml", "tools",
-        new AddMcpServerRequest(
-            "tools", "sse", "https://mcp.example.test/sse", null, null, null));
+        McpServerDefinition.from(new AddMcpServerRequest(
+            "tools", "sse", "https://mcp.example.test/sse", null, null, null, null, null)));
     Map<String, Object> network = mcpServer(switchedToSse, "tools");
     assertEquals("sse", network.get("transport"));
     assertFalse(network.containsKey("command"));
@@ -330,8 +330,8 @@ class HermesProfileMcpTest {
     String networkWithHeader = new Yaml().dump(yamlMapWithServer(switchedToSse, "tools", network));
     String headersCleared = EDITOR.updateMcpServer(
         networkWithHeader, "/opt/data/config.yaml", "tools",
-        new AddMcpServerRequest(
-            "tools", "sse", "https://mcp.example.test/sse", null, null, null, Map.of()));
+        McpServerDefinition.from(new AddMcpServerRequest(
+            "tools", "sse", "https://mcp.example.test/sse", null, null, null, Map.of(), null)));
     Map<String, Object> clearedNetwork = mcpServer(headersCleared, "tools");
     assertFalse(clearedNetwork.containsKey("headers"), "an explicit empty header map clears headers");
     assertEquals("retained", clearedNetwork.get("vendor_option"));
@@ -340,7 +340,7 @@ class HermesProfileMcpTest {
     // to stdio must clear both the network endpoint and its credentials.
     String switchedToStdio = EDITOR.updateMcpServer(
         networkWithHeader, "/opt/data/config.yaml", "tools",
-        new AddMcpServerRequest("tools", "stdio", null, "node", "server.js", null));
+        McpServerDefinition.from(new AddMcpServerRequest("tools", "stdio", null, "node", "server.js", null, null, null)));
     Map<String, Object> command = mcpServer(switchedToStdio, "tools");
     assertEquals("stdio", command.get("transport"));
     assertEquals("node", command.get("command"));
@@ -363,8 +363,8 @@ class HermesProfileMcpTest {
         """;
     String renamed = EDITOR.updateMcpServer(
         config, "/opt/data/config.yaml", "old-name",
-        new AddMcpServerRequest(
-            "new-name", "http", "https://new.example.test/mcp", null, null, null));
+        McpServerDefinition.from(new AddMcpServerRequest(
+            "new-name", "http", "https://new.example.test/mcp", null, null, null, null, null)));
     Map<String, Object> renamedServers = mcpServers(renamed);
     assertFalse(renamedServers.containsKey("old-name"));
     assertTrue(renamedServers.containsKey("new-name"));
@@ -379,8 +379,8 @@ class HermesProfileMcpTest {
 
     assertThrows(ResourceConflictException.class, () -> liveMcp.update(
         HOST, "cid", "ops", "old-name",
-        new AddMcpServerRequest(
-            "occupied", "http", "https://new.example.test/mcp", null, null, null)));
+        McpServerDefinition.from(new AddMcpServerRequest(
+            "occupied", "http", "https://new.example.test/mcp", null, null, null, null, null))));
     // No temp-file write (and no deletion) is attempted after the collision is
     // discovered. Asserted by operation rather than by a total exec count, because the
     // profile-existence guard also reads before the config read.

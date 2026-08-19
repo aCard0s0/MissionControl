@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
-import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
+import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
@@ -137,7 +137,7 @@ class AgentsControllerTest {
     // rollback-safe operation, so it must not be reachable by accident from the plain path
     hostIsConnected();
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
-    when(templates.createFromTemplate(eq("tpl-1"), eq(HOST), any(CreateAgentRequest.class)))
+    when(templates.createFromTemplate(eq("tpl-1"), eq(HOST), any(ProfileSpec.class)))
         .thenReturn(profile("scout"));
 
     mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
@@ -147,7 +147,7 @@ class AgentsControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("scout"));
 
-    verify(templates).createFromTemplate(eq("tpl-1"), eq(HOST), any(CreateAgentRequest.class));
+    verify(templates).createFromTemplate(eq("tpl-1"), eq(HOST), any(ProfileSpec.class));
     verify(profiles, never()).create(any(), any());
   }
 
@@ -156,7 +156,7 @@ class AgentsControllerTest {
     // the dashboard sends "" for "no template", and that must not look up a template named ""
     hostIsConnected();
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
-    when(profiles.create(eq(HOST), any(CreateAgentRequest.class))).thenReturn(profile("scout"));
+    when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
 
     mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
             {"hostId":"dh-local","containerId":"c1","name":"scout","provider":"anthropic",
@@ -164,7 +164,7 @@ class AgentsControllerTest {
             """))
         .andExpect(status().isOk());
 
-    verify(profiles).create(eq(HOST), any(CreateAgentRequest.class));
+    verify(profiles).create(eq(HOST), any(ProfileSpec.class));
     verifyNoInteractions(templates);
   }
 
