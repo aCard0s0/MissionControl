@@ -70,8 +70,7 @@ class AgentSkillsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName) {
-    DockerHostRef host = endpoints.host(hostId);
-    return profiles.readSkillContent(host, containerId, name, skillName);
+    return profiles.readSkillContent(endpoints.host(hostId), containerId, name, skillName);
   }
 
   @PutMapping("/{skillName}/content")

@@ -33,7 +33,6 @@ import com.github.dockerjava.api.model.NetworkSettings;
 import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.api.model.RestartPolicy;
 import io.hermes.missioncontrol.config.AppProperties;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

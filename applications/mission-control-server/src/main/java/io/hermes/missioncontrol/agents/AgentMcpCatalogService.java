@@ -1,6 +1,5 @@
 package io.hermes.missioncontrol.agents;
 
-import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
@@ -61,7 +60,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     if ("managed".equals(source.kind()) && !"running".equals(source.runtimeState())) {
       throw new ResourceConflictException("managed MCP server is not running: " + source.name());
     }
-    AddMcpServerRequest definition = materialize(host, containerId, source, alias, true);
+    McpServerDefinition definition = materialize(host, containerId, source, alias, true);
     AgentProfileDto updated = profiles.addMcpServer(host, containerId, profile, definition);
     long now = System.currentTimeMillis();
     links.upsert(new AgentMcpLink(
@@ -80,7 +79,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
         .filter(server -> alias.equals(server.name()))
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException("unknown MCP server on Agent: " + alias));
-    AddMcpServerRequest definition = materialize(
+    McpServerDefinition definition = materialize(
         host, containerId, source, alias, existing.enabled());
     AgentProfileDto updated = profiles.updateMcpServer(
         host, containerId, profile, alias, definition);
@@ -174,55 +173,45 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     return copyWithMcp(profile, servers);
   }
 
-  private AddMcpServerRequest materialize(
+  private McpServerDefinition materialize(
       DockerHostRef agentHost,
       String containerId,
       McpServerDto source,
       String alias,
       boolean enabled) {
-    String endpoint = null;
-    String command = null;
-    String args = null;
-    Map<String, String> headers = Map.of();
-    Map<String, String> environment = Map.of();
-
     if ("stdio".equals(source.kind())) {
-      command = source.stdioCommand();
+      String command = source.stdioCommand();
       if (command == null || command.isBlank()) {
         throw new IllegalArgumentException("catalog stdio server has no command: " + source.name());
       }
-      args = joinArgs(source.args());
-      environment = registry.materializedEnvironment(source.id());
-    } else {
-      if ("managed".equals(source.kind()) && agentHost.id().equals(source.hostId())) {
-        docker.connectNetwork(agentHost, containerId, MCP_NETWORK);
-        endpoint = registry.sameHostConnectionUrl(source.id());
-      } else if ("managed".equals(source.kind())) {
-        endpoint = source.crossHostUrl();
-        if (endpoint == null || endpoint.isBlank()) {
-          throw new IllegalArgumentException(
-              "managed MCP server needs a cross-host URL for this Agent: " + source.name());
-        }
-      } else {
-        endpoint = source.url();
-      }
-      headers = registry.materializedHeaders(source.id());
+      // the catalog stores args as a list already; no shell tokenizing round trip needed
+      return new McpServerDefinition(
+          alias, McpServerDefinition.Transport.STDIO, null, command,
+          source.args() == null ? List.of() : source.args(), enabled, null,
+          registry.materializedEnvironment(source.id()));
     }
-    return new AddMcpServerRequest(
-        alias, source.transport(), endpoint, command, args, enabled, headers, environment);
+    return new McpServerDefinition(
+        alias, McpServerDefinition.Transport.of(source.transport()),
+        connectionEndpoint(agentHost, containerId, source), null, List.of(),
+        enabled, registry.materializedHeaders(source.id()), null);
   }
 
-  private static String joinArgs(List<String> values) {
-    if (values == null || values.isEmpty()) return null;
-    return values.stream().map(AgentMcpCatalogService::quoteArg)
-        .reduce((left, right) -> left + " " + right).orElse(null);
-  }
-
-  private static String quoteArg(String value) {
-    if (value == null) return "''";
-    if (!value.isEmpty() && value.chars().noneMatch(
-        ch -> Character.isWhitespace(ch) || ch == '\'' || ch == '"')) return value;
-    return "'" + value.replace("'", "'\"'\"'") + "'";
+  /** Where an Agent on this host reaches a network catalog entry. A managed server on the
+   *  Agent's own host is reached over the shared MCP network, which the Agent is attached to
+   *  here; one on another host needs an address its operator published. */
+  private String connectionEndpoint(
+      DockerHostRef agentHost, String containerId, McpServerDto source) {
+    if (!"managed".equals(source.kind())) return source.url();
+    if (agentHost.id().equals(source.hostId())) {
+      docker.connectNetwork(agentHost, containerId, MCP_NETWORK);
+      return registry.sameHostConnectionUrl(source.id());
+    }
+    String crossHost = source.crossHostUrl();
+    if (crossHost == null || crossHost.isBlank()) {
+      throw new IllegalArgumentException(
+          "managed MCP server needs a cross-host URL for this Agent: " + source.name());
+    }
+    return crossHost;
   }
 
   private static String alias(String value) {

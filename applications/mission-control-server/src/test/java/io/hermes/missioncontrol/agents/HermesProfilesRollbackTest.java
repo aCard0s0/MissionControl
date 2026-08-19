@@ -8,7 +8,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
@@ -23,15 +22,15 @@ class HermesProfilesRollbackTest {
   void baseConfigurationFailureDeletesNewProfile() {
     DockerExecService dockerExec = mock(DockerExecService.class);
     HermesProfiles profiles = AgentsWiring.profiles(dockerExec);
-    CreateAgentRequest request = new CreateAgentRequest(
-        "dh-local", "cid", "ops", "anthropic", "model", null, null, null, null, null);
+    ProfileSpec spec = new ProfileSpec(
+        "cid", "ops", "anthropic", "model", null, null, null, null);
     when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(),
         any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, "", ""))
         .thenThrow(new RuntimeException("config failed"))
         .thenReturn(new DockerExecService.ExecResult(0, "", ""));
 
-    assertThrows(RuntimeException.class, () -> profiles.createProfileBare(HOST, request));
+    assertThrows(RuntimeException.class, () -> profiles.createProfileBare(HOST, spec));
 
     verify(dockerExec).runAsUser(
         HOST, "cid", "hermes", List.of("hermes", "profile", "delete", "ops", "--yes"),
@@ -44,13 +43,13 @@ class HermesProfilesRollbackTest {
     // produced a profile whose auxiliary chain had no provider to resolve to
     DockerExecService dockerExec = mock(DockerExecService.class);
     HermesProfiles profiles = AgentsWiring.profiles(dockerExec);
-    CreateAgentRequest request = new CreateAgentRequest(
-        "dh-local", "cid", "ops", "anthropic", "model", null, null, null, null, null);
+    ProfileSpec spec = new ProfileSpec(
+        "cid", "ops", "anthropic", "model", null, null, null, null);
     when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(),
         any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, "", ""));
 
-    assertThrows(IllegalStateException.class, () -> profiles.createProfileBare(HOST, request));
+    assertThrows(IllegalStateException.class, () -> profiles.createProfileBare(HOST, spec));
 
     verify(dockerExec).runAsUser(
         HOST, "cid", "hermes", List.of("hermes", "profile", "delete", "ops", "--yes"),

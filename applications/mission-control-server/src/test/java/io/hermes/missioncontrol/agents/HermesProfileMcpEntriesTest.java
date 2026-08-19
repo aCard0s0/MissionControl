@@ -300,8 +300,8 @@ class HermesProfileMcpEntriesTest {
     HermesProfileMcp mcp = mcp(container);
     mcp.test(HOST, CONTAINER, PROFILE, "files");
 
-    mcp.add(HOST, CONTAINER, PROFILE, new AddMcpServerRequest(
-        "docs", "http", "http://docs:1/mcp", null, null, true));
+    mcp.add(HOST, CONTAINER, PROFILE, McpServerDefinition.from(new AddMcpServerRequest(
+        "docs", "http", "http://docs:1/mcp", null, null, true, null, null)));
 
     String written = writtenConfig(container);
     assertTrue(written.contains("docs"), written);
@@ -318,8 +318,8 @@ class HermesProfileMcpEntriesTest {
     HermesProfileMcp mcp = mcp(container);
     mcp.test(HOST, CONTAINER, PROFILE, "files");
 
-    mcp.update(HOST, CONTAINER, PROFILE, "files", new AddMcpServerRequest(
-        "files-v2", "http", "http://x:1/mcp", null, null, true));
+    mcp.update(HOST, CONTAINER, PROFILE, "files", McpServerDefinition.from(new AddMcpServerRequest(
+        "files-v2", "http", "http://x:1/mcp", null, null, true, null, null)));
 
     Map<?, ?> after = yaml(writtenConfig(container));
     Map<?, ?> servers = (Map<?, ?>) after.get("mcp_servers");

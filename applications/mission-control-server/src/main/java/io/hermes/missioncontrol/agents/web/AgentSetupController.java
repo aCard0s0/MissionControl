@@ -4,7 +4,6 @@ import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.SetEnvRequest;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,8 +35,7 @@ class AgentSetupController {
   @GetMapping("/auth-providers")
   public List<AuthProviderDto> authProviders(
       @PathVariable String hostId, @PathVariable String containerId) {
-    DockerHostRef host = endpoints.host(hostId);
-    return setup.setup(host, containerId, "default").authProviders();
+    return setup.setup(endpoints.host(hostId), containerId, "default").authProviders();
   }
 
   @GetMapping("/{name}/setup")
@@ -45,8 +43,7 @@ class AgentSetupController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    DockerHostRef host = endpoints.host(hostId);
-    return setup.setup(host, containerId, name);
+    return setup.setup(endpoints.host(hostId), containerId, name);
   }
 
   @PutMapping("/{name}/env")
@@ -55,8 +52,7 @@ class AgentSetupController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody SetEnvRequest request) {
-    DockerHostRef host = endpoints.host(hostId);
-    return setup.putEnv(host, containerId, name, request.entries());
+    return setup.putEnv(endpoints.host(hostId), containerId, name, request.entries());
   }
 
   @PostMapping("/{name}/env/init")
@@ -64,7 +60,6 @@ class AgentSetupController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    DockerHostRef host = endpoints.host(hostId);
-    return setup.initEnv(host, containerId, name);
+    return setup.initEnv(endpoints.host(hostId), containerId, name);
   }
 }

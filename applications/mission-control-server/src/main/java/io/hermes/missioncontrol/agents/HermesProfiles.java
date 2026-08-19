@@ -1,12 +1,10 @@
 package io.hermes.missioncontrol.agents;
 
-import com.github.dockerjava.api.exception.ConflictException;
+import io.hermes.missioncontrol.docker.ContainerNotRunningException;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
-import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
-import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
@@ -85,9 +83,9 @@ public class HermesProfiles {
         profiles.add(readProfile(host, containerId, name));
       }
       return profiles;
-    } catch (ConflictException stopped) {
-      // Docker returns 409 when a stale dashboard client asks to exec inside a
-      // stopped container. Inventory is simply unavailable until it restarts.
+    } catch (ContainerNotRunningException stopped) {
+      // A stale dashboard client asking to exec inside a stopped container. Inventory is
+      // simply unavailable until it restarts.
       return List.of();
     }
   }
@@ -129,24 +127,21 @@ public class HermesProfiles {
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
-  public AgentProfileDto create(DockerHostRef host, CreateAgentRequest request) {
-    String profileName = createProfileBare(host, request);
-    return readProfile(host, request.containerId(), profileName);
+  public AgentProfileDto create(DockerHostRef host, ProfileSpec spec) {
+    String profileName = createProfileBare(host, spec);
+    return readProfile(host, spec.containerId(), profileName);
   }
 
   /** Creates and configures the profile but skips the read-back. The template
    *  create/deploy flow re-reads the profile after layering its blueprint, so the
    *  read here would be thrown away — callers that need the DTO use {@link #create}.
    *  Returns the created profile name. */
-  public String createProfileBare(DockerHostRef host, CreateAgentRequest request) {
-    String profileName = request.name();
-    if (!ProfilePaths.isValidName(profileName)) {
-      throw new IllegalArgumentException("invalid profile name");
-    }
-    String containerId = request.containerId();
+  public String createProfileBare(DockerHostRef host, ProfileSpec spec) {
+    String profileName = spec.name();
+    String containerId = spec.containerId();
     List<String> command = new ArrayList<>(List.of("hermes", "profile", "create", profileName));
-    String cloneFrom = request.cloneFrom();
-    if (cloneFrom != null && !cloneFrom.isBlank()) {
+    String cloneFrom = spec.cloneFrom();
+    if (cloneFrom != null) {
       command.addAll(List.of("--clone", "--clone-from", cloneFrom));
     }
     boolean created = false;
@@ -154,13 +149,13 @@ public class HermesProfiles {
       files.exec(host, containerId, command);
       created = true;
       ModelTarget auxiliary = HermesModelConfig.auxiliaryTarget(
-          request.provider(), request.model(), request.baseUrl(), request.auxiliary());
+          spec.provider(), spec.model(), spec.baseUrl(), spec.auxiliary());
       modelConfig.write(host, containerId, profileName,
-          request.provider(), request.model(), request.baseUrl(), auxiliary);
+          spec.provider(), spec.model(), spec.baseUrl(), auxiliary);
       modelConfig.assertConfigured(host, containerId, profileName);
       env.seedIfMissing(host, containerId, profileName);
-      modelConfig.writeApiKey(host, containerId, profileName, request.provider(), request.apiKey());
-      modelConfig.writeAuxiliaryApiKey(host, containerId, profileName, auxiliary, request.auxiliary());
+      modelConfig.writeApiKey(host, containerId, profileName, spec.provider(), spec.apiKey());
+      modelConfig.writeAuxiliaryApiKey(host, containerId, profileName, auxiliary, spec.auxiliary());
       return profileName;
     } catch (RuntimeException failure) {
       if (created) {
@@ -237,15 +232,15 @@ public class HermesProfiles {
   // ── MCP servers ────────────────────────────────────────────────────────────
 
   public AgentProfileDto addMcpServer(
-      DockerHostRef host, String containerId, String profileName, AddMcpServerRequest request) {
-    mcp.add(host, containerId, profileName, request);
+      DockerHostRef host, String containerId, String profileName, McpServerDefinition definition) {
+    mcp.add(host, containerId, profileName, definition);
     return readProfile(host, containerId, profileName);
   }
 
   public AgentProfileDto updateMcpServer(
       DockerHostRef host, String containerId, String profileName, String serverName,
-      AddMcpServerRequest request) {
-    mcp.update(host, containerId, profileName, serverName, request);
+      McpServerDefinition definition) {
+    mcp.update(host, containerId, profileName, serverName, definition);
     return readProfile(host, containerId, profileName);
   }
 

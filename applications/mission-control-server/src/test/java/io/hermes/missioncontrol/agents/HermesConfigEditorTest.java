@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -15,11 +14,13 @@ import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
 /**
- * The config-edit rules on their own. {@link HermesConfigEditor} touches no container, so
- * every decision it makes — transport switching, rename collisions, header and environment
- * validation, refusing to rewrite a file it cannot parse — is reachable here without a
- * Docker mock. Previously these rules were only ever exercised incidentally through
- * {@link HermesProfilesTest}.
+ * What an edit does to {@code config.yaml}. {@link HermesConfigEditor} touches no container, so
+ * every decision it makes — which keys a transport owns, rename collisions, refusing to rewrite
+ * a file it cannot parse — is reachable here without a Docker mock.
+ *
+ * <p>What a valid definition <em>is</em> moved to {@link McpServerDefinitionTest} along with the
+ * rules themselves. The editor now takes an already-validated {@link McpServerDefinition} and is
+ * only responsible for the file's shape.
  */
 class HermesConfigEditorTest {
 
@@ -33,12 +34,19 @@ class HermesConfigEditorTest {
     return (Map<?, ?>) servers.get(name);
   }
 
-  private static AddMcpServerRequest http(String name, String url) {
-    return new AddMcpServerRequest(name, "http", url, null, null, null);
+  private static McpServerDefinition definition(
+      String name, String transport, String url, String command, String args, Boolean enabled,
+      Map<String, String> headers, Map<String, String> environment) {
+    return McpServerDefinition.from(new AddMcpServerRequest(
+        name, transport, url, command, args, enabled, headers, environment));
   }
 
-  private static AddMcpServerRequest stdio(String name, String command, String args) {
-    return new AddMcpServerRequest(name, "stdio", null, command, args, null);
+  private static McpServerDefinition http(String name, String url) {
+    return definition(name, "http", url, null, null, null, null, null);
+  }
+
+  private static McpServerDefinition stdio(String name, String command, String args) {
+    return definition(name, "stdio", null, command, args, null, null, null);
   }
 
   @Test
@@ -56,7 +64,7 @@ class HermesConfigEditorTest {
     // SSE cannot be told apart from HTTP by looking at the URL, and used to come back
     // from the API as "http" — the transport the caller asked for is the one persisted
     String result = editor.addMcpServer(
-        "", PATH, new AddMcpServerRequest("stream", "SSE", "https://x.internal/sse", null, null, null));
+        "", PATH, McpServerDefinition.from(new AddMcpServerRequest("stream", "SSE", "https://x.internal/sse", null, null, null, null, null)));
 
     assertEquals("sse", serverIn(result, "stream").get("transport"));
   }
@@ -65,7 +73,7 @@ class HermesConfigEditorTest {
   void switchingFromStdioToHttpClearsCommandArgsAndEnv() {
     String stdioConfig = editor.addMcpServer(
         "", PATH,
-        new AddMcpServerRequest("files", "stdio", null, "npx", "-y @scope/files", null, null,
+        definition("files", "stdio", null, "npx", "-y @scope/files", null, null,
             Map.of("TOKEN", "secret")));
 
     String result = editor.updateMcpServer(
@@ -83,8 +91,8 @@ class HermesConfigEditorTest {
   void switchingFromHttpToStdioClearsUrlAndHeaders() {
     String httpConfig = editor.addMcpServer(
         "", PATH,
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null,
-            Map.of("Authorization", "Bearer t")));
+        definition("files", "http", "https://files.internal/mcp", null, null, null,
+            Map.of("Authorization", "Bearer t"), null));
 
     String result = editor.updateMcpServer(httpConfig, PATH, "files", stdio("files", "npx", null));
 
@@ -98,8 +106,8 @@ class HermesConfigEditorTest {
   void anOmittedHeaderMapPreservesHeadersWhileAnEmptyMapClearsThem() {
     String withHeader = editor.addMcpServer(
         "", PATH,
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null,
-            Map.of("Authorization", "Bearer t")));
+        definition("files", "http", "https://files.internal/mcp", null, null, null,
+            Map.of("Authorization", "Bearer t"), null));
 
     // null means "the caller did not edit this advanced field"
     String untouched = editor.updateMcpServer(
@@ -109,8 +117,8 @@ class HermesConfigEditorTest {
     // an explicit empty map is a deliberate clear
     String cleared = editor.updateMcpServer(
         withHeader, PATH, "files",
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null,
-            Map.of()));
+        definition("files", "http", "https://files.internal/mcp", null, null, null,
+            Map.of(), null));
     assertFalse(serverIn(cleared, "files").containsKey("headers"));
   }
 
@@ -197,7 +205,7 @@ class HermesConfigEditorTest {
   void enabledDefaultsToTrueOnlyWhenTheEntryDoesNotAlreadyCarryIt() {
     String disabled = editor.addMcpServer(
         "", PATH,
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, false));
+        definition("files", "http", "https://files.internal/mcp", null, null, false, null, null));
     assertEquals(Boolean.FALSE, serverIn(disabled, "files").get("enabled"));
 
     // a later edit that says nothing about `enabled` must not silently re-enable it
@@ -218,166 +226,6 @@ class HermesConfigEditorTest {
   }
 
   @Test
-  void headerNamesAndValuesWithLineBreaksAreRejected() {
-    // header injection: a CRLF in either half would forge extra request headers
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "http", "https://x.internal/mcp", null, null, null,
-            Map.of("X-Evil\r\nInjected", "v"))));
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "http", "https://x.internal/mcp", null, null, null,
-            Map.of("Authorization", "Bearer t\r\nX-Evil: 1"))));
-
-    Map<String, String> blankName = new LinkedHashMap<>();
-    blankName.put("  ", "v");
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "http", "https://x.internal/mcp", null, null, null,
-            blankName)));
-  }
-
-  @Test
-  void invalidStdioEnvironmentKeysAndValuesAreRejected() {
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "stdio", null, "npx", null, null, null,
-            Map.of("1LEADING_DIGIT", "v"))));
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "stdio", null, "npx", null, null, null,
-            Map.of("HAS-DASH", "v"))));
-    // a value carrying a line break would inject a second entry into the env block
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "stdio", null, "npx", null, null, null,
-            Map.of("TOKEN", "a\nEVIL=1"))));
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH,
-        new AddMcpServerRequest("files", "stdio", null, "npx", null, null, null,
-            Map.of("TOKEN", "a\0b"))));
-  }
-
-  @Test
-  void quotedArgsKeepTheirInternalSpaces() {
-    assertEquals(
-        List.of("--flag", "two words", "and more", "tail"),
-        editor.splitArgs("--flag 'two words' \"and more\"   tail"));
-    // an unterminated quote still yields the trailing token rather than dropping it
-    assertEquals(List.of("--flag", "two words"), editor.splitArgs("--flag 'two words"));
-    assertEquals(List.of(), editor.splitArgs("   "));
-  }
-
-  @Test
-  void aTransportThatIsNotStdioHttpOrSseIsRejectedAndSoIsAMissingEndpoint() {
-    assertThrows(IllegalArgumentException.class, () -> editor.addMcpServer(
-        "", PATH, new AddMcpServerRequest("files", "grpc", "https://x.internal", null, null, null)));
-    // stdio without a command, and http without a url, are both unusable definitions
-    assertThrows(IllegalArgumentException.class, () ->
-        editor.addMcpServer("", PATH, stdio("files", "  ", null)));
-    assertThrows(IllegalArgumentException.class, () ->
-        editor.addMcpServer("", PATH, http("files", "  ")));
-  }
-
-  @Test
-  void aBlankOrNullServerNameIsRejected() {
-    assertThrows(IllegalArgumentException.class, () -> editor.serverName(null));
-    assertThrows(IllegalArgumentException.class, () -> editor.serverName("   "));
-    assertEquals("files", editor.serverName("  files  "));
-  }
-
-  // ── header and environment validation ────────────────────────────────────
-
-  @Test
-  void aHeaderWithNoNameOrNoValueIsRefused() {
-    // these are written verbatim into config.yaml and sent on every MCP request
-    assertEquals("MCP header name must not be blank", rejected(headers(Map.of("   ", "v"))));
-    assertEquals("missing value for MCP header: X-Api-Key",
-        rejected(headers(nullValued("X-Api-Key"))));
-  }
-
-  @Test
-  void aHeaderCarryingALineBreakIsRefusedInEitherHalf() {
-    // a CR or LF in a header splits it into two headers on the wire
-    assertEquals("MCP headers must not contain line breaks",
-        rejected(headers(Map.of("X-Api-Key", "value\r\nX-Injected: yes"))));
-    assertEquals("MCP headers must not contain line breaks",
-        rejected(headers(Map.of("X-Api\nKey", "value"))));
-  }
-
-  @Test
-  void aValidHeaderIsStoredTrimmedAndVerbatim() {
-    String yaml = editor.addMcpServer("", PATH, new AddMcpServerRequest(
-        "tools", "http", "https://tools.test/mcp", null, null, true,
-        Map.of("  X-Api-Key  ", "secret")));
-
-    Map<?, ?> headers = (Map<?, ?>) serverIn(yaml, "tools").get("headers");
-    assertEquals("secret", headers.get("X-Api-Key"));
-  }
-
-  @Test
-  void anEnvironmentKeyMustLookLikeAShellVariable() {
-    assertEquals("invalid MCP environment key: 1BAD",
-        rejected(environment(Map.of("1BAD", "v"))));
-    assertEquals("invalid MCP environment key: MY-KEY",
-        rejected(environment(Map.of("MY-KEY", "v"))));
-    assertEquals("invalid MCP environment key: ",
-        rejected(environment(Map.of("   ", "v"))));
-  }
-
-  @Test
-  void anEnvironmentValueCannotCarryNulOrALineBreak() {
-    assertEquals("missing value for MCP environment: ROOT",
-        rejected(environment(nullValued("ROOT"))));
-    assertEquals("MCP environment values must not contain NUL or line breaks",
-        rejected(environment(Map.of("ROOT", "/data\nEXTRA=1"))));
-    assertEquals("MCP environment values must not contain NUL or line breaks",
-        rejected(environment(Map.of("ROOT", "/data "))));
-  }
-
-  @Test
-  void aValidEnvironmentEntryIsStoredOnAStdioServer() {
-    String yaml = editor.addMcpServer("", PATH, new AddMcpServerRequest(
-        "files", "stdio", null, "npx", "-y @example/files", true, null, Map.of("ROOT", "/data")));
-
-    Map<?, ?> env = (Map<?, ?>) serverIn(yaml, "files").get("env");
-    assertEquals("/data", env.get("ROOT"));
-  }
-
-  // ── transport and parse guards ───────────────────────────────────────────
-
-  @Test
-  void aTransportThatIsNotOneOfTheThreeIsRefusedRatherThanGuessedFromTheUrl() {
-    // SSE cannot be inferred from a URL, so nothing is inferred at all
-    for (String transport : List.of("  ", "grpc", "HTTP2")) {
-      assertEquals("invalid transport", assertThrows(IllegalArgumentException.class,
-          () -> editor.addMcpServer("", PATH,
-              new AddMcpServerRequest("tools", transport, "https://tools.test/mcp", null, null, true)))
-          .getMessage());
-    }
-    assertEquals("invalid transport", assertThrows(IllegalArgumentException.class,
-        () -> editor.addMcpServer("", PATH,
-            new AddMcpServerRequest("tools", null, "https://tools.test/mcp", null, null, true)))
-        .getMessage());
-  }
-
-  @Test
-  void aTransportIsMatchedCaseInsensitivelyAndStoredLowercase() {
-    String yaml = editor.addMcpServer("", PATH,
-        new AddMcpServerRequest("tools", " SSE ", "https://tools.test/sse", null, null, true));
-
-    assertEquals("sse", serverIn(yaml, "tools").get("transport"));
-  }
-
-  @Test
-  void aStdioServerWithoutACommandIsRefused() {
-    assertEquals("missing command", assertThrows(IllegalArgumentException.class,
-        () -> editor.addMcpServer("", PATH, stdio("files", null, "-y x"))).getMessage());
-    assertEquals("missing command", assertThrows(IllegalArgumentException.class,
-        () -> editor.addMcpServer("", PATH, stdio("files", "   ", "-y x"))).getMessage());
-  }
-
-  @Test
   void anUnparseableConfigIsNeverRewritten() {
     // rewriting a file we cannot parse would drop whatever else the operator had in it
     assertEquals("refusing to rewrite unparseable " + PATH,
@@ -393,26 +241,5 @@ class HermesConfigEditorTest {
   void anAbsentConfigStartsFromAnEmptyTree() {
     assertTrue(editor.parseForEdit(null, PATH).isEmpty());
     assertTrue(editor.parseForEdit("   ", PATH).isEmpty());
-  }
-
-  private String rejected(Runnable call) {
-    return assertThrows(IllegalArgumentException.class, call::run).getMessage();
-  }
-
-  private Runnable headers(Map<String, String> headers) {
-    return () -> editor.addMcpServer("", PATH, new AddMcpServerRequest(
-        "tools", "http", "https://tools.test/mcp", null, null, true, headers));
-  }
-
-  private Runnable environment(Map<String, String> environment) {
-    return () -> editor.addMcpServer("", PATH, new AddMcpServerRequest(
-        "files", "stdio", null, "npx", null, true, null, environment));
-  }
-
-  /** A single-entry map with a null value, which Map.of cannot express. */
-  private static Map<String, String> nullValued(String key) {
-    Map<String, String> map = new java.util.LinkedHashMap<>();
-    map.put(key, null);
-    return map;
   }
 }

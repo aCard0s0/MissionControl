@@ -14,8 +14,9 @@ import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
+import io.hermes.missioncontrol.agents.McpServerDefinition;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
-import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
+import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
@@ -100,8 +101,8 @@ class ProfileTemplateServiceTest {
         "pt-1", "ops", "", "anthropic", "model", "", "", "soul", "",
         List.of(), List.of(), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(template));
-    CreateAgentRequest create = new CreateAgentRequest(
-        "dh-local", "cid", "ops", "anthropic", "model", null, null, null, "pt-1", null);
+    ProfileSpec create = new ProfileSpec(
+        "cid", "ops", "anthropic", "model", null, null, null, null);
     doThrow(new RuntimeException("soul write failed"))
         .when(profiles).updateSoul(HOST, "cid", "ops", "soul");
 
@@ -198,8 +199,8 @@ class ProfileTemplateServiceTest {
 
     runtimeService.applyExisting("pt-1", HOST, "cid", "ops");
 
-    ArgumentCaptor<AddMcpServerRequest> requests =
-        ArgumentCaptor.forClass(AddMcpServerRequest.class);
+    ArgumentCaptor<McpServerDefinition> requests =
+        ArgumentCaptor.forClass(McpServerDefinition.class);
     verify(profiles, Mockito.times(2))
         .addMcpServer(Mockito.eq(HOST), Mockito.eq("cid"), Mockito.eq("ops"), requests.capture());
     assertEquals(Map.of("Authorization", "Bearer runtime-token"),

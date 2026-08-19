@@ -1,11 +1,8 @@
 package io.hermes.missioncontrol.agents;
 
-import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.springframework.stereotype.Component;
@@ -32,8 +29,8 @@ class HermesConfigEditor {
   }
 
   /** Creates or overwrites one entry under {@code mcp_servers}. */
-  String addMcpServer(String configYaml, String configPath, AddMcpServerRequest request) {
-    String name = serverName(request.name());
+  String addMcpServer(String configYaml, String configPath, McpServerDefinition definition) {
+    String name = definition.name();
     Map<Object, Object> root = parseForEdit(configYaml, configPath);
     Map<Object, Object> servers = mcpServersForEdit(root);
     Object existing = servers.get(name);
@@ -41,7 +38,7 @@ class HermesConfigEditor {
       throw new ResourceConflictException("refusing to overwrite malformed MCP server: " + name);
     }
     Map<Object, Object> server = asMutableMap(existing);
-    applyDefinition(server, request);
+    applyDefinition(server, definition);
     servers.put(name, server);
     root.put("mcp_servers", servers);
     return yaml().dump(root);
@@ -49,9 +46,9 @@ class HermesConfigEditor {
 
   /** Updates an entry, renaming it when the request carries a different name. */
   String updateMcpServer(
-      String configYaml, String configPath, String serverName, AddMcpServerRequest request) {
+      String configYaml, String configPath, String serverName, McpServerDefinition definition) {
     String currentName = serverName(serverName);
-    String newName = serverName(request.name());
+    String newName = definition.name();
     Map<Object, Object> root = parseForEdit(configYaml, configPath);
     Map<Object, Object> servers = mcpServersForEdit(root);
     if (!servers.containsKey(currentName)) {
@@ -65,7 +62,7 @@ class HermesConfigEditor {
       throw new ResourceConflictException("refusing to rewrite malformed MCP server: " + currentName);
     }
     Map<Object, Object> server = asMutableMap(existing);
-    applyDefinition(server, request);
+    applyDefinition(server, definition);
     if (!currentName.equals(newName)) servers.remove(currentName);
     servers.put(newName, server);
     root.put("mcp_servers", servers);
@@ -111,50 +108,45 @@ class HermesConfigEditor {
     return asMutableMap(node);
   }
 
-  private void applyDefinition(Map<Object, Object> server, AddMcpServerRequest request) {
-    String transport = request.transport() == null
-        ? ""
-        : request.transport().trim().toLowerCase(Locale.ROOT);
+  /**
+   * Maps a validated definition onto the entry's YAML.
+   *
+   * <p>Only the file's shape is decided here — which keys a transport owns, and therefore
+   * which of the other transport's leftovers must be cleared. What a valid definition is
+   * belongs to {@link McpServerDefinition}, whose invariants this relies on: a network
+   * transport has a url and no command, stdio has a command and no headers.
+   */
+  private void applyDefinition(Map<Object, Object> server, McpServerDefinition definition) {
     // Persist the explicit value. In particular, SSE cannot be inferred from a
     // URL and previously came back from the API incorrectly as HTTP.
-    server.put("transport", transport);
-    if ("stdio".equals(transport)) {
-      String command = request.command();
-      if (command == null || command.isBlank()) throw new IllegalArgumentException("missing command");
-      server.put("command", command.trim());
-      String args = request.args();
-      if (args == null || args.isBlank()) {
-        server.remove("args");
-      } else {
-        server.put("args", splitArgs(args.trim()));
-      }
-      if (request.environment() != null) {
-        Map<String, String> environment = validatedEnvironment(request.environment());
-        if (environment.isEmpty()) server.remove("env"); else server.put("env", environment);
+    server.put("transport", definition.transport().wireName());
+    if (definition.transport() == McpServerDefinition.Transport.STDIO) {
+      server.put("command", definition.command());
+      if (definition.args().isEmpty()) server.remove("args");
+      else server.put("args", definition.args());
+      if (definition.environment() != null) {
+        if (definition.environment().isEmpty()) server.remove("env");
+        else server.put("env", new LinkedHashMap<>(definition.environment()));
       }
       // These keys belong to network transports. Clearing them avoids reviving
       // stale endpoints or credentials after a later transport change.
       server.remove("url");
       server.remove("headers");
-    } else if ("http".equals(transport) || "sse".equals(transport)) {
-      String urlValue = request.url();
-      if (urlValue == null || urlValue.isBlank()) throw new IllegalArgumentException("missing url");
-      server.put("url", urlValue.trim());
+    } else {
+      server.put("url", definition.url());
       server.remove("command");
       server.remove("args");
       server.remove("env");
       // An omitted header map means the caller did not edit this advanced
       // field. An explicit empty map clears it without disturbing other,
       // genuinely unmodeled Hermes options.
-      if (request.headers() != null) {
-        Map<String, String> headers = validatedHeaders(request.headers());
-        if (headers.isEmpty()) server.remove("headers"); else server.put("headers", headers);
+      if (definition.headers() != null) {
+        if (definition.headers().isEmpty()) server.remove("headers");
+        else server.put("headers", new LinkedHashMap<>(definition.headers()));
       }
-    } else {
-      throw new IllegalArgumentException("invalid transport");
     }
 
-    Boolean enabled = request.enabled();
+    Boolean enabled = definition.enabled();
     if (enabled != null) {
       server.put("enabled", enabled);
     } else if (!server.containsKey("enabled")) {
@@ -165,39 +157,6 @@ class HermesConfigEditor {
   String serverName(String value) {
     if (value == null || value.isBlank()) throw new IllegalArgumentException("missing server name");
     return value.trim();
-  }
-
-  private Map<String, String> validatedHeaders(Map<String, String> input) {
-    Map<String, String> result = new LinkedHashMap<>();
-    for (Map.Entry<String, String> entry : input.entrySet()) {
-      String name = entry.getKey() == null ? "" : entry.getKey().trim();
-      String value = entry.getValue();
-      if (name.isBlank()) throw new IllegalArgumentException("MCP header name must not be blank");
-      if (value == null) throw new IllegalArgumentException("missing value for MCP header: " + name);
-      if (name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0
-          || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
-        throw new IllegalArgumentException("MCP headers must not contain line breaks");
-      }
-      result.put(name, value);
-    }
-    return result;
-  }
-
-  private Map<String, String> validatedEnvironment(Map<String, String> input) {
-    Map<String, String> result = new LinkedHashMap<>();
-    for (Map.Entry<String, String> entry : input.entrySet()) {
-      String name = entry.getKey() == null ? "" : entry.getKey().trim();
-      String value = entry.getValue();
-      if (!name.matches("[A-Za-z_][A-Za-z0-9_]{0,127}")) {
-        throw new IllegalArgumentException("invalid MCP environment key: " + name);
-      }
-      if (value == null) throw new IllegalArgumentException("missing value for MCP environment: " + name);
-      if (value.indexOf('\0') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
-        throw new IllegalArgumentException("MCP environment values must not contain NUL or line breaks");
-      }
-      result.put(name, value);
-    }
-    return result;
   }
 
   /**
@@ -226,24 +185,4 @@ class HermesConfigEditor {
     return yaml().dump(root);
   }
 
-  /** Shell-style tokenizer so quoted MCP args keep their internal spaces. */
-  List<String> splitArgs(String args) {
-    List<String> out = new ArrayList<>();
-    StringBuilder cur = new StringBuilder();
-    char quote = 0;
-    for (int i = 0; i < args.length(); i++) {
-      char c = args.charAt(i);
-      if (quote != 0) {
-        if (c == quote) quote = 0; else cur.append(c);
-      } else if (c == '\'' || c == '"') {
-        quote = c;
-      } else if (Character.isWhitespace(c)) {
-        if (cur.length() > 0) { out.add(cur.toString()); cur.setLength(0); }
-      } else {
-        cur.append(c);
-      }
-    }
-    if (cur.length() > 0) out.add(cur.toString());
-    return out;
-  }
 }

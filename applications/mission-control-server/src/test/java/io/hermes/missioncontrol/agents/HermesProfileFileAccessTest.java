@@ -103,7 +103,7 @@ class HermesProfileFileAccessTest {
     theProfileDoesNotExist();
 
     assertThrows(NoSuchElementException.class, () -> profiles.addMcpServer(HOST, CONTAINER, "tpyo",
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null)));
+        McpServerDefinition.from(new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null, null, null))));
 
     // the atomic-write path mkdir -p's too, so it needed the same guard
     verify(dockerExec, never()).runAsUser(any(), anyString(), any(), any(),
@@ -159,7 +159,7 @@ class HermesProfileFileAccessTest {
     theProfileExists();
     // the config read-back returns an empty document, which the editor treats as a new one
     profiles.addMcpServer(HOST, CONTAINER, "scout",
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null));
+        McpServerDefinition.from(new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null, null, null)));
 
     ArgumentCaptor<List<String>> argv = captureArgv();
     verify(dockerExec).runAsUser(any(), anyString(), any(), argv.capture(),
@@ -176,8 +176,8 @@ class HermesProfileFileAccessTest {
     theProfileExists();
 
     profiles.addMcpServer(HOST, CONTAINER, "scout",
-        new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null,
-            java.util.Map.of("Authorization", "Bearer secret-token")));
+        McpServerDefinition.from(new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null,
+            java.util.Map.of("Authorization", "Bearer secret-token"), null)));
 
     // sensitive=true keeps the argv — and therefore the header — out of any error or log
     verify(dockerExec).runAsUser(any(), anyString(), any(), any(),

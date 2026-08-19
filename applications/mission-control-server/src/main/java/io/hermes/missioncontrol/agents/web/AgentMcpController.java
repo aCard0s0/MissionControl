@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
+import io.hermes.missioncontrol.agents.McpServerDefinition;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
@@ -47,7 +48,8 @@ class AgentMcpController {
       @Valid @RequestBody AddMcpServerRequest request) {
     DockerHostRef host = endpoints.host(hostId);
     mcpCatalog.assertCustom(host, containerId, name, request.name());
-    return endpoints.linked(host, profiles.addMcpServer(host, containerId, name, request));
+    return endpoints.linked(host,
+        profiles.addMcpServer(host, containerId, name, McpServerDefinition.from(request)));
   }
 
   /** Replaces a custom MCP definition in one config write. The body name may
@@ -62,7 +64,8 @@ class AgentMcpController {
     DockerHostRef host = endpoints.host(hostId);
     mcpCatalog.assertCustom(host, containerId, name, serverName);
     return endpoints.linked(host,
-        profiles.updateMcpServer(host, containerId, name, serverName, request));
+        profiles.updateMcpServer(
+            host, containerId, name, serverName, McpServerDefinition.from(request)));
   }
 
   /** Disconnect/reconnect is deliberately separate from permanent deletion so
@@ -127,7 +130,6 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    DockerHostRef host = endpoints.host(hostId);
-    return profiles.testMcpServer(host, containerId, name, serverName);
+    return profiles.testMcpServer(endpoints.host(hostId), containerId, name, serverName);
   }
 }
