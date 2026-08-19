@@ -32,7 +32,6 @@ import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.RestartPolicy;
 import io.hermes.missioncontrol.config.AppProperties;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.time.Duration;
 import java.util.List;

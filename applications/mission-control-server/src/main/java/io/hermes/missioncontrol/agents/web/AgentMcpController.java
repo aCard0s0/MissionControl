@@ -48,7 +48,8 @@ class AgentMcpController {
       @Valid @RequestBody AddMcpServerRequest request) {
     DockerHostRef host = endpoints.host(hostId);
     mcpCatalog.assertCustom(host, containerId, name, request.name());
-    return endpoints.linked(host, profiles.addMcpServer(host, containerId, name, McpServerDefinition.from(request)));
+    return endpoints.linked(host,
+        profiles.addMcpServer(host, containerId, name, McpServerDefinition.from(request)));
   }
 
   /** Replaces a custom MCP definition in one config write. The body name may
@@ -129,7 +130,6 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    DockerHostRef host = endpoints.host(hostId);
-    return profiles.testMcpServer(host, containerId, name, serverName);
+    return profiles.testMcpServer(endpoints.host(hostId), containerId, name, serverName);
   }
 }

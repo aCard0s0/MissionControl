@@ -16,7 +16,6 @@ import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import io.hermes.missioncontrol.config.AppProperties;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

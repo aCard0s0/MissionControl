@@ -49,7 +49,6 @@ import com.github.dockerjava.api.model.RestartPolicy;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Volume;
 import io.hermes.missioncontrol.config.AppProperties;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;

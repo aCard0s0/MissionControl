@@ -10,7 +10,6 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.board.BoardRepository;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;

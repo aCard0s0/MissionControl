@@ -87,8 +87,7 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateSoulRequest request) {
-    DockerHostRef host = endpoints.host(hostId);
-    profiles.updateSoul(host, containerId, name, request.soul());
+    profiles.updateSoul(endpoints.host(hostId), containerId, name, request.soul());
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/config")
@@ -107,8 +106,7 @@ public class AgentsController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    DockerHostRef host = endpoints.host(hostId);
-    return profiles.integrations(host, containerId, name);
+    return profiles.integrations(endpoints.host(hostId), containerId, name);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/logs")
@@ -117,7 +115,6 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestParam(defaultValue = "100") int tail) {
-    DockerHostRef host = endpoints.host(hostId);
-    return profiles.logs(host, containerId, name, tail);
+    return profiles.logs(endpoints.host(hostId), containerId, name, tail);
   }
 }
