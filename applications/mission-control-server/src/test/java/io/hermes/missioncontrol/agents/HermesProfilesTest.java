@@ -7,7 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.github.dockerjava.api.exception.ConflictException;
+import io.hermes.missioncontrol.docker.ContainerNotRunningException;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
@@ -28,7 +28,7 @@ class HermesProfilesTest {
   void stoppedContainerHasNoReadableProfileInventory() {
     DockerExecService dockerExec = mock(DockerExecService.class);
     when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
-        anyBoolean(), any(Duration.class))).thenThrow(new ConflictException("container is not running"));
+        anyBoolean(), any(Duration.class))).thenThrow(new ContainerNotRunningException("Hermes command needs a running container: stopped", null));
 
     assertEquals(List.of(), AgentsWiring.profiles(dockerExec).list(new DockerHostRef("dh-local", "unix:///sock"), "stopped"));
   }

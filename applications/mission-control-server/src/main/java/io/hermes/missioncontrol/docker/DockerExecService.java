@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.docker;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
@@ -66,6 +67,13 @@ public class DockerExecService {
           .withCmd(command.toArray(new String[0]));
       if (user != null && !user.isBlank()) create.withUser(user);
       exec = create.exec();
+    } catch (ConflictException notRunning) {
+      // The daemon refuses an exec in a container that is not running. Translated here so
+      // callers can recognise the case without importing docker-java: the sensitive wrap
+      // below would otherwise flatten it into an opaque 503, and an untranslated one made
+      // the agents package depend on this client's exception hierarchy.
+      throw new ContainerNotRunningException(
+          operation + " needs a running container: " + containerId, notRunning);
     } catch (RuntimeException e) {
       if (sensitive) throw new UpstreamUnavailableException(operation + " failed", e);
       throw e;

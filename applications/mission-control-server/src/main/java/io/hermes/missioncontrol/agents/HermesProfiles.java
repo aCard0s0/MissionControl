@@ -1,6 +1,6 @@
 package io.hermes.missioncontrol.agents;
 
-import com.github.dockerjava.api.exception.ConflictException;
+import io.hermes.missioncontrol.docker.ContainerNotRunningException;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
@@ -85,9 +85,9 @@ public class HermesProfiles {
         profiles.add(readProfile(host, containerId, name));
       }
       return profiles;
-    } catch (ConflictException stopped) {
-      // Docker returns 409 when a stale dashboard client asks to exec inside a
-      // stopped container. Inventory is simply unavailable until it restarts.
+    } catch (ContainerNotRunningException stopped) {
+      // A stale dashboard client asking to exec inside a stopped container. Inventory is
+      // simply unavailable until it restarts.
       return List.of();
     }
   }

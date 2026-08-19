@@ -5,8 +5,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.github.dockerjava.api.exception.DockerException;
-import com.github.dockerjava.api.exception.NotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.NoSuchElementException;
@@ -24,6 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Pins the exception-to-HTTP contract every frontend call depends on. The stub controller
  * exists so each handler can be reached in isolation, without standing up a real one.
+ *
+ * <p>Docker's own mappings moved to {@code DockerExceptionAdviceTest} with the advice that
+ * owns them. The one thing asserted here about that split is the reverse direction: a plain
+ * failure still reaches this catch-all with the higher-precedence docker advice registered
+ * ahead of it.
  */
 class ApiExceptionHandlerTest {
 
@@ -51,12 +54,6 @@ class ApiExceptionHandlerTest {
   }
 
   @Test
-  void dockerNotFoundIsANotFound() throws Exception {
-    mvc.perform(get("/boom/docker-not-found"))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
   void aConstraintViolationIsAConflictNotAnOpaqueFailure() throws Exception {
     mvc.perform(get("/boom/data-integrity"))
         .andExpect(status().isConflict())
@@ -71,18 +68,30 @@ class ApiExceptionHandlerTest {
   }
 
   @Test
-  void aDockerFailureIsABadGateway() throws Exception {
-    mvc.perform(get("/boom/docker"))
-        .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.startsWith("docker daemon error:")));
-  }
-
-  @Test
   void anUnreachableDependencyIsServiceUnavailable() throws Exception {
     mvc.perform(get("/boom/upstream"))
         .andExpect(status().isServiceUnavailable())
         .andExpect(jsonPath("$.error").value("docker host not connected"));
+  }
+
+  /**
+   * The reverse of what {@code DockerExceptionAdviceTest} pins: with the higher-precedence
+   * docker advice registered, a failure it does not handle must still find this catch-all
+   * rather than escaping the advice chain and losing the error-body shape.
+   */
+  @Test
+  void aPlainFailureStillReachesTheCatchAllWithTheDockerAdviceAhead() throws Exception {
+    MockMvc both = MockMvcBuilders.standaloneSetup(new ThrowingController())
+        .setControllerAdvice(
+            new io.hermes.missioncontrol.docker.DockerExceptionAdvice(), new ApiExceptionHandler())
+        .build();
+
+    both.perform(get("/boom/unexpected"))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.error").value("index 4 out of bounds"));
+    both.perform(get("/boom/illegal-argument"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value("that argument is no good"));
   }
 
   @Test
@@ -146,74 +155,6 @@ class ApiExceptionHandlerTest {
         .andExpect(jsonPath("$.error").value("hostId is required"));
   }
 
-  @Test
-  void aDockerConflictIsAConflictNotABadGateway() throws Exception {
-    // a duplicate container name is the caller's problem and is actionable; 502 tells them
-    // the daemon is broken, which it is not
-    mvc.perform(get("/boom/docker-conflict"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.containsString("container name already in use")));
-  }
-
-  @Test
-  void aDockerNotModifiedIsNotReportedAsADaemonError() throws Exception {
-    // stopping an already-stopped container: nothing failed, the state is simply already
-    // what was asked for
-    mvc.perform(get("/boom/docker-not-modified"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.containsString("container already stopped")));
-  }
-
-  @Test
-  void aGenuineDaemonFailureIsStillABadGateway() throws Exception {
-    // the new conflict handlers must not swallow the general docker case
-    mvc.perform(get("/boom/docker"))
-        .andExpect(status().isBadGateway());
-  }
-
-  // --- the daemon rejecting us vs. the daemon being broken ----------------------------
-  //
-  // The DockerException catch-all answered 502 for the whole family, so a malformed image
-  // reference — a request the daemon itself refused — was reported as "docker daemon error"
-  // and tripped alerting keyed on 5xx.
-
-  @Test
-  void aRequestTheDaemonItselfRejectsIsAClientErrorNotAGatewayFailure() throws Exception {
-    mvc.perform(get("/boom/docker-bad-request"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.containsString("invalid reference format")));
-  }
-
-  @Test
-  void aNotAcceptableFromTheDaemonIsAlsoAClientError() throws Exception {
-    mvc.perform(get("/boom/docker-not-acceptable"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.containsString("container is not running")));
-  }
-
-  @Test
-  void rejectedRegistryCredentialsAreReportedAsAGatewayFailureNotABadRequest() throws Exception {
-    // nothing the caller sent is wrong — our registry configuration is
-    mvc.perform(get("/boom/docker-unauthorized"))
-        .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.containsString("registry credentials")));
-  }
-
-  @Test
-  void aGenuineDaemonFailureStillAnswers502() throws Exception {
-    // Spring picks the most specific handler, so this proves the subtype handlers above did
-    // not capture the general case with them
-    mvc.perform(get("/boom/docker"))
-        .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.error").value(
-            org.hamcrest.Matchers.startsWith("docker daemon error:")));
-  }
-
   record ValidatedBody(@NotBlank String name) {}
 
   @RestController
@@ -230,11 +171,6 @@ class ApiExceptionHandlerTest {
       throw new NoSuchElementException("unknown docker host: dh-9");
     }
 
-    @RequestMapping("/docker-not-found")
-    void dockerNotFound() {
-      throw new NotFoundException("no such container");
-    }
-
     @RequestMapping("/data-integrity")
     void dataIntegrity() {
       throw new DataIntegrityViolationException("UNIQUE constraint failed: docker_hosts.url");
@@ -243,11 +179,6 @@ class ApiExceptionHandlerTest {
     @RequestMapping("/resource-conflict")
     void resourceConflict() {
       throw new ResourceConflictException("a container with that name already exists");
-    }
-
-    @RequestMapping("/docker")
-    void docker() {
-      throw new DockerException("daemon said no", 500);
     }
 
     @RequestMapping("/upstream")
@@ -273,34 +204,6 @@ class ApiExceptionHandlerTest {
     @RequestMapping(value = "/validated", method = org.springframework.web.bind.annotation.RequestMethod.POST)
     void validated(@Valid @RequestBody ValidatedBody body) {
       throw new AssertionError("validation should have rejected this before the body ran");
-    }
-
-    @RequestMapping("/docker-conflict")
-    void dockerConflict() {
-      throw new com.github.dockerjava.api.exception.ConflictException("container name already in use");
-    }
-
-    @RequestMapping("/docker-not-modified")
-    void dockerNotModified() {
-      throw new com.github.dockerjava.api.exception.NotModifiedException("container already stopped");
-    }
-
-    @RequestMapping("/docker-bad-request")
-    void dockerBadRequest() {
-      throw new com.github.dockerjava.api.exception.BadRequestException(
-          "Status 400: invalid reference format");
-    }
-
-    @RequestMapping("/docker-not-acceptable")
-    void dockerNotAcceptable() {
-      throw new com.github.dockerjava.api.exception.NotAcceptableException(
-          "container is not running");
-    }
-
-    @RequestMapping("/docker-unauthorized")
-    void dockerUnauthorized() {
-      throw new com.github.dockerjava.api.exception.UnauthorizedException(
-          "unauthorized: incorrect username or password");
     }
 
     /** Mirrors the logs endpoints: an int query param with a default. */

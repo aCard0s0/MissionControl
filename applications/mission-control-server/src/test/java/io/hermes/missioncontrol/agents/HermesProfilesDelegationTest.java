@@ -130,7 +130,8 @@ class HermesProfilesDelegationTest {
     // Docker answers 409 when a stale dashboard client asks to exec in a stopped container;
     // inventory is simply unavailable until it restarts
     when(files.dirExists(any(), anyString(), anyString()))
-        .thenThrow(new com.github.dockerjava.api.exception.ConflictException("container not running"));
+        .thenThrow(new io.hermes.missioncontrol.docker.ContainerNotRunningException(
+            "Hermes command needs a running container: c1", null));
 
     assertTrue(profiles.list(HOST, CONTAINER).isEmpty());
   }
