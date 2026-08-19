@@ -195,10 +195,11 @@ describe('TerminalPanel tabs', () => {
     const { fixture, store } = render(storeStub([c], c));
     await openPanel(fixture);
 
-    for (let i = 0; i < 12; i++) {
-      el(fixture).querySelector<HTMLButtonElement>('.add')!.click();
-      await settle(fixture);
-    }
+    // the cap is enforced as each tab is added, so the clicks need no repaint
+    // between them — one settle at the end is both enough and much cheaper
+    const add = el(fixture).querySelector<HTMLButtonElement>('.add')!;
+    for (let i = 0; i < 12; i++) add.click();
+    await settle(fixture);
 
     expect(tabs(fixture).length).toBe(12);
     expect(store.toast).toHaveBeenCalledWith(

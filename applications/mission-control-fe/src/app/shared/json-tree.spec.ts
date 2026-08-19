@@ -127,14 +127,14 @@ describe('JsonTree search', () => {
 });
 
 describe('JsonTree limits', () => {
-  // the only test here that renders the cap itself — 8000 rows through change
-  // detection outruns the default timeout on a cold or loaded machine
+  // the only test here that renders the cap itself: 8000 rows through change
+  // detection, which is why vitest-base.config.ts raises the timeout
   it('stops at the node cap and says the output was cut', () => {
     const { fixture } = render(Array.from({ length: 9_000 }, (_, i) => i));
 
     expect(text(fixture)).toContain('output truncated (8000 nodes)');
     expect(rows(fixture).length).toBe(8_000);
-  }, 30_000);
+  });
 
   it('says nothing about truncation for a document that fits', () => {
     const { fixture } = render([1, 2, 3]);

@@ -79,6 +79,7 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
+            "runnerConfig": "vitest-base.config.ts",
             "coverageReporters": [
               "text-summary",
               "html",
