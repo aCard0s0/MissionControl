@@ -84,6 +84,9 @@ public class ContainerUpgrader {
     return new ManagedContainerSpec(
         inspected.getId(), name, imageParts[1], inspected.getImageId(), labels,
         hostConfig == null || hostConfig.getBinds() == null ? List.of() : List.of(hostConfig.getBinds()),
+        hostConfig == null ? null : hostConfig.getPortBindings(),
+        config.getExposedPorts() == null ? List.of() : List.of(config.getExposedPorts()),
+        hostConfig != null && Boolean.TRUE.equals(hostConfig.getPublishAllPorts()),
         hostConfig == null ? null : hostConfig.getRestartPolicy(),
         config.getCmd() == null ? null : List.of(config.getCmd()),
         config.getEntrypoint() == null ? null : List.of(config.getEntrypoint()),
@@ -119,8 +122,8 @@ public class ContainerUpgrader {
 
   /**
    * Moves a managed container onto another tag of the Hermes image, keeping its
-   * name, labels, networks and — crucially — its data volume, so profiles, souls,
-   * skills and credentials survive.
+   * name, labels, networks, published ports and — crucially — its data volume, so
+   * profiles, souls, skills and credentials survive.
    *
    * <p>The old container is renamed aside rather than removed, and is only
    * dropped once the replacement passes its readiness checks. That keeps a real
@@ -214,11 +217,16 @@ public class ContainerUpgrader {
     HostConfig hostConfig = HostConfig.newHostConfig().withBinds(spec.binds().toArray(new Bind[0]));
     if (spec.restartPolicy() != null) hostConfig.withRestartPolicy(spec.restartPolicy());
     if (spec.primaryNetwork() != null) hostConfig.withNetworkMode(spec.primaryNetwork());
+    // an operator's own `-p` — the documented way to reach a webhook listener — is a create-time
+    // setting, so it is gone for good if the replacement does not carry it
+    if (spec.portBindings() != null) hostConfig.withPortBindings(spec.portBindings());
+    if (spec.publishAllPorts()) hostConfig.withPublishAllPorts(true);
 
     var create = client.createContainerCmd(image)
         .withName(spec.name())
         .withLabels(spec.labels())
         .withHostConfig(hostConfig);
+    if (!spec.exposedPorts().isEmpty()) create.withExposedPorts(spec.exposedPorts());
     if (spec.cmd() != null) create.withCmd(spec.cmd());
     if (spec.entrypoint() != null) create.withEntrypoint(spec.entrypoint());
     if (spec.env() != null) create.withEnv(spec.env());

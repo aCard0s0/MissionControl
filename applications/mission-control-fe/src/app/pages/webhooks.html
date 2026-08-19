@@ -119,8 +119,9 @@
         @if (!listenerOf(w.agentId)?.published) {
           <p class="lock-hint warn">
             Nothing outside the docker network can reach this yet — Mission Control does not
-            publish an agent port. Expose the listener yourself, or run the sender inside the
-            same network.
+            publish an agent port. Expose the listener yourself with
+            <code class="mono">-p 127.0.0.1:{{ listenerPort(w.agentId) }}:{{ listenerPort(w.agentId) }}</code>
+            when the container is next recreated, or run the sender inside the same network.
           </p>
         }
         @if (tested()[w.name]; as output) {

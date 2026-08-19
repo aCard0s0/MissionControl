@@ -6,6 +6,9 @@ import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
 
+/** Hermes' own default webhook listener port, mirrored from `HermesWebhooks.DEFAULT_PORT`. */
+const DEFAULT_WEBHOOK_PORT = 8644;
+
 /**
  * Inbound webhooks — routes that wake a profile when something posts to them.
  *
@@ -63,6 +66,12 @@ export class WebhooksPage {
 
   protected listenerOf(agentId: string) {
     return this.store.webhookListenerOf(agentId);
+  }
+
+  /** The port a `-p` would have to map. Hermes' own default stands in when the listener
+   *  config records none, which is what hermes itself would bind. */
+  protected listenerPort(agentId: string): number {
+    return this.listenerOf(agentId)?.port ?? DEFAULT_WEBHOOK_PORT;
   }
 
   protected async toggleListener(agentId: string, enabled: boolean): Promise<void> {

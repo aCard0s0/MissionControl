@@ -1,14 +1,7 @@
-// The MCP catalog entry form. `.scrim`, `.modal`, `.panel-h`, `.btn`, `.input`,
-// `.select`, `.field` and `.chip` are global (src/styles.scss); everything the
-// form lays out itself lives here.
+// The MCP catalog entry form. `.scrim`, `.modal`, `.modal-b`, `.modal-actions`,
+// `.panel-h`, `.btn`, `.input`, `.select`, `.field` and `.chip` are global
+// (src/styles.scss); everything the form lays out itself lives here.
 .editor-modal { width: min(780px, calc(100vw - 48px)); }
-.modal-b {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  > p { margin: 0; }
-}
 .form-grid { display: grid; gap: 12px; }
 .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-grid.transport-url { grid-template-columns: 140px 1fr; }
@@ -60,7 +53,6 @@
   white-space: nowrap;
   input { accent-color: var(--acc); }
 }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 
 @media (max-width: 760px) {
   .editor-modal { width: 94vw; }

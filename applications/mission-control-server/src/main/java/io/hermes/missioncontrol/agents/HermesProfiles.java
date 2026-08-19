@@ -34,6 +34,7 @@ import org.springframework.stereotype.Service;
  *   <li>{@link HermesSessions} — the conversation store in {@code state.db}
  *   <li>{@link HermesGatewayLogs} — the per-profile s6 gateway log
  *   <li>{@link HermesIntegrations} — the platforms in {@code gateway_state.json}
+ *   <li>{@link ProfileInventory} — which profiles the container has at all
  * </ul>
  *
  * <p>The mutating endpoints all return the whole profile, so each one reads as
@@ -51,6 +52,7 @@ public class HermesProfiles {
   private final HermesSessions sessions;
   private final HermesGatewayLogs gatewayLogs;
   private final HermesIntegrations integrations;
+  private final ProfileInventory inventory;
 
   public HermesProfiles(
       HermesContainerFiles files,
@@ -60,7 +62,8 @@ public class HermesProfiles {
       HermesProfileMcp mcp,
       HermesSessions sessions,
       HermesGatewayLogs gatewayLogs,
-      HermesIntegrations integrations) {
+      HermesIntegrations integrations,
+      ProfileInventory inventory) {
     this.files = files;
     this.env = env;
     this.modelConfig = modelConfig;
@@ -69,6 +72,7 @@ public class HermesProfiles {
     this.sessions = sessions;
     this.gatewayLogs = gatewayLogs;
     this.integrations = integrations;
+    this.inventory = inventory;
   }
 
   // ── inventory ──────────────────────────────────────────────────────────────
@@ -76,7 +80,7 @@ public class HermesProfiles {
   public List<AgentProfileDto> list(String url, String containerId) {
     try {
       List<AgentProfileDto> profiles = new ArrayList<>();
-      for (String name : listProfileNames(url, containerId)) {
+      for (String name : inventory.names(url, containerId)) {
         profiles.add(readProfile(url, containerId, name));
       }
       return profiles;
@@ -90,20 +94,6 @@ public class HermesProfiles {
   /** Reads a single profile's current state (config, soul, memory, skills, mcp). */
   public AgentProfileDto get(String url, String containerId, String name) {
     return readProfile(url, containerId, name);
-  }
-
-  private List<String> listProfileNames(String url, String containerId) {
-    List<String> names = new ArrayList<>();
-    if (files.dirExists(url, containerId, ProfilePaths.HERMES_HOME)) {
-      names.add("default");
-    }
-    var ls = files.exec(url, containerId, List.of(
-        "sh", "-lc", "ls -1 " + ProfilePaths.PROFILES_DIR + " 2>/dev/null || true"));
-    for (String name : HermesContainerFiles.lines(ls.stdout())) {
-      if ("default".equals(name)) continue;
-      if (ProfilePaths.isValidName(name)) names.add(name);
-    }
-    return names;
   }
 
   private AgentProfileDto readProfile(String url, String containerId, String name) {

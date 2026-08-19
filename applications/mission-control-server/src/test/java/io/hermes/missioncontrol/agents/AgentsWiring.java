@@ -45,6 +45,7 @@ final class AgentsWiring {
         mcp,
         new HermesSessions(files, json),
         new HermesGatewayLogs(files),
-        new HermesIntegrations(files, json));
+        new HermesIntegrations(files, json),
+        new ProfileInventory(files));
   }
 }
