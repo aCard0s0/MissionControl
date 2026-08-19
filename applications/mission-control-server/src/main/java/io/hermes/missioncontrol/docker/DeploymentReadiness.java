@@ -68,12 +68,15 @@ public class DeploymentReadiness {
       dockerExec.runAsUser(
           host, containerId, "hermes", command, "Hermes deployment readiness",
           true, false, Duration.ofSeconds(45));
-    } catch (UpstreamUnavailableException already) {
-      throw already;
-    } catch (RuntimeException notReady) {
-      // A non-zero readiness exit is a bare RuntimeException, which the advice answers as
-      // 500 with a stack trace — for the same operational outcome the checks two lines
-      // above and below report as 503. A gateway that is slow to come up is not a defect.
+    } catch (ContainerCommandFailedException notReady) {
+      // The script exits non-zero for an unreadable profile file or a gateway that never
+      // reports ready. Both are 503 — the same status the checks two lines above and below
+      // report for the same operational outcome — rather than the 400 a rejected command
+      // means everywhere else. A gateway that is slow to come up is not a bad request.
+      //
+      // Only this exception is translated: anything else the exec seam raises already carries
+      // its own honest status, and the blanket catch this replaced turned genuine defects
+      // into 503 as well.
       throw new UpstreamUnavailableException(
           "Hermes readiness checks failed: " + notReady.getMessage(), notReady);
     }

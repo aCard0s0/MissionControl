@@ -151,12 +151,20 @@ public class DockerExecService {
     return false;
   }
 
-  static RuntimeException commandFailure(
+  /**
+   * The failure a non-zero exit becomes. Typed rather than a bare {@code RuntimeException}, which
+   * no advice matched and the HTTP catch-all therefore answered as a 500 defect — see
+   * {@link ContainerCommandFailedException}.
+   */
+  static ContainerCommandFailedException commandFailure(
       String operation, int exitCode, boolean sensitive, String stdout, String stderr) {
-    if (sensitive) return new RuntimeException(operation + " failed with exit code " + exitCode);
+    if (sensitive) {
+      return new ContainerCommandFailedException(
+          operation + " failed with exit code " + exitCode);
+    }
     String detail = stderr.trim().isEmpty() ? stdout.trim() : stderr.trim();
     if (detail.isEmpty()) detail = "exit code " + exitCode;
     if (detail.length() > 500) detail = detail.substring(0, 500);
-    return new RuntimeException(operation + " failed: " + detail);
+    return new ContainerCommandFailedException(operation + " failed: " + detail);
   }
 }
