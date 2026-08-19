@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { McpCatalogServer } from '../core/models';
 import {
-  McpEditorDraft, applyMcpKindDefaults, httpEndpointValid, mcpDraftFromServer, mcpDraftToInput,
-  mcpDraftValid, newMcpDraft, splitMcpLines,
+  McpEditorDraft, applyMcpKindDefaults, mcpDraftFromServer, mcpDraftToInput, mcpDraftValid,
+  newMcpDraft, splitMcpLines,
 } from './mcp-editor';
 
 const draft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
@@ -18,15 +18,6 @@ describe('MCP Servers editor', () => {
   it('keeps list-form commands without invoking a shell parser', () => {
     expect(splitMcpLines(' node\n--message=hello world\n\n1100 '))
       .toEqual(['node', '--message=hello world', '1100']);
-  });
-
-  it('only accepts HTTP(S) endpoints', () => {
-    expect(httpEndpointValid('https://mcp.example.test/mcp')).toBe(true);
-    expect(httpEndpointValid('http://127.0.0.1:1100/sse')).toBe(true);
-    expect(httpEndpointValid('file:///etc/passwd')).toBe(false);
-    expect(httpEndpointValid('javascript:alert(1)')).toBe(false);
-    expect(httpEndpointValid('https://user:secret@mcp.example.test/mcp')).toBe(false);
-    expect(httpEndpointValid('https://mcp.example.test/mcp#fragment')).toBe(false);
   });
 
   it('builds a managed structured request and strips response-only secret flags', () => {
@@ -273,14 +264,6 @@ describe('MCP Servers editor drafts', () => {
     expect(mcpDraftFromServer(server).environment[0]).toMatchObject({ set: true });
     expect(mcpDraftFromServer(server, true).environment[0])
       .toMatchObject({ set: false, recoverable: false, value: '' });
-  });
-
-  it('rejects an endpoint carrying credentials, a fragment or the wrong scheme', () => {
-    expect(httpEndpointValid('https://mcp.example.test/mcp')).toBe(true);
-    expect(httpEndpointValid('http://user:pw@mcp.example.test/mcp')).toBe(false);
-    expect(httpEndpointValid('https://mcp.example.test/mcp#frag')).toBe(false);
-    expect(httpEndpointValid('ws://mcp.example.test')).toBe(false);
-    expect(httpEndpointValid('not a url')).toBe(false);
   });
 
   it('rejects a support service whose own healthcheck is malformed', () => {

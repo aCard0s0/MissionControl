@@ -2,12 +2,12 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { HermesStore } from '../core/hermes-store';
 import { clock } from '../core/format';
-import { mcpOperationActive } from '../core/mcp-lifecycle';
+import { mcpDisplayEndpoint, mcpOperationActive } from '../core/mcp/catalog-rules';
 import { McpCatalogKind, McpCatalogServer, McpRetainedResource } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { McpEditorDraft, mcpDraftFromServer, newMcpDraft } from './mcp-editor';
-import { mcpDisplayEndpoint, mcpServerGroups } from './mcp-server-groups';
+import { mcpServerGroups } from './mcp-server-groups';
 import { McpServerEditor } from './mcp-server-editor';
 import { McpServerLogs } from './mcp-server-logs';
 

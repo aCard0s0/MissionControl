@@ -1,11 +1,19 @@
 import {
+  duplicateCatalogName, httpEndpointValid, mcpConfigEntriesValid, mcpHealthcheckValid,
+  mcpPathValid, mcpPortValid, mcpSupportServiceNameValid, mcpVolumeValid,
+} from '../core/mcp/catalog-rules';
+import {
   McpCatalogKind, McpCatalogServer, McpCatalogServerInput, McpConfigEntry, McpHealthcheck,
   McpNamedVolume, McpTransport, McpSupportService,
 } from '../core/models';
 
 // The MCP Servers editor, minus the UI: what a draft is, how a stored server
-// becomes one, what makes it valid, and what the backend gets on save. Pure
-// functions, so every rule here is testable without rendering the page.
+// becomes one, and what the backend gets on save. Pure functions, so every rule
+// here is testable without rendering the page.
+//
+// What makes an entry legal is not the editor's to decide — those rules live in
+// core/mcp/catalog-rules and are the same ones the store enforces on save. What
+// is left here is which of them apply to which kind.
 
 /** A config entry being edited. A stored secret arrives with an empty `value`. */
 export interface McpEditorEntry extends McpConfigEntry {
@@ -55,17 +63,6 @@ const DEFAULT_PATH = '/mcp';
 /** One argument per line — never shell-parsed, so a value may contain spaces. */
 export function splitMcpLines(value: string): string[] {
   return value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-}
-
-/** Only plain http(s) endpoints, and nothing carrying credentials or a fragment. */
-export function httpEndpointValid(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return (url.protocol === 'http:' || url.protocol === 'https:') && !!url.hostname
-      && !url.username && !url.password && !url.hash;
-  } catch {
-    return false;
-  }
 }
 
 export function newMcpDraft(kind: McpCatalogKind, hostId: string): McpEditorDraft {
@@ -173,71 +170,32 @@ export function mcpDraftToInput(draft: McpEditorDraft): McpCatalogServerInput {
  */
 export function mcpDraftValid(draft: McpEditorDraft, existing: readonly McpCatalogServer[]): boolean {
   if (!draft.name.trim()) return false;
-  if (existing.some(server =>
-    server.id !== draft.id && server.name.toLowerCase() === draft.name.trim().toLowerCase())) return false;
-  if (!entriesValid(draft.environment, false) || !entriesValid(draft.headers, true)) return false;
+  if (duplicateCatalogName(draft.name, existing, draft.id)) return false;
+  if (!mcpConfigEntriesValid(draft.environment, 'env')
+      || !mcpConfigEntriesValid(draft.headers, 'header')) return false;
   if (draft.kind === 'managed') return managedValid(draft);
   if (draft.kind === 'external') return httpEndpointValid(draft.url.trim());
   return !!draft.stdioCommand.trim();
 }
 
 function managedValid(draft: McpEditorDraft): boolean {
-  if (!draft.hostId || !draft.image.trim() || !portValid(draft.internalPort)) return false;
-  if (draft.publishedPort !== null && !portValid(draft.publishedPort)) return false;
-  if (!draft.path.startsWith('/') || draft.path.startsWith('//') || draft.path.includes('#')) return false;
+  if (!draft.hostId || !draft.image.trim() || !mcpPortValid(draft.internalPort)) return false;
+  if (draft.publishedPort !== null && !mcpPortValid(draft.publishedPort)) return false;
+  if (!mcpPathValid(draft.path)) return false;
   if (draft.crossHostUrl.trim() && !httpEndpointValid(draft.crossHostUrl.trim())) return false;
-  if (draft.volumes.some(volume => !volumeValid(volume))) return false;
-  if (!healthcheckValid(draft.healthcheck)) return false;
+  if (draft.volumes.some(volume => !mcpVolumeValid(volume))) return false;
+  if (!mcpHealthcheckValid(draft.healthcheck)) return false;
   const names = new Set<string>();
   for (const service of draft.supportServices) {
     const name = service.name.trim();
-    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(name) || names.has(name) || !service.image.trim()) return false;
+    if (!mcpSupportServiceNameValid(name) || names.has(name) || !service.image.trim()) return false;
     names.add(name);
-    if (!entriesValid(service.environment, false)
-        || service.volumes.some(volume => !volumeValid(volume))
-        || !healthcheckValid(service.healthcheck ?? null)) return false;
+    if (!mcpConfigEntriesValid(service.environment, 'env')
+        || service.volumes.some(volume => !mcpVolumeValid(volume))
+        || !mcpHealthcheckValid(service.healthcheck ?? null)) return false;
   }
   return true;
 }
-
-/** Header names and environment keys have different legal alphabets, and neither
- *  may repeat. A secret is only valid once it has a value, stored or typed. */
-function entriesValid(entries: McpEditorEntry[], headers: boolean): boolean {
-  const pattern = headers
-    ? /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
-    : /^[A-Za-z_][A-Za-z0-9_]*$/;
-  const seen = new Set<string>();
-  return entries.every(entry => {
-    const key = entry.key.trim();
-    const identity = headers ? key.toLowerCase() : key;
-    if (!key || !pattern.test(key) || seen.has(identity)) return false;
-    seen.add(identity);
-    return !entry.secret || !!entry.value || !!entry.set;
-  });
-}
-
-/** A docker volume name, mounted at an absolute path that can't escape upward —
- *  and never over the daemon socket. */
-function volumeValid(volume: McpNamedVolume): boolean {
-  return /^[a-z0-9][a-z0-9_.-]{0,62}$/.test(volume.name.trim())
-    && volume.target.trim().startsWith('/')
-    && !volume.target.includes('/../')
-    && !volume.target.endsWith('/..')
-    && volume.target.trim() !== '/var/run/docker.sock';
-}
-
-function healthcheckValid(value: McpHealthcheck | null | undefined): boolean {
-  if (!value) return true;
-  if (!value.test.length || !['CMD', 'CMD-SHELL', 'NONE'].includes(value.test[0])) return false;
-  if (value.test[0] === 'NONE' && value.test.length !== 1) return false;
-  const duration = /^[1-9][0-9]*(?:\.[0-9]+)?(?:ns|us|ms|s|m|h)$/;
-  if ([value.interval, value.timeout, value.startPeriod]
-      .some(item => !!item && !duration.test(item))) return false;
-  return value.retries === null || value.retries === undefined
-    || (value.retries >= 1 && value.retries <= 100);
-}
-
-const portValid = (port: number | null): boolean => !!port && port >= 1 && port <= 65_535;
 
 function configEntries(items: McpEditorEntry[]): McpConfigEntry[] {
   return items

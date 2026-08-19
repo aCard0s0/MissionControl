@@ -1,9 +1,9 @@
 import { WritableSignal, signal } from '@angular/core';
 import { McpServerOperation } from '../hermes-api';
-import { mcpOperationActive } from '../mcp-lifecycle';
+import { duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
 import { LogEntry, McpCatalogServer, McpCatalogServerInput, McpRetainedResource } from '../models';
 import { StoreContext } from './store-context';
-import { toMcpCatalogServer } from './wire-mappers';
+import { toMcpCatalogServer, toMcpRetainedResource } from './wire-mappers';
 
 /** Image pulls (notably Playwright) can take minutes on a cold host, so the
  *  operation poll has to outlast the backend's ten-minute Compose timeout. */
@@ -48,14 +48,14 @@ export class McpCatalogStore {
 
   async refreshRetainedResources(): Promise<void> {
     try {
-      this.retainedResources.set(await this.ctx.api.mcp.retainedResources());
+      this.retainedResources.set(
+        (await this.ctx.api.mcp.retainedResources()).map(toMcpRetainedResource));
     } catch { /* retained data inventory is non-critical */ }
   }
 
   /** Create or update a catalog entry. Returns its id, or an empty string. */
   async save(input: McpCatalogServerInput, id?: string): Promise<string> {
-    const duplicate = this.servers().find(server =>
-      server.id !== id && server.name.toLowerCase() === input.name.toLowerCase());
+    const duplicate = duplicateCatalogName(input.name, this.servers(), id);
     if (duplicate) {
       this.ctx.toast(`MCP server name already exists: ${duplicate.name}`);
       return '';
