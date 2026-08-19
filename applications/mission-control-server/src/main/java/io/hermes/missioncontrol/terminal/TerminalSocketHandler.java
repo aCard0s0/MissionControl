@@ -150,7 +150,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
 
     String url;
     try {
-      url = hosts.urlOf(hostId);
+      url = hosts.requireConnected(hostId).url();
     } catch (Exception e) {
       session.close(CloseStatus.POLICY_VIOLATION.withReason("unknown host: " + hostId));
       return;

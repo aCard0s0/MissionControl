@@ -33,21 +33,21 @@ public class DockerExecService {
   }
 
   public ExecResult run(
-      String url,
+      DockerHostRef host,
       String containerId,
       List<String> command,
       String operation,
       boolean check,
       boolean sensitive,
       Duration timeout) {
-    return runAsUser(url, containerId, null, command, operation, check, sensitive, timeout);
+    return runAsUser(host, containerId, null, command, operation, check, sensitive, timeout);
   }
 
   /** Runs a bounded exec as a specific container user. A null/blank user keeps
    * Docker's default user; Hermes profile mutations pass {@code hermes} so
    * files remain readable by the supervised gateway processes. */
   public ExecResult runAsUser(
-      String url,
+      DockerHostRef host,
       String containerId,
       String user,
       List<String> command,
@@ -57,7 +57,7 @@ public class DockerExecService {
       Duration timeout) {
     // streaming: an exec attach is silent for as long as the command runs, so a socket
     // timeout here would cap every caller's budget at the transport's ceiling
-    DockerClient client = clients.streamingForUrl(url);
+    DockerClient client = clients.streamingForUrl(host.url());
     ExecCreateCmdResponse exec;
     try {
       var create = client.execCreateCmd(containerId)

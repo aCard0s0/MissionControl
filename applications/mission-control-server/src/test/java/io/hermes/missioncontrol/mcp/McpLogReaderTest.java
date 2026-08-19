@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.Test;
 class McpLogReaderTest {
 
   private static final String URL = "unix:///sock";
+  private static final DockerHostRef HOST_REF = new DockerHostRef("dh-local", URL);
   private static final String SERVICE = "mcp-files";
   private static final String SUPPORT = ComposeStackRenderer.supportKey(SERVICE, "db");
 
@@ -45,7 +47,7 @@ class McpLogReaderTest {
     compose = mock(ComposeStackManager.class);
     configs = mock(McpConfigStore.class);
     reader = new McpLogReader(hosts, docker, compose, configs);
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
+    when(hosts.ref("dh-local")).thenReturn(new DockerHostRef("dh-local", URL));
   }
 
   @Test
@@ -58,7 +60,7 @@ class McpLogReaderTest {
         assertThrows(IllegalArgumentException.class, () -> reader.logs(external, 100));
 
     assertEquals("logs are available only for managed MCP servers", failure.getMessage());
-    verify(hosts, never()).urlOf(anyString());
+    verify(hosts, never()).ref(anyString());
   }
 
   @Test
@@ -66,10 +68,10 @@ class McpLogReaderTest {
     when(configs.read(any())).thenReturn(config("db"));
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
     when(compose.serviceContainerId("dh-local", SUPPORT)).thenReturn("cid-db");
-    when(docker.logs(URL, "cid-server", 100)).thenReturn(List.of(
+    when(docker.logs(HOST_REF, "cid-server", 100)).thenReturn(List.of(
         new LogLineDto(30, "INFO", "cid-server", "listening on 1100"),
         new LogLineDto(10, "INFO", "cid-server", "starting")));
-    when(docker.logs(URL, "cid-db", 100)).thenReturn(List.of(
+    when(docker.logs(HOST_REF, "cid-db", 100)).thenReturn(List.of(
         new LogLineDto(20, "INFO", "cid-db", "database system is ready")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);
@@ -87,20 +89,20 @@ class McpLogReaderTest {
     when(configs.read(any())).thenReturn(config("db"));
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
     when(compose.serviceContainerId("dh-local", SUPPORT)).thenReturn(null);
-    when(docker.logs(URL, "cid-server", 100))
+    when(docker.logs(HOST_REF, "cid-server", 100))
         .thenReturn(List.of(new LogLineDto(10, "INFO", "cid-server", "starting")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);
 
     assertEquals(1, lines.size());
-    verify(docker, never()).logs(URL, null, 100);
+    verify(docker, never()).logs(HOST_REF, null, 100);
   }
 
   @Test
   void theRequestedTailIsClampedToAUsableRange() {
     when(configs.read(any())).thenReturn(config());
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
-    when(docker.logs(anyString(), anyString(), anyInt())).thenReturn(List.of());
+    when(docker.logs(any(), anyString(), anyInt())).thenReturn(List.of());
 
     reader.logs(row("managed"), 0);
     reader.logs(row("managed"), -5);
@@ -109,16 +111,16 @@ class McpLogReaderTest {
 
     // 0 and negatives would ask the daemon for everything it has; 5000 lines is a response
     // nobody reads and a stream the dashboard has to hold in memory
-    verify(docker, times(2)).logs(URL, "cid-server", 1);
-    verify(docker).logs(URL, "cid-server", 500);
-    verify(docker).logs(URL, "cid-server", 250);
+    verify(docker, times(2)).logs(HOST_REF, "cid-server", 1);
+    verify(docker).logs(HOST_REF, "cid-server", 500);
+    verify(docker).logs(HOST_REF, "cid-server", 250);
   }
 
   @Test
   void aServerWithNoSupportServicesReadsOnlyItsOwnContainer() {
     when(configs.read(any())).thenReturn(config());
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
-    when(docker.logs(URL, "cid-server", 100))
+    when(docker.logs(HOST_REF, "cid-server", 100))
         .thenReturn(List.of(new LogLineDto(10, "INFO", "cid-server", "starting")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);

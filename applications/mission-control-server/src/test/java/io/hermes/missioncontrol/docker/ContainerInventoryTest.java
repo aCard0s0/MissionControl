@@ -16,6 +16,7 @@ import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,7 @@ import org.mockito.Answers;
 
 class ContainerInventoryTest {
 
+  private static final DockerHostRef HOST = new DockerHostRef("local", "unix:///sock");
   /** The Engine substitutes this for a reference it can no longer resolve. */
   private static final String BARE_IMAGE_ID =
       "sha256:e5b3a1c7d90f4b2e6a8c0d1f3b5a7c9e1d3f5b7a9c1e3d5f7b9a1c3e5d7f9b1c";
@@ -49,9 +51,9 @@ class ContainerInventoryTest {
 
     // the parked original runs the same image as the live one, so only the name
     // tells them apart — showing both would offer the operator two identical cards
-    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers(HOST, false)));
     assertEquals(List.of("demo", "demo-mc-upgrade-0a1b2c3d"),
-        names(subject.listContainers("unix:///sock", "local", true)));
+        names(subject.listContainers(HOST, true)));
   }
 
   @Test
@@ -60,7 +62,7 @@ class ContainerInventoryTest {
         container("aaaaaaa1111", "/demo", "hermes/image:v1"),
         container("bbbbbbb2222", "/postgres", "other/thing:v1"));
 
-    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers(HOST, false);
 
     assertEquals(List.of("demo"), names(fleet));
     assertEquals("hermes/image", fleet.get(0).image());
@@ -72,7 +74,7 @@ class ContainerInventoryTest {
     stubListing(container("aaaaaaa1111", "/demo",
         "hermes/image@sha256:9b2c1e4f6a8d0c3e5f7a9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f01"));
 
-    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers(HOST, false);
 
     // the digest carries its own ':', so a repository comparison that does not strip
     // it first hides every container this dashboard pinned by digest
@@ -85,7 +87,7 @@ class ContainerInventoryTest {
   void aDockerHubQualifiedReferenceMatchesTheShortConfiguredForm() {
     stubListing(container("aaaaaaa1111", "/demo", "docker.io/hermes/image:v1"));
 
-    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers(HOST, false);
 
     assertEquals(List.of("demo"), names(fleet));
     // the card still shows the reference the daemon reported, registry host included
@@ -101,7 +103,7 @@ class ContainerInventoryTest {
         container("bbbbbbb2222", "/hermes-beta", "acme/other:v1"),
         container("ccccccc3333", "/gamma", "acme/other:v1"));
 
-    List<ContainerDto> fleet = substringInventory.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = substringInventory.listContainers(HOST, false);
 
     // an operator who typed a lowercase filter still expects to see a container whose
     // image was published with capitals
@@ -123,7 +125,7 @@ class ContainerInventoryTest {
     // raced with a removal: the container is gone by the time uptime is read
     stubMissingOnInspect("bbbbbbb2222");
 
-    Map<String, ContainerDto> fleet = byName(subject.listContainers("unix:///sock", "local", false));
+    Map<String, ContainerDto> fleet = byName(subject.listContainers(HOST, false));
 
     assertEquals("running", fleet.get("healthy").status());
     assertEquals("unhealthy", fleet.get("sick").status());
@@ -153,7 +155,7 @@ class ContainerInventoryTest {
     when(unlabelled.getLabels()).thenReturn(null);
     stubListing(seeded, blank, otherLabels, unlabelled);
 
-    Map<String, ContainerDto> fleet = byName(subject.listContainers("unix:///sock", "local", false));
+    Map<String, ContainerDto> fleet = byName(subject.listContainers(HOST, false));
 
     assertEquals(List.of("ops", "research"), fleet.get("seeded").profiles());
     assertEquals(List.of(), fleet.get("blank").profiles());
@@ -167,7 +169,7 @@ class ContainerInventoryTest {
     when(nameless.getNames()).thenReturn(null);
     stubListing(nameless);
 
-    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers(HOST, false);
 
     // a container mid-rename reports no name; dropping the whole listing over it
     // would blank the dashboard
@@ -179,7 +181,7 @@ class ContainerInventoryTest {
   void theShortIdIsTheFirstSevenCharactersOfTheContainerId() {
     stubListing(container("9f3c1a4e8b2d7c05", "/demo", "hermes/image:v1"));
 
-    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers(HOST, false);
 
     assertEquals("9f3c1a4", fleet.get(0).shortId());
     assertEquals("9f3c1a4e8b2d7c05", fleet.get(0).id());
@@ -194,7 +196,7 @@ class ContainerInventoryTest {
     when(unsized.getSizeRootFs()).thenReturn(null);
     stubListing(sized, unsized);
 
-    Map<String, ContainerDto> fleet = byName(subject.listContainers("unix:///sock", "local", false));
+    Map<String, ContainerDto> fleet = byName(subject.listContainers(HOST, false));
 
     assertEquals(1.0, fleet.get("sized").sizeRootFsGb(), 1e-9);
     assertNull(fleet.get("unsized").sizeRootFsGb());
@@ -206,7 +208,7 @@ class ContainerInventoryTest {
     when(agent.getLabels()).thenReturn(Map.of("mc.managed", "true"));
     stubListing(agent);
 
-    List<ContainerDto> fleet = subject.listContainers("unix:///sock", "local", false);
+    List<ContainerDto> fleet = subject.listContainers(HOST, false);
 
     // moving a floating tag during another container's upgrade makes the Engine report this
     // one by image id; that parses as repository "sha256", which matches nothing
@@ -227,7 +229,7 @@ class ContainerInventoryTest {
 
     // nothing ties this one to the configured repository, so claiming it runs Hermes
     // would invent an Agent the operator never deployed
-    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers(HOST, false)));
   }
 
   @Test
@@ -251,9 +253,9 @@ class ContainerInventoryTest {
 
     // a seeding helper runs the Hermes image but is never an Agent; a stray left by a
     // failed deploy still has to be reachable through ?all=true so it can be reaped
-    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers(HOST, false)));
     assertEquals(List.of("demo", "nostalgic_wozniak"),
-        names(subject.listContainers("unix:///sock", "local", true)));
+        names(subject.listContainers(HOST, true)));
   }
 
   private static List<String> names(List<ContainerDto> containers) {
@@ -353,7 +355,7 @@ class ContainerInventoryTest {
     when(managed.getLabels()).thenReturn(Map.of("mc.managed", "true"));
     stubListing(managed);
 
-    assertEquals(List.of("demo"), names(subject.listContainers("unix:///sock", "local", false)));
+    assertEquals(List.of("demo"), names(subject.listContainers(HOST, false)));
   }
 
   @Test
@@ -361,7 +363,7 @@ class ContainerInventoryTest {
     Container foreign = container("bbbbbbb2222", "/someone-elses", BARE_IMAGE_ID);
     stubListing(foreign);
 
-    assertTrue(names(subject.listContainers("unix:///sock", "local", false)).isEmpty());
+    assertTrue(names(subject.listContainers(HOST, false)).isEmpty());
   }
 
   @Test
@@ -370,6 +372,6 @@ class ContainerInventoryTest {
     when(helper.getLabels()).thenReturn(Map.of("mc.bootstrap", "true"));
     stubListing(helper);
 
-    assertTrue(names(subject.listContainers("unix:///sock", "local", false)).isEmpty());
+    assertTrue(names(subject.listContainers(HOST, false)).isEmpty());
   }
 }

@@ -12,6 +12,7 @@ import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,11 +78,11 @@ public class HermesProfiles {
 
   // ── inventory ──────────────────────────────────────────────────────────────
 
-  public List<AgentProfileDto> list(String url, String containerId) {
+  public List<AgentProfileDto> list(DockerHostRef host, String containerId) {
     try {
       List<AgentProfileDto> profiles = new ArrayList<>();
-      for (String name : inventory.names(url, containerId)) {
-        profiles.add(readProfile(url, containerId, name));
+      for (String name : inventory.names(host, containerId)) {
+        profiles.add(readProfile(host, containerId, name));
       }
       return profiles;
     } catch (ConflictException stopped) {
@@ -92,21 +93,21 @@ public class HermesProfiles {
   }
 
   /** Reads a single profile's current state (config, soul, memory, skills, mcp). */
-  public AgentProfileDto get(String url, String containerId, String name) {
-    return readProfile(url, containerId, name);
+  public AgentProfileDto get(DockerHostRef host, String containerId, String name) {
+    return readProfile(host, containerId, name);
   }
 
-  private AgentProfileDto readProfile(String url, String containerId, String name) {
+  private AgentProfileDto readProfile(DockerHostRef host, String containerId, String name) {
     String dir = ProfilePaths.profileDir(name);
-    String configYaml = files.readFile(url, containerId, dir + "/config.yaml");
-    String soul = files.readFile(url, containerId, dir + "/SOUL.md");
-    String memoryMd = files.readFile(url, containerId, dir + "/MEMORY.md");
-    String envFile = files.readFile(url, containerId, dir + "/.env");
+    String configYaml = files.readFile(host, containerId, dir + "/config.yaml");
+    String soul = files.readFile(host, containerId, dir + "/SOUL.md");
+    String memoryMd = files.readFile(host, containerId, dir + "/MEMORY.md");
+    String envFile = files.readFile(host, containerId, dir + "/.env");
     Map<?, ?> configMap = YamlValues.parseMap(configYaml);
     ConfigInfo config = modelConfig.parseConfig(configMap);
-    List<SkillDto> skillList = skills.list(url, containerId, name, configMap);
-    List<AgentMcpServerDto> mcpList = mcp.list(url, containerId, name, configMap);
-    List<IntegrationDto> integrationList = integrations.list(url, containerId, name);
+    List<SkillDto> skillList = skills.list(host, containerId, name, configMap);
+    List<AgentMcpServerDto> mcpList = mcp.list(host, containerId, name, configMap);
+    List<IntegrationDto> integrationList = integrations.list(host, containerId, name);
     return new AgentProfileDto(
         ProfilePaths.profileId(containerId, name),
         containerId,
@@ -128,16 +129,16 @@ public class HermesProfiles {
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
-  public AgentProfileDto create(String url, CreateAgentRequest request) {
-    String profileName = createProfileBare(url, request);
-    return readProfile(url, request.containerId(), profileName);
+  public AgentProfileDto create(DockerHostRef host, CreateAgentRequest request) {
+    String profileName = createProfileBare(host, request);
+    return readProfile(host, request.containerId(), profileName);
   }
 
   /** Creates and configures the profile but skips the read-back. The template
    *  create/deploy flow re-reads the profile after layering its blueprint, so the
    *  read here would be thrown away — callers that need the DTO use {@link #create}.
    *  Returns the created profile name. */
-  public String createProfileBare(String url, CreateAgentRequest request) {
+  public String createProfileBare(DockerHostRef host, CreateAgentRequest request) {
     String profileName = request.name();
     if (!ProfilePaths.isValidName(profileName)) {
       throw new IllegalArgumentException("invalid profile name");
@@ -150,21 +151,21 @@ public class HermesProfiles {
     }
     boolean created = false;
     try {
-      files.exec(url, containerId, command);
+      files.exec(host, containerId, command);
       created = true;
       ModelTarget auxiliary = HermesModelConfig.auxiliaryTarget(
           request.provider(), request.model(), request.baseUrl(), request.auxiliary());
-      modelConfig.write(url, containerId, profileName,
+      modelConfig.write(host, containerId, profileName,
           request.provider(), request.model(), request.baseUrl(), auxiliary);
-      modelConfig.assertConfigured(url, containerId, profileName);
-      env.seedIfMissing(url, containerId, profileName);
-      modelConfig.writeApiKey(url, containerId, profileName, request.provider(), request.apiKey());
-      modelConfig.writeAuxiliaryApiKey(url, containerId, profileName, auxiliary, request.auxiliary());
+      modelConfig.assertConfigured(host, containerId, profileName);
+      env.seedIfMissing(host, containerId, profileName);
+      modelConfig.writeApiKey(host, containerId, profileName, request.provider(), request.apiKey());
+      modelConfig.writeAuxiliaryApiKey(host, containerId, profileName, auxiliary, request.auxiliary());
       return profileName;
     } catch (RuntimeException failure) {
       if (created) {
         try {
-          delete(url, containerId, profileName);
+          delete(host, containerId, profileName);
         } catch (RuntimeException cleanup) {
           failure.addSuppressed(cleanup);
         }
@@ -173,125 +174,125 @@ public class HermesProfiles {
     }
   }
 
-  public void delete(String url, String containerId, String name) {
-    files.exec(url, containerId, List.of("hermes", "profile", "delete", name, "--yes"));
-    mcp.evictProfile(url, containerId, name);
+  public void delete(DockerHostRef host, String containerId, String name) {
+    files.exec(host, containerId, List.of("hermes", "profile", "delete", name, "--yes"));
+    mcp.evictProfile(host, containerId, name);
   }
 
   // ── documents ──────────────────────────────────────────────────────────────
 
-  public void updateSoul(String url, String containerId, String name, String soul) {
-    writeProfileFile(url, containerId, name, "SOUL.md", soul);
+  public void updateSoul(DockerHostRef host, String containerId, String name, String soul) {
+    writeProfileFile(host, containerId, name, "SOUL.md", soul);
   }
 
-  public void updateMemory(String url, String containerId, String name, String memory) {
-    writeProfileFile(url, containerId, name, "MEMORY.md", memory);
+  public void updateMemory(DockerHostRef host, String containerId, String name, String memory) {
+    writeProfileFile(host, containerId, name, "MEMORY.md", memory);
   }
 
   private void writeProfileFile(
-      String url, String containerId, String name, String fileName, String content) {
-    String path = files.requireProfileDir(url, containerId, name) + "/" + fileName;
-    files.writeFile(url, containerId, path, content == null ? "" : content);
+      DockerHostRef host, String containerId, String name, String fileName, String content) {
+    String path = files.requireProfileDir(host, containerId, name) + "/" + fileName;
+    files.writeFile(host, containerId, path, content == null ? "" : content);
   }
 
-  public AgentProfileDto updateConfig(String url, String containerId, String name, String configYaml) {
+  public AgentProfileDto updateConfig(DockerHostRef host, String containerId, String name, String configYaml) {
     YamlValues.requireMapping(configYaml, "config.yaml must be a YAML mapping");
-    writeProfileFile(url, containerId, name, "config.yaml", configYaml);
-    return readProfile(url, containerId, name);
+    writeProfileFile(host, containerId, name, "config.yaml", configYaml);
+    return readProfile(host, containerId, name);
   }
 
   // ── skills ─────────────────────────────────────────────────────────────────
 
   public AgentProfileDto setSkillEnabled(
-      String url, String containerId, String profileName, String skillName, boolean enabled) {
-    skills.setEnabled(url, containerId, profileName, skillName, enabled);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, String skillName, boolean enabled) {
+    skills.setEnabled(host, containerId, profileName, skillName, enabled);
+    return readProfile(host, containerId, profileName);
   }
 
   public AgentProfileDto installSkill(
-      String url, String containerId, String profileName, String skillId) {
-    skills.install(url, containerId, profileName, skillId);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, String skillId) {
+    skills.install(host, containerId, profileName, skillId);
+    return readProfile(host, containerId, profileName);
   }
 
   public AgentProfileDto uninstallSkill(
-      String url, String containerId, String profileName, String skillName) {
-    skills.uninstall(url, containerId, profileName, skillName);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, String skillName) {
+    skills.uninstall(host, containerId, profileName, skillName);
+    return readProfile(host, containerId, profileName);
   }
 
   public SkillContentDto readSkillContent(
-      String url, String containerId, String profileName, String skillName) {
-    return skills.readContent(url, containerId, profileName, skillName);
+      DockerHostRef host, String containerId, String profileName, String skillName) {
+    return skills.readContent(host, containerId, profileName, skillName);
   }
 
   /** Overwrites a skill's SKILL.md, then re-reads the profile so the refreshed
    *  name/version/description/source flow back to the caller. */
   public AgentProfileDto updateSkillContent(
-      String url, String containerId, String profileName, String skillName, String body) {
-    skills.updateContent(url, containerId, profileName, skillName, body);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, String skillName, String body) {
+    skills.updateContent(host, containerId, profileName, skillName, body);
+    return readProfile(host, containerId, profileName);
   }
 
   // ── MCP servers ────────────────────────────────────────────────────────────
 
   public AgentProfileDto addMcpServer(
-      String url, String containerId, String profileName, AddMcpServerRequest request) {
-    mcp.add(url, containerId, profileName, request);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, AddMcpServerRequest request) {
+    mcp.add(host, containerId, profileName, request);
+    return readProfile(host, containerId, profileName);
   }
 
   public AgentProfileDto updateMcpServer(
-      String url, String containerId, String profileName, String serverName,
+      DockerHostRef host, String containerId, String profileName, String serverName,
       AddMcpServerRequest request) {
-    mcp.update(url, containerId, profileName, serverName, request);
-    return readProfile(url, containerId, profileName);
+    mcp.update(host, containerId, profileName, serverName, request);
+    return readProfile(host, containerId, profileName);
   }
 
   public AgentProfileDto setMcpServerEnabled(
-      String url, String containerId, String profileName, String serverName, boolean enabled) {
-    mcp.setEnabled(url, containerId, profileName, serverName, enabled);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, String serverName, boolean enabled) {
+    mcp.setEnabled(host, containerId, profileName, serverName, enabled);
+    return readProfile(host, containerId, profileName);
   }
 
   public AgentProfileDto removeMcpServer(
-      String url, String containerId, String profileName, String serverName) {
-    mcp.remove(url, containerId, profileName, serverName);
-    return readProfile(url, containerId, profileName);
+      DockerHostRef host, String containerId, String profileName, String serverName) {
+    mcp.remove(host, containerId, profileName, serverName);
+    return readProfile(host, containerId, profileName);
   }
 
   /** Probes a single MCP server with Hermes' own MCP initialize handshake. */
   public McpTestResult testMcpServer(
-      String url, String containerId, String profileName, String serverName) {
-    return mcp.test(url, containerId, profileName, serverName);
+      DockerHostRef host, String containerId, String profileName, String serverName) {
+    return mcp.test(host, containerId, profileName, serverName);
   }
 
   // ── observability ──────────────────────────────────────────────────────────
 
-  public List<IntegrationDto> integrations(String url, String containerId, String profileName) {
-    return integrations.list(url, containerId, profileName);
+  public List<IntegrationDto> integrations(DockerHostRef host, String containerId, String profileName) {
+    return integrations.list(host, containerId, profileName);
   }
 
   /** Reads the profile-specific s6 gateway log, including rotated files, rather
    * than reusing Docker's container-wide stdout/stderr stream. */
-  public List<LogLineDto> logs(String url, String containerId, String profileName, int tail) {
-    return gatewayLogs.read(url, containerId, profileName, tail);
+  public List<LogLineDto> logs(DockerHostRef host, String containerId, String profileName, int tail) {
+    return gatewayLogs.read(host, containerId, profileName, tail);
   }
 
   // ── sessions ───────────────────────────────────────────────────────────────
 
-  public List<SessionDto> listSessions(String url, String containerId, String profileName) {
-    return sessions.list(url, containerId, profileName);
+  public List<SessionDto> listSessions(DockerHostRef host, String containerId, String profileName) {
+    return sessions.list(host, containerId, profileName);
   }
 
   /** Returns the chat history (messages) for a session as a JSON array string. */
   public String readSessionMessages(
-      String url, String containerId, String profileName, String sessionId) {
-    return sessions.readMessages(url, containerId, profileName, sessionId);
+      DockerHostRef host, String containerId, String profileName, String sessionId) {
+    return sessions.readMessages(host, containerId, profileName, sessionId);
   }
 
   public void deleteSession(
-      String url, String containerId, String profileName, String sessionId) {
-    sessions.delete(url, containerId, profileName, sessionId);
+      DockerHostRef host, String containerId, String profileName, String sessionId) {
+    sessions.delete(host, containerId, profileName, sessionId);
   }
 }

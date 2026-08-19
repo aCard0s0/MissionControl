@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,12 @@ import org.springframework.stereotype.Component;
  * <p>Shared by the controllers under {@code /api/agents/**} so the host check cannot be
  * forgotten on a new endpoint — reaching a container through an unconnected host is the
  * failure that check exists to turn into a 503 rather than a stack trace.
+ *
+ * <p>{@link #host} is the whole of that resolution. It used to be two methods — one
+ * handing back a bare url, one asserting connectedness for endpoints whose service
+ * re-resolved the host itself from an id — which meant a single request could probe the
+ * host and then resolve it again unprobed. A {@link DockerHostRef} carries both halves, so
+ * there is one call and nothing left to re-resolve downstream.
  */
 @Component
 class AgentEndpoints {
@@ -25,18 +32,12 @@ class AgentEndpoints {
     this.mcpCatalog = mcpCatalog;
   }
 
-  /** The daemon URL for a connected host. Throws before any container is touched. */
-  String url(String hostId) {
-    return hosts.requireConnected(hostId).url();
+  /** The connected host. Throws before any container is touched. */
+  DockerHostRef host(String hostId) {
+    return hosts.requireConnected(hostId);
   }
 
-  /** Asserts the host is reachable without needing its URL — for endpoints that delegate
-   *  to a service holding its own host registry. */
-  void requireConnected(String hostId) {
-    hosts.requireConnected(hostId);
-  }
-
-  AgentProfileDto linked(String hostId, AgentProfileDto profile) {
-    return mcpCatalog.enrich(hostId, profile);
+  AgentProfileDto linked(DockerHostRef host, AgentProfileDto profile) {
+    return mcpCatalog.enrich(host, profile);
   }
 }

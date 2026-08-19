@@ -8,6 +8,7 @@ import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.api.UpdateConfigRequest;
 import io.hermes.missioncontrol.agents.api.UpdateSoulRequest;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -52,29 +53,30 @@ public class AgentsController {
 
   @GetMapping
   public List<AgentProfileDto> list(@RequestParam String hostId, @RequestParam String containerId) {
-    return profiles.list(endpoints.url(hostId), containerId).stream()
-        .map(profile -> endpoints.linked(hostId, profile))
+    DockerHostRef host = endpoints.host(hostId);
+    return profiles.list(host, containerId).stream()
+        .map(profile -> endpoints.linked(host, profile))
         .toList();
   }
 
   @PostMapping
   public AgentProfileDto create(@Valid @RequestBody CreateAgentRequest request) {
-    String hostId = request.hostId();
-    String url = endpoints.url(hostId);
+    DockerHostRef host = endpoints.host(request.hostId());
     String templateId = request.fromTemplateId();
     if (templateId != null && !templateId.isBlank()) {
       // Create the request-configured base and layer the template's
       // soul/memory/skills/mcp/secrets as one owned, rollback-safe operation.
-      return endpoints.linked(hostId, templates.createFromTemplate(templateId, url, request));
+      return endpoints.linked(host, templates.createFromTemplate(templateId, host, request));
     }
-    return endpoints.linked(hostId, profiles.create(url, request));
+    return endpoints.linked(host, profiles.create(host, request));
   }
 
   @DeleteMapping("/{hostId}/{containerId}/{name}")
   public void delete(
       @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    profiles.delete(endpoints.url(hostId), containerId, name);
-    mcpCatalog.deleteAgentLinks(hostId, containerId, name);
+    DockerHostRef host = endpoints.host(hostId);
+    profiles.delete(host, containerId, name);
+    mcpCatalog.deleteAgentLinks(host, containerId, name);
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/soul")
@@ -83,7 +85,8 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateSoulRequest request) {
-    profiles.updateSoul(endpoints.url(hostId), containerId, name, request.soul());
+    DockerHostRef host = endpoints.host(hostId);
+    profiles.updateSoul(host, containerId, name, request.soul());
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/config")
@@ -92,8 +95,9 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateConfigRequest request) {
-    return endpoints.linked(hostId, profiles.updateConfig(
-        endpoints.url(hostId), containerId, name, request.configYaml()));
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.updateConfig(
+        host, containerId, name, request.configYaml()));
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/integrations")
@@ -101,7 +105,8 @@ public class AgentsController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return profiles.integrations(endpoints.url(hostId), containerId, name);
+    DockerHostRef host = endpoints.host(hostId);
+    return profiles.integrations(host, containerId, name);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/logs")
@@ -110,6 +115,7 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestParam(defaultValue = "100") int tail) {
-    return profiles.logs(endpoints.url(hostId), containerId, name, tail);
+    DockerHostRef host = endpoints.host(hostId);
+    return profiles.logs(host, containerId, name, tail);
   }
 }

@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.fleet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -17,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.ContainerUpdateService;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.docker.StatsDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
@@ -38,7 +40,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  */
 class ContainersControllerTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  /** The ref the controller builds from a listed host row. */
+  private static DockerHostRef ref(String hostId) {
+    return new DockerHostRef(hostId, HOST.url());
+  }
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
 
   private DockerGateway docker;
   private HostService hosts;
@@ -68,9 +75,9 @@ class ContainersControllerTest {
   @Test
   void listSkipsHostsThatAreNotConnected() throws Exception {
     when(hosts.list()).thenReturn(List.of(
-        host("dh-up", URL, "connected"),
-        host("dh-down", "tcp://10.0.0.7:2375", "error")));
-    when(docker.listContainers(URL, "dh-up", false)).thenReturn(List.of(container("abc123", "dh-up")));
+        host("dh-up", HOST.url(), "connected"),
+        host("dh-down", HOST.url(), "error")));
+    when(docker.listContainers(ref("dh-up"), false)).thenReturn(List.of(container("abc123", "dh-up")));
 
     mvc.perform(get("/api/containers"))
         .andExpect(status().isOk())
@@ -78,18 +85,18 @@ class ContainersControllerTest {
 
     // the down host's status is already visible on /api/hosts; probing it here would
     // just make the inventory call as slow as the slowest dead daemon
-    verify(docker).listContainers(URL, "dh-up", false);
-    verify(docker, org.mockito.Mockito.never()).listContainers(eq("tcp://10.0.0.7:2375"), anyString(), anyBoolean());
+    verify(docker).listContainers(ref("dh-up"), false);
+    verify(docker, org.mockito.Mockito.never()).listContainers(eq(ref("dh-down")), anyBoolean());
   }
 
   @Test
   void listSurvivesOneHostThrowingAndStillReturnsTheOthers() throws Exception {
     when(hosts.list()).thenReturn(List.of(
-        host("dh-broken", "tcp://10.0.0.7:2375", "connected"),
-        host("dh-ok", URL, "connected")));
-    when(docker.listContainers("tcp://10.0.0.7:2375", "dh-broken", false))
+        host("dh-broken", HOST.url(), "connected"),
+        host("dh-ok", HOST.url(), "connected")));
+    when(docker.listContainers(ref("dh-broken"), false))
         .thenThrow(new RuntimeException("daemon went away mid-list"));
-    when(docker.listContainers(URL, "dh-ok", false)).thenReturn(List.of(container("abc123", "dh-ok")));
+    when(docker.listContainers(ref("dh-ok"), false)).thenReturn(List.of(container("abc123", "dh-ok")));
 
     // a host that dies between the probe and the listing must not take the whole fleet
     // view down with it
@@ -101,25 +108,25 @@ class ContainersControllerTest {
 
   @Test
   void listFiltersToOneHostWhenHostIdIsGivenAndForwardsTheAllFlag() throws Exception {
-    when(hosts.list()).thenReturn(List.of(host("dh-a", URL, "connected"), host("dh-b", "tcp://b:2375", "connected")));
-    when(docker.listContainers(anyString(), anyString(), anyBoolean())).thenReturn(List.of());
+    when(hosts.list()).thenReturn(List.of(host("dh-a", HOST.url(), "connected"), host("dh-b", HOST.url(), "connected")));
+    when(docker.listContainers(any(), anyBoolean())).thenReturn(List.of());
 
     mvc.perform(get("/api/containers").param("hostId", "dh-a").param("all", "true"))
         .andExpect(status().isOk());
 
     ArgumentCaptor<Boolean> all = ArgumentCaptor.forClass(Boolean.class);
-    verify(docker).listContainers(eq(URL), eq("dh-a"), all.capture());
+    verify(docker).listContainers(eq(ref("dh-a")), all.capture());
     // all=true switches off the Hermes name/image filter — a silently dropped flag makes
     // the "show everything" toggle in the UI do nothing
     assertEquals(true, all.getValue());
-    verify(docker, org.mockito.Mockito.never()).listContainers(eq("tcp://b:2375"), anyString(), anyBoolean());
+    verify(docker, org.mockito.Mockito.never()).listContainers(eq(ref("dh-down")), anyBoolean());
   }
 
   @Test
   void statsAndLogsResolveTheHostUrlBeforeReachingTheDaemon() throws Exception {
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
-    when(docker.stats(URL, "abc123")).thenReturn(new StatsDto(12.5, 256, 2048, 1, 2, 99L));
-    when(docker.logs(URL, "abc123", 100)).thenReturn(List.of(new LogLineDto(1L, "info", "stdout", "up")));
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    when(docker.stats(HOST, "abc123")).thenReturn(new StatsDto(12.5, 256, 2048, 1, 2, 99L));
+    when(docker.logs(HOST, "abc123", 100)).thenReturn(List.of(new LogLineDto(1L, "info", "stdout", "up")));
 
     mvc.perform(get("/api/containers/dh-local/abc123/stats"))
         .andExpect(status().isOk())
@@ -130,19 +137,19 @@ class ContainersControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1));
 
-    verify(docker).stats(URL, "abc123");
-    verify(docker).logs(URL, "abc123", 100);
+    verify(docker).stats(HOST, "abc123");
+    verify(docker).logs(HOST, "abc123", 100);
   }
 
   @Test
   void anExplicitTailIsForwardedToTheGateway() throws Exception {
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
-    when(docker.logs(anyString(), anyString(), anyInt())).thenReturn(List.of());
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    when(docker.logs(any(), anyString(), anyInt())).thenReturn(List.of());
 
     mvc.perform(get("/api/containers/dh-local/abc123/logs").param("tail", "500"))
         .andExpect(status().isOk());
 
-    verify(docker).logs(URL, "abc123", 500);
+    verify(docker).logs(HOST, "abc123", 500);
   }
 
   @Test
@@ -165,8 +172,8 @@ class ContainersControllerTest {
         .andExpect(status().isBadRequest());
     verifyNoInteractions(docker);
 
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
-    when(docker.deploy(URL, "dh-local", "scout", "v1", List.of("default"))).thenReturn("newid123");
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    when(docker.deploy(HOST, "scout", "v1", List.of("default"))).thenReturn("newid123");
 
     mvc.perform(post("/api/containers")
             .contentType(MediaType.APPLICATION_JSON)
@@ -183,8 +190,8 @@ class ContainersControllerTest {
         .andExpect(status().isBadRequest());
     verifyNoInteractions(updates);
 
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
-    when(updates.update(URL, "dh-local", "abc123", "v2")).thenReturn("replacement456");
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    when(updates.update(HOST, "abc123", "v2")).thenReturn("replacement456");
 
     // the container id changes on an update, so the caller has to be told the new one
     mvc.perform(post("/api/containers/dh-local/abc123/update")
@@ -196,7 +203,7 @@ class ContainersControllerTest {
 
   @Test
   void anUnknownHostIsANotFound() throws Exception {
-    when(hosts.urlOf("dh-ghost")).thenThrow(new NoSuchElementException("unknown docker host: dh-ghost"));
+    when(hosts.requireConnected("dh-ghost")).thenThrow(new NoSuchElementException("unknown docker host: dh-ghost"));
 
     mvc.perform(get("/api/containers/dh-ghost/abc123/stats"))
         .andExpect(status().isNotFound())
@@ -205,7 +212,7 @@ class ContainersControllerTest {
 
   @Test
   void startStopAndRemoveAllResolveTheHostUrl() throws Exception {
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
 
     mvc.perform(post("/api/containers/dh-local/abc123/start")).andExpect(status().isOk());
     mvc.perform(post("/api/containers/dh-local/abc123/stop")).andExpect(status().isOk());
@@ -213,8 +220,8 @@ class ContainersControllerTest {
             .delete("/api/containers/dh-local/abc123"))
         .andExpect(status().isOk());
 
-    verify(docker).start(URL, "abc123");
-    verify(docker).stop(URL, "abc123");
-    verify(docker).remove(URL, "abc123");
+    verify(docker).start(HOST, "abc123");
+    verify(docker).stop(HOST, "abc123");
+    verify(docker).remove(HOST, "abc123");
   }
 }

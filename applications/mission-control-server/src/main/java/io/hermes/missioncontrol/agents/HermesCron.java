@@ -7,6 +7,7 @@ import io.hermes.missioncontrol.agents.api.CronJobDto;
 import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.UpdateCronJobRequest;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
@@ -53,13 +54,13 @@ public class HermesCron {
   }
 
   /** The schedule, and whether the gateway that fires it is up. */
-  public CronJobsDto list(String url, String containerId, String profileName) {
-    return new CronJobsDto(read(url, containerId, profileName),
-        schedulerRunning(url, containerId, profileName));
+  public CronJobsDto list(DockerHostRef host, String containerId, String profileName) {
+    return new CronJobsDto(read(host, containerId, profileName),
+        schedulerRunning(host, containerId, profileName));
   }
 
   public CronJobsDto create(
-      String url, String containerId, String profileName, CreateCronJobRequest request) {
+      DockerHostRef host, String containerId, String profileName, CreateCronJobRequest request) {
     String schedule = required(request.schedule(), "schedule");
     List<String> command = new ArrayList<>(List.of("cron", "create", schedule));
     if (notBlank(request.prompt())) command.add(request.prompt());
@@ -68,12 +69,12 @@ public class HermesCron {
     if (request.repeat() != null) addOption(command, "--repeat", String.valueOf(request.repeat()));
     for (String skill : skills(request.skills())) addOption(command, "--skill", skill);
 
-    run(url, containerId, profileName, command);
-    return list(url, containerId, profileName);
+    run(host, containerId, profileName, command);
+    return list(host, containerId, profileName);
   }
 
   public CronJobsDto update(
-      String url, String containerId, String profileName, String jobId,
+      DockerHostRef host, String containerId, String profileName, String jobId,
       UpdateCronJobRequest request) {
     List<String> command = new ArrayList<>(List.of("cron", "edit", requireJobId(jobId)));
     addOption(command, "--schedule", request.schedule());
@@ -83,36 +84,36 @@ public class HermesCron {
     if (request.repeat() != null) addOption(command, "--repeat", String.valueOf(request.repeat()));
     // --skill replaces the set, which is what an editor's "these are the skills" means
     for (String skill : skills(request.skills())) addOption(command, "--skill", skill);
-    if (command.size() == 3) return list(url, containerId, profileName);   // nothing to change
+    if (command.size() == 3) return list(host, containerId, profileName);   // nothing to change
 
-    run(url, containerId, profileName, command);
-    return list(url, containerId, profileName);
+    run(host, containerId, profileName, command);
+    return list(host, containerId, profileName);
   }
 
   /** Pauses or resumes one job. Hermes keeps a paused job in the file, disabled. */
   public CronJobsDto setEnabled(
-      String url, String containerId, String profileName, String jobId, boolean enabled) {
-    run(url, containerId, profileName,
+      DockerHostRef host, String containerId, String profileName, String jobId, boolean enabled) {
+    run(host, containerId, profileName,
         List.of("cron", enabled ? "resume" : "pause", requireJobId(jobId)));
-    return list(url, containerId, profileName);
+    return list(host, containerId, profileName);
   }
 
-  public CronJobsDto remove(String url, String containerId, String profileName, String jobId) {
-    run(url, containerId, profileName, List.of("cron", "remove", requireJobId(jobId)));
-    return list(url, containerId, profileName);
+  public CronJobsDto remove(DockerHostRef host, String containerId, String profileName, String jobId) {
+    run(host, containerId, profileName, List.of("cron", "remove", requireJobId(jobId)));
+    return list(host, containerId, profileName);
   }
 
   /** Asks for the job to fire on the next scheduler tick rather than at its schedule. */
-  public CronJobsDto runNow(String url, String containerId, String profileName, String jobId) {
-    run(url, containerId, profileName, List.of("cron", "run", requireJobId(jobId)));
-    return list(url, containerId, profileName);
+  public CronJobsDto runNow(DockerHostRef host, String containerId, String profileName, String jobId) {
+    run(host, containerId, profileName, List.of("cron", "run", requireJobId(jobId)));
+    return list(host, containerId, profileName);
   }
 
   // ── reading ────────────────────────────────────────────────────────────────
 
-  private List<CronJobDto> read(String url, String containerId, String profileName) {
+  private List<CronJobDto> read(DockerHostRef host, String containerId, String profileName) {
     String path = ProfilePaths.cronJobsFile(profileName);
-    String json = files.readFile(url, containerId, path);
+    String json = files.readFile(host, containerId, path);
     if (json == null || json.isBlank()) return List.of();
     List<CronJobDto> jobs = new ArrayList<>();
     try {
@@ -160,9 +161,9 @@ public class HermesCron {
    * an operator cannot see on the page. {@code cron status} exists to answer exactly this,
    * so its one line is read rather than the job table's footer.
    */
-  private boolean schedulerRunning(String url, String containerId, String profileName) {
+  private boolean schedulerRunning(DockerHostRef host, String containerId, String profileName) {
     try {
-      ExecResult result = run(url, containerId, profileName, List.of("cron", "status"), false);
+      ExecResult result = run(host, containerId, profileName, List.of("cron", "status"), false);
       String out = (result.stdout() + result.stderr()).toLowerCase();
       return out.contains("running") && !out.contains("not running");
     } catch (RuntimeException e) {
@@ -174,15 +175,15 @@ public class HermesCron {
   // ── writing ────────────────────────────────────────────────────────────────
 
   private ExecResult run(
-      String url, String containerId, String profileName, List<String> hermesArgs) {
-    return run(url, containerId, profileName, hermesArgs, true);
+      DockerHostRef host, String containerId, String profileName, List<String> hermesArgs) {
+    return run(host, containerId, profileName, hermesArgs, true);
   }
 
   private ExecResult run(
-      String url, String containerId, String profileName, List<String> hermesArgs, boolean check) {
+      DockerHostRef host, String containerId, String profileName, List<String> hermesArgs, boolean check) {
     List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName));
     command.addAll(hermesArgs);
-    return files.exec(url, containerId, command, check);
+    return files.exec(host, containerId, command, check);
   }
 
   private static List<String> skills(List<String> skills) {

@@ -15,6 +15,7 @@ import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.MessagingStatusDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ import org.junit.jupiter.api.Test;
  */
 class HermesSetupTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
   private static final String CONTAINER = "c1";
   private static final String PROFILE = "default";
 
@@ -41,24 +42,24 @@ class HermesSetupTest {
   void setUp() {
     files = mock(HermesContainerFiles.class);
     setup = new HermesSetup(files, mock(HermesEnvFile.class));
-    when(files.fileExists(anyString(), anyString(), anyString())).thenReturn(true);
-    when(files.readFile(anyString(), anyString(), anyString())).thenReturn("");
+    when(files.fileExists(any(), anyString(), anyString())).thenReturn(true);
+    when(files.readFile(any(), anyString(), anyString())).thenReturn("");
     statusOutput("");
   }
 
   private void statusOutput(String stdout) {
-    when(files.exec(anyString(), anyString(), any()))
+    when(files.exec(any(), anyString(), any()))
         .thenReturn(new io.hermes.missioncontrol.docker.DockerExecService.ExecResult(0, stdout, ""));
   }
 
   /** The default profile lives at Hermes' home, not under {@code profiles/} — see
    *  {@link ProfilePaths#profileDir}. */
   private void envFile(String contents) {
-    when(files.readFile(URL, CONTAINER, "/opt/data/.env")).thenReturn(contents);
+    when(files.readFile(HOST, CONTAINER, "/opt/data/.env")).thenReturn(contents);
   }
 
   private AgentSetupDto run() {
-    return setup.setup(URL, CONTAINER, PROFILE);
+    return setup.setup(HOST, CONTAINER, PROFILE);
   }
 
   private static ApiKeyStatusDto key(AgentSetupDto dto, String envVar) {
@@ -198,7 +199,7 @@ class HermesSetupTest {
 
   @Test
   void aFailingStatusCommandDegradesToTheEnvInsteadOfFailingTheRequest() {
-    when(files.exec(anyString(), anyString(), any()))
+    when(files.exec(any(), anyString(), any()))
         .thenThrow(new RuntimeException("container is not running"));
     envFile("OPENAI_API_KEY=sk-still-here-7777");
 
@@ -210,17 +211,17 @@ class HermesSetupTest {
 
   @Test
   void aNamedProfileAsksHermesForThatProfile() {
-    setup.setup(URL, CONTAINER, "scout");
+    setup.setup(HOST, CONTAINER, "scout");
 
     org.mockito.Mockito.verify(files)
-        .exec(URL, CONTAINER, List.of("hermes", "-p", "scout", "status"));
+        .exec(HOST, CONTAINER, List.of("hermes", "-p", "scout", "status"));
   }
 
   @Test
   void theDefaultProfileOmitsTheProfileFlag() {
     run();
 
-    org.mockito.Mockito.verify(files).exec(URL, CONTAINER, List.of("hermes", "status"));
+    org.mockito.Mockito.verify(files).exec(HOST, CONTAINER, List.of("hermes", "status"));
   }
 
   @Test
@@ -260,7 +261,7 @@ class HermesSetupTest {
 
   @Test
   void anAbsentEnvFileReportsNothingSetRatherThanFailing() {
-    when(files.fileExists(anyString(), anyString(), anyString())).thenReturn(false);
+    when(files.fileExists(any(), anyString(), anyString())).thenReturn(false);
     envFile("");
 
     AgentSetupDto dto = run();
@@ -291,7 +292,7 @@ class HermesSetupTest {
   void anEnvKeyThatIsBlankOrMalformedBlocksTheWholeBatch() {
     for (String key : java.util.Arrays.asList("", "   ", "lower_case", "1LEADING", null)) {
       assertThrows(IllegalArgumentException.class,
-          () -> setup.putEnv(URL, CONTAINER, PROFILE, List.of(new EnvEntry(key, "value"))));
+          () -> setup.putEnv(HOST, CONTAINER, PROFILE, List.of(new EnvEntry(key, "value"))));
     }
   }
 
@@ -299,7 +300,7 @@ class HermesSetupTest {
   void aStatusReportThatCouldNotBeReadLeavesEveryProviderUnknownRatherThanFailing() {
     // 'hermes status' fails on a container whose gateway has never started; the .env half of
     // the report is still worth showing
-    when(files.exec(anyString(), anyString(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+    when(files.exec(any(), anyString(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
         .thenThrow(new io.hermes.missioncontrol.errors.UpstreamUnavailableException("exec failed"));
     envFile("ANTHROPIC_API_KEY=sk-ant-abcdefgh\n");
 

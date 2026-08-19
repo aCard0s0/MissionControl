@@ -33,6 +33,7 @@ import com.github.dockerjava.api.model.NetworkSettings;
 import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.api.model.RestartPolicy;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +53,7 @@ import org.mockito.Answers;
  */
 class ContainerUpgraderInspectTest {
 
-  private static final String URL = "unix:///sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///sock");
   private static final String ID = "abc123def456";
   /** The port a profile's webhook listener binds, which is why an Agent gets published at all. */
   private static final ExposedPort WEBHOOK_PORT = ExposedPort.tcp(8644);
@@ -69,7 +70,7 @@ class ContainerUpgraderInspectTest {
     client = mock(DockerClient.class);
     images = mock(ImageStore.class);
     networks = mock(DockerNetworks.class);
-    when(clients.forUrl(URL)).thenReturn(client);
+    when(clients.forUrl(HOST.url())).thenReturn(client);
     upgrader = new ContainerUpgrader(clients,
         new AppProperties("", "unix:///sock", "hermes/agent", "hermes", "test", true),
         images, mock(DeploymentReadiness.class), networks);
@@ -150,7 +151,7 @@ class ContainerUpgraderInspectTest {
     when(inspected.getState()).thenReturn(state);
     inspectReturns(inspected);
 
-    ManagedContainerSpec spec = upgrader.inspectManaged(URL, ID);
+    ManagedContainerSpec spec = upgrader.inspectManaged(HOST, ID);
 
     assertEquals("mc-hermes-demo", spec.name(), "the daemon's leading slash is stripped");
     assertEquals("1.2", spec.tag());
@@ -176,7 +177,7 @@ class ContainerUpgraderInspectTest {
             .withPublishAllPorts(true),
         null, null));
 
-    ManagedContainerSpec spec = upgrader.inspectManaged(URL, ID);
+    ManagedContainerSpec spec = upgrader.inspectManaged(HOST, ID);
 
     assertEquals(1, spec.portBindings().getBindings().size());
     assertTrue(spec.publishAllPorts());
@@ -187,7 +188,7 @@ class ContainerUpgraderInspectTest {
     // a hand-created container may carry no host config, no cmd and no state at all
     inspectReturns(container(managedLabels("mc-hermes-demo"), null, null, null));
 
-    ManagedContainerSpec spec = upgrader.inspectManaged(URL, ID);
+    ManagedContainerSpec spec = upgrader.inspectManaged(HOST, ID);
 
     assertEquals("", spec.name(), "a nameless container is empty, not null");
     assertNull(spec.cmd());
@@ -207,7 +208,7 @@ class ContainerUpgraderInspectTest {
   void aStoppedContainerIsRecordedAsStoppedSoItComesBackParked() {
     inspectReturns(container(managedLabels("mc-hermes-demo"), null, runningState(false), null));
 
-    assertFalse(upgrader.inspectManaged(URL, ID).wasRunning());
+    assertFalse(upgrader.inspectManaged(HOST, ID).wasRunning());
   }
 
   // ── which networks have to be reattached by hand ────────────────────────
@@ -223,7 +224,7 @@ class ContainerUpgraderInspectTest {
     inspectReturns(container(managedLabels("mc-hermes-demo"),
         HostConfig.newHostConfig().withNetworkMode("bridge"), runningState(true), attached));
 
-    Map<String, List<String>> reattach = upgrader.inspectManaged(URL, ID).extraNetworks();
+    Map<String, List<String>> reattach = upgrader.inspectManaged(HOST, ID).extraNetworks();
 
     assertEquals(List.of("mission-control-mcp-net"), List.copyOf(reattach.keySet()));
     // the daemon's auto short-id alias would collide with the replacement's own
@@ -235,14 +236,14 @@ class ContainerUpgraderInspectTest {
     Map<String, ContainerNetwork> attached = new LinkedHashMap<>();
     attached.put("mission-control-mcp-net", network());
     inspectReturns(container(managedLabels("mc-hermes-demo"), null, null, attached));
-    assertEquals(List.of(), upgrader.inspectManaged(URL, ID).extraNetworks()
+    assertEquals(List.of(), upgrader.inspectManaged(HOST, ID).extraNetworks()
         .get("mission-control-mcp-net"));
 
     InspectContainerResponse noNetworkSettings =
         container(managedLabels("mc-hermes-demo"), null, null, null);
     when(noNetworkSettings.getNetworkSettings()).thenReturn(null);
     inspectReturns(noNetworkSettings);
-    assertTrue(upgrader.inspectManaged(URL, ID).extraNetworks().isEmpty());
+    assertTrue(upgrader.inspectManaged(HOST, ID).extraNetworks().isEmpty());
   }
 
   // ── what the replacement is created with ────────────────────────────────
@@ -251,7 +252,7 @@ class ContainerUpgraderInspectTest {
   void theReplacementIsCreatedWithEverySettingTheOriginalHad() {
     CreateContainerCmd create = upgradeHarness(true);
 
-    upgrader.upgrade(URL, ID, "1.3");
+    upgrader.upgrade(HOST, ID, "1.3");
 
     verify(create).withCmd(List.of("gateway", "run"));
     verify(create).withEntrypoint(List.of("/init"));
@@ -260,7 +261,7 @@ class ContainerUpgraderInspectTest {
     verify(create).withWorkingDir("/opt/data");
     verify(create).withExposedPorts(List.of(WEBHOOK_PORT));
     // the user-defined network is reconnected by hand with its aliases
-    verify(networks).connect(URL, "new-id", "mission-control-mcp-net", List.of("mc-hermes-demo"));
+    verify(networks).connect(HOST, "new-id", "mission-control-mcp-net", List.of("mc-hermes-demo"));
     verify(client).startContainerCmd("new-id");
   }
 
@@ -271,7 +272,7 @@ class ContainerUpgraderInspectTest {
     // container by hand — and nothing on the page would say the routes had stopped arriving.
     CreateContainerCmd create = upgradeHarness(true, true);
 
-    upgrader.upgrade(URL, ID, "1.3");
+    upgrader.upgrade(HOST, ID, "1.3");
 
     HostConfig replacement = hostConfigOf(create);
     Ports.Binding[] bound = replacement.getPortBindings().getBindings().get(WEBHOOK_PORT);
@@ -286,7 +287,7 @@ class ContainerUpgraderInspectTest {
     // passing null to withCmd/withUser would be a different container, not the same one
     CreateContainerCmd create = upgradeHarness(false);
 
-    upgrader.upgrade(URL, ID, "1.3");
+    upgrader.upgrade(HOST, ID, "1.3");
 
     verify(create, never()).withCmd(any(List.class));
     verify(create, never()).withEntrypoint(any(List.class));
@@ -310,7 +311,7 @@ class ContainerUpgraderInspectTest {
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private String refused() {
-    return assertThrows(IllegalArgumentException.class, () -> upgrader.inspectManaged(URL, ID))
+    return assertThrows(IllegalArgumentException.class, () -> upgrader.inspectManaged(HOST, ID))
         .getMessage();
   }
 
@@ -441,7 +442,7 @@ class ContainerUpgraderInspectTest {
     when(client.inspectImageCmd(anyString())).thenReturn(inspectImage);
 
     assertThrows(io.hermes.missioncontrol.errors.ResourceConflictException.class,
-        () -> upgrader.upgrade(URL, ID, "1.2"));
+        () -> upgrader.upgrade(HOST, ID, "1.2"));
 
     verify(create, never()).exec();
   }
@@ -456,9 +457,9 @@ class ContainerUpgraderInspectTest {
         .thenReturn(newImage());
     when(client.inspectImageCmd(anyString())).thenReturn(inspectImage);
 
-    upgrader.upgrade(URL, ID, "1.3");
+    upgrader.upgrade(HOST, ID, "1.3");
 
-    verify(images).pull(URL, "hermes/agent", "1.3");
+    verify(images).pull(HOST, "hermes/agent", "1.3");
     verify(create).exec();
   }
 
@@ -470,7 +471,7 @@ class ContainerUpgraderInspectTest {
     when(client.startContainerCmd("new-id"))
         .thenThrow(new IllegalStateException("replacement will not start"));
 
-    assertThrows(IllegalStateException.class, () -> upgrader.upgrade(URL, ID, "1.3"));
+    assertThrows(IllegalStateException.class, () -> upgrader.upgrade(HOST, ID, "1.3"));
 
     verify(client).removeContainerCmd("new-id");
     verify(client, times(2)).renameContainerCmd(ID);   // parked aside, then renamed back

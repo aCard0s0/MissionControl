@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import static io.hermes.missioncontrol.agents.FakeContainer.CONTAINER;
-import static io.hermes.missioncontrol.agents.FakeContainer.URL;
+import static io.hermes.missioncontrol.agents.FakeContainer.HOST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,7 +46,7 @@ class HermesSessionsTest {
               "started_at":1783765479.656,"ended_at":null,"message_count":12}]
             """);
 
-    SessionDto session = sessions(container).list(URL, CONTAINER, "ops").getFirst();
+    SessionDto session = sessions(container).list(HOST, CONTAINER, "ops").getFirst();
 
     assertEquals("s1", session.id());
     assertEquals("Deploy review", session.title());
@@ -65,7 +65,7 @@ class HermesSessionsTest {
               "ended_at":2,"message_count":1}]
             """);
 
-    assertEquals("closed", sessions(container).list(URL, CONTAINER, "ops").getFirst().status());
+    assertEquals("closed", sessions(container).list(HOST, CONTAINER, "ops").getFirst().status());
   }
 
   @Test
@@ -77,7 +77,7 @@ class HermesSessionsTest {
               "ended_at":null,"message_count":null}]
             """);
 
-    SessionDto session = sessions(container).list(URL, CONTAINER, "ops").getFirst();
+    SessionDto session = sessions(container).list(HOST, CONTAINER, "ops").getFirst();
     assertEquals("(untitled session)", session.title());
     assertEquals("cli", session.platform());
     assertEquals(0, session.startedAt());
@@ -96,14 +96,14 @@ class HermesSessionsTest {
             """);
 
     assertEquals(List.of("s2"),
-        sessions(container).list(URL, CONTAINER, "ops").stream().map(SessionDto::id).toList());
+        sessions(container).list(HOST, CONTAINER, "ops").stream().map(SessionDto::id).toList());
   }
 
   @Test
   void aProfileWithNoStoreYetHasNoSessionsAndIsNotQueried() {
     FakeContainer container = new FakeContainer();   // no state.db
 
-    assertEquals(List.of(), sessions(container).list(URL, CONTAINER, "ops"));
+    assertEquals(List.of(), sessions(container).list(HOST, CONTAINER, "ops"));
     assertTrue(container.executed().stream()
         .noneMatch(argv -> argv.contains("python3")), "the store was queried anyway");
   }
@@ -116,7 +116,7 @@ class HermesSessionsTest {
         .file(DB, "")
         .onCommand("FROM sessions", "Traceback (most recent call last): …");
 
-    assertEquals(List.of(), sessions(container).list(URL, CONTAINER, "ops"));
+    assertEquals(List.of(), sessions(container).list(HOST, CONTAINER, "ops"));
   }
 
   // ── messages ───────────────────────────────────────────────────────────────
@@ -128,19 +128,19 @@ class HermesSessionsTest {
         .onCommand("FROM messages", "[{\"role\":\"user\",\"content\":\"hi\"}]\n");
 
     assertEquals("[{\"role\":\"user\",\"content\":\"hi\"}]",
-        sessions(container).readMessages(URL, CONTAINER, "ops", "s1"));
+        sessions(container).readMessages(HOST, CONTAINER, "ops", "s1"));
   }
 
   @Test
   void anEmptyAnswerBecomesAnEmptyArrayRatherThanABlankBody() {
     FakeContainer container = new FakeContainer().file(DB, "").onCommand("FROM messages", "   ");
 
-    assertEquals("[]", sessions(container).readMessages(URL, CONTAINER, "ops", "s1"));
+    assertEquals("[]", sessions(container).readMessages(HOST, CONTAINER, "ops", "s1"));
   }
 
   @Test
   void aProfileWithNoStoreHasNoHistory() {
-    assertEquals("[]", sessions(new FakeContainer()).readMessages(URL, CONTAINER, "ops", "s1"));
+    assertEquals("[]", sessions(new FakeContainer()).readMessages(HOST, CONTAINER, "ops", "s1"));
   }
 
   @Test
@@ -152,13 +152,13 @@ class HermesSessionsTest {
         .onCommand("FROM sessions", "[]")
         .onCommand("FROM messages", "[]");
 
-    sessions(container).list(URL, CONTAINER, "ops");
-    verify(container.dockerExec()).runAsUser(anyString(), anyString(), anyString(),
+    sessions(container).list(HOST, CONTAINER, "ops");
+    verify(container.dockerExec()).runAsUser(any(), anyString(), anyString(),
         argThat(argv -> argv.size() > 2 && argv.get(2).contains("FROM sessions")),
         anyString(), eq(false), anyBoolean(), any(Duration.class));
 
-    sessions(container).readMessages(URL, CONTAINER, "ops", "s1");
-    verify(container.dockerExec()).runAsUser(anyString(), anyString(), anyString(),
+    sessions(container).readMessages(HOST, CONTAINER, "ops", "s1");
+    verify(container.dockerExec()).runAsUser(any(), anyString(), anyString(),
         argThat(argv -> argv.size() > 2 && argv.get(2).contains("FROM messages")),
         anyString(), eq(true), anyBoolean(), any(Duration.class));
   }
@@ -169,7 +169,7 @@ class HermesSessionsTest {
   void deletionRunsAgainstTheProfilesOwnStore() {
     FakeContainer container = new FakeContainer().file(DB, "");
 
-    sessions(container).delete(URL, CONTAINER, "ops", "s1");
+    sessions(container).delete(HOST, CONTAINER, "ops", "s1");
 
     List<String> argv = container.executed().stream()
         .filter(a -> a.contains("python3")).findFirst().orElseThrow();
@@ -183,7 +183,7 @@ class HermesSessionsTest {
   @Test
   void deletingFromAProfileWithNoStoreIsRejectedRatherThanSilentlyDoingNothing() {
     assertThrows(IllegalArgumentException.class,
-        () -> sessions(new FakeContainer()).delete(URL, CONTAINER, "ops", "s1"));
+        () -> sessions(new FakeContainer()).delete(HOST, CONTAINER, "ops", "s1"));
   }
 
   // ── input validation ───────────────────────────────────────────────────────
@@ -195,9 +195,9 @@ class HermesSessionsTest {
 
     for (String id : new String[] {null, "", "   "}) {
       assertThrows(IllegalArgumentException.class,
-          () -> sessions.readMessages(URL, CONTAINER, "ops", id), "id=" + id);
+          () -> sessions.readMessages(HOST, CONTAINER, "ops", id), "id=" + id);
       assertThrows(IllegalArgumentException.class,
-          () -> sessions.delete(URL, CONTAINER, "ops", id), "id=" + id);
+          () -> sessions.delete(HOST, CONTAINER, "ops", id), "id=" + id);
     }
     assertEquals(List.of(), container.executed());
   }
@@ -207,8 +207,8 @@ class HermesSessionsTest {
     HermesSessions sessions = sessions(new FakeContainer());
 
     assertThrows(IllegalArgumentException.class,
-        () -> sessions.list(URL, CONTAINER, "../../etc"));
+        () -> sessions.list(HOST, CONTAINER, "../../etc"));
     assertThrows(IllegalArgumentException.class,
-        () -> sessions.readMessages(URL, CONTAINER, "a/b", "s1"));
+        () -> sessions.readMessages(HOST, CONTAINER, "a/b", "s1"));
   }
 }

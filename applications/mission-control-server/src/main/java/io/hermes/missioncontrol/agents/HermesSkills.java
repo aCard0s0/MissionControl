@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.agents;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -33,14 +34,14 @@ class HermesSkills {
 
   // ── listing ────────────────────────────────────────────────────────────────
 
-  List<SkillDto> list(String url, String containerId, String profileName, Map<?, ?> configMap) {
+  List<SkillDto> list(DockerHostRef host, String containerId, String profileName, Map<?, ?> configMap) {
     String skillsDir = ProfilePaths.skillsDir(profileName);
     Set<String> disabled = disabledSkills(configMap, ProfilePaths.PLATFORM_CLI);
-    Set<String> bundled = bundledSkillNames(url, containerId, skillsDir);
+    Set<String> bundled = bundledSkillNames(host, containerId, skillsDir);
     List<SkillDto> skills = new ArrayList<>();
-    for (String skillMdPath : findSkillMdPaths(url, containerId, skillsDir)) {
+    for (String skillMdPath : findSkillMdPaths(host, containerId, skillsDir)) {
       String dirName = skillDirName(skillMdPath);
-      String skillMd = files.readFile(url, containerId, skillMdPath);
+      String skillMd = files.readFile(host, containerId, skillMdPath);
       if (skillMd == null || skillMd.isBlank()) continue;
       SkillMeta meta = parseSkillMeta(skillMd, dirName);
       String source = resolveSkillSource(meta, bundled);
@@ -52,11 +53,11 @@ class HermesSkills {
   }
 
   /** Reads a skill's SKILL.md body plus its file list, for inspection/editing. */
-  SkillContentDto readContent(String url, String containerId, String profileName, String skillName) {
+  SkillContentDto readContent(DockerHostRef host, String containerId, String profileName, String skillName) {
     requireValidSkillName(skillName);
-    String skillDir = requireSkillDir(url, containerId, profileName, skillName);
-    String body = files.readFile(url, containerId, skillDir + "/SKILL.md");
-    return new SkillContentDto(skillName, skillDir, body, listSkillFiles(url, containerId, skillDir));
+    String skillDir = requireSkillDir(host, containerId, profileName, skillName);
+    String body = files.readFile(host, containerId, skillDir + "/SKILL.md");
+    return new SkillContentDto(skillName, skillDir, body, listSkillFiles(host, containerId, skillDir));
   }
 
   // ── mutation ───────────────────────────────────────────────────────────────
@@ -64,12 +65,12 @@ class HermesSkills {
   /** Adds or removes the skill from {@code skills.platform_disabled.cli}, leaving every
    *  other key in the config — including ones Mission Control does not model — intact. */
   void setEnabled(
-      String url, String containerId, String profileName, String skillName, boolean enabled) {
+      DockerHostRef host, String containerId, String profileName, String skillName, boolean enabled) {
     if (skillName == null || skillName.isBlank()) {
       throw new IllegalArgumentException("missing skill name");
     }
-    String configPath = files.requireProfileDir(url, containerId, profileName) + "/config.yaml";
-    String configYaml = files.readFile(url, containerId, configPath);
+    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+    String configYaml = files.readFile(host, containerId, configPath);
     Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
     Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
     root.put("skills", skills);
@@ -85,36 +86,36 @@ class HermesSkills {
       if (!present) cliDisabled.add(skillName);
     }
 
-    files.writeFile(url, containerId, configPath, YamlValues.dump(root));
+    files.writeFile(host, containerId, configPath, YamlValues.dump(root));
   }
 
-  void install(String url, String containerId, String profileName, String skillId) {
+  void install(DockerHostRef host, String containerId, String profileName, String skillId) {
     if (skillId == null || skillId.isBlank()) throw new IllegalArgumentException("missing skill name");
     // skill ids flow in from reusable templates (user-authored) — validate the
     // same way uninstall does so a stray value can't be parsed as a CLI flag
     if (!ProfilePaths.isValidName(skillId)) {
       throw new IllegalArgumentException("invalid skill id: " + skillId);
     }
-    files.exec(url, containerId, List.of("hermes", "-p", profileName, "skills", "install", skillId, "--force"));
+    files.exec(host, containerId, List.of("hermes", "-p", profileName, "skills", "install", skillId, "--force"));
   }
 
-  void uninstall(String url, String containerId, String profileName, String skillName) {
+  void uninstall(DockerHostRef host, String containerId, String profileName, String skillName) {
     if (skillName == null || skillName.isBlank()) throw new IllegalArgumentException("missing skill name");
     if (!ProfilePaths.isValidName(skillName)) throw new IllegalArgumentException("invalid skill name");
     // `hermes skills uninstall` prompts "Confirm [y/N]" (no --yes flag) and
     // reports failures on stdout with exit code 0, so it cannot be driven
     // reliably through a non-tty exec — remove the skill directory instead.
-    files.removeTree(url, containerId, requireSkillDir(url, containerId, profileName, skillName));
+    files.removeTree(host, containerId, requireSkillDir(host, containerId, profileName, skillName));
   }
 
   /** Overwrites a skill's SKILL.md. The caller re-reads the profile so the refreshed
    *  name/version/description/source flow back. */
   void updateContent(
-      String url, String containerId, String profileName, String skillName, String body) {
+      DockerHostRef host, String containerId, String profileName, String skillName, String body) {
     requireValidSkillName(skillName);
     if (body == null) throw new IllegalArgumentException("missing skill body");
-    String skillDir = requireSkillDir(url, containerId, profileName, skillName);
-    files.writeFile(url, containerId, skillDir + "/SKILL.md", body);
+    String skillDir = requireSkillDir(host, containerId, profileName, skillName);
+    files.writeFile(host, containerId, skillDir + "/SKILL.md", body);
   }
 
   // ── resolution ─────────────────────────────────────────────────────────────
@@ -126,8 +127,8 @@ class HermesSkills {
   }
 
   private String requireSkillDir(
-      String url, String containerId, String profileName, String skillName) {
-    String skillDir = findSkillDir(url, containerId, profileName, skillName);
+      DockerHostRef host, String containerId, String profileName, String skillName) {
+    String skillDir = findSkillDir(host, containerId, profileName, skillName);
     if (skillDir == null) throw new IllegalArgumentException("skill not found: " + skillName);
     return skillDir;
   }
@@ -136,15 +137,15 @@ class HermesSkills {
    *  skill name, but SKILL.md frontmatter may override the display name. Searches
    *  flat and category-nested layouts alike. */
   private String findSkillDir(
-      String url, String containerId, String profileName, String skillName) {
+      DockerHostRef host, String containerId, String profileName, String skillName) {
     String skillsDir = ProfilePaths.skillsDir(profileName);
     String direct = skillsDir + "/" + skillName;
-    if (files.dirExists(url, containerId, direct)) return direct;
-    for (String skillMdPath : findSkillMdPaths(url, containerId, skillsDir)) {
+    if (files.dirExists(host, containerId, direct)) return direct;
+    for (String skillMdPath : findSkillMdPaths(host, containerId, skillsDir)) {
       String dir = parentDir(skillMdPath);
       String dirName = skillDirName(skillMdPath);
       if (skillName.equals(dirName)) return dir;
-      String skillMd = files.readFile(url, containerId, skillMdPath);
+      String skillMd = files.readFile(host, containerId, skillMdPath);
       if (!skillMd.isBlank() && skillName.equals(parseSkillMeta(skillMd, dirName).name())) {
         return dir;
       }
@@ -155,18 +156,18 @@ class HermesSkills {
   /** All SKILL.md paths under a profile's skills dir — flat (skills/&lt;x&gt;/SKILL.md)
    *  AND category-nested (skills/&lt;category&gt;/&lt;x&gt;/SKILL.md), skipping curator
    *  backups and other dot-dirs. The old flat-only `ls` missed nested skills. */
-  private List<String> findSkillMdPaths(String url, String containerId, String skillsDir) {
-    ExecResult find = files.exec(url, containerId, List.of("sh", "-lc",
+  private List<String> findSkillMdPaths(DockerHostRef host, String containerId, String skillsDir) {
+    ExecResult find = files.exec(host, containerId, List.of("sh", "-lc",
         "find \"$1\" -mindepth 1 -maxdepth 3 -name SKILL.md -not -path '*/.*' 2>/dev/null || true",
         "_", skillsDir));
     return HermesContainerFiles.lines(find.stdout());
   }
 
   /** Relative file paths inside a skill dir (skipping dot-files), for the UI. */
-  private List<String> listSkillFiles(String url, String containerId, String skillDir) {
+  private List<String> listSkillFiles(DockerHostRef host, String containerId, String skillDir) {
     String script = "d=\"$1\"; cd \"$d\" 2>/dev/null || exit 0; "
         + "find . -maxdepth 3 -type f -not -path '*/.*' 2>/dev/null | sed 's|^\\./||' | sort";
-    ExecResult ls = files.exec(url, containerId, List.of("sh", "-lc", script, "_", skillDir));
+    ExecResult ls = files.exec(host, containerId, List.of("sh", "-lc", script, "_", skillDir));
     return new ArrayList<>(HermesContainerFiles.lines(ls.stdout()));
   }
 
@@ -185,9 +186,9 @@ class HermesSkills {
   /** Names listed in skills/.bundled_manifest ("name:hash" per line) ship with
    *  Hermes. Anything present on disk but absent here was created locally — by
    *  the agent itself or the curator (which authors umbrella skills). */
-  private Set<String> bundledSkillNames(String url, String containerId, String skillsDir) {
+  private Set<String> bundledSkillNames(DockerHostRef host, String containerId, String skillsDir) {
     Set<String> names = new HashSet<>();
-    String manifest = files.readFile(url, containerId, skillsDir + "/.bundled_manifest");
+    String manifest = files.readFile(host, containerId, skillsDir + "/.bundled_manifest");
     if (manifest == null) return names;
     for (String line : HermesContainerFiles.lines(manifest)) {
       int colon = line.indexOf(':');

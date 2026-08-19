@@ -6,8 +6,8 @@ import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
-import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 
@@ -20,21 +20,19 @@ import java.util.List;
  */
 final class AgentWebFixture {
 
-  static final String HOST = "dh-local";
-  static final String URL = "unix:///var/run/docker.sock";
+  static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///var/run/docker.sock");
   static final String CONTAINER = "c1";
   static final String PROFILE = "scout";
-  static final String BASE = "/api/agents/" + HOST + "/" + CONTAINER + "/" + PROFILE;
+  static final String BASE = "/api/agents/" + HOST.id() + "/" + CONTAINER + "/" + PROFILE;
 
   private AgentWebFixture() {}
 
   static void hostIsConnected(HostService hosts) {
-    when(hosts.requireConnected(HOST)).thenReturn(new DockerHostDto(
-        HOST, "localhost", URL, "local", "connected", "docker", "1.47", 3L, null));
+    when(hosts.requireConnected(HOST.id())).thenReturn(HOST);
   }
 
   static void hostIsDown(HostService hosts) {
-    when(hosts.requireConnected(HOST))
+    when(hosts.requireConnected(HOST.id()))
         .thenThrow(new UpstreamUnavailableException("docker host not connected"));
   }
 

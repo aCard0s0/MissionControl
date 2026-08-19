@@ -55,41 +55,46 @@ public class DockerGateway {
 
   // ── daemon probing ───────────────────────────────────────────────────────
 
+  /**
+   * Deliberately still takes a bare url: this is the call that decides whether a daemon
+   * answers at all, so it runs before a {@link DockerHostRef} for that host can exist.
+   * Everything past this point takes the ref.
+   */
   public DaemonInfo ping(String url) {
     return inventory.ping(url);
   }
 
   // ── inventory ────────────────────────────────────────────────────────────
 
-  public List<ContainerDto> listContainers(String url, String hostId, boolean includeAll) {
-    return inventory.listContainers(url, hostId, includeAll);
+  public List<ContainerDto> listContainers(DockerHostRef host, boolean includeAll) {
+    return inventory.listContainers(host, includeAll);
   }
 
   // ── stats / logs ─────────────────────────────────────────────────────────
 
-  public StatsDto stats(String url, String containerId) {
-    return statsReader.stats(url, containerId);
+  public StatsDto stats(DockerHostRef host, String containerId) {
+    return statsReader.stats(host, containerId);
   }
 
-  public List<LogLineDto> logs(String url, String containerId, int tail) {
-    return logReader.logs(url, containerId, tail);
+  public List<LogLineDto> logs(DockerHostRef host, String containerId, int tail) {
+    return logReader.logs(host, containerId, tail);
   }
 
   // ── networks ─────────────────────────────────────────────────────────────
 
-  public void connectNetwork(String url, String containerId, String networkName) {
-    networks.connect(url, containerId, networkName);
+  public void connectNetwork(DockerHostRef host, String containerId, String networkName) {
+    networks.connect(host, containerId, networkName);
   }
 
   public void connectNetwork(
-      String url, String containerId, String networkName, List<String> aliases) {
-    networks.connect(url, containerId, networkName, aliases);
+      DockerHostRef host, String containerId, String networkName, List<String> aliases) {
+    networks.connect(host, containerId, networkName, aliases);
   }
 
   // ── images ──────────────────────────────────────────────────────────────
 
-  public Set<String> localImageTags(String url) {
-    return images.localImageTags(url);
+  public Set<String> localImageTags(DockerHostRef host) {
+    return images.localImageTags(host);
   }
 
   public String hermesImageRepository() {
@@ -98,27 +103,27 @@ public class DockerGateway {
 
   // ── lifecycle ────────────────────────────────────────────────────────────
 
-  public String deploy(String url, String hostId, String name, String version, List<String> profiles) {
-    return deployer.deploy(url, hostId, name, version, profiles);
+  public String deploy(DockerHostRef host, String name, String version, List<String> profiles) {
+    return deployer.deploy(host, name, version, profiles);
   }
 
-  public ManagedContainerSpec inspectManaged(String url, String containerId) {
-    return upgrader.inspectManaged(url, containerId);
+  public ManagedContainerSpec inspectManaged(DockerHostRef host, String containerId) {
+    return upgrader.inspectManaged(host, containerId);
   }
 
-  public UpgradeResult upgrade(String url, String containerId, String version) {
-    return upgrader.upgrade(url, containerId, version);
+  public UpgradeResult upgrade(DockerHostRef host, String containerId, String version) {
+    return upgrader.upgrade(host, containerId, version);
   }
 
-  public void start(String url, String containerId) {
-    lifecycle.start(url, containerId);
+  public void start(DockerHostRef host, String containerId) {
+    lifecycle.start(host, containerId);
   }
 
-  public void stop(String url, String containerId) {
-    lifecycle.stop(url, containerId);
+  public void stop(DockerHostRef host, String containerId) {
+    lifecycle.stop(host, containerId);
   }
 
-  public void remove(String url, String containerId) {
-    lifecycle.remove(url, containerId);
+  public void remove(DockerHostRef host, String containerId) {
+    lifecycle.remove(host, containerId);
   }
 }

@@ -8,11 +8,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.ImageCatalogService;
 import io.hermes.missioncontrol.docker.ImageTagsDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
-import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /** The image-tag endpoint that feeds the version picker. */
 class ImagesControllerTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
 
   private ImageCatalogService catalog;
   private HostService hosts;
@@ -41,8 +41,7 @@ class ImagesControllerTest {
   }
 
   private void hostIsConnected() {
-    when(hosts.requireConnected("dh-local")).thenReturn(
-        new DockerHostDto("dh-local", "localhost", URL, "local", "connected", "docker", "1.47", 3L, null));
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
   }
 
   private static ImageTagsDto tags() {
@@ -52,20 +51,20 @@ class ImagesControllerTest {
   @Test
   void theRemoteFlagDefaultsToTrueAndIsForwarded() throws Exception {
     hostIsConnected();
-    when(catalog.tags(URL, true)).thenReturn(tags());
-    when(catalog.tags(URL, false)).thenReturn(tags());
+    when(catalog.tags(HOST, true)).thenReturn(tags());
+    when(catalog.tags(HOST, false)).thenReturn(tags());
 
     mvc.perform(get("/api/images/tags").param("hostId", "dh-local"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.repository").value("hermes/agent"))
         .andExpect(jsonPath("$.newest").value("v2"));
-    verify(catalog).tags(URL, true);
+    verify(catalog).tags(HOST, true);
 
     // remote=false is the "don't call the registry" escape hatch; dropping it would make
     // the endpoint always pay for a Docker Hub round trip
     mvc.perform(get("/api/images/tags").param("hostId", "dh-local").param("remote", "false"))
         .andExpect(status().isOk());
-    verify(catalog).tags(URL, false);
+    verify(catalog).tags(HOST, false);
   }
 
   @Test

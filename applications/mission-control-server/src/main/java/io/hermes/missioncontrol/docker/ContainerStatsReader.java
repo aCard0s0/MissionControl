@@ -26,8 +26,8 @@ public class ContainerStatsReader {
     this.clients = clients;
   }
 
-  public StatsDto stats(String url, String containerId) {
-    DockerClient client = clients.forUrl(url);
+  public StatsDto stats(DockerHostRef host, String containerId) {
+    DockerClient client = clients.forUrl(host.url());
     try (InvocationBuilder.AsyncResultCallback<Statistics> callback =
         new InvocationBuilder.AsyncResultCallback<>()) {
       client.statsCmd(containerId).withNoStream(true).exec(callback);

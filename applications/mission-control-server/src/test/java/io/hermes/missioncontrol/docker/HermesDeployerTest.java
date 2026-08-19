@@ -32,6 +32,7 @@ import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.RestartPolicy;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.time.Duration;
 import java.util.List;
@@ -47,6 +48,8 @@ import org.mockito.ArgumentCaptor;
  * policy the running Agent inherits, and the readiness gate it has to clear.
  */
 class HermesDeployerTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
@@ -82,7 +85,7 @@ class HermesDeployerTest {
     when(state.getRunning()).thenReturn(true);
 
     String containerId = subject.deploy(
-        "unix:///sock", "dh-local", "demo", "latest", List.of("ops"));
+        HOST, "demo", "latest", List.of("ops"));
 
     assertEquals("main-id", containerId);
     verify(createVolume).withName("mc-hermes-demo");
@@ -128,7 +131,7 @@ class HermesDeployerTest {
     when(state.getRunning()).thenReturn(true);
 
     String containerId = subject.deploy(
-        "unix:///sock", "dh-local", "demo", "latest", List.of("ops", "research"));
+        HOST, "demo", "latest", List.of("ops", "research"));
 
     assertEquals("main-id", containerId);
 
@@ -168,7 +171,7 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    String containerId = subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of());
+    String containerId = subject.deploy(HOST, "demo", "latest", List.of());
 
     assertEquals("main-id", containerId);
     // the repository must be pulled without the tag glued on twice, and at the tag
@@ -198,7 +201,7 @@ class HermesDeployerTest {
     stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
+        () -> subject.deploy(HOST, "demo", "latest", List.of()));
 
     assertTrue(failure.getMessage().contains("exited before readiness checks"), failure.getMessage());
     // an exec against a dead container blocks or reports a confusing daemon error
@@ -227,7 +230,7 @@ class HermesDeployerTest {
     RemoveVolumeCmd removeVolume = stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
+        () -> subject.deploy(HOST, "demo", "latest", List.of()));
 
     assertTrue(failure.getMessage().contains("stopped during readiness checks"), failure.getMessage());
     // a half-deployed Agent left behind would block the next deploy on its volume
@@ -251,10 +254,10 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    subject.deploy("unix:///sock", "dh-local", "demo", "latest", List.of());
+    subject.deploy(HOST, "demo", "latest", List.of());
 
     ArgumentCaptor<List<String>> command = ArgumentCaptor.forClass(List.class);
-    verify(dockerExec).runAsUser(eq("unix:///sock"), eq("main-id"), eq("hermes"), command.capture(),
+    verify(dockerExec).runAsUser(eq(HOST), eq("main-id"), eq("hermes"), command.capture(),
         anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
 
     List<String> argv = command.getValue();

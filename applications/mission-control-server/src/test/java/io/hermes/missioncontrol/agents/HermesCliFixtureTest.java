@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import static io.hermes.missioncontrol.agents.FakeContainer.CONTAINER;
-import static io.hermes.missioncontrol.agents.FakeContainer.URL;
+import static io.hermes.missioncontrol.agents.FakeContainer.HOST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -69,7 +69,7 @@ class HermesCliFixtureTest {
    */
   private static final String REDACTED_SECRET = "redacted-by-capture-hermes-fixtures-sh-0000";
 
-  /** A profile whose webhook listener is on, so the rendered route URL carries its port. */
+  /** A profile whose webhook listener is on, so the rendered route HOST carries its port. */
   private static final String WEBHOOK_LISTENER_CONFIG = """
       platforms:
         webhook:
@@ -110,13 +110,13 @@ class HermesCliFixtureTest {
    */
   private void assertTheStatusReportParses(Path set, String version) throws IOException {
     HermesContainerFiles files = mock(HermesContainerFiles.class);
-    when(files.fileExists(anyString(), anyString(), anyString())).thenReturn(true);
-    when(files.readFile(anyString(), anyString(), anyString())).thenReturn("");
-    when(files.exec(anyString(), anyString(), any()))
+    when(files.fileExists(any(), anyString(), anyString())).thenReturn(true);
+    when(files.readFile(any(), anyString(), anyString())).thenReturn("");
+    when(files.exec(any(), anyString(), any()))
         .thenReturn(new ExecResult(0, read(set, "status.txt"), ""));
 
     AgentSetupDto report = new HermesSetup(files, mock(HermesEnvFile.class))
-        .setup(URL, CONTAINER, "default");
+        .setup(HOST, CONTAINER, "default");
 
     assertFalse(report.apiKeys().isEmpty(), version + ": no API-key rows parsed");
     assertFalse(report.authProviders().isEmpty(), version + ": no auth providers parsed");
@@ -172,7 +172,7 @@ class HermesCliFixtureTest {
         .onCommand("-name SKILL.md", skillsDir + "/captured/SKILL.md\n");
 
     List<SkillDto> listed = new HermesSkills(container.files(), new HermesConfigEditor())
-        .list(URL, CONTAINER, "ops", Map.of());
+        .list(HOST, CONTAINER, "ops", Map.of());
 
     assertEquals(1, listed.size(), version + ": the captured skill did not list");
     SkillDto skill = listed.getFirst();
@@ -203,12 +203,12 @@ class HermesCliFixtureTest {
     if (captured.isBlank()) return;   // optional: a profile may have no jobs at all
 
     HermesContainerFiles files = mock(HermesContainerFiles.class);
-    when(files.readFile(anyString(), anyString(), anyString())).thenReturn(captured);
-    when(files.exec(anyString(), anyString(), any(), anyBoolean()))
+    when(files.readFile(any(), anyString(), anyString())).thenReturn(captured);
+    when(files.exec(any(), anyString(), any(), anyBoolean()))
         .thenReturn(new ExecResult(0, "✓ Cron scheduler is running", ""));
 
     List<CronJobDto> jobs =
-        new HermesCron(files, new ObjectMapper()).list(URL, CONTAINER, "default").jobs();
+        new HermesCron(files, new ObjectMapper()).list(HOST, CONTAINER, "default").jobs();
 
     assertFalse(jobs.isEmpty(), version + ": the captured schedule parsed to no jobs");
     for (CronJobDto job : jobs) {
@@ -243,13 +243,13 @@ class HermesCliFixtureTest {
             + " scrub — that is a live signing key in a git repository"));
 
     HermesContainerFiles files = mock(HermesContainerFiles.class);
-    when(files.readFile(anyString(), anyString(), anyString())).thenAnswer(invocation ->
+    when(files.readFile(any(), anyString(), anyString())).thenAnswer(invocation ->
         invocation.getArgument(2, String.class).endsWith("config.yaml")
             ? WEBHOOK_LISTENER_CONFIG : captured);
 
     List<WebhookSubscriptionDto> routes =
         new HermesWebhooks(files, json, new ProfileInventory(files))
-            .list(URL, CONTAINER, "default").subscriptions();
+            .list(HOST, CONTAINER, "default").subscriptions();
 
     assertFalse(routes.isEmpty(), version + ": the captured routes parsed to nothing");
     for (WebhookSubscriptionDto route : routes) {

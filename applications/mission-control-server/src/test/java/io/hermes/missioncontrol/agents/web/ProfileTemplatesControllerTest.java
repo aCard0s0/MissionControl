@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.agents.web;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -15,10 +16,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
-import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -35,8 +36,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  */
 class ProfileTemplatesControllerTest {
 
-  private static final String HOST = "dh-local";
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///var/run/docker.sock");
 
   private ProfileTemplateService service;
   private HostService hosts;
@@ -53,8 +53,7 @@ class ProfileTemplatesControllerTest {
   }
 
   private void hostIsConnected() {
-    when(hosts.requireConnected(HOST)).thenReturn(
-        new DockerHostDto(HOST, "localhost", URL, "local", "connected", "docker", "1.47", 3L, null));
+    when(hosts.requireConnected(HOST.id())).thenReturn(HOST);
   }
 
   private static ProfileTemplateDto template() {
@@ -104,7 +103,7 @@ class ProfileTemplatesControllerTest {
 
   @Test
   void captureAndDeployBothRequireAConnectedHostAndStopBeforeTheService() throws Exception {
-    when(hosts.requireConnected(HOST))
+    when(hosts.requireConnected(HOST.id()))
         .thenThrow(new UpstreamUnavailableException("docker host not connected"));
 
     mvc.perform(post("/api/profile-templates/capture")
@@ -126,9 +125,9 @@ class ProfileTemplatesControllerTest {
   @Test
   void captureAndDeployPassTheResolvedHostUrlRatherThanTheHostId() throws Exception {
     hostIsConnected();
-    when(service.captureFromAgent(anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.any()))
+    when(service.captureFromAgent(any(), anyString(), anyString(), org.mockito.ArgumentMatchers.any()))
         .thenReturn(template());
-    when(service.deploy(anyString(), anyString(), anyString(), anyString())).thenReturn(profile());
+    when(service.deploy(anyString(), any(), anyString(), anyString())).thenReturn(profile());
 
     mvc.perform(post("/api/profile-templates/capture")
             .contentType(MediaType.APPLICATION_JSON)
@@ -144,8 +143,8 @@ class ProfileTemplatesControllerTest {
 
     // the service talks to a daemon, so it needs the url; handing it a host id would
     // fail at the transport layer
-    verify(service).captureFromAgent(URL, "c1", "scout", "researcher");
-    verify(service).deploy("pt-1", URL, "c1", "scout");
+    verify(service).captureFromAgent(HOST, "c1", "scout", "researcher");
+    verify(service).deploy("pt-1", HOST, "c1", "scout");
   }
 
   @Test

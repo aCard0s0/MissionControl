@@ -22,6 +22,7 @@ import com.github.dockerjava.api.model.Image;
 import com.github.dockerjava.api.model.Network;
 import com.github.dockerjava.api.model.NetworkSettings;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,8 @@ import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 
 class DockerGatewayNetworkAndImageTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
@@ -48,9 +51,9 @@ class DockerGatewayNetworkAndImageTest {
   @Test
   void aBlankNetworkNameIsRejectedBeforeTheDaemonIsCalled() {
     assertThrows(IllegalArgumentException.class,
-        () -> gateway.connectNetwork("unix:///sock", "agent-id", null));
+        () -> gateway.connectNetwork(HOST, "agent-id", null));
     assertThrows(IllegalArgumentException.class,
-        () -> gateway.connectNetwork("unix:///sock", "agent-id", "  "));
+        () -> gateway.connectNetwork(HOST, "agent-id", "  "));
 
     // a blank name would list every network on the host and attach to an arbitrary one
     verifyNoInteractions(client);
@@ -60,7 +63,7 @@ class DockerGatewayNetworkAndImageTest {
   void connectingANetworkTheContainerAlreadyHasIsANoOp() {
     stubInspect("agent-id", inspectedOn("mission-control-mcp-net"));
 
-    gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net");
+    gateway.connectNetwork(HOST, "agent-id", "mission-control-mcp-net");
 
     verify(client, never()).connectToNetworkCmd();
     verify(client, never()).listNetworksCmd();
@@ -76,7 +79,7 @@ class DockerGatewayNetworkAndImageTest {
     when(connect.exec()).thenThrow(new RuntimeException("endpoint already exists in network"));
 
     assertDoesNotThrow(
-        () -> gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net"));
+        () -> gateway.connectNetwork(HOST, "agent-id", "mission-control-mcp-net"));
 
     verify(connect).exec();
   }
@@ -89,7 +92,7 @@ class DockerGatewayNetworkAndImageTest {
     when(connect.exec()).thenThrow(refused);
 
     RuntimeException thrown = assertThrows(RuntimeException.class,
-        () -> gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net"));
+        () -> gateway.connectNetwork(HOST, "agent-id", "mission-control-mcp-net"));
 
     assertSame(refused, thrown);
   }
@@ -106,7 +109,7 @@ class DockerGatewayNetworkAndImageTest {
     when(listNetworks.exec()).thenReturn(List.of(sibling));
 
     assertThrows(NotFoundException.class,
-        () -> gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net"));
+        () -> gateway.connectNetwork(HOST, "agent-id", "mission-control-mcp-net"));
 
     verify(client, never()).connectToNetworkCmd();
   }
@@ -116,7 +119,7 @@ class DockerGatewayNetworkAndImageTest {
     stubInspect("agent-id", inspectedOn());
     ConnectToNetworkCmd connect = stubResolvedNetwork("mission-control-mcp-net", "network-id");
 
-    gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net", List.of("demo"));
+    gateway.connectNetwork(HOST, "agent-id", "mission-control-mcp-net", List.of("demo"));
 
     // catalog-linked MCP servers dial the agent by its alias; losing it on a
     // reattachment leaves a container that is on the network but unreachable
@@ -138,7 +141,7 @@ class DockerGatewayNetworkAndImageTest {
 
     // v2 is the same repository written in its registry-qualified form, and offering
     // 'other/image' tags as Hermes upgrades would deploy an unrelated image
-    assertEquals(Set.of("v1", "v2"), gateway.localImageTags("unix:///sock"));
+    assertEquals(Set.of("v1", "v2"), gateway.localImageTags(HOST));
   }
 
   @Test
@@ -148,14 +151,14 @@ class DockerGatewayNetworkAndImageTest {
     stubImages(untagged, imageTagged("hermes/image:v1"));
 
     // an intermediate build layer carries no tags; it must not cut the scan short
-    assertEquals(Set.of("v1"), gateway.localImageTags("unix:///sock"));
+    assertEquals(Set.of("v1"), gateway.localImageTags(HOST));
   }
 
   @Test
   void noHermesImageConfiguredYieldsNoLocalTagsAndNeverAsksTheDaemon() {
     DockerGateway unconfigured = DockerWiring.gateway(clients, new AppProperties("", "unix:///sock", "", "hermes", "test", true), dockerExec);
 
-    assertEquals(Set.of(), unconfigured.localImageTags("unix:///sock"));
+    assertEquals(Set.of(), unconfigured.localImageTags(HOST));
     verifyNoInteractions(client);
   }
 

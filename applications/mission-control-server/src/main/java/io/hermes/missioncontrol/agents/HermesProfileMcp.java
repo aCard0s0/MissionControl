@@ -5,6 +5,7 @@ import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.docker.ContainerIdListener;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -45,7 +46,7 @@ class HermesProfileMcp implements ContainerIdListener {
   /** As in {@code HostService}: a reachability probe is evidence for about this long. */
   private static final long PROBE_TTL_MS = 10_000;
 
-  private record CacheKey(String url, String containerId, String profileName, String serverName) {}
+  private record CacheKey(DockerHostRef host, String containerId, String profileName, String serverName) {}
 
   /** A probe, the definition it was taken against, and when it was filed — {@code at} is
    *  stamped on caching rather than read from {@code result.checkedAt()} so a slow
@@ -81,9 +82,9 @@ class HermesProfileMcp implements ContainerIdListener {
 
   // ── config edits ───────────────────────────────────────────────────────────
 
-  void add(String url, String containerId, String profileName, AddMcpServerRequest request) {
+  void add(DockerHostRef host, String containerId, String profileName, AddMcpServerRequest request) {
     String name = config.serverName(request.name());
-    rewriteConfig(url, containerId, profileName, List.of(name),
+    rewriteConfig(host, containerId, profileName, List.of(name),
         (yaml, path) -> config.addMcpServer(yaml, path, request));
   }
 
@@ -91,26 +92,26 @@ class HermesProfileMcp implements ContainerIdListener {
    * atomic config-file replacement. A rename collision is rejected before any
    * container write, so the original definition is never lost. */
   void update(
-      String url, String containerId, String profileName, String serverName,
+      DockerHostRef host, String containerId, String profileName, String serverName,
       AddMcpServerRequest request) {
     String currentName = config.serverName(serverName);
     String newName = config.serverName(request.name());
-    rewriteConfig(url, containerId, profileName, List.of(currentName, newName),
+    rewriteConfig(host, containerId, profileName, List.of(currentName, newName),
         (yaml, path) -> config.updateMcpServer(yaml, path, currentName, request));
   }
 
   /** Toggles only {@code enabled}; URL, command, args, headers, tool filters,
    * and any keys unknown to Mission Control are retained in the YAML data model. */
   void setEnabled(
-      String url, String containerId, String profileName, String serverName, boolean enabled) {
+      DockerHostRef host, String containerId, String profileName, String serverName, boolean enabled) {
     String name = config.serverName(serverName);
-    rewriteConfig(url, containerId, profileName, List.of(name),
+    rewriteConfig(host, containerId, profileName, List.of(name),
         (yaml, path) -> config.setMcpServerEnabled(yaml, path, name, enabled));
   }
 
-  void remove(String url, String containerId, String profileName, String serverName) {
+  void remove(DockerHostRef host, String containerId, String profileName, String serverName) {
     String name = config.serverName(serverName);
-    rewriteConfig(url, containerId, profileName, List.of(name),
+    rewriteConfig(host, containerId, profileName, List.of(name),
         (yaml, path) -> config.removeMcpServer(yaml, path, name));
   }
 
@@ -118,15 +119,15 @@ class HermesProfileMcp implements ContainerIdListener {
    *  The cache is cleared before the write so a concurrent listing cannot re-cache a probe
    *  taken against the definition that is being replaced. */
   private void rewriteConfig(
-      String url, String containerId, String profileName, List<String> invalidate,
+      DockerHostRef host, String containerId, String profileName, List<String> invalidate,
       ConfigRewrite rewrite) {
-    String configPath = files.requireProfileDir(url, containerId, profileName) + "/config.yaml";
-    String configYaml = files.readFile(url, containerId, configPath);
+    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+    String configYaml = files.readFile(host, containerId, configPath);
     String updated = rewrite.apply(configYaml, configPath);
     for (String name : invalidate) {
-      probeCache.remove(new CacheKey(url, containerId, profileName, name));
+      probeCache.remove(new CacheKey(host, containerId, profileName, name));
     }
-    files.writeFileAtomically(url, containerId, configPath, updated);
+    files.writeFileAtomically(host, containerId, configPath, updated);
   }
 
   @FunctionalInterface
@@ -138,8 +139,8 @@ class HermesProfileMcp implements ContainerIdListener {
 
   /** Drops every probe filed against a profile that no longer exists. Called after the
    *  delete succeeds: while the profile is still there, so are its probes. */
-  void evictProfile(String url, String containerId, String profileName) {
-    probeCache.keySet().removeIf(key -> Objects.equals(key.url(), url)
+  void evictProfile(DockerHostRef host, String containerId, String profileName) {
+    probeCache.keySet().removeIf(key -> Objects.equals(key.host(), host)
         && Objects.equals(key.containerId(), containerId)
         && Objects.equals(key.profileName(), profileName));
   }
@@ -198,7 +199,7 @@ class HermesProfileMcp implements ContainerIdListener {
   // ── listing ────────────────────────────────────────────────────────────────
 
   List<AgentMcpServerDto> list(
-      String hostUrl, String containerId, String profileName, Map<?, ?> configMap) {
+      DockerHostRef host, String containerId, String profileName, Map<?, ?> configMap) {
     Object mcpServers = configMap == null ? null : configMap.get("mcp_servers");
     if (!(mcpServers instanceof Map<?, ?> serversMap)) return List.of();
     List<AgentMcpServerDto> result = new ArrayList<>();
@@ -207,7 +208,7 @@ class HermesProfileMcp implements ContainerIdListener {
       if (name.isBlank()) continue;
       if (!(e.getValue() instanceof Map<?, ?> server)) continue;
       Entry entry = readEntry(server);
-      CachedProbe cached = validCache(new CacheKey(hostUrl, containerId, profileName, name), entry);
+      CachedProbe cached = validCache(new CacheKey(host, containerId, profileName, name), entry);
 
       String status = !entry.enabled() ? "disabled"
           : cached == null ? "unknown" : cached.result().status();
@@ -269,20 +270,20 @@ class HermesProfileMcp implements ContainerIdListener {
   // ── probing ────────────────────────────────────────────────────────────────
 
   /** Probes a single MCP server with Hermes' own MCP initialize handshake. */
-  McpTestResult test(String url, String containerId, String profileName, String serverName) {
+  McpTestResult test(DockerHostRef host, String containerId, String profileName, String serverName) {
     if (serverName == null || serverName.isBlank()) {
       throw new IllegalArgumentException("missing server name");
     }
     long checkedAt = clock.getAsLong();
     Map<?, ?> configMap = YamlValues.parseMap(
-        files.readFile(url, containerId, ProfilePaths.configFile(profileName)));
+        files.readFile(host, containerId, ProfilePaths.configFile(profileName)));
     if (!(configMap.get("mcp_servers") instanceof Map<?, ?> servers)
         || !(servers.get(serverName) instanceof Map<?, ?> server)) {
       return new McpTestResult(serverName, "error", 0, null, "server not found in config.yaml", checkedAt);
     }
 
     Entry entry = readEntry(server);
-    CacheKey cacheKey = new CacheKey(url, containerId, profileName, serverName);
+    CacheKey cacheKey = new CacheKey(host, containerId, profileName, serverName);
     if (!entry.enabled()) {
       McpTestResult disabled =
           new McpTestResult(serverName, "disabled", entry.tools(), null, null, checkedAt);
@@ -292,7 +293,7 @@ class HermesProfileMcp implements ContainerIdListener {
 
     long start = System.nanoTime();
     List<String> probeCommand = ProfilePaths.hermesCli(profileName, "mcp", "test", serverName);
-    ExecResult probe = files.exec(url, containerId, probeCommand, false);
+    ExecResult probe = files.exec(host, containerId, probeCommand, false);
     long latencyMs = (System.nanoTime() - start) / 1_000_000L;
     String probeOutput = probe.stdout() + "\n" + probe.stderr();
     int discoveredTools = Math.max(entry.tools(), parseToolCount(probeOutput));

@@ -4,6 +4,7 @@ import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.ContainerUpdateService;
 import io.hermes.missioncontrol.docker.DeployRequest;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.docker.StatsDto;
 import io.hermes.missioncontrol.docker.UpdateContainerRequest;
@@ -44,6 +45,11 @@ public class ContainersController {
    * Inventory across hosts. Filtered to Hermes-related containers unless
    * all=true; hosts that fail to answer are skipped (their status is already
    * visible on /api/hosts).
+   *
+   * <p>The only endpoint here that does not resolve through
+   * {@code HostService.requireConnected}: it is already iterating listed rows and
+   * filtering on the status they carry, so it builds each ref from the row it holds
+   * rather than asking for the same verdict a second time.
    */
   @GetMapping
   public List<ContainerDto> list(
@@ -54,7 +60,7 @@ public class ContainersController {
       if (hostId != null && !hostId.equals(host.id())) continue;
       if (!"connected".equals(host.status())) continue;
       try {
-        result.addAll(docker.listContainers(host.url(), host.id(), all));
+        result.addAll(docker.listContainers(new DockerHostRef(host.id(), host.url()), all));
       } catch (Exception e) {
         log.warn("listing containers on {} failed: {}", host.id(), e.getMessage());
       }
@@ -62,9 +68,13 @@ public class ContainersController {
     return result;
   }
 
+  // Every endpoint below resolves through requireConnected, so a daemon that is down is
+  // reported as a 503 before the container is touched. They used to take the host row's url
+  // unprobed, which left the same outage surfacing as a 502 'docker daemon error' — the
+  // failure ImagesController's comment already said every such endpoint should avoid.
   @GetMapping("/{hostId}/{id}/stats")
   public StatsDto stats(@PathVariable String hostId, @PathVariable String id) {
-    return docker.stats(hosts.urlOf(hostId), id);
+    return docker.stats(hosts.requireConnected(hostId), id);
   }
 
   @GetMapping("/{hostId}/{id}/logs")
@@ -72,25 +82,25 @@ public class ContainersController {
       @PathVariable String hostId,
       @PathVariable String id,
       @RequestParam(defaultValue = "100") int tail) {
-    return docker.logs(hosts.urlOf(hostId), id, tail);
+    return docker.logs(hosts.requireConnected(hostId), id, tail);
   }
 
   @PostMapping
   public Map<String, String> deploy(@Valid @RequestBody DeployRequest request) {
     String containerId = docker.deploy(
-        hosts.urlOf(request.hostId()), request.hostId(),
+        hosts.requireConnected(request.hostId()),
         request.name(), request.version(), request.profiles());
     return Map.of("id", containerId);
   }
 
   @PostMapping("/{hostId}/{id}/start")
   public void start(@PathVariable String hostId, @PathVariable String id) {
-    docker.start(hosts.urlOf(hostId), id);
+    docker.start(hosts.requireConnected(hostId), id);
   }
 
   @PostMapping("/{hostId}/{id}/stop")
   public void stop(@PathVariable String hostId, @PathVariable String id) {
-    docker.stop(hosts.urlOf(hostId), id);
+    docker.stop(hosts.requireConnected(hostId), id);
   }
 
   /**
@@ -102,11 +112,11 @@ public class ContainersController {
       @PathVariable String hostId,
       @PathVariable String id,
       @Valid @RequestBody UpdateContainerRequest request) {
-    return Map.of("id", updates.update(hosts.urlOf(hostId), hostId, id, request.version()));
+    return Map.of("id", updates.update(hosts.requireConnected(hostId), id, request.version()));
   }
 
   @DeleteMapping("/{hostId}/{id}")
   public void remove(@PathVariable String hostId, @PathVariable String id) {
-    docker.remove(hosts.urlOf(hostId), id);
+    docker.remove(hosts.requireConnected(hostId), id);
   }
 }

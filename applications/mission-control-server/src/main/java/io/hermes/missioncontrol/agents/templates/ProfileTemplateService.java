@@ -7,6 +7,7 @@ import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretInput;
@@ -114,13 +115,13 @@ public class ProfileTemplateService {
   // ── apply / deploy ─────────────────────────────────────────────────────────
 
   /** Create a new agent in {@code containerId} from a template and apply it. */
-  public AgentProfileDto deploy(String id, String url, String containerId, String name) {
-    return applier.deployNew(require(id), url, containerId, name);
+  public AgentProfileDto deploy(String id, DockerHostRef host, String containerId, String name) {
+    return applier.deployNew(require(id), host, containerId, name);
   }
 
   /** Layer a template onto an agent that already exists (used by the create flow). */
-  public AgentProfileDto applyExisting(String id, String url, String containerId, String name) {
-    return applier.layerOnto(require(id), url, containerId, name);
+  public AgentProfileDto applyExisting(String id, DockerHostRef host, String containerId, String name) {
+    return applier.layerOnto(require(id), host, containerId, name);
   }
 
   /**
@@ -130,13 +131,13 @@ public class ProfileTemplateService {
    * it is created here and not by {@link TemplateApplier#deployNew} — but this call owns it,
    * so a failure while applying rolls it back.
    */
-  public AgentProfileDto createFromTemplate(String id, String url, CreateAgentRequest request) {
+  public AgentProfileDto createFromTemplate(String id, DockerHostRef host, CreateAgentRequest request) {
     ProfileTemplate template = require(id);
-    profiles.createProfileBare(url, request);
+    profiles.createProfileBare(host, request);
     try {
-      return applier.layerOnto(template, url, request.containerId(), request.name());
+      return applier.layerOnto(template, host, request.containerId(), request.name());
     } catch (RuntimeException failure) {
-      applier.rollback(url, request.containerId(), request.name(), failure);
+      applier.rollback(host, request.containerId(), request.name(), failure);
       throw failure;
     }
   }
@@ -146,9 +147,9 @@ public class ProfileTemplateService {
   // atomic insert, and the datasource pool is size 1 — holding the sole connection
   // across those execs would serialize the whole app.
   public ProfileTemplateDto captureFromAgent(
-      String url, String containerId, String agentName, String templateName) {
-    AgentProfileDto agent = profiles.get(url, containerId, agentName);
-    AgentSetupDto agentSetup = setup.setup(url, containerId, agentName);
+      DockerHostRef host, String containerId, String agentName, String templateName) {
+    AgentProfileDto agent = profiles.get(host, containerId, agentName);
+    AgentSetupDto agentSetup = setup.setup(host, containerId, agentName);
 
     List<String> skills = agent.skills().stream()
         .filter(SkillDto::enabled)

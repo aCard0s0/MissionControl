@@ -4,7 +4,6 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.URL;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.enrichmentIsTransparent;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
@@ -75,7 +74,7 @@ class AgentMcpControllerTest {
   void addingAServerAssertsItIsCustomBeforeTheProfileIsWritten() throws Exception {
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any())).thenReturn(profile(PROFILE));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any())).thenReturn(profile(PROFILE));
 
     mvc.perform(post(MCP).contentType(MediaType.APPLICATION_JSON).content(BODY))
         .andExpect(status().isOk())
@@ -83,7 +82,7 @@ class AgentMcpControllerTest {
 
     InOrder order = inOrder(mcpCatalog, profiles);
     order.verify(mcpCatalog).assertCustom(HOST, CONTAINER, PROFILE, SERVER);
-    order.verify(profiles).addMcpServer(eq(URL), eq(CONTAINER), eq(PROFILE), any(AddMcpServerRequest.class));
+    order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq(PROFILE), any(AddMcpServerRequest.class));
   }
 
   @Test
@@ -96,7 +95,7 @@ class AgentMcpControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error").value("this server is linked to the catalog; sync it instead"));
 
-    verify(profiles, never()).addMcpServer(anyString(), anyString(), anyString(), any());
+    verify(profiles, never()).addMcpServer(any(), anyString(), anyString(), any());
   }
 
   @Test
@@ -113,7 +112,7 @@ class AgentMcpControllerTest {
   void updatingChecksThePathNameNotTheBodyNameSoARenameStaysAtomic() throws Exception {
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.updateMcpServer(anyString(), anyString(), anyString(), anyString(), any()))
+    when(profiles.updateMcpServer(any(), anyString(), anyString(), anyString(), any()))
         .thenReturn(profile(PROFILE));
 
     mvc.perform(put(MCP + "/" + SERVER).contentType(MediaType.APPLICATION_JSON).content("""
@@ -123,7 +122,7 @@ class AgentMcpControllerTest {
 
     // the entry being replaced is the one named in the path; the body name is its new name
     verify(mcpCatalog).assertCustom(HOST, CONTAINER, PROFILE, SERVER);
-    verify(profiles).updateMcpServer(eq(URL), eq(CONTAINER), eq(PROFILE), eq(SERVER), any());
+    verify(profiles).updateMcpServer(eq(HOST), eq(CONTAINER), eq(PROFILE), eq(SERVER), any());
   }
 
   @Test
@@ -139,13 +138,13 @@ class AgentMcpControllerTest {
   void togglingAServerWritesTheFlag() throws Exception {
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.setMcpServerEnabled(URL, CONTAINER, PROFILE, SERVER, false)).thenReturn(profile(PROFILE));
+    when(profiles.setMcpServerEnabled(HOST, CONTAINER, PROFILE, SERVER, false)).thenReturn(profile(PROFILE));
 
     mvc.perform(put(MCP + "/" + SERVER + "/enabled")
             .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
         .andExpect(status().isOk());
 
-    verify(profiles).setMcpServerEnabled(URL, CONTAINER, PROFILE, SERVER, false);
+    verify(profiles).setMcpServerEnabled(HOST, CONTAINER, PROFILE, SERVER, false);
   }
 
   @Test
@@ -154,12 +153,12 @@ class AgentMcpControllerTest {
     // entry would be left in config.yaml with nothing recording where it came from
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.removeMcpServer(URL, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
+    when(profiles.removeMcpServer(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
 
     mvc.perform(delete(MCP + "/" + SERVER)).andExpect(status().isOk());
 
     InOrder order = inOrder(profiles, mcpCatalog);
-    order.verify(profiles).removeMcpServer(URL, CONTAINER, PROFILE, SERVER);
+    order.verify(profiles).removeMcpServer(HOST, CONTAINER, PROFILE, SERVER);
     order.verify(mcpCatalog).forgetLink(HOST, CONTAINER, PROFILE, SERVER);
   }
 
@@ -188,15 +187,15 @@ class AgentMcpControllerTest {
 
     verify(mcpCatalog).sync(HOST, CONTAINER, PROFILE, SERVER);
     verify(mcpCatalog).unlink(HOST, CONTAINER, PROFILE, SERVER);
-    // these three delegate to a service that resolves the host itself, so the controller only
-    // asserts reachability rather than passing a URL down
-    verify(hosts, never()).urlOf(anyString());
+    // the controller resolves the host once and hands the ref down, so nothing downstream
+    // has a reason to resolve it a second time
+    verify(hosts, never()).ref(anyString());
   }
 
   @Test
   void testingAServerReportsTheProbeResult() throws Exception {
     hostIsConnected(hosts);
-    when(profiles.testMcpServer(URL, CONTAINER, PROFILE, SERVER))
+    when(profiles.testMcpServer(HOST, CONTAINER, PROFILE, SERVER))
         .thenReturn(new McpTestResult(SERVER, "ok", 7, 42L, null, 1_700_000_000_000L));
 
     mvc.perform(post(MCP + "/" + SERVER + "/test"))
@@ -224,8 +223,8 @@ class AgentMcpControllerTest {
     }
 
     verifyNoInteractions(profiles);
-    verify(mcpCatalog, never()).connect(anyString(), anyString(), anyString(), any());
-    verify(mcpCatalog, never()).sync(anyString(), anyString(), anyString(), anyString());
-    verify(mcpCatalog, never()).unlink(anyString(), anyString(), anyString(), anyString());
+    verify(mcpCatalog, never()).connect(any(), anyString(), anyString(), any());
+    verify(mcpCatalog, never()).sync(any(), anyString(), anyString(), anyString());
+    verify(mcpCatalog, never()).unlink(any(), anyString(), anyString(), anyString());
   }
 }

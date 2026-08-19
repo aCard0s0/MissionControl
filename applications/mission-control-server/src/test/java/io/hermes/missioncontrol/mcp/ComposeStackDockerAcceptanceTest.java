@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
@@ -85,7 +86,7 @@ class ComposeStackDockerAcceptanceTest {
     retained = new RetainedResourceRepository(jdbc);
 
     HostService hosts = mock(HostService.class);
-    when(hosts.urlOf(anyString())).thenReturn(SOCKET);
+    when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", SOCKET));
     McpConfigStore configs =
         new McpConfigStore(new SecretCipher("acceptance-secret", "", false), new ObjectMapper());
     compose = new ComposeStackManager(hosts, stackDirectory.toString());

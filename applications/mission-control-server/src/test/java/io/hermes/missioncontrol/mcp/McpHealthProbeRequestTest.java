@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
@@ -210,7 +211,7 @@ class McpHealthProbeRequestTest {
   @Test
   void aLocalManagedServerIsAttachedToTheMcpNetworkAndProbedByItsServiceName() {
     route("/mcp", 200, "application/json", "{}");
-    when(hosts.urlOf(HostService.LOCAL_HOST_ID)).thenReturn("unix:///sock");
+    when(hosts.ref(HostService.LOCAL_HOST_ID)).thenReturn(new DockerHostRef(HostService.LOCAL_HOST_ID, "unix:///sock"));
     McpHealthProbe attaching = probeOwnedBy(OWN_CONTAINER);
     // 'localhost' stands in for the Compose service name so the probe reaches the stub without
     // needing a Docker network to make a service name resolvable
@@ -218,7 +219,7 @@ class McpHealthProbeRequestTest {
 
     attaching.check(row("managed", "running", HostService.LOCAL_HOST_ID, "localhost"));
 
-    verify(docker).connectNetwork("unix:///sock", OWN_CONTAINER, ComposeStackRenderer.NETWORK);
+    verify(docker).connectNetwork(new DockerHostRef(HostService.LOCAL_HOST_ID, "unix:///sock"), OWN_CONTAINER, ComposeStackRenderer.NETWORK);
     assertEquals(List.of("POST /mcp"), requests);
     verify(repository).updateCheck(eq(ID), eq("connected"), isNull(), anyLong(), anyLong());
   }
@@ -239,9 +240,9 @@ class McpHealthProbeRequestTest {
 
   @Test
   void aFailedNetworkAttachIsRecordedAndStopsTheProbe() {
-    when(hosts.urlOf(HostService.LOCAL_HOST_ID)).thenReturn("unix:///sock");
+    when(hosts.ref(HostService.LOCAL_HOST_ID)).thenReturn(new DockerHostRef(HostService.LOCAL_HOST_ID, "unix:///sock"));
     doThrow(new UpstreamUnavailableException("docker host not connected"))
-        .when(docker).connectNetwork(anyString(), anyString(), anyString());
+        .when(docker).connectNetwork(any(), anyString(), anyString());
     localManagedConfig();
 
     probeOwnedBy(OWN_CONTAINER).check(row("managed", "running", HostService.LOCAL_HOST_ID, "localhost"));

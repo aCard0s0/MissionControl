@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -38,6 +39,8 @@ import org.yaml.snakeyaml.Yaml;
  * or container they describe goes away, or the map only ever grows.
  */
 class HermesProfileMcpTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private static final HermesConfigEditor EDITOR = new HermesConfigEditor();
 
@@ -92,7 +95,7 @@ class HermesProfileMcpTest {
    */
   private static DockerExecService probingExec() {
     DockerExecService dockerExec = mock(DockerExecService.class);
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(),
         anyBoolean(), anyBoolean(), any(Duration.class)))
         .thenAnswer(invocation -> {
           List<?> command = invocation.getArgument(3);
@@ -104,7 +107,7 @@ class HermesProfileMcpTest {
   }
 
   private static String status(HermesProfileMcp mcp, String containerId, String profileName) {
-    return mcp.list("unix:///sock", containerId, profileName, configMap()).get(0).status();
+    return mcp.list(HOST, containerId, profileName, configMap()).get(0).status();
   }
 
   /**
@@ -121,7 +124,7 @@ class HermesProfileMcpTest {
     FakeClock clock = new FakeClock();
     HermesProfileMcp liveMcp = liveMcp(probingExec(), clock);
 
-    assertEquals("connected", liveMcp.test("unix:///sock", "cid", "ops", "tp").status());
+    assertEquals("connected", liveMcp.test(HOST, "cid", "ops", "tp").status());
     assertEquals("connected", status(liveMcp, "cid", "ops"));
 
     clock.advance(9_999);
@@ -147,13 +150,13 @@ class HermesProfileMcpTest {
     FakeClock clock = new FakeClock();
     HermesProfileMcp liveMcp = liveMcp(probingExec(), clock);
 
-    liveMcp.test("unix:///sock", "removed-cid", "ops", "tp");
-    liveMcp.test("unix:///sock", "removed-cid", "eng", "tp");
+    liveMcp.test(HOST, "removed-cid", "ops", "tp");
+    liveMcp.test(HOST, "removed-cid", "eng", "tp");
     assertEquals(2, liveMcp.cachedProbeCount());
 
     // The container is gone now — removed outside Mission Control, so no eviction hook ran.
     clock.advance(10_000);
-    liveMcp.test("unix:///sock", "live-cid", "ops", "tp");
+    liveMcp.test(HOST, "live-cid", "ops", "tp");
 
     assertEquals(1, liveMcp.cachedProbeCount(),
         "a write sweeps what the TTL expired, including keys the read path never reaches");
@@ -168,12 +171,12 @@ class HermesProfileMcpTest {
     HermesProfileMcp liveMcp = liveMcp(dockerExec, clock);
     HermesProfiles profiles = AgentsWiring.profiles(dockerExec, liveMcp);
 
-    liveMcp.test("unix:///sock", "cid", "ops", "tp");
-    liveMcp.test("unix:///sock", "cid", "eng", "tp");
+    liveMcp.test(HOST, "cid", "ops", "tp");
+    liveMcp.test(HOST, "cid", "eng", "tp");
     assertEquals("connected", status(liveMcp, "cid", "ops"));
     assertEquals("connected", status(liveMcp, "cid", "eng"));
 
-    profiles.delete("unix:///sock", "cid", "ops");
+    profiles.delete(HOST, "cid", "ops");
 
     assertEquals("unknown", status(liveMcp, "cid", "ops"));
     assertEquals("connected", status(liveMcp, "cid", "eng"),
@@ -193,8 +196,8 @@ class HermesProfileMcpTest {
     FakeClock clock = new FakeClock();
     HermesProfileMcp liveMcp = liveMcp(probingExec(), clock);
 
-    liveMcp.test("unix:///sock", "old-cid", "ops", "tp");
-    liveMcp.test("unix:///sock", "other-cid", "ops", "tp");
+    liveMcp.test(HOST, "old-cid", "ops", "tp");
+    liveMcp.test(HOST, "other-cid", "ops", "tp");
     assertEquals("connected", status(liveMcp, "old-cid", "ops"));
 
     assertEquals(0, liveMcp.onContainerReplaced("dh-local", "old-cid", "new-cid"),
@@ -219,25 +222,25 @@ class HermesProfileMcpTest {
         "enabled", true));
     Map<String, Object> config = Map.of("mcp_servers", Map.of("tp", server));
     String yaml = "mcp_servers:\n  tp:\n    url: http://host.docker.internal:8050/mcp/sse\n    transport: sse\n    enabled: true\n";
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, yaml, ""))
         // Hermes currently exits 0 even when its protocol handshake fails.
         .thenReturn(new DockerExecService.ExecResult(0, "✗ Connection failed", ""));
 
-    assertEquals("unknown", liveMcp.list("unix:///sock", "cid", "ops", config).get(0).status());
-    assertEquals("error", liveMcp.test("unix:///sock", "cid", "ops", "tp").status());
-    assertEquals("error", liveMcp.list("unix:///sock", "cid", "ops", config).get(0).status());
+    assertEquals("unknown", liveMcp.list(HOST, "cid", "ops", config).get(0).status());
+    assertEquals("error", liveMcp.test(HOST, "cid", "ops", "tp").status());
+    assertEquals("error", liveMcp.list(HOST, "cid", "ops", config).get(0).status());
 
     server.put("url", "http://host.docker.internal:9999/mcp");
-    assertEquals("unknown", liveMcp.list("unix:///sock", "cid", "ops", config).get(0).status());
+    assertEquals("unknown", liveMcp.list(HOST, "cid", "ops", config).get(0).status());
   }
 
   @Test
   void disabledMcpIsNeverReportedConnected() {
     Map<String, Object> config = Map.of("mcp_servers", Map.of("off", Map.of(
         "url", "http://example.test/mcp", "enabled", false)));
-    AgentMcpServerDto result = mcp.list("unix:///sock", "cid", "ops", config).get(0);
+    AgentMcpServerDto result = mcp.list(HOST, "cid", "ops", config).get(0);
     assertFalse(result.enabled());
     assertEquals("disabled", result.status());
   }
@@ -288,7 +291,7 @@ class HermesProfileMcpTest {
 
     Map<String, Object> root = yamlMap(config);
     assertEquals("sse", mcpServer(config, "events").get("transport"));
-    AgentMcpServerDto dto = mcp.list("unix:///sock", "cid", "ops", root).get(0);
+    AgentMcpServerDto dto = mcp.list(HOST, "cid", "ops", root).get(0);
     assertEquals("sse", dto.transport());
     assertTrue(dto.enabled());
   }
@@ -370,19 +373,19 @@ class HermesProfileMcpTest {
 
     DockerExecService dockerExec = mock(DockerExecService.class);
     HermesProfileMcp liveMcp = liveMcp(dockerExec);
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, config, ""));
 
     assertThrows(ResourceConflictException.class, () -> liveMcp.update(
-        "unix:///sock", "cid", "ops", "old-name",
+        HOST, "cid", "ops", "old-name",
         new AddMcpServerRequest(
             "occupied", "http", "https://new.example.test/mcp", null, null, null)));
     // No temp-file write (and no deletion) is attempted after the collision is
     // discovered. Asserted by operation rather than by a total exec count, because the
     // profile-existence guard also reads before the config read.
     verify(dockerExec, never()).runAsUser(
-        anyString(), anyString(), anyString(), any(), eq("write MCP configuration"), anyBoolean(),
+        any(), anyString(), anyString(), any(), eq("write MCP configuration"), anyBoolean(),
         anyBoolean(), any(Duration.class));
   }
 

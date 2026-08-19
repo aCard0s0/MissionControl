@@ -6,6 +6,7 @@ import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.MessagingStatusDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.Secrets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -86,11 +87,11 @@ public class HermesSetup {
     this.envFile = envFile;
   }
 
-  public AgentSetupDto setup(String url, String containerId, String name) {
+  public AgentSetupDto setup(DockerHostRef host, String containerId, String name) {
     String envPath = ProfilePaths.profileDir(name) + "/.env";
-    boolean envExists = files.fileExists(url, containerId, envPath);
-    Map<String, String> env = parseEnv(files.readFile(url, containerId, envPath));
-    StatusReport report = runStatus(url, containerId, name);
+    boolean envExists = files.fileExists(host, containerId, envPath);
+    Map<String, String> env = parseEnv(files.readFile(host, containerId, envPath));
+    StatusReport report = runStatus(host, containerId, name);
 
     List<ApiKeyStatusDto> apiKeys = new ArrayList<>();
     for (ApiKeySpec spec : API_KEYS) {
@@ -127,7 +128,7 @@ public class HermesSetup {
     return new AgentSetupDto(envPath, envExists, apiKeys, authProviders, apiKeyProviders, messaging);
   }
 
-  public AgentSetupDto putEnv(String url, String containerId, String name, List<EnvEntry> entries) {
+  public AgentSetupDto putEnv(DockerHostRef host, String containerId, String name, List<EnvEntry> entries) {
     List<EnvEntry> toApply = entries == null ? List.of() : entries;
     for (EnvEntry entry : toApply) {
       if (entry == null || entry.key() == null || !ENV_KEY.matcher(entry.key()).matches()) {
@@ -145,17 +146,17 @@ public class HermesSetup {
     }
     for (EnvEntry entry : toApply) {
       if (entry.value() == null || entry.value().isBlank()) {
-        envFile.remove(url, containerId, name, entry.key());
+        envFile.remove(host, containerId, name, entry.key());
       } else {
-        envFile.write(url, containerId, name, entry.key(), entry.value());
+        envFile.write(host, containerId, name, entry.key(), entry.value());
       }
     }
-    return setup(url, containerId, name);
+    return setup(host, containerId, name);
   }
 
-  public AgentSetupDto initEnv(String url, String containerId, String name) {
-    envFile.seedIfMissing(url, containerId, name);
-    return setup(url, containerId, name);
+  public AgentSetupDto initEnv(DockerHostRef host, String containerId, String name) {
+    envFile.seedIfMissing(host, containerId, name);
+    return setup(host, containerId, name);
   }
 
   /** Commented-out .env template documenting every supported variable. */
@@ -190,10 +191,10 @@ public class HermesSetup {
 
   /** Degrades to null when `hermes status` cannot run — callers then report
    *  from the .env alone. */
-  private StatusReport runStatus(String url, String containerId, String name) {
+  private StatusReport runStatus(DockerHostRef host, String containerId, String name) {
     List<String> command = ProfilePaths.hermesCli(name, "status");
     try {
-      return parseStatus(files.exec(url, containerId, command).stdout());
+      return parseStatus(files.exec(host, containerId, command).stdout());
     } catch (RuntimeException e) {
       // degrading to the .env alone makes every externally-configured provider look
       // unconfigured, which is indistinguishable from "not set up" without this line

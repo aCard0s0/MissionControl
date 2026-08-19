@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
@@ -57,7 +58,7 @@ class McpManagedLifecycleTest {
     repository = new McpServerRepository(database.jdbc());
     compose = mock(ComposeStackManager.class);
     hosts = mock(HostService.class);
-    when(hosts.urlOf(anyString())).thenReturn("unix:///sock");
+    when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
 
     service = new McpRegistryService(repository,
         new RetainedResourceRepository(database.jdbc()),

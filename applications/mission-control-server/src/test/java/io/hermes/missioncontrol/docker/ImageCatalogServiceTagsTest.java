@@ -8,11 +8,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ImageCatalogServiceTagsTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private final DockerGateway docker = mock(DockerGateway.class);
   private final RegistryTagService registry = mock(RegistryTagService.class);
@@ -21,10 +24,10 @@ class ImageCatalogServiceTagsTest {
   @Test
   void localAndRemoteTagsAreJoinedIntoOneNewestFirstList() {
     stubRepository("hermes/image");
-    when(docker.localImageTags("unix:///sock")).thenReturn(Set.of("v2026.7.1"));
+    when(docker.localImageTags(HOST)).thenReturn(Set.of("v2026.7.1"));
     stubRemote(remote("latest"), remote("v2026.8.3"));
 
-    ImageTagsDto dto = catalog.tags("unix:///sock", true);
+    ImageTagsDto dto = catalog.tags(HOST, true);
 
     assertEquals(List.of("latest", "v2026.8.3", "v2026.7.1"), dto.tags());
     assertEquals(dto.tags(), dto.entries().stream().map(ImageTagDto::tag).toList());
@@ -40,11 +43,11 @@ class ImageCatalogServiceTagsTest {
   @Test
   void remoteStatusDetailAndTimestampReachTheDto() {
     stubRepository("hermes/image");
-    when(docker.localImageTags("unix:///sock")).thenReturn(Set.of("v2026.7.1"));
+    when(docker.localImageTags(HOST)).thenReturn(Set.of("v2026.7.1"));
     when(registry.tags("hermes/image")).thenReturn(new RegistryTagService.RemoteTags(
         List.of(), RegistryTagService.UNAVAILABLE, "connect timed out", 1234L));
 
-    ImageTagsDto dto = catalog.tags("unix:///sock", true);
+    ImageTagsDto dto = catalog.tags(HOST, true);
 
     // the badge shows the status, but only the detail and the reading's age let the
     // UI explain why the remote half of the catalog is missing
@@ -58,9 +61,9 @@ class ImageCatalogServiceTagsTest {
   @Test
   void skippingTheRegistryReportsDisabledAndNeverCallsIt() {
     stubRepository("hermes/image");
-    when(docker.localImageTags("unix:///sock")).thenReturn(Set.of("v2026.7.1"));
+    when(docker.localImageTags(HOST)).thenReturn(Set.of("v2026.7.1"));
 
-    ImageTagsDto dto = catalog.tags("unix:///sock", false);
+    ImageTagsDto dto = catalog.tags(HOST, false);
 
     assertEquals(RegistryTagService.DISABLED, dto.registryStatus());
     // no lookup was attempted, so there is no reading to date
@@ -73,13 +76,13 @@ class ImageCatalogServiceTagsTest {
   @Test
   void theRepositoryReportedIsTheBareRepositoryTheFrontendComparesAgainst() {
     stubRepository("nousresearch/hermes-agent");
-    when(docker.localImageTags("unix:///sock")).thenReturn(Set.of());
+    when(docker.localImageTags(HOST)).thenReturn(Set.of());
     // stubbed for the bare repository only: looking the registry up under anything else
     // (a tagged MC_HERMES_IMAGE, say) yields no RemoteTags at all
     when(registry.tags("nousresearch/hermes-agent")).thenReturn(new RegistryTagService.RemoteTags(
         List.of(remote("v2026.8.3")), RegistryTagService.OK, null, 99L));
 
-    ImageTagsDto dto = catalog.tags("unix:///sock", true);
+    ImageTagsDto dto = catalog.tags(HOST, true);
 
     // the frontend gates every update badge on this matching ContainerDto.image, which is
     // always a bare repository — echoing a tagged reference retires the badge fleet-wide
@@ -89,10 +92,10 @@ class ImageCatalogServiceTagsTest {
   @Test
   void theNewestPinnedReleaseSkipsFloatingTags() {
     stubRepository("hermes/image");
-    when(docker.localImageTags("unix:///sock")).thenReturn(Set.of());
+    when(docker.localImageTags(HOST)).thenReturn(Set.of());
     stubRemote(remote("latest"), remote("v2026.8.3"), remote("v2026.7.1"));
 
-    ImageTagsDto dto = catalog.tags("unix:///sock", true);
+    ImageTagsDto dto = catalog.tags(HOST, true);
 
     // 'latest' heads the list but names a stream, not a release: calling it newest would
     // tell a pinned container it is out of date forever
@@ -103,10 +106,10 @@ class ImageCatalogServiceTagsTest {
   @Test
   void aCatalogWithNothingPinnedReportsNoNewestRelease() {
     stubRepository("hermes/image");
-    when(docker.localImageTags("unix:///sock")).thenReturn(Set.of());
+    when(docker.localImageTags(HOST)).thenReturn(Set.of());
     stubRemote(remote("latest"), remote("main"), remote("edge"));
 
-    ImageTagsDto dto = catalog.tags("unix:///sock", true);
+    ImageTagsDto dto = catalog.tags(HOST, true);
 
     assertNull(dto.newest());
     // the catalog is not empty — every tag it holds is simply a moving one

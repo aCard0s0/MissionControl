@@ -27,6 +27,7 @@ import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretInput;
 import io.hermes.missioncontrol.secrets.SecretRef;
@@ -49,7 +50,7 @@ import org.mockito.InOrder;
  */
 class TemplateCaptureAndApplyTest {
 
-  private static final String URL = "unix:///sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///sock");
   private static final String CONTAINER = "c1";
 
   private final ProfileTemplateRepository repository = mock(ProfileTemplateRepository.class);
@@ -72,7 +73,7 @@ class TemplateCaptureAndApplyTest {
         new ApiKeyStatusDto("Anthropic", "ANTHROPIC_API_KEY", true, "sk-…abcd"),
         new ApiKeyStatusDto("OpenAI", "OPENAI_API_KEY", false, null)));
 
-    ProfileTemplateDto captured = service.captureFromAgent(URL, CONTAINER, "scout", "ops");
+    ProfileTemplateDto captured = service.captureFromAgent(HOST, CONTAINER, "scout", "ops");
 
     assertEquals(List.of("refactor"), captured.skills());
     SecretRef secret = captured.secrets().getFirst();
@@ -88,7 +89,7 @@ class TemplateCaptureAndApplyTest {
         mcp("docs", "http", "disabled"))));
     setupIs(List.of());
 
-    ProfileTemplateDto captured = service.captureFromAgent(URL, CONTAINER, "scout", "ops");
+    ProfileTemplateDto captured = service.captureFromAgent(HOST, CONTAINER, "scout", "ops");
 
     assertEquals(List.of("files", "docs"), captured.mcpServers().stream().map(McpServerSpec::name).toList());
     assertEquals(true, captured.mcpServers().get(0).enabled());
@@ -101,8 +102,8 @@ class TemplateCaptureAndApplyTest {
     agentIs(agent("scout", List.of(), List.of()));
     setupIs(List.of());
 
-    assertEquals("scout-template", service.captureFromAgent(URL, CONTAINER, "scout", null).name());
-    assertEquals("scout-template", service.captureFromAgent(URL, CONTAINER, "scout", "  ").name());
+    assertEquals("scout-template", service.captureFromAgent(HOST, CONTAINER, "scout", null).name());
+    assertEquals("scout-template", service.captureFromAgent(HOST, CONTAINER, "scout", "  ").name());
   }
 
   @Test
@@ -114,7 +115,7 @@ class TemplateCaptureAndApplyTest {
     when(repository.existsByName("scout-template")).thenReturn(true);
     when(repository.existsByName("scout-template-2")).thenReturn(true);
 
-    assertEquals("scout-template-3", service.captureFromAgent(URL, CONTAINER, "scout", null).name());
+    assertEquals("scout-template-3", service.captureFromAgent(HOST, CONTAINER, "scout", null).name());
   }
 
   @Test
@@ -122,7 +123,7 @@ class TemplateCaptureAndApplyTest {
     agentIs(agent("scout", List.of(), List.of()));
     setupIs(List.of());
 
-    ProfileTemplateDto captured = service.captureFromAgent(URL, CONTAINER, "scout", "ops");
+    ProfileTemplateDto captured = service.captureFromAgent(HOST, CONTAINER, "scout", "ops");
 
     assertEquals("Captured from scout", captured.description());
     assertEquals("anthropic", captured.provider());
@@ -144,12 +145,12 @@ class TemplateCaptureAndApplyTest {
       t.model = "gpt-5.2";
       t.baseUrl = "https://gateway.test/v1";
     }));
-    when(profiles.get(URL, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
 
-    service.deploy("pt-1", URL, CONTAINER, "scout");
+    service.deploy("pt-1", HOST, CONTAINER, "scout");
 
     ArgumentCaptor<CreateAgentRequest> created = ArgumentCaptor.forClass(CreateAgentRequest.class);
-    verify(profiles).create(eq(URL), created.capture());
+    verify(profiles).create(eq(HOST), created.capture());
     assertEquals("openai", created.getValue().provider());
     assertEquals("gpt-5.2", created.getValue().model());
     assertEquals("https://gateway.test/v1", created.getValue().baseUrl());
@@ -164,15 +165,15 @@ class TemplateCaptureAndApplyTest {
       t.model = "  ";
       t.baseUrl = "";
     }));
-    when(profiles.get(URL, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
 
-    service.deploy("pt-1", URL, CONTAINER, "scout");
+    service.deploy("pt-1", HOST, CONTAINER, "scout");
 
     ArgumentCaptor<CreateAgentRequest> created = ArgumentCaptor.forClass(CreateAgentRequest.class);
-    verify(profiles).create(eq(URL), created.capture());
+    verify(profiles).create(eq(HOST), created.capture());
     assertEquals("nous", created.getValue().provider());
     assertEquals("Hermes-4-405B", created.getValue().model());
-    assertNull(created.getValue().baseUrl(), "a blank base URL must not be sent as an empty string");
+    assertNull(created.getValue().baseUrl(), "a blank base HOST must not be sent as an empty string");
   }
 
   @Test
@@ -185,20 +186,20 @@ class TemplateCaptureAndApplyTest {
       t.mcpServers = Arrays.asList(mcpSpec("files"), mcpSpec("  "), null);
       t.secrets = List.of(new StoredSecret("ANTHROPIC_API_KEY", cipher.encrypt("sk-ant-real")));
     }));
-    when(profiles.get(URL, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
 
-    service.deploy("pt-1", URL, CONTAINER, "scout");
+    service.deploy("pt-1", HOST, CONTAINER, "scout");
 
     InOrder order = inOrder(profiles, setup);
-    order.verify(profiles).create(eq(URL), any());
-    order.verify(profiles).updateSoul(URL, CONTAINER, "scout", "be useful");
-    order.verify(profiles).installSkill(URL, CONTAINER, "scout", "refactor");
-    order.verify(profiles).addMcpServer(eq(URL), eq(CONTAINER), eq("scout"), any(AddMcpServerRequest.class));
-    order.verify(setup).putEnv(URL, CONTAINER, "scout",
+    order.verify(profiles).create(eq(HOST), any());
+    order.verify(profiles).updateSoul(HOST, CONTAINER, "scout", "be useful");
+    order.verify(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
+    order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq("scout"), any(AddMcpServerRequest.class));
+    order.verify(setup).putEnv(HOST, CONTAINER, "scout",
         List.of(new EnvEntry("ANTHROPIC_API_KEY", "sk-ant-real")));
     // a blank memory is not a memory: writing it would overwrite whatever the profile had
-    verify(profiles, never()).updateMemory(anyString(), anyString(), anyString(), anyString());
-    verify(profiles, never()).installSkill(URL, CONTAINER, "scout", "");
+    verify(profiles, never()).updateMemory(any(), anyString(), anyString(), anyString());
+    verify(profiles, never()).installSkill(HOST, CONTAINER, "scout", "");
   }
 
   @Test
@@ -209,24 +210,24 @@ class TemplateCaptureAndApplyTest {
     templateIs(template(t -> t.secrets = List.of(
         new StoredSecret("ANTHROPIC_API_KEY", foreign),
         new StoredSecret("OPENAI_API_KEY", null))));
-    when(profiles.get(URL, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
 
-    service.deploy("pt-1", URL, CONTAINER, "scout");
+    service.deploy("pt-1", HOST, CONTAINER, "scout");
 
-    verify(setup, never()).putEnv(anyString(), anyString(), anyString(), anyList());
+    verify(setup, never()).putEnv(any(), anyString(), anyString(), anyList());
   }
 
   @Test
   void aFailureWhileApplyingDropsTheProfileThisCallCreated() {
     templateIs(template(t -> t.skills = List.of("refactor")));
     doThrow(new IllegalStateException("skill not found"))
-        .when(profiles).installSkill(URL, CONTAINER, "scout", "refactor");
+        .when(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
 
     assertEquals("skill not found", assertThrows(IllegalStateException.class,
-        () -> service.deploy("pt-1", URL, CONTAINER, "scout")).getMessage());
+        () -> service.deploy("pt-1", HOST, CONTAINER, "scout")).getMessage());
 
     // all or nothing: a profile with a soul and no skills is not what the operator asked for
-    verify(profiles).delete(URL, CONTAINER, "scout");
+    verify(profiles).delete(HOST, CONTAINER, "scout");
   }
 
   @Test
@@ -234,12 +235,12 @@ class TemplateCaptureAndApplyTest {
     // the operator needs the reason the deploy failed; the cleanup problem is secondary
     templateIs(template(t -> t.skills = List.of("refactor")));
     IllegalStateException original = new IllegalStateException("skill not found");
-    doThrow(original).when(profiles).installSkill(URL, CONTAINER, "scout", "refactor");
+    doThrow(original).when(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
     doThrow(new IllegalStateException("container is gone"))
-        .when(profiles).delete(URL, CONTAINER, "scout");
+        .when(profiles).delete(HOST, CONTAINER, "scout");
 
     IllegalStateException thrown = assertThrows(IllegalStateException.class,
-        () -> service.deploy("pt-1", URL, CONTAINER, "scout"));
+        () -> service.deploy("pt-1", HOST, CONTAINER, "scout"));
 
     assertSame(original, thrown);
     assertEquals("container is gone", thrown.getSuppressed()[0].getMessage());
@@ -252,12 +253,12 @@ class TemplateCaptureAndApplyTest {
     // dropping an agent the caller already had is not this code's call
     templateIs(template(t -> t.skills = List.of("refactor")));
     doThrow(new IllegalStateException("skill not found"))
-        .when(profiles).installSkill(URL, CONTAINER, "scout", "refactor");
+        .when(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
 
-    assertThrows(IllegalStateException.class, () -> service.applyExisting("pt-1", URL, CONTAINER, "scout"));
+    assertThrows(IllegalStateException.class, () -> service.applyExisting("pt-1", HOST, CONTAINER, "scout"));
 
-    verify(profiles, never()).delete(anyString(), anyString(), anyString());
-    verify(profiles, never()).create(anyString(), any());
+    verify(profiles, never()).delete(any(), anyString(), anyString());
+    verify(profiles, never()).create(any(), any());
   }
 
   @Test
@@ -266,15 +267,15 @@ class TemplateCaptureAndApplyTest {
     // so it creates it itself — and therefore owns the rollback
     templateIs(template(t -> t.skills = List.of("refactor")));
     doThrow(new IllegalStateException("skill not found"))
-        .when(profiles).installSkill(URL, CONTAINER, "scout", "refactor");
+        .when(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
     CreateAgentRequest request = new CreateAgentRequest(
         "dh-local", CONTAINER, "scout", "anthropic", "claude-opus-5", null, null, null, "pt-1", null);
 
-    assertThrows(IllegalStateException.class, () -> service.createFromTemplate("pt-1", URL, request));
+    assertThrows(IllegalStateException.class, () -> service.createFromTemplate("pt-1", HOST, request));
 
-    verify(profiles).createProfileBare(URL, request);
-    verify(profiles).delete(URL, CONTAINER, "scout");
-    verify(profiles, never()).create(anyString(), any());
+    verify(profiles).createProfileBare(HOST, request);
+    verify(profiles).delete(HOST, CONTAINER, "scout");
+    verify(profiles, never()).create(any(), any());
   }
 
   // ── stored secrets on the way in ────────────────────────────────────────
@@ -325,11 +326,11 @@ class TemplateCaptureAndApplyTest {
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private void agentIs(AgentProfileDto agent) {
-    when(profiles.get(URL, CONTAINER, agent.name())).thenReturn(agent);
+    when(profiles.get(HOST, CONTAINER, agent.name())).thenReturn(agent);
   }
 
   private void setupIs(List<ApiKeyStatusDto> apiKeys) {
-    when(setup.setup(eq(URL), eq(CONTAINER), anyString())).thenReturn(
+    when(setup.setup(eq(HOST), eq(CONTAINER), anyString())).thenReturn(
         new AgentSetupDto("/opt/data/.env", true, apiKeys, List.of(), List.of(), List.of()));
   }
 

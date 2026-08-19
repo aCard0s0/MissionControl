@@ -12,6 +12,7 @@ import io.hermes.missioncontrol.agents.api.CronJobDto;
 import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.UpdateCronJobRequest;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,7 +39,7 @@ import org.junit.jupiter.api.Test;
  */
 class HermesCronTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
   private static final String CONTAINER = "c1";
 
   /** Records every argv and answers reads from a canned jobs.json. */
@@ -52,13 +53,13 @@ class HermesCronTest {
     }
 
     @Override
-    String readFile(String url, String containerId, String path) {
+    String readFile(DockerHostRef host, String containerId, String path) {
       commands.add(List.of("readFile", path));
       return jobsJson;
     }
 
     @Override
-    ExecResult exec(String url, String containerId, List<String> command, boolean check) {
+    ExecResult exec(DockerHostRef host, String containerId, List<String> command, boolean check) {
       commands.add(command);
       if (command.contains("status")) return new ExecResult(0, cronStatus, "");
       return new ExecResult(0, "", "");
@@ -90,7 +91,7 @@ class HermesCronTest {
     exec.jobsJson = fixture();
 
     Map<String, CronJobDto> byKind = new HashMap<>();
-    for (CronJobDto job : cron.list(URL, CONTAINER, "default").jobs()) {
+    for (CronJobDto job : cron.list(HOST, CONTAINER, "default").jobs()) {
       byKind.put(job.scheduleKind(), job);
     }
 
@@ -104,7 +105,7 @@ class HermesCronTest {
   void aJobCarriesTheFieldsThePageRenders() throws IOException {
     exec.jobsJson = fixture();
 
-    CronJobDto digest = cron.list(URL, CONTAINER, "default").jobs().stream()
+    CronJobDto digest = cron.list(HOST, CONTAINER, "default").jobs().stream()
         .filter(j -> "morning digest".equals(j.name())).findFirst().orElseThrow();
 
     // the capture script redacts every prompt — an operator's instructions to an agent are the
@@ -126,7 +127,7 @@ class HermesCronTest {
   void aPausedJobIsReportedAsDisabledRatherThanOmitted() throws IOException {
     exec.jobsJson = fixture();
 
-    CronJobDto paused = cron.list(URL, CONTAINER, "default").jobs().stream()
+    CronJobDto paused = cron.list(HOST, CONTAINER, "default").jobs().stream()
         .filter(j -> !j.enabled()).findFirst().orElseThrow();
 
     assertEquals("paused", paused.state());
@@ -137,7 +138,7 @@ class HermesCronTest {
   void aBoundedRepeatKeepsItsRemainingCount() throws IOException {
     exec.jobsJson = fixture();
 
-    CronJobDto watchdog = cron.list(URL, CONTAINER, "default").jobs().stream()
+    CronJobDto watchdog = cron.list(HOST, CONTAINER, "default").jobs().stream()
         .filter(j -> "watchdog".equals(j.name())).findFirst().orElseThrow();
 
     assertEquals(5, watchdog.repeatTimes());
@@ -148,7 +149,7 @@ class HermesCronTest {
   void jobsAreOrderedByWhatRunsNext() throws IOException {
     exec.jobsJson = fixture();
 
-    List<Long> nextRuns = cron.list(URL, CONTAINER, "default").jobs().stream()
+    List<Long> nextRuns = cron.list(HOST, CONTAINER, "default").jobs().stream()
         .map(CronJobDto::nextRunAt).toList();
 
     assertEquals(
@@ -159,18 +160,18 @@ class HermesCronTest {
   @Test
   void anEmptyOrUnreadableFileReadsAsAnEmptySchedule() {
     exec.jobsJson = "";
-    assertTrue(cron.list(URL, CONTAINER, "default").jobs().isEmpty());
+    assertTrue(cron.list(HOST, CONTAINER, "default").jobs().isEmpty());
 
     // a half-written file during a hermes write must not 500 the page that shows it
     exec.jobsJson = "{\"jobs\": [{\"id\": \"a\", ";
-    assertTrue(cron.list(URL, CONTAINER, "default").jobs().isEmpty());
+    assertTrue(cron.list(HOST, CONTAINER, "default").jobs().isEmpty());
   }
 
   @Test
   void readsTheProfilesOwnScheduleFile() throws IOException {
     exec.jobsJson = fixture();
 
-    cron.list(URL, CONTAINER, "ops");
+    cron.list(HOST, CONTAINER, "ops");
 
     assertTrue(exec.commands.contains(
         List.of("readFile", "/opt/data/profiles/ops/cron/jobs.json")));
@@ -183,21 +184,21 @@ class HermesCronTest {
     // a stored job nothing fires is the failure an operator cannot otherwise see
     exec.cronStatus = "✗ Gateway is not running — cron jobs will NOT fire";
 
-    assertFalse(cron.list(URL, CONTAINER, "default").schedulerRunning());
+    assertFalse(cron.list(HOST, CONTAINER, "default").schedulerRunning());
   }
 
   @Test
   void saysTheSchedulerIsUpWhenHermesReportsItRunning() {
     exec.cronStatus = "✓ Cron scheduler is running (gateway up)";
 
-    assertTrue(cron.list(URL, CONTAINER, "default").schedulerRunning());
+    assertTrue(cron.list(HOST, CONTAINER, "default").schedulerRunning());
   }
 
   // ── what each mutation asks hermes to do ──────────────────────────────────
 
   @Test
   void aCreatePassesTheScheduleAndPromptPositionally() {
-    cron.create(URL, CONTAINER, "default", new CreateCronJobRequest(
+    cron.create(HOST, CONTAINER, "default", new CreateCronJobRequest(
         "0 9 * * *", "Summarize alerts", "digest", "telegram", 5, List.of("web-research")));
 
     assertEquals(List.of("hermes", "cron", "create", "0 9 * * *", "Summarize alerts",
@@ -207,7 +208,7 @@ class HermesCronTest {
 
   @Test
   void aNamedProfileScopesEveryCommandWithMinusP() {
-    cron.create(URL, CONTAINER, "ops", new CreateCronJobRequest(
+    cron.create(HOST, CONTAINER, "ops", new CreateCronJobRequest(
         "30m", "Check disk", null, null, null, null));
 
     assertEquals(List.of("hermes", "-p", "ops", "cron", "create", "30m", "Check disk"),
@@ -216,7 +217,7 @@ class HermesCronTest {
 
   @Test
   void blankOptionsAreLeftOffTheCommandLineEntirely() {
-    cron.create(URL, CONTAINER, "default", new CreateCronJobRequest(
+    cron.create(HOST, CONTAINER, "default", new CreateCronJobRequest(
         "30m", null, "  ", "", null, List.of("", "  ")));
 
     assertEquals(List.of("hermes", "cron", "create", "30m"), exec.mutationCommand());
@@ -224,15 +225,15 @@ class HermesCronTest {
 
   @Test
   void aScheduleIsRequired() {
-    assertThrows(IllegalArgumentException.class, () -> cron.create(URL, CONTAINER, "default",
+    assertThrows(IllegalArgumentException.class, () -> cron.create(HOST, CONTAINER, "default",
         new CreateCronJobRequest("  ", "do it", null, null, null, null)));
-    assertThrows(IllegalArgumentException.class, () -> cron.create(URL, CONTAINER, "default",
+    assertThrows(IllegalArgumentException.class, () -> cron.create(HOST, CONTAINER, "default",
         new CreateCronJobRequest(null, "do it", null, null, null, null)));
   }
 
   @Test
   void anEditSendsOnlyTheFieldsThatChanged() {
-    cron.update(URL, CONTAINER, "default", "abc123",
+    cron.update(HOST, CONTAINER, "default", "abc123",
         new UpdateCronJobRequest(null, "new prompt", null, null, null, null));
 
     assertEquals(List.of("hermes", "cron", "edit", "abc123", "--prompt", "new prompt"),
@@ -241,7 +242,7 @@ class HermesCronTest {
 
   @Test
   void anEditWithNothingToChangeTouchesNoContainer() {
-    cron.update(URL, CONTAINER, "default", "abc123",
+    cron.update(HOST, CONTAINER, "default", "abc123",
         new UpdateCronJobRequest(null, null, null, null, null, null));
 
     assertTrue(exec.commands.stream().noneMatch(c -> c.contains("edit")));
@@ -249,28 +250,28 @@ class HermesCronTest {
 
   @Test
   void pausingUsesHermesOwnVerb() {
-    cron.setEnabled(URL, CONTAINER, "default", "abc123", false);
+    cron.setEnabled(HOST, CONTAINER, "default", "abc123", false);
 
     assertEquals(List.of("hermes", "cron", "pause", "abc123"), exec.mutationCommand());
   }
 
   @Test
   void resumingUsesHermesOwnVerb() {
-    cron.setEnabled(URL, CONTAINER, "default", "abc123", true);
+    cron.setEnabled(HOST, CONTAINER, "default", "abc123", true);
 
     assertEquals(List.of("hermes", "cron", "resume", "abc123"), exec.mutationCommand());
   }
 
   @Test
   void removeAddressesTheJobById() {
-    cron.remove(URL, CONTAINER, "default", "abc123");
+    cron.remove(HOST, CONTAINER, "default", "abc123");
 
     assertEquals(List.of("hermes", "cron", "remove", "abc123"), exec.mutationCommand());
   }
 
   @Test
   void runNowAsksForTheNextTickRatherThanTheSchedule() {
-    cron.runNow(URL, CONTAINER, "default", "abc123");
+    cron.runNow(HOST, CONTAINER, "default", "abc123");
 
     assertEquals(List.of("hermes", "cron", "run", "abc123"), exec.mutationCommand());
   }
@@ -280,20 +281,20 @@ class HermesCronTest {
     // ids reach us from a URL path segment and go straight into an argv
     for (String hostile : List.of("--help", "a b", "a;rm -rf /", "", "a".repeat(65), "a/b")) {
       assertThrows(IllegalArgumentException.class,
-          () -> cron.remove(URL, CONTAINER, "default", hostile), hostile);
+          () -> cron.remove(HOST, CONTAINER, "default", hostile), hostile);
     }
   }
 
   @Test
   void aProfileNameThatCouldEscapeTheProfilesDirIsRefused() {
-    assertThrows(IllegalArgumentException.class, () -> cron.list(URL, CONTAINER, "../../etc"));
+    assertThrows(IllegalArgumentException.class, () -> cron.list(HOST, CONTAINER, "../../etc"));
   }
 
   @Test
   void everyMutationAnswersWithTheScheduleHermesNowHolds() throws IOException {
     exec.jobsJson = fixture();
 
-    CronJobsDto after = cron.remove(URL, CONTAINER, "default", "abc123");
+    CronJobsDto after = cron.remove(HOST, CONTAINER, "default", "abc123");
 
     // the dashboard never guesses what a write produced — ids, parsed schedules and
     // next-run times are all hermes' to decide

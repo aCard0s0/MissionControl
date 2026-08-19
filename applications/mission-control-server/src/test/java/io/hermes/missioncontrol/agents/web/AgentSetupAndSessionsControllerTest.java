@@ -4,9 +4,9 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.URL;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -72,20 +72,20 @@ class AgentSetupAndSessionsControllerTest {
     // OAuth tokens live in the container's auth.json, not in a profile, so this reports what a
     // not-yet-created agent would inherit
     hostIsConnected(hosts);
-    when(setup.setup(URL, CONTAINER, "default")).thenReturn(setupReport(
+    when(setup.setup(HOST, CONTAINER, "default")).thenReturn(setupReport(
         List.of(new AuthProviderDto("Nous Portal", true, "authenticated", null))));
 
-    mvc.perform(get("/api/agents/" + HOST + "/" + CONTAINER + "/auth-providers"))
+    mvc.perform(get("/api/agents/" + HOST.id() + "/" + CONTAINER + "/auth-providers"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].label").value("Nous Portal"));
 
-    verify(setup).setup(URL, CONTAINER, "default");
+    verify(setup).setup(HOST, CONTAINER, "default");
   }
 
   @Test
   void theSetupReportForAProfileDelegates() throws Exception {
     hostIsConnected(hosts);
-    when(setup.setup(URL, CONTAINER, PROFILE)).thenReturn(setupReport(List.of()));
+    when(setup.setup(HOST, CONTAINER, PROFILE)).thenReturn(setupReport(List.of()));
 
     mvc.perform(get(BASE + "/setup"))
         .andExpect(status().isOk())
@@ -110,30 +110,30 @@ class AgentSetupAndSessionsControllerTest {
                 + "x".repeat(8_193) + "\"}]}"))
         .andExpect(status().isBadRequest());
 
-    verify(setup, never()).putEnv(anyString(), anyString(), anyString(), anyList());
+    verify(setup, never()).putEnv(any(), anyString(), anyString(), anyList());
   }
 
   @Test
   void aValidEnvWriteReachesTheContainerWithItsEntries() throws Exception {
     hostIsConnected(hosts);
-    when(setup.putEnv(eq(URL), eq(CONTAINER), eq(PROFILE), anyList())).thenReturn(setupReport(List.of()));
+    when(setup.putEnv(eq(HOST), eq(CONTAINER), eq(PROFILE), anyList())).thenReturn(setupReport(List.of()));
 
     mvc.perform(put(BASE + "/env").contentType(MediaType.APPLICATION_JSON)
             .content("{\"entries\":[{\"key\":\"ANTHROPIC_API_KEY\",\"value\":\"sk-ant-x\"}]}"))
         .andExpect(status().isOk());
 
-    verify(setup).putEnv(URL, CONTAINER, PROFILE,
+    verify(setup).putEnv(HOST, CONTAINER, PROFILE,
         List.of(new EnvEntry("ANTHROPIC_API_KEY", "sk-ant-x")));
   }
 
   @Test
   void initialisingEnvDelegates() throws Exception {
     hostIsConnected(hosts);
-    when(setup.initEnv(URL, CONTAINER, PROFILE)).thenReturn(setupReport(List.of()));
+    when(setup.initEnv(HOST, CONTAINER, PROFILE)).thenReturn(setupReport(List.of()));
 
     mvc.perform(post(BASE + "/env/init")).andExpect(status().isOk());
 
-    verify(setup).initEnv(URL, CONTAINER, PROFILE);
+    verify(setup).initEnv(HOST, CONTAINER, PROFILE);
   }
 
   // ── sessions ────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ class AgentSetupAndSessionsControllerTest {
   @Test
   void listingSessionsDelegates() throws Exception {
     hostIsConnected(hosts);
-    when(profiles.listSessions(URL, CONTAINER, PROFILE))
+    when(profiles.listSessions(HOST, CONTAINER, PROFILE))
         .thenReturn(List.of(new SessionDto("s-1", "first run", "cli", 1_700_000_000_000L, 4, "done")));
 
     mvc.perform(get(BASE + "/sessions"))
@@ -154,7 +154,7 @@ class AgentSetupAndSessionsControllerTest {
     // the in-container query already emits a JSON array; re-parsing it here would only add a
     // way for the response to differ from what the agent recorded
     hostIsConnected(hosts);
-    when(profiles.readSessionMessages(URL, CONTAINER, PROFILE, "s-1"))
+    when(profiles.readSessionMessages(HOST, CONTAINER, PROFILE, "s-1"))
         .thenReturn("[{\"role\":\"user\",\"text\":\"hello\"}]");
 
     mvc.perform(get(BASE + "/sessions/s-1"))
@@ -169,7 +169,7 @@ class AgentSetupAndSessionsControllerTest {
 
     mvc.perform(delete(BASE + "/sessions/s-1")).andExpect(status().isOk());
 
-    verify(profiles).deleteSession(URL, CONTAINER, PROFILE, "s-1");
+    verify(profiles).deleteSession(HOST, CONTAINER, PROFILE, "s-1");
   }
 
   @Test

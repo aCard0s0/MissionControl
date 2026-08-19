@@ -49,6 +49,7 @@ import com.github.dockerjava.api.model.RestartPolicy;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Volume;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
@@ -61,6 +62,8 @@ import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 
 class DockerGatewayTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
@@ -109,7 +112,7 @@ class DockerGatewayTest {
     when(inspect.exec()).thenReturn(mock(InspectVolumeResponse.class));
 
     assertThrows(ResourceConflictException.class,
-        () -> gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of()));
   }
 
   @Test
@@ -132,7 +135,7 @@ class DockerGatewayTest {
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
     assertThrows(RuntimeException.class,
-        () -> gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of("ops")));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of("ops")));
     verify(removeVolume).exec();
   }
 
@@ -148,7 +151,7 @@ class DockerGatewayTest {
     stubOneShotExhausted("helper-id");
 
     RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> deployer.runOneShot("unix:///sock", client, "hermes/image:latest",
+        () -> deployer.runOneShot(HOST, client, "hermes/image:latest",
             HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     assertEquals("initialize Hermes data volume timed out", failure.getMessage());
@@ -170,7 +173,7 @@ class DockerGatewayTest {
     // the volume is seeded by this point. Failing here would roll the whole deploy back —
     // and the surviving helper still holds the data volume, so that rollback could not
     // delete it either, leaving a half-removed deploy nothing can retry over.
-    assertDoesNotThrow(() -> deployer.runOneShot("unix:///sock", client, "hermes/image:latest",
+    assertDoesNotThrow(() -> deployer.runOneShot(HOST, client, "hermes/image:latest",
         HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     verify(reap).exec();
@@ -189,7 +192,7 @@ class DockerGatewayTest {
     when(reap.exec()).thenThrow(new RuntimeException("removal already in progress"));
 
     RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> deployer.runOneShot("unix:///sock", client, "hermes/image:latest",
+        () -> deployer.runOneShot(HOST, client, "hermes/image:latest",
             HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
 
     // the seeding failure is the diagnosis an operator needs; the tidy-up error must not
@@ -223,7 +226,7 @@ class DockerGatewayTest {
     when(inspect.exec()).thenReturn(inspected);
     when(inspected.getState()).thenReturn(state);
     when(state.getRunning()).thenReturn(true);
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class))).thenThrow(new RuntimeException("unreadable profile"));
     RemoveContainerCmd removeMain = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     RemoveVolumeCmd removeVolume = mock(RemoveVolumeCmd.class);
@@ -231,7 +234,7 @@ class DockerGatewayTest {
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
     assertThrows(RuntimeException.class,
-        () -> gateway.deploy("unix:///sock", "dh-local", "demo", "latest", List.of()));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of()));
 
     verify(removeMain).exec();
     verify(removeVolume).exec();
@@ -252,7 +255,7 @@ class DockerGatewayTest {
     when(client.removeContainerCmd("cid")).thenReturn(removeContainer);
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
-    gateway.remove("unix:///sock", "cid");
+    gateway.remove(HOST, "cid");
 
     verify(removeContainer).exec();
     verify(removeVolume).exec();
@@ -277,7 +280,7 @@ class DockerGatewayTest {
     ConnectToNetworkCmd connect = mock(ConnectToNetworkCmd.class, Answers.RETURNS_SELF);
     when(client.connectToNetworkCmd()).thenReturn(connect);
 
-    gateway.connectNetwork("unix:///sock", "agent-id", "mission-control-mcp-net");
+    gateway.connectNetwork(HOST, "agent-id", "mission-control-mcp-net");
 
     verify(connect).withContainerId("agent-id");
     verify(connect).withNetworkId("network-id");
@@ -291,7 +294,7 @@ class DockerGatewayTest {
     stubManagedInspect("cid", "hermes/image:v2026.7.1", true, Map.of(), Map.of());
 
     assertThrows(IllegalArgumentException.class,
-        () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+        () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
 
     // an unmanaged container must not be stopped, renamed, or recreated
     verify(client, never()).stopContainerCmd(anyString());
@@ -304,7 +307,7 @@ class DockerGatewayTest {
         Map.of("mc.managed", "true"), Map.of());
 
     assertThrows(IllegalArgumentException.class,
-        () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+        () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
     verify(client, never()).renameContainerCmd(anyString());
   }
 
@@ -313,7 +316,7 @@ class DockerGatewayTest {
     stubManagedInspect("cid", "someone/else:v1", true, managedLabels(), Map.of());
 
     assertThrows(IllegalArgumentException.class,
-        () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+        () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
     verify(client, never()).renameContainerCmd(anyString());
   }
 
@@ -323,7 +326,7 @@ class DockerGatewayTest {
     stubImage("hermes/image:v2026.8.3", "image-sha");
 
     assertThrows(ResourceConflictException.class,
-        () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+        () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
     verify(client, never()).renameContainerCmd(anyString());
   }
 
@@ -338,7 +341,7 @@ class DockerGatewayTest {
     RemoveContainerCmd removeOld = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     when(client.removeContainerCmd("cid")).thenReturn(removeOld);
 
-    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade(HOST, "cid", "v2026.8.3");
 
     assertEquals("new-id", result.newContainerId());
     assertEquals("v2026.7.1", result.fromTag());
@@ -385,7 +388,7 @@ class DockerGatewayTest {
     ConnectToNetworkCmd connect = mock(ConnectToNetworkCmd.class, Answers.RETURNS_SELF);
     when(client.connectToNetworkCmd()).thenReturn(connect);
 
-    gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    gateway.upgrade(HOST, "cid", "v2026.8.3");
 
     // losing this membership would silently break every catalog-linked MCP server
     verify(connect).withContainerId("new-id");
@@ -422,7 +425,7 @@ class DockerGatewayTest {
     ConnectToNetworkCmd connect = mock(ConnectToNetworkCmd.class, Answers.RETURNS_SELF);
     when(client.connectToNetworkCmd()).thenReturn(connect);
 
-    gateway.upgrade("unix:///sock", "cid1234abcd", "v2026.8.3");
+    gateway.upgrade(HOST, "cid1234abcd", "v2026.8.3");
 
     ArgumentCaptor<ContainerNetwork> attached = ArgumentCaptor.forClass(ContainerNetwork.class);
     verify(connect).withContainerNetwork(attached.capture());
@@ -439,14 +442,14 @@ class DockerGatewayTest {
     StartContainerCmd startNew = mock(StartContainerCmd.class);
     when(client.startContainerCmd("new-id")).thenReturn(startNew);
     stubRunningState("new-id");
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class))).thenThrow(new RuntimeException("gateway never came up"));
     RemoveContainerCmd removeNew = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     when(client.removeContainerCmd("new-id")).thenReturn(removeNew);
     StartContainerCmd restartOld = mock(StartContainerCmd.class);
     when(client.startContainerCmd("cid")).thenReturn(restartOld);
 
-    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+    assertThrows(RuntimeException.class, () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
 
     verify(removeNew).exec();
     verify(rename).withName("demo");        // renamed back off the parked name
@@ -463,7 +466,7 @@ class DockerGatewayTest {
     stubCreate("hermes/image:v2026.8.3", "new-id");
     when(client.removeContainerCmd("cid")).thenReturn(mock(RemoveContainerCmd.class, Answers.RETURNS_SELF));
 
-    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade(HOST, "cid", "v2026.8.3");
 
     assertFalse(result.running());
     // an operator parked this container on purpose; an update must not start it
@@ -487,7 +490,7 @@ class DockerGatewayTest {
     StartContainerCmd restartOld = mock(StartContainerCmd.class);
     when(client.startContainerCmd("cid")).thenReturn(restartOld);
 
-    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+    assertThrows(RuntimeException.class, () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
 
     // the container was stopped before the rename was attempted, so failing there must
     // still put it back — otherwise the Agent stays down with nothing scheduled to fix it
@@ -504,7 +507,7 @@ class DockerGatewayTest {
     stubStop("cid");
     stubCreate("hermes/image:v2026.8.3", "new-id");
     stubStartAndReady("new-id");
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class))).thenThrow(new RuntimeException("gateway never came up"));
     RemoveContainerCmd removeNew = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     when(client.removeContainerCmd("new-id")).thenReturn(removeNew);
@@ -514,7 +517,7 @@ class DockerGatewayTest {
     StartContainerCmd startOriginal = mock(StartContainerCmd.class);
     when(client.startContainerCmd("cid")).thenReturn(startOriginal);
 
-    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+    assertThrows(RuntimeException.class, () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
 
     // both containers mount mc-hermes-demo at /opt/data and both run 'gateway run', so
     // starting the original alongside a surviving replacement puts two Hermes gateways on
@@ -544,7 +547,7 @@ class DockerGatewayTest {
         .thenThrow(new NotFoundException("no such container: new-id"));
     when(inspectedNew.getState()).thenReturn(newState);
     when(newState.getRunning()).thenReturn(true);
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class))).thenThrow(new RuntimeException("gateway never came up"));
     RemoveContainerCmd removeNew = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
     when(client.removeContainerCmd("new-id")).thenReturn(removeNew);
@@ -552,7 +555,7 @@ class DockerGatewayTest {
     StartContainerCmd startOriginal = mock(StartContainerCmd.class);
     when(client.startContainerCmd("cid")).thenReturn(startOriginal);
 
-    assertThrows(RuntimeException.class, () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+    assertThrows(RuntimeException.class, () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
 
     // nothing else holds the data volume now, so the Agent must come back up
     verify(startOriginal).exec();
@@ -570,7 +573,7 @@ class DockerGatewayTest {
     when(client.startContainerCmd("cid")).thenReturn(restartOld);
 
     RuntimeException failure = assertThrows(RuntimeException.class,
-        () -> gateway.upgrade("unix:///sock", "cid", "v2026.8.3"));
+        () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
 
     assertEquals("daemon refused the stop", failure.getMessage());
     // the daemon may well have killed it before failing to answer, and an explicitly
@@ -596,7 +599,7 @@ class DockerGatewayTest {
 
     // the replacement is created, started and validated by this point: the upgrade
     // succeeded, and clearing away the parked original is only cleanup
-    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade(HOST, "cid", "v2026.8.3");
 
     assertEquals("new-id", result.newContainerId());
     verify(removeNew, never()).exec();
@@ -616,7 +619,7 @@ class DockerGatewayTest {
     stubStartAndReady("new-id");
     when(client.removeContainerCmd("cid")).thenReturn(mock(RemoveContainerCmd.class, Answers.RETURNS_SELF));
 
-    UpgradeResult result = gateway.upgrade("unix:///sock", "cid", "v2026.8.3");
+    UpgradeResult result = gateway.upgrade(HOST, "cid", "v2026.8.3");
 
     assertEquals("new-id", result.newContainerId());
     assertTrue(result.running());

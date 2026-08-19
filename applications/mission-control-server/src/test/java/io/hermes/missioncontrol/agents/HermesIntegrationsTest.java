@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import static io.hermes.missioncontrol.agents.FakeContainer.CONTAINER;
-import static io.hermes.missioncontrol.agents.FakeContainer.URL;
+import static io.hermes.missioncontrol.agents.FakeContainer.HOST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -31,7 +31,7 @@ class HermesIntegrationsTest {
 
   private Map<String, String> statuses(String json) {
     FakeContainer container = new FakeContainer().file(STATE, json);
-    return integrations(container).list(URL, CONTAINER, "ops").stream()
+    return integrations(container).list(HOST, CONTAINER, "ops").stream()
         .collect(Collectors.toMap(IntegrationDto::kind, IntegrationDto::status));
   }
 
@@ -79,7 +79,7 @@ class HermesIntegrationsTest {
         {"platforms":{"slack":{"state":"reticulating"},"discord":{}}}
         """);
 
-    List<IntegrationDto> listed = integrations(container).list(URL, CONTAINER, "ops");
+    List<IntegrationDto> listed = integrations(container).list(HOST, CONTAINER, "ops");
 
     assertEquals("gateway reticulating", listed.getFirst().detail());
     assertEquals("gateway state unknown", listed.get(1).detail());
@@ -109,7 +109,7 @@ class HermesIntegrationsTest {
 
   @Test
   void aProfileWithNoGatewayStateHasNoIntegrations() {
-    assertEquals(List.of(), integrations(new FakeContainer()).list(URL, CONTAINER, "ops"));
+    assertEquals(List.of(), integrations(new FakeContainer()).list(HOST, CONTAINER, "ops"));
   }
 
   @Test
@@ -121,6 +121,6 @@ class HermesIntegrationsTest {
   @Test
   void aProfileNameThatCouldEscapeTheProfilesDirectoryIsRejected() {
     assertThrows(IllegalArgumentException.class,
-        () -> integrations(new FakeContainer()).list(URL, CONTAINER, "../../etc"));
+        () -> integrations(new FakeContainer()).list(HOST, CONTAINER, "../../etc"));
   }
 }

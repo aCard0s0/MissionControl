@@ -32,8 +32,8 @@ public class ContainerLogReader {
     this.clients = clients;
   }
 
-  public List<LogLineDto> logs(String url, String containerId, int tail) {
-    DockerClient client = clients.forUrl(url);
+  public List<LogLineDto> logs(DockerHostRef host, String containerId, int tail) {
+    DockerClient client = clients.forUrl(host.url());
     List<LogLineDto> lines = new ArrayList<>();
     boolean complete = false;
     try (ResultCallback.Adapter<Frame> callback = new ResultCallback.Adapter<>() {

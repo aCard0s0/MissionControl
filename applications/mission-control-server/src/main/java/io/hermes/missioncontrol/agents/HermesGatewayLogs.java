@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -38,7 +39,7 @@ class HermesGatewayLogs {
     this.files = files;
   }
 
-  List<LogLineDto> read(String url, String containerId, String profileName, int tail) {
+  List<LogLineDto> read(DockerHostRef host, String containerId, String profileName, int tail) {
     String logDir = ProfilePaths.gatewayLogDir(profileName);
     int limit = Math.min(Math.max(tail, 1), 500);
     String script = """
@@ -49,7 +50,7 @@ class HermesGatewayLogs {
         } | tail -n "$limit"
         """;
     ExecResult result = files.exec(
-        url, containerId, List.of("sh", "-c", script, "_", logDir, String.valueOf(limit)));
+        host, containerId, List.of("sh", "-c", script, "_", logDir, String.valueOf(limit)));
     return parse(profileName, result.stdout());
   }
 

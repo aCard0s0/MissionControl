@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.io.IOException;
@@ -62,7 +63,7 @@ class ComposeStackManagerTest {
   @BeforeEach
   void setUp() {
     hosts = mock(HostService.class);
-    when(hosts.urlOf(anyString())).thenReturn("unix:///sock");
+    when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
   }
 
   // ── volume purging ──────────────────────────────────────────────────────

@@ -3,7 +3,6 @@ package io.hermes.missioncontrol.agents.web;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.URL;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -70,9 +69,9 @@ class AgentsControllerTest {
   @Test
   void listingProfilesReachesTheContainerWhenTheHostIsUp() throws Exception {
     hostIsConnected();
-    when(profiles.list(URL, CONTAINER)).thenReturn(List.of());
+    when(profiles.list(HOST, CONTAINER)).thenReturn(List.of());
 
-    mvc.perform(get("/api/agents").param("hostId", HOST).param("containerId", "c1"))
+    mvc.perform(get("/api/agents").param("hostId", HOST.id()).param("containerId", "c1"))
         .andExpect(status().isOk());
   }
 
@@ -80,7 +79,7 @@ class AgentsControllerTest {
   void aDisconnectedHostShortCircuitsBeforeTouchingTheContainer() throws Exception {
     hostIsDown();
 
-    mvc.perform(get("/api/agents").param("hostId", HOST).param("containerId", "c1"))
+    mvc.perform(get("/api/agents").param("hostId", HOST.id()).param("containerId", "c1"))
         .andExpect(status().isServiceUnavailable())
         .andExpect(jsonPath("$.error").value("docker host not connected"));
 
@@ -120,10 +119,10 @@ class AgentsControllerTest {
   @Test
   void listingEnrichesEveryProfileWithItsCatalogLinks() throws Exception {
     hostIsConnected();
-    when(profiles.list(URL, CONTAINER)).thenReturn(List.of(profile("scout"), profile("scribe")));
+    when(profiles.list(HOST, CONTAINER)).thenReturn(List.of(profile("scout"), profile("scribe")));
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
 
-    mvc.perform(get("/api/agents").param("hostId", HOST).param("containerId", CONTAINER))
+    mvc.perform(get("/api/agents").param("hostId", HOST.id()).param("containerId", CONTAINER))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].name").value("scout"))
         .andExpect(jsonPath("$[1].name").value("scribe"));
@@ -138,7 +137,7 @@ class AgentsControllerTest {
     // rollback-safe operation, so it must not be reachable by accident from the plain path
     hostIsConnected();
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
-    when(templates.createFromTemplate(eq("tpl-1"), eq(URL), any(CreateAgentRequest.class)))
+    when(templates.createFromTemplate(eq("tpl-1"), eq(HOST), any(CreateAgentRequest.class)))
         .thenReturn(profile("scout"));
 
     mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
@@ -148,8 +147,8 @@ class AgentsControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("scout"));
 
-    verify(templates).createFromTemplate(eq("tpl-1"), eq(URL), any(CreateAgentRequest.class));
-    verify(profiles, never()).create(anyString(), any());
+    verify(templates).createFromTemplate(eq("tpl-1"), eq(HOST), any(CreateAgentRequest.class));
+    verify(profiles, never()).create(any(), any());
   }
 
   @Test
@@ -157,7 +156,7 @@ class AgentsControllerTest {
     // the dashboard sends "" for "no template", and that must not look up a template named ""
     hostIsConnected();
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
-    when(profiles.create(eq(URL), any(CreateAgentRequest.class))).thenReturn(profile("scout"));
+    when(profiles.create(eq(HOST), any(CreateAgentRequest.class))).thenReturn(profile("scout"));
 
     mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
             {"hostId":"dh-local","containerId":"c1","name":"scout","provider":"anthropic",
@@ -165,7 +164,7 @@ class AgentsControllerTest {
             """))
         .andExpect(status().isOk());
 
-    verify(profiles).create(eq(URL), any(CreateAgentRequest.class));
+    verify(profiles).create(eq(HOST), any(CreateAgentRequest.class));
     verifyNoInteractions(templates);
   }
 
@@ -188,11 +187,11 @@ class AgentsControllerTest {
     // later profile that happens to reuse the name
     hostIsConnected();
 
-    mvc.perform(delete("/api/agents/" + HOST + "/" + CONTAINER + "/scout"))
+    mvc.perform(delete("/api/agents/" + HOST.id() + "/" + CONTAINER + "/scout"))
         .andExpect(status().isOk());
 
     InOrder order = inOrder(profiles, mcpCatalog);
-    order.verify(profiles).delete(URL, CONTAINER, "scout");
+    order.verify(profiles).delete(HOST, CONTAINER, "scout");
     order.verify(mcpCatalog).deleteAgentLinks(HOST, CONTAINER, "scout");
   }
 
@@ -200,7 +199,7 @@ class AgentsControllerTest {
   void updatingTheSoulAndTheConfigDelegateTheirBodies() throws Exception {
     hostIsConnected();
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
-    when(profiles.updateConfig(URL, CONTAINER, "scout", "model: opus\n")).thenReturn(profile("scout"));
+    when(profiles.updateConfig(HOST, CONTAINER, "scout", "model: opus\n")).thenReturn(profile("scout"));
 
     mvc.perform(put(BASE + "/soul").contentType(MediaType.APPLICATION_JSON)
             .content("{\"soul\":\"You scout the codebase.\"}"))
@@ -210,16 +209,16 @@ class AgentsControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("scout"));
 
-    verify(profiles).updateSoul(URL, CONTAINER, "scout", "You scout the codebase.");
-    verify(profiles).updateConfig(URL, CONTAINER, "scout", "model: opus\n");
+    verify(profiles).updateSoul(HOST, CONTAINER, "scout", "You scout the codebase.");
+    verify(profiles).updateConfig(HOST, CONTAINER, "scout", "model: opus\n");
   }
 
   @Test
   void integrationsAndLogsDelegateAndTheLogTailDefaultsToOneHundred() throws Exception {
     hostIsConnected();
-    when(profiles.integrations(URL, CONTAINER, "scout"))
+    when(profiles.integrations(HOST, CONTAINER, "scout"))
         .thenReturn(List.of(new IntegrationDto("slack", "connected", "#ops")));
-    when(profiles.logs(eq(URL), eq(CONTAINER), eq("scout"), anyInt())).thenReturn(List.of());
+    when(profiles.logs(eq(HOST), eq(CONTAINER), eq("scout"), anyInt())).thenReturn(List.of());
 
     mvc.perform(get(BASE + "/integrations"))
         .andExpect(status().isOk())
@@ -227,15 +226,15 @@ class AgentsControllerTest {
     mvc.perform(get(BASE + "/logs")).andExpect(status().isOk());
     mvc.perform(get(BASE + "/logs").param("tail", "5")).andExpect(status().isOk());
 
-    verify(profiles).logs(URL, CONTAINER, "scout", 100);
-    verify(profiles).logs(URL, CONTAINER, "scout", 5);
+    verify(profiles).logs(HOST, CONTAINER, "scout", 100);
+    verify(profiles).logs(HOST, CONTAINER, "scout", 5);
   }
 
   @Test
   void aDisconnectedHostFailsTheProfileWriteEndpointsToo() throws Exception {
     hostIsDown();
 
-    mvc.perform(delete("/api/agents/" + HOST + "/" + CONTAINER + "/scout"))
+    mvc.perform(delete("/api/agents/" + HOST.id() + "/" + CONTAINER + "/scout"))
         .andExpect(status().isServiceUnavailable());
     mvc.perform(put(BASE + "/soul").contentType(MediaType.APPLICATION_JSON).content("{\"soul\":\"x\"}"))
         .andExpect(status().isServiceUnavailable());

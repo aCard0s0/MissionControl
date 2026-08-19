@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
@@ -66,7 +67,7 @@ class McpRegistryLifecycleTest {
     hosts = mock(HostService.class);
     compose = mock(ComposeStackManager.class);
     operations = new QueuedOperations();
-    when(hosts.urlOf("dh-local")).thenReturn("unix:///sock");
+    when(hosts.ref("dh-local")).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
     service = new McpRegistryService(repository, retained, links, hosts, mock(DockerGateway.class),
         new SecretCipher("test-secret", "", false), new ObjectMapper(), compose, LIVE_MODE,
         operations);
@@ -110,7 +111,7 @@ class McpRegistryLifecycleTest {
 
   @Test
   void aManagedRecordMustNameAHostThisDashboardKnows() {
-    when(hosts.urlOf("dh-ghost")).thenThrow(new NoSuchElementException("no such docker host"));
+    when(hosts.ref("dh-ghost")).thenThrow(new NoSuchElementException("no such docker host"));
 
     assertThrows(NoSuchElementException.class, () -> service.create(managed("Files", "dh-ghost")));
     assertTrue(repository.findAll().isEmpty(), "no row may be left behind by a rejected create");
@@ -126,7 +127,7 @@ class McpRegistryLifecycleTest {
     assertEquals("kind is immutable; create a new catalog record instead",
         assertThrows(IllegalArgumentException.class,
             () -> service.update(id, external("Files"))).getMessage());
-    when(hosts.urlOf("dh-other")).thenReturn("tcp://other:2375");
+    when(hosts.ref("dh-other")).thenReturn(new DockerHostRef("dh-other", "tcp://other:2375"));
     assertEquals("hostId is immutable; duplicate the server onto another host instead",
         assertThrows(IllegalArgumentException.class,
             () -> service.update(id, managed("Files", "dh-other"))).getMessage());

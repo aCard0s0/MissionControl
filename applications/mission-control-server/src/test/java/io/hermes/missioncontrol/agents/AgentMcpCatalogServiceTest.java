@@ -20,6 +20,7 @@ import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
@@ -35,6 +36,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 class AgentMcpCatalogServiceTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private final McpRegistryService registry = mock(McpRegistryService.class);
   private final AgentMcpLinkRepository links = mock(AgentMcpLinkRepository.class);
@@ -57,7 +60,7 @@ class AgentMcpCatalogServiceTest {
     when(links.list("dh-local", "container", "default")).thenReturn(List.of(link));
     when(registry.require("mcp-1")).thenReturn(catalog);
 
-    AgentMcpServerDto enriched = service.enrich("dh-local", profile).mcp().getFirst();
+    AgentMcpServerDto enriched = service.enrich(HOST, profile).mcp().getFirst();
 
     assertEquals("catalog", enriched.origin());
     assertEquals("mcp-1", enriched.catalogServerId());
@@ -82,10 +85,9 @@ class AgentMcpCatalogServiceTest {
         .thenReturn(Map.of("Authorization", "Bearer secret"));
     when(links.list("dh-local", "container", "default")).thenReturn(List.of(
         new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 7, 1, 1)));
-    when(hosts.urlOf("dh-local")).thenReturn("unix:///sock");
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
     when(profiles.addMcpServer(
-        org.mockito.ArgumentMatchers.eq("unix:///sock"),
+        org.mockito.ArgumentMatchers.eq(HOST),
         org.mockito.ArgumentMatchers.eq("container"),
         org.mockito.ArgumentMatchers.eq("default"),
         org.mockito.ArgumentMatchers.any(AddMcpServerRequest.class)))
@@ -94,13 +96,13 @@ class AgentMcpCatalogServiceTest {
             "http://mcp-tools:1100/mcp", null, null))));
 
     AgentProfileDto result = service.connect(
-        "dh-local", "container", "default",
+        HOST, "container", "default",
         new ConnectCatalogMcpRequest("mcp-1", "tools"));
 
-    verify(docker).connectNetwork("unix:///sock", "container", "mission-control-mcp-net");
+    verify(docker).connectNetwork(HOST, "container", "mission-control-mcp-net");
     ArgumentCaptor<AddMcpServerRequest> request = ArgumentCaptor.forClass(AddMcpServerRequest.class);
     verify(profiles).addMcpServer(
-        org.mockito.ArgumentMatchers.eq("unix:///sock"),
+        org.mockito.ArgumentMatchers.eq(HOST),
         org.mockito.ArgumentMatchers.eq("container"),
         org.mockito.ArgumentMatchers.eq("default"), request.capture());
     assertEquals("http://mcp-tools:1100/mcp", request.getValue().url());
@@ -120,11 +122,10 @@ class AgentMcpCatalogServiceTest {
     when(catalog.runtimeState()).thenReturn("running");
     when(catalog.transport()).thenReturn("http");
     when(registry.require("mcp-1")).thenReturn(catalog);
-    when(hosts.urlOf("dh-local")).thenReturn("unix:///sock");
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
 
     IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
-        service.connect("dh-local", "container", "default",
+        service.connect(HOST, "container", "default",
             new ConnectCatalogMcpRequest("mcp-1", "tools")));
 
     assertTrue(error.getMessage().contains("cross-host URL"));
@@ -145,16 +146,16 @@ class AgentMcpCatalogServiceTest {
   void anAliasThatIsNotASafeIdentifierIsRefusedOnEveryPathThatTakesOne() {
     for (String bad : List.of("", "   ", "../etc", "-leading", "a".repeat(101), "with space")) {
       assertEquals("invalid MCP alias", assertThrows(IllegalArgumentException.class,
-          () -> service.connect("dh-local", "container", "default",
+          () -> service.connect(HOST, "container", "default",
               new ConnectCatalogMcpRequest("mcp-1", bad))).getMessage());
       assertThrows(IllegalArgumentException.class,
-          () -> service.sync("dh-local", "container", "default", bad));
+          () -> service.sync(HOST, "container", "default", bad));
       assertThrows(IllegalArgumentException.class,
-          () -> service.unlink("dh-local", "container", "default", bad));
+          () -> service.unlink(HOST, "container", "default", bad));
       assertThrows(IllegalArgumentException.class,
-          () -> service.assertCustom("dh-local", "container", "default", bad));
+          () -> service.assertCustom(HOST, "container", "default", bad));
       assertThrows(IllegalArgumentException.class,
-          () -> service.forgetLink("dh-local", "container", "default", bad));
+          () -> service.forgetLink(HOST, "container", "default", bad));
     }
     verifyNoInteractions(profiles);
     verifyNoInteractions(links);
@@ -163,7 +164,7 @@ class AgentMcpCatalogServiceTest {
   @Test
   void anAliasIsTrimmedBeforeItIsUsedAsAKey() {
     // ' tools ' and 'tools' must not become two entries, or a sync would edit the wrong one
-    service.forgetLink("dh-local", "container", "default", "  tools  ");
+    service.forgetLink(HOST, "container", "default", "  tools  ");
 
     verify(links).delete("dh-local", "container", "default", "tools");
   }
@@ -175,14 +176,14 @@ class AgentMcpCatalogServiceTest {
     // the alias is a config.yaml key: connecting over it would silently replace a custom entry
     registryHas(managedCatalog("dh-local", "running"));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default"))
+    when(profiles.get(HOST, "container", "default"))
         .thenReturn(profile(List.of(custom("tools"))));
 
     ResourceConflictException failure = assertThrows(ResourceConflictException.class, () ->
-        service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools")));
+        service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools")));
 
     assertEquals("an MCP server named 'tools' already exists on this Agent", failure.getMessage());
-    verify(profiles, never()).addMcpServer(anyString(), anyString(), anyString(), any());
+    verify(profiles, never()).addMcpServer(any(), anyString(), anyString(), any());
     verify(links, never()).upsert(any());
   }
 
@@ -191,13 +192,13 @@ class AgentMcpCatalogServiceTest {
     // its Compose service name would resolve to nothing, so the Agent would hold a dead entry
     registryHas(managedCatalog("dh-local", "exited"));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
 
     assertEquals("managed MCP server is not running: Tools",
         assertThrows(ResourceConflictException.class, () ->
-            service.connect("dh-local", "container", "default",
+            service.connect(HOST, "container", "default",
                 new ConnectCatalogMcpRequest("mcp-1", "tools"))).getMessage());
-    verify(docker, never()).connectNetwork(anyString(), anyString(), anyString());
+    verify(docker, never()).connectNetwork(any(), anyString(), anyString());
   }
 
   @Test
@@ -207,17 +208,17 @@ class AgentMcpCatalogServiceTest {
     registryHas(external);
     when(registry.materializedHeaders("mcp-1")).thenReturn(Map.of("Authorization", "Bearer secret"));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("tools"))));
 
-    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
 
     AddMcpServerRequest written = capturedAdd();
     assertEquals("https://tools.example.test/mcp", written.url());
     assertEquals("Bearer secret", written.headers().get("Authorization"));
     assertTrue(written.environment().isEmpty(), "environment belongs to stdio servers only");
-    verify(docker, never()).connectNetwork(anyString(), anyString(), anyString());
+    verify(docker, never()).connectNetwork(any(), anyString(), anyString());
   }
 
   @Test
@@ -225,11 +226,11 @@ class AgentMcpCatalogServiceTest {
     registryHas(stdioCatalog("npx", List.of("-y", "@example/files")));
     when(registry.materializedEnvironment("mcp-1")).thenReturn(Map.of("ROOT", "/data"));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("files"))));
 
-    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
     AddMcpServerRequest written = capturedAdd();
     assertEquals("npx", written.command());
@@ -242,11 +243,11 @@ class AgentMcpCatalogServiceTest {
   void aStdioCatalogServerWithNoCommandCannotBeConnected() {
     registryHas(stdioCatalog(null, List.of()));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
 
     assertEquals("catalog stdio server has no command: Tools",
         assertThrows(IllegalArgumentException.class, () ->
-            service.connect("dh-local", "container", "default",
+            service.connect(HOST, "container", "default",
                 new ConnectCatalogMcpRequest("mcp-1", "files"))).getMessage());
   }
 
@@ -257,11 +258,11 @@ class AgentMcpCatalogServiceTest {
     registryHas(stdioCatalog("npx", List.of(
         "-y", "my project", "it's", "say \"hi\"", "", "--flag=a b")));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("files"))));
 
-    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
     assertEquals("-y 'my project' 'it'\"'\"'s' 'say \"hi\"' '' '--flag=a b'", capturedAdd().args());
   }
@@ -270,11 +271,11 @@ class AgentMcpCatalogServiceTest {
   void aStdioServerWithNoArgumentsWritesNoArgumentString() {
     registryHas(stdioCatalog("npx", List.of()));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("files"))));
 
-    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
     assertNull(capturedAdd().args());
   }
@@ -285,8 +286,8 @@ class AgentMcpCatalogServiceTest {
   void syncingAnEntryThatIsNotLinkedIsANotFound() {
     assertEquals("MCP entry is not linked to the catalog: tools",
         assertThrows(NoSuchElementException.class,
-            () -> service.sync("dh-local", "container", "default", "tools")).getMessage());
-    verify(profiles, never()).updateMcpServer(anyString(), anyString(), anyString(), anyString(), any());
+            () -> service.sync(HOST, "container", "default", "tools")).getMessage());
+    verify(profiles, never()).updateMcpServer(any(), anyString(), anyString(), anyString(), any());
   }
 
   @Test
@@ -295,11 +296,11 @@ class AgentMcpCatalogServiceTest {
     linkExists("tools", 2);
     registryHas(managedCatalog("dh-local", "running"));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
 
     assertEquals("unknown MCP server on Agent: tools",
         assertThrows(NoSuchElementException.class,
-            () -> service.sync("dh-local", "container", "default", "tools")).getMessage());
+            () -> service.sync(HOST, "container", "default", "tools")).getMessage());
   }
 
   @Test
@@ -309,15 +310,15 @@ class AgentMcpCatalogServiceTest {
     registryHas(managedCatalog("dh-local", "running"));
     when(registry.sameHostConnectionUrl("mcp-1")).thenReturn("http://mcp-tools:1100/mcp");
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default"))
+    when(profiles.get(HOST, "container", "default"))
         .thenReturn(profile(List.of(disabled("tools"))));
-    when(profiles.updateMcpServer(anyString(), anyString(), anyString(), anyString(), any()))
+    when(profiles.updateMcpServer(any(), anyString(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(disabled("tools"))));
 
-    service.sync("dh-local", "container", "default", "tools");
+    service.sync(HOST, "container", "default", "tools");
 
     ArgumentCaptor<AddMcpServerRequest> written = ArgumentCaptor.forClass(AddMcpServerRequest.class);
-    verify(profiles).updateMcpServer(eq("unix:///sock"), eq("container"), eq("default"),
+    verify(profiles).updateMcpServer(eq(HOST), eq("container"), eq("default"),
         eq("tools"), written.capture());
     assertEquals(Boolean.FALSE, written.getValue().enabled());
   }
@@ -328,12 +329,12 @@ class AgentMcpCatalogServiceTest {
     registryHas(managedCatalog("dh-local", "running"));
     when(registry.sameHostConnectionUrl("mcp-1")).thenReturn("http://mcp-tools:1100/mcp");
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default"))
+    when(profiles.get(HOST, "container", "default"))
         .thenReturn(profile(List.of(custom("tools"))));
-    when(profiles.updateMcpServer(anyString(), anyString(), anyString(), anyString(), any()))
+    when(profiles.updateMcpServer(any(), anyString(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("tools"))));
 
-    service.sync("dh-local", "container", "default", "tools");
+    service.sync(HOST, "container", "default", "tools");
 
     ArgumentCaptor<AgentMcpLink> saved = ArgumentCaptor.forClass(AgentMcpLink.class);
     verify(links).upsert(saved.capture());
@@ -348,8 +349,8 @@ class AgentMcpCatalogServiceTest {
   void unlinkingAnEntryThatIsNotLinkedIsANotFound() {
     assertEquals("MCP entry is not linked to the catalog: tools",
         assertThrows(NoSuchElementException.class,
-            () -> service.unlink("dh-local", "container", "default", "tools")).getMessage());
-    verify(links, never()).delete(anyString(), anyString(), anyString(), anyString());
+            () -> service.unlink(HOST, "container", "default", "tools")).getMessage());
+    verify(links, never()).delete(any(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -357,13 +358,13 @@ class AgentMcpCatalogServiceTest {
     // the point of unlink: keep the working definition, stop tracking the catalog
     linkExists("tools", 2);
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default"))
+    when(profiles.get(HOST, "container", "default"))
         .thenReturn(profile(List.of(custom("tools"))));
 
-    AgentProfileDto result = service.unlink("dh-local", "container", "default", "tools");
+    AgentProfileDto result = service.unlink(HOST, "container", "default", "tools");
 
     verify(links).delete("dh-local", "container", "default", "tools");
-    verify(profiles, never()).removeMcpServer(anyString(), anyString(), anyString(), anyString());
+    verify(profiles, never()).removeMcpServer(any(), anyString(), anyString(), anyString());
     assertEquals("custom", result.mcp().getFirst().origin());
   }
 
@@ -373,20 +374,20 @@ class AgentMcpCatalogServiceTest {
 
     assertEquals("catalog-linked MCP entries must be customized before direct editing",
         assertThrows(ResourceConflictException.class,
-            () -> service.assertCustom("dh-local", "container", "default", "tools")).getMessage());
+            () -> service.assertCustom(HOST, "container", "default", "tools")).getMessage());
 
     when(links.find("dh-local", "container", "default", "mine")).thenReturn(Optional.empty());
-    service.assertCustom("dh-local", "container", "default", "mine");
+    service.assertCustom(HOST, "container", "default", "mine");
   }
 
   @Test
   void deletingAnAgentDropsAllItsLinksInOneStatement() {
     // one statement rather than one delete per alias: a partial failure used to leave a profile
     // holding some of its links
-    service.deleteAgentLinks("dh-local", "container", "default");
+    service.deleteAgentLinks(HOST, "container", "default");
 
     verify(links).deleteByAgent("dh-local", "container", "default");
-    verify(links, never()).delete(anyString(), anyString(), anyString(), anyString());
+    verify(links, never()).delete(any(), anyString(), anyString(), anyString());
   }
 
   // ── catalog deletion ────────────────────────────────────────────────────
@@ -397,13 +398,13 @@ class AgentMcpCatalogServiceTest {
     // connection to a server that is about to disappear, with nothing recording where it came from
     when(links.findByServer("mcp-1")).thenReturn(List.of(link("tools", "container")));
     hostIsUp();
-    when(profiles.setMcpServerEnabled("unix:///sock", "container", "default", "tools", false))
+    when(profiles.setMcpServerEnabled(HOST, "container", "default", "tools", false))
         .thenReturn(profile(List.of(disabled("tools"))));
 
     service.beforeServerDeleted("mcp-1");
 
     InOrder order = inOrder(profiles, links);
-    order.verify(profiles).setMcpServerEnabled("unix:///sock", "container", "default", "tools", false);
+    order.verify(profiles).setMcpServerEnabled(HOST, "container", "default", "tools", false);
     order.verify(links).delete("dh-local", "container", "default", "tools");
   }
 
@@ -411,7 +412,7 @@ class AgentMcpCatalogServiceTest {
   void aLinkWhoseAgentOrEntryIsGoneIsDiscardedRatherThanBlockingTheDeletion() {
     when(links.findByServer("mcp-1")).thenReturn(List.of(link("gone", "container")));
     hostIsUp();
-    when(profiles.setMcpServerEnabled("unix:///sock", "container", "default", "gone", false))
+    when(profiles.setMcpServerEnabled(HOST, "container", "default", "gone", false))
         .thenThrow(new NoSuchElementException("unknown MCP server on Agent: gone"));
 
     service.disableAndUnlinkForDeletion("mcp-1");
@@ -425,13 +426,13 @@ class AgentMcpCatalogServiceTest {
     // now would leave a live connection nothing can turn off
     when(links.findByServer("mcp-1")).thenReturn(List.of(link("tools", "container")));
     hostIsUp();
-    when(profiles.setMcpServerEnabled("unix:///sock", "container", "default", "tools", false))
+    when(profiles.setMcpServerEnabled(HOST, "container", "default", "tools", false))
         .thenReturn(profile(List.of(custom("tools"))));
 
     assertEquals("could not disable MCP entry tools",
         assertThrows(ResourceConflictException.class,
             () -> service.disableAndUnlinkForDeletion("mcp-1")).getMessage());
-    verify(links, never()).delete(anyString(), anyString(), anyString(), anyString());
+    verify(links, never()).delete(any(), anyString(), anyString(), anyString());
   }
 
   // ── enrich ──────────────────────────────────────────────────────────────
@@ -440,7 +441,7 @@ class AgentMcpCatalogServiceTest {
   void anUnlinkedEntryPassesThroughEnrichmentUntouched() {
     when(links.list("dh-local", "container", "default")).thenReturn(List.of());
 
-    AgentMcpServerDto result = service.enrich("dh-local", profile(List.of(custom("mine")))).mcp().getFirst();
+    AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("mine")))).mcp().getFirst();
 
     assertEquals("custom", result.origin());
     assertNull(result.catalogServerId());
@@ -455,7 +456,7 @@ class AgentMcpCatalogServiceTest {
         .thenReturn(List.of(link("tools", "container")));
     when(registry.require("mcp-1")).thenThrow(new NoSuchElementException("unknown MCP server: mcp-1"));
 
-    AgentMcpServerDto result = service.enrich("dh-local", profile(List.of(custom("tools")))).mcp().getFirst();
+    AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("tools")))).mcp().getFirst();
 
     assertEquals("custom", result.origin());
     verify(links).delete("dh-local", "container", "default", "tools");
@@ -469,7 +470,7 @@ class AgentMcpCatalogServiceTest {
         .thenReturn(List.of(new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1)));
     when(registry.require("mcp-1")).thenReturn(source);
 
-    AgentMcpServerDto result = service.enrich("dh-local", profile(List.of(custom("tools")))).mcp().getFirst();
+    AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("tools")))).mcp().getFirst();
 
     assertEquals("catalog", result.origin());
     assertFalse(result.updateAvailable());
@@ -478,7 +479,7 @@ class AgentMcpCatalogServiceTest {
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private void hostIsUp() {
-    when(hosts.urlOf("dh-local")).thenReturn("unix:///sock");
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
   }
 
   private void registryHas(McpServerDto source) {
@@ -520,7 +521,7 @@ class AgentMcpCatalogServiceTest {
 
   private AddMcpServerRequest capturedAdd() {
     ArgumentCaptor<AddMcpServerRequest> request = ArgumentCaptor.forClass(AddMcpServerRequest.class);
-    verify(profiles).addMcpServer(anyString(), anyString(), anyString(), request.capture());
+    verify(profiles).addMcpServer(any(), anyString(), anyString(), request.capture());
     return request.getValue();
   }
 
@@ -541,35 +542,35 @@ class AgentMcpCatalogServiceTest {
     when(source.crossHostUrl()).thenReturn("https://peer.test/mcp");
     registryHas(source);
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("tools"))));
     enrichesTransparently();
 
-    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
 
     assertEquals("https://peer.test/mcp", capturedAdd().url());
-    verify(docker, never()).connectNetwork(anyString(), anyString(), anyString());
+    verify(docker, never()).connectNetwork(any(), anyString(), anyString());
   }
 
   @Test
   void aStdioCatalogServerNeedsNoNetworkAndNoUrl() {
     registryHas(stdioCatalog("npx", List.of("a b")));
     hostIsUp();
-    when(profiles.get("unix:///sock", "container", "default")).thenReturn(profile(List.of()));
-    when(profiles.addMcpServer(anyString(), anyString(), anyString(), any()))
+    when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
+    when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("files"))));
     enrichesTransparently();
 
-    service.connect("dh-local", "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
 
     assertNull(capturedAdd().url());
     // one argument carrying a space must not become two
     assertEquals("'a b'", capturedAdd().args());
-    verify(docker, never()).connectNetwork(anyString(), anyString(), anyString());
+    verify(docker, never()).connectNetwork(any(), anyString(), anyString());
   }
 
   private void enrichesTransparently() {
-    when(links.list(anyString(), anyString(), anyString())).thenReturn(List.of());
+    when(links.list(any(), anyString(), anyString())).thenReturn(List.of());
   }
 }

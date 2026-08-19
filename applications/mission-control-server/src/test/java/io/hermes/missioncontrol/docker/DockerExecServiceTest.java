@@ -23,6 +23,7 @@ import com.github.dockerjava.api.command.InspectExecCmd;
 import com.github.dockerjava.api.command.InspectExecResponse;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -31,6 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 
 class DockerExecServiceTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   @Test
   void sensitiveFailureNeverContainsCommandOutput() {
@@ -83,7 +86,7 @@ class DockerExecServiceTest {
     DockerClients clients = stubbedClients(0);
 
     new DockerExecService(clients).runAsUser(
-        "unix:///sock", "cid", "hermes", List.of("true"), "test",
+        HOST, "cid", "hermes", List.of("true"), "test",
         true, false, Duration.ofSeconds(1));
 
     verify(create).withUser("hermes");
@@ -94,7 +97,7 @@ class DockerExecServiceTest {
     DockerClients clients = stubbedClients(0);
 
     DockerExecService.ExecResult result = new DockerExecService(clients).run(
-        "unix:///sock", "cid", List.of("hermes", "gateway", "status"), "read gateway status",
+        HOST, "cid", List.of("hermes", "gateway", "status"), "read gateway status",
         true, false, Duration.ofSeconds(1));
 
     assertEquals(0, result.exitCode());
@@ -111,7 +114,7 @@ class DockerExecServiceTest {
     DockerClients clients = stubbedClients(null);
 
     assertThrows(UpstreamUnavailableException.class, () -> new DockerExecService(clients).runAsUser(
-        "unix:///sock", "cid", "hermes", List.of("hermes", "profile", "delete"), "delete profile",
+        HOST, "cid", "hermes", List.of("hermes", "profile", "delete"), "delete profile",
         true, false, Duration.ofSeconds(1)));
   }
 
@@ -122,7 +125,7 @@ class DockerExecServiceTest {
     DockerClients clients = stubbedClients(null);
 
     DockerExecService.ExecResult result = new DockerExecService(clients).runAsUser(
-        "unix:///sock", "cid", "hermes", List.of("test", "-f", "/x"), "check file",
+        HOST, "cid", "hermes", List.of("test", "-f", "/x"), "check file",
         false, false, Duration.ofSeconds(1));
 
     assertNotEquals(0, result.exitCode());
@@ -133,7 +136,7 @@ class DockerExecServiceTest {
     DockerClients clients = stubbedClients(1);
 
     DockerExecService.ExecResult result = new DockerExecService(clients).runAsUser(
-        "unix:///sock", "cid", "hermes", List.of("test", "-f", "/absent"), "check file",
+        HOST, "cid", "hermes", List.of("test", "-f", "/absent"), "check file",
         false, false, Duration.ofSeconds(1));
 
     assertEquals(1, result.exitCode());
@@ -150,7 +153,7 @@ class DockerExecServiceTest {
         frame(StreamType.STDERR, "\nwarning: no tty"));
 
     DockerExecService.ExecResult result = new DockerExecService(clients).runAsUser(
-        "unix:///sock", "cid", "hermes", List.of("hermes", "profile", "list"), "list profiles",
+        HOST, "cid", "hermes", List.of("hermes", "profile", "list"), "list profiles",
         true, false, Duration.ofSeconds(1));
 
     assertEquals("{\"profiles\":[\"ops\"]}", result.stdout());
@@ -166,7 +169,7 @@ class DockerExecServiceTest {
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
         () -> new DockerExecService(clients).runAsUser(
-            "unix:///sock", "cid", "hermes", List.of("hermes", "gateway", "status"),
+            HOST, "cid", "hermes", List.of("hermes", "gateway", "status"),
             "read gateway status", true, false, Duration.ofMillis(1)));
 
     // a hung daemon is a 503, and the operator needs to know which call hung
@@ -181,7 +184,7 @@ class DockerExecServiceTest {
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
         () -> new DockerExecService(clients).runAsUser(
-            "unix:///sock", "cid", "hermes", List.of("hermes", "profile", "env", "set"),
+            HOST, "cid", "hermes", List.of("hermes", "profile", "env", "set"),
             "write profile environment", true, true, Duration.ofSeconds(1)));
 
     assertTrue(failure.getMessage().contains("write profile environment"));
@@ -273,7 +276,7 @@ class DockerExecServiceTest {
         .when(start).exec(any());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+        () -> new DockerExecService(clients).runAsUser(HOST, "cid", "hermes",
             List.of("hermes", "gateway", "status"), "read gateway status",
             true, false, Duration.ofSeconds(1)));
 
@@ -288,7 +291,7 @@ class DockerExecServiceTest {
     doThrow(new IllegalArgumentException("bad exec spec")).when(start).exec(any());
 
     assertThrows(IllegalArgumentException.class,
-        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+        () -> new DockerExecService(clients).runAsUser(HOST, "cid", "hermes",
             List.of("true"), "check file", false, false, Duration.ofSeconds(1)));
   }
 
@@ -299,7 +302,7 @@ class DockerExecServiceTest {
         .when(start).exec(any());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+        () -> new DockerExecService(clients).runAsUser(HOST, "cid", "hermes",
             List.of("hermes", "profile", "env", "set"), "write profile environment",
             true, true, Duration.ofSeconds(1)));
 
@@ -314,7 +317,7 @@ class DockerExecServiceTest {
         .when(inspect).exec();
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> new DockerExecService(clients).runAsUser("unix:///sock", "cid", "hermes",
+        () -> new DockerExecService(clients).runAsUser(HOST, "cid", "hermes",
             List.of("hermes", "profile", "env", "set"), "write profile environment",
             true, true, Duration.ofSeconds(1)));
 
@@ -324,7 +327,7 @@ class DockerExecServiceTest {
     DockerClients plain = stubbedClients(0);
     doThrow(new IllegalStateException("cannot inspect")).when(inspect).exec();
     assertThrows(IllegalStateException.class,
-        () -> new DockerExecService(plain).runAsUser("unix:///sock", "cid", "hermes",
+        () -> new DockerExecService(plain).runAsUser(HOST, "cid", "hermes",
             List.of("true"), "check file", false, false, Duration.ofSeconds(1)));
   }
 
@@ -334,7 +337,7 @@ class DockerExecServiceTest {
         new Frame(StreamType.STDOUT, null), frame(StreamType.STDOUT, "real output"));
 
     DockerExecService.ExecResult result = new DockerExecService(clients).runAsUser(
-        "unix:///sock", "cid", "hermes", List.of("true"), "read", true, false,
+        HOST, "cid", "hermes", List.of("true"), "read", true, false,
         Duration.ofSeconds(1));
 
     assertEquals("real output", result.stdout());

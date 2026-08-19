@@ -32,15 +32,16 @@ public class ContainerUpdateService {
   }
 
   /**
-   * Takes the daemon endpoint and the host id side by side, the way {@link
-   * DockerGateway#deploy} does: the caller already holds the host registry, and
-   * resolving it here would make this package depend on the one that owns hosts.
+   * Takes a {@link DockerHostRef} rather than resolving the host itself: resolving here
+   * would make this package depend on the one that owns hosts, and the caller has already
+   * done it. Both halves the remap needs — the endpoint to reach the daemon and the id the
+   * dashboard rows are keyed by — travel in the one value.
    *
    * @return the id of the replacement container
    */
-  public String update(String hostUrl, String hostId, String containerId, String version) {
-    UpgradeResult result = docker.upgrade(hostUrl, containerId, version);
-    remap(hostId, result.oldContainerId(), result.newContainerId());
+  public String update(DockerHostRef host, String containerId, String version) {
+    UpgradeResult result = docker.upgrade(host, containerId, version);
+    remap(host.id(), result.oldContainerId(), result.newContainerId());
     return result.newContainerId();
   }
 

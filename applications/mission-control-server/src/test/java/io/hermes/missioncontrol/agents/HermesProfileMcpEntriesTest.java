@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import static io.hermes.missioncontrol.agents.FakeContainer.CONTAINER;
-import static io.hermes.missioncontrol.agents.FakeContainer.URL;
+import static io.hermes.missioncontrol.agents.FakeContainer.HOST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -11,6 +11,7 @@ import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -39,10 +40,10 @@ class HermesProfileMcpEntriesTest {
   void aConfigWithNoUsableMcpBlockListsNothing() {
     HermesProfileMcp mcp = mcp(new FakeContainer());
 
-    assertTrue(mcp.list(URL, CONTAINER, PROFILE, null).isEmpty());
-    assertTrue(mcp.list(URL, CONTAINER, PROFILE, Map.of()).isEmpty());
+    assertTrue(mcp.list(HOST, CONTAINER, PROFILE, null).isEmpty());
+    assertTrue(mcp.list(HOST, CONTAINER, PROFILE, Map.of()).isEmpty());
     // a scalar where the block belongs, which a hand-edit produces easily
-    assertTrue(mcp.list(URL, CONTAINER, PROFILE, yaml("mcp_servers: none\n")).isEmpty());
+    assertTrue(mcp.list(HOST, CONTAINER, PROFILE, yaml("mcp_servers: none\n")).isEmpty());
   }
 
   @Test
@@ -54,7 +55,7 @@ class HermesProfileMcpEntriesTest {
           files: {transport: http, url: 'http://files:1/mcp'}
         """);
 
-    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(URL, CONTAINER, PROFILE, config);
+    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(HOST, CONTAINER, PROFILE, config);
 
     assertEquals(List.of("files"), listed.stream().map(AgentMcpServerDto::name).toList());
   }
@@ -70,7 +71,7 @@ class HermesProfileMcpEntriesTest {
           silent: {url: 'http://x:1/mcp'}
         """);
 
-    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(URL, CONTAINER, PROFILE, config);
+    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(HOST, CONTAINER, PROFILE, config);
 
     assertEquals("stdio", byName(listed, "shell").transport(), "a command means stdio");
     assertEquals("http", byName(listed, "stream").transport());
@@ -92,7 +93,7 @@ class HermesProfileMcpEntriesTest {
           odd: {transport: http, url: 'http://x:1/mcp', enabled: 'maybe'}
         """);
 
-    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(URL, CONTAINER, PROFILE, config);
+    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(HOST, CONTAINER, PROFILE, config);
 
     assertTrue(byName(listed, "plain").enabled());
     assertEquals(false, byName(listed, "switched-off").enabled());
@@ -111,7 +112,7 @@ class HermesProfileMcpEntriesTest {
           exclude: {transport: http, url: 'http://x:1/mcp', tools: {exclude: [write]}}
         """);
 
-    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(URL, CONTAINER, PROFILE, config);
+    List<AgentMcpServerDto> listed = mcp(new FakeContainer()).list(HOST, CONTAINER, PROFILE, config);
 
     assertEquals(2, byName(listed, "filtered").tools(), "blank entries are not tools");
     assertEquals(0, byName(listed, "scalar").tools());
@@ -126,10 +127,10 @@ class HermesProfileMcpEntriesTest {
 
     for (String name : List.of("", "   ")) {
       assertEquals("missing server name", assertThrows(IllegalArgumentException.class,
-          () -> mcp.test(URL, CONTAINER, PROFILE, name)).getMessage());
+          () -> mcp.test(HOST, CONTAINER, PROFILE, name)).getMessage());
     }
     assertEquals("missing server name", assertThrows(IllegalArgumentException.class,
-        () -> mcp.test(URL, CONTAINER, PROFILE, null)).getMessage());
+        () -> mcp.test(HOST, CONTAINER, PROFILE, null)).getMessage());
   }
 
   @Test
@@ -137,7 +138,7 @@ class HermesProfileMcpEntriesTest {
     FakeContainer container = new FakeContainer()
         .file(configPath(), "mcp_servers:\n  other: {transport: http, url: 'http://x:1/mcp'}\n");
 
-    McpTestResult result = mcp(container).test(URL, CONTAINER, PROFILE, "files");
+    McpTestResult result = mcp(container).test(HOST, CONTAINER, PROFILE, "files");
 
     assertEquals("error", result.status());
     assertEquals("server not found in config.yaml", result.error());
@@ -145,7 +146,7 @@ class HermesProfileMcpEntriesTest {
     // the same when there is no mcp block at all
     FakeContainer empty = new FakeContainer().file(configPath(), "model: opus\n");
     assertEquals("server not found in config.yaml",
-        mcp(empty).test(URL, CONTAINER, PROFILE, "files").error());
+        mcp(empty).test(HOST, CONTAINER, PROFILE, "files").error());
   }
 
   @Test
@@ -154,7 +155,7 @@ class HermesProfileMcpEntriesTest {
         "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp', enabled: false,"
             + " tools: {include: [read]}}\n");
 
-    McpTestResult result = mcp(container).test(URL, CONTAINER, PROFILE, "files");
+    McpTestResult result = mcp(container).test(HOST, CONTAINER, PROFILE, "files");
 
     assertEquals("disabled", result.status());
     assertEquals(1, result.tools(), "the configured filter is still reported");
@@ -170,7 +171,7 @@ class HermesProfileMcpEntriesTest {
         .onCommand("mcp", new ExecResult(0,
             "[32m✓ Connected (http)[0m\n  discovered 7 tools\n", ""));
 
-    McpTestResult result = mcp(container).test(URL, CONTAINER, PROFILE, "files");
+    McpTestResult result = mcp(container).test(HOST, CONTAINER, PROFILE, "files");
 
     assertEquals("connected", result.status());
     assertEquals(7, result.tools());
@@ -186,7 +187,7 @@ class HermesProfileMcpEntriesTest {
         .onCommand("mcp", new ExecResult(1, "connecting…\n",
             "[31mtraceback\nConnectionRefusedError: [Errno 111] Connection refused[0m\n"));
 
-    McpTestResult result = mcp(container).test(URL, CONTAINER, PROFILE, "files");
+    McpTestResult result = mcp(container).test(HOST, CONTAINER, PROFILE, "files");
 
     assertEquals("error", result.status());
     assertEquals("ConnectionRefusedError: [Errno 111] Connection refused", result.error());
@@ -199,7 +200,7 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(1, "  ", "   "));
 
-    assertEquals("MCP handshake failed", mcp(container).test(URL, CONTAINER, PROFILE, "files").error());
+    assertEquals("MCP handshake failed", mcp(container).test(HOST, CONTAINER, PROFILE, "files").error());
   }
 
   @Test
@@ -209,7 +210,7 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(0, "no MCP endpoint on that path\n", ""));
 
-    McpTestResult result = mcp(container).test(URL, CONTAINER, PROFILE, "files");
+    McpTestResult result = mcp(container).test(HOST, CONTAINER, PROFILE, "files");
 
     assertEquals("error", result.status());
     assertEquals("no MCP endpoint on that path", result.error());
@@ -223,7 +224,7 @@ class HermesProfileMcpEntriesTest {
             "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(0, "✓ Connected (http)\n", ""));
 
-    mcp(container).test(URL, CONTAINER, "default", "files");
+    mcp(container).test(HOST, CONTAINER, "default", "files");
 
     List<String> probe = container.executed().stream()
         .filter(argv -> argv.contains("mcp")).findFirst().orElseThrow();
@@ -261,14 +262,14 @@ class HermesProfileMcpEntriesTest {
             "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(0, "✓ Connected (http)\n", ""));
     HermesProfileMcp mcp = mcp(container);
-    mcp.test(URL, CONTAINER, PROFILE, "files");
-    mcp.test(URL, CONTAINER, "other", "files");
+    mcp.test(HOST, CONTAINER, PROFILE, "files");
+    mcp.test(HOST, CONTAINER, "other", "files");
 
-    mcp.evictProfile(URL, CONTAINER, PROFILE);
+    mcp.evictProfile(HOST, CONTAINER, PROFILE);
 
     // the evicted profile reports unknown again; the other keeps its cached verdict
-    assertEquals("unknown", byName(mcp.list(URL, CONTAINER, PROFILE, cachedConfig()), "files").status());
-    assertEquals("connected", byName(mcp.list(URL, CONTAINER, "other", cachedConfig()), "files").status());
+    assertEquals("unknown", byName(mcp.list(HOST, CONTAINER, PROFILE, cachedConfig()), "files").status());
+    assertEquals("connected", byName(mcp.list(HOST, CONTAINER, "other", cachedConfig()), "files").status());
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────
@@ -297,9 +298,9 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(0, "✓ Connected (http)\n", ""));
     HermesProfileMcp mcp = mcp(container);
-    mcp.test(URL, CONTAINER, PROFILE, "files");
+    mcp.test(HOST, CONTAINER, PROFILE, "files");
 
-    mcp.add(URL, CONTAINER, PROFILE, new AddMcpServerRequest(
+    mcp.add(HOST, CONTAINER, PROFILE, new AddMcpServerRequest(
         "docs", "http", "http://docs:1/mcp", null, null, true));
 
     String written = writtenConfig(container);
@@ -315,9 +316,9 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(0, "✓ Connected (http)\n", ""));
     HermesProfileMcp mcp = mcp(container);
-    mcp.test(URL, CONTAINER, PROFILE, "files");
+    mcp.test(HOST, CONTAINER, PROFILE, "files");
 
-    mcp.update(URL, CONTAINER, PROFILE, "files", new AddMcpServerRequest(
+    mcp.update(HOST, CONTAINER, PROFILE, "files", new AddMcpServerRequest(
         "files-v2", "http", "http://x:1/mcp", null, null, true));
 
     Map<?, ?> after = yaml(writtenConfig(container));
@@ -325,7 +326,7 @@ class HermesProfileMcpEntriesTest {
     assertTrue(servers.containsKey("files-v2"), writtenConfig(container));
     assertEquals(false, servers.containsKey("files"));
     assertEquals("unknown",
-        byName(mcp.list(URL, CONTAINER, PROFILE, after), "files-v2").status());
+        byName(mcp.list(HOST, CONTAINER, PROFILE, after), "files-v2").status());
   }
 
   @Test
@@ -334,7 +335,7 @@ class HermesProfileMcpEntriesTest {
     FakeContainer container = new FakeContainer().file(configPath(),
         "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp', unknown_key: keep-me}\n");
 
-    mcp(container).setEnabled(URL, CONTAINER, PROFILE, "files", false);
+    mcp(container).setEnabled(HOST, CONTAINER, PROFILE, "files", false);
 
     Map<?, ?> servers = (Map<?, ?>) yaml(writtenConfig(container)).get("mcp_servers");
     Map<?, ?> entry = (Map<?, ?>) servers.get("files");
@@ -349,7 +350,7 @@ class HermesProfileMcpEntriesTest {
         "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n"
             + "  docs: {transport: http, url: 'http://docs:1/mcp'}\n");
 
-    mcp(container).remove(URL, CONTAINER, PROFILE, "files");
+    mcp(container).remove(HOST, CONTAINER, PROFILE, "files");
 
     Map<?, ?> servers = (Map<?, ?>) yaml(writtenConfig(container)).get("mcp_servers");
     assertEquals(false, servers.containsKey("files"));
@@ -372,7 +373,7 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(1, "connecting…\nno route to host\n", "   "));
 
-    assertEquals("no route to host", mcp(container).test(URL, CONTAINER, PROFILE, "files").error());
+    assertEquals("no route to host", mcp(container).test(HOST, CONTAINER, PROFILE, "files").error());
   }
 
   @Test
@@ -381,7 +382,7 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(1, "", "x".repeat(500)));
 
-    String error = mcp(container).test(URL, CONTAINER, PROFILE, "files").error();
+    String error = mcp(container).test(HOST, CONTAINER, PROFILE, "files").error();
 
     assertEquals(300, error.length(), "the whole message is serialised into the API response");
   }
@@ -394,7 +395,7 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(1, "", "the real reason\n\n   \n"));
 
-    assertEquals("the real reason", mcp(container).test(URL, CONTAINER, PROFILE, "files").error());
+    assertEquals("the real reason", mcp(container).test(HOST, CONTAINER, PROFILE, "files").error());
   }
 
   @Test
@@ -403,16 +404,16 @@ class HermesProfileMcpEntriesTest {
         .file(configPath(), "mcp_servers:\n  files: {transport: http, url: 'http://x:1/mcp'}\n")
         .onCommand("mcp", new ExecResult(0, "✓ Connected (http)\n", ""));
     HermesProfileMcp mcp = mcp(container);
-    mcp.test(URL, CONTAINER, PROFILE, "files");
+    mcp.test(HOST, CONTAINER, PROFILE, "files");
 
     // a different container id keeps its own probes; ours are dropped
-    mcp.evictProfile(URL, "some-other-container", PROFILE);
-    assertEquals("connected", byName(mcp.list(URL, CONTAINER, PROFILE, cachedConfig()), "files").status());
+    mcp.evictProfile(HOST, "some-other-container", PROFILE);
+    assertEquals("connected", byName(mcp.list(HOST, CONTAINER, PROFILE, cachedConfig()), "files").status());
 
-    mcp.evictProfile("unix:///other-daemon", CONTAINER, PROFILE);
-    assertEquals("connected", byName(mcp.list(URL, CONTAINER, PROFILE, cachedConfig()), "files").status());
+    mcp.evictProfile(new DockerHostRef("dh-other", "unix:///other-daemon"), CONTAINER, PROFILE);
+    assertEquals("connected", byName(mcp.list(HOST, CONTAINER, PROFILE, cachedConfig()), "files").status());
 
-    mcp.evictProfile(URL, CONTAINER, PROFILE);
-    assertEquals("unknown", byName(mcp.list(URL, CONTAINER, PROFILE, cachedConfig()), "files").status());
+    mcp.evictProfile(HOST, CONTAINER, PROFILE);
+    assertEquals("unknown", byName(mcp.list(HOST, CONTAINER, PROFILE, cachedConfig()), "files").status());
   }
 }

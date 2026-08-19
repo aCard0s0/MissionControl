@@ -16,6 +16,7 @@ import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,7 @@ import org.junit.jupiter.api.Test;
  */
 class HermesProfilesDelegationTest {
 
-  private static final String URL = "unix:///sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///sock");
   private static final String CONTAINER = "c1";
   private static final String PROFILE = "scout";
   private static final String DIR = "/opt/data/profiles/scout";
@@ -61,8 +62,8 @@ class HermesProfilesDelegationTest {
     profiles = new HermesProfiles(files, env, modelConfig, skills, mcp, sessions, gatewayLogs,
         integrations, new ProfileInventory(files));
 
-    when(files.requireProfileDir(URL, CONTAINER, PROFILE)).thenReturn(DIR);
-    when(files.readFile(anyString(), anyString(), anyString())).thenReturn("");
+    when(files.requireProfileDir(HOST, CONTAINER, PROFILE)).thenReturn(DIR);
+    when(files.readFile(any(), anyString(), anyString())).thenReturn("");
     when(modelConfig.parseConfig(any())).thenReturn(new ConfigInfo("anthropic", "claude-opus-5", "/work"));
   }
 
@@ -70,10 +71,10 @@ class HermesProfilesDelegationTest {
 
   @Test
   void readingOneProfileAssemblesItFromEveryCollaborator() {
-    when(files.readFile(URL, CONTAINER, DIR + "/SOUL.md")).thenReturn("be useful");
-    when(files.readFile(URL, CONTAINER, DIR + "/MEMORY.md")).thenReturn("remembered");
+    when(files.readFile(HOST, CONTAINER, DIR + "/SOUL.md")).thenReturn("be useful");
+    when(files.readFile(HOST, CONTAINER, DIR + "/MEMORY.md")).thenReturn("remembered");
 
-    AgentProfileDto profile = profiles.get(URL, CONTAINER, PROFILE);
+    AgentProfileDto profile = profiles.get(HOST, CONTAINER, PROFILE);
 
     assertEquals(PROFILE, profile.name());
     assertEquals("Profile", profile.role());
@@ -82,30 +83,30 @@ class HermesProfilesDelegationTest {
     assertEquals("/work", profile.cwd());
     assertEquals("be useful", profile.soul());
     assertEquals("remembered", profile.memoryMd());
-    verify(skills).list(URL, CONTAINER, PROFILE, Map.of());
-    verify(mcp).list(URL, CONTAINER, PROFILE, Map.of());
-    verify(integrations).list(URL, CONTAINER, PROFILE);
+    verify(skills).list(HOST, CONTAINER, PROFILE, Map.of());
+    verify(mcp).list(HOST, CONTAINER, PROFILE, Map.of());
+    verify(integrations).list(HOST, CONTAINER, PROFILE);
   }
 
   @Test
   void theDefaultProfileIsLabelledAsSuchAndReadFromTheHermesHome() {
-    when(files.requireProfileDir(URL, CONTAINER, "default")).thenReturn("/opt/data");
+    when(files.requireProfileDir(HOST, CONTAINER, "default")).thenReturn("/opt/data");
 
-    AgentProfileDto profile = profiles.get(URL, CONTAINER, "default");
+    AgentProfileDto profile = profiles.get(HOST, CONTAINER, "default");
 
     assertEquals("Default profile", profile.role());
-    verify(files).readFile(URL, CONTAINER, "/opt/data/config.yaml");
+    verify(files).readFile(HOST, CONTAINER, "/opt/data/config.yaml");
   }
 
   @Test
   void listingReadsTheDefaultProfileAndEveryValidlyNamedDirectory() {
-    when(files.dirExists(URL, CONTAINER, "/opt/data")).thenReturn(true);
-    when(files.exec(anyString(), anyString(), any())).thenReturn(
+    when(files.dirExists(HOST, CONTAINER, "/opt/data")).thenReturn(true);
+    when(files.exec(any(), anyString(), any())).thenReturn(
         new io.hermes.missioncontrol.docker.DockerExecService.ExecResult(
             0, "scout\ndefault\n../escape\n\nscribe\n", ""));
-    when(files.requireProfileDir(anyString(), anyString(), anyString())).thenReturn(DIR);
+    when(files.requireProfileDir(any(), anyString(), anyString())).thenReturn(DIR);
 
-    List<AgentProfileDto> listed = profiles.list(URL, CONTAINER);
+    List<AgentProfileDto> listed = profiles.list(HOST, CONTAINER);
 
     // 'default' is added once from the home directory, not twice; a name that could escape the
     // profiles directory is dropped before it is concatenated into a container path
@@ -115,51 +116,51 @@ class HermesProfilesDelegationTest {
 
   @Test
   void aContainerWithNoHermesHomeListsOnlyItsNamedProfiles() {
-    when(files.dirExists(URL, CONTAINER, "/opt/data")).thenReturn(false);
-    when(files.exec(anyString(), anyString(), any())).thenReturn(
+    when(files.dirExists(HOST, CONTAINER, "/opt/data")).thenReturn(false);
+    when(files.exec(any(), anyString(), any())).thenReturn(
         new io.hermes.missioncontrol.docker.DockerExecService.ExecResult(0, "scout\n", ""));
-    when(files.requireProfileDir(anyString(), anyString(), anyString())).thenReturn(DIR);
+    when(files.requireProfileDir(any(), anyString(), anyString())).thenReturn(DIR);
 
     assertEquals(List.of("scout"),
-        profiles.list(URL, CONTAINER).stream().map(AgentProfileDto::name).toList());
+        profiles.list(HOST, CONTAINER).stream().map(AgentProfileDto::name).toList());
   }
 
   @Test
   void aStoppedContainerListsNothingRatherThanFailingTheAgentsPage() {
     // Docker answers 409 when a stale dashboard client asks to exec in a stopped container;
     // inventory is simply unavailable until it restarts
-    when(files.dirExists(anyString(), anyString(), anyString()))
+    when(files.dirExists(any(), anyString(), anyString()))
         .thenThrow(new com.github.dockerjava.api.exception.ConflictException("container not running"));
 
-    assertTrue(profiles.list(URL, CONTAINER).isEmpty());
+    assertTrue(profiles.list(HOST, CONTAINER).isEmpty());
   }
 
   // ── documents ───────────────────────────────────────────────────────────
 
   @Test
   void theSoulAndMemoryAreWrittenIntoTheProfileDirectory() {
-    profiles.updateSoul(URL, CONTAINER, PROFILE, "be useful");
-    profiles.updateMemory(URL, CONTAINER, PROFILE, null);
+    profiles.updateSoul(HOST, CONTAINER, PROFILE, "be useful");
+    profiles.updateMemory(HOST, CONTAINER, PROFILE, null);
 
-    verify(files).writeFile(URL, CONTAINER, DIR + "/SOUL.md", "be useful");
+    verify(files).writeFile(HOST, CONTAINER, DIR + "/SOUL.md", "be useful");
     // a null document is written as empty rather than as the string "null"
-    verify(files).writeFile(URL, CONTAINER, DIR + "/MEMORY.md", "");
+    verify(files).writeFile(HOST, CONTAINER, DIR + "/MEMORY.md", "");
   }
 
   @Test
   void aConfigThatIsNotAMappingIsRefusedBeforeItOverwritesTheFile() {
     assertEquals("config.yaml must be a YAML mapping",
         assertThrows(IllegalArgumentException.class,
-            () -> profiles.updateConfig(URL, CONTAINER, PROFILE, "- a list\n")).getMessage());
+            () -> profiles.updateConfig(HOST, CONTAINER, PROFILE, "- a list\n")).getMessage());
 
-    verify(files, never()).writeFile(anyString(), anyString(), anyString(), anyString());
+    verify(files, never()).writeFile(any(), anyString(), anyString(), anyString());
   }
 
   @Test
   void aValidConfigIsWrittenAndTheProfileIsReadBack() {
-    AgentProfileDto updated = profiles.updateConfig(URL, CONTAINER, PROFILE, "model: opus\n");
+    AgentProfileDto updated = profiles.updateConfig(HOST, CONTAINER, PROFILE, "model: opus\n");
 
-    verify(files).writeFile(URL, CONTAINER, DIR + "/config.yaml", "model: opus\n");
+    verify(files).writeFile(HOST, CONTAINER, DIR + "/config.yaml", "model: opus\n");
     assertEquals(PROFILE, updated.name(), "the caller gets the state after the write");
   }
 
@@ -167,19 +168,19 @@ class HermesProfilesDelegationTest {
 
   @Test
   void everySkillEndpointHandsOffToTheSkillsCollaboratorAndReturnsTheFreshProfile() {
-    when(skills.readContent(URL, CONTAINER, PROFILE, "refactor"))
+    when(skills.readContent(HOST, CONTAINER, PROFILE, "refactor"))
         .thenReturn(new SkillContentDto("refactor", DIR + "/skills/refactor", "body", List.of()));
 
-    assertEquals(PROFILE, profiles.setSkillEnabled(URL, CONTAINER, PROFILE, "refactor", false).name());
-    assertEquals(PROFILE, profiles.installSkill(URL, CONTAINER, PROFILE, "refactor").name());
-    assertEquals(PROFILE, profiles.uninstallSkill(URL, CONTAINER, PROFILE, "refactor").name());
-    assertEquals(PROFILE, profiles.updateSkillContent(URL, CONTAINER, PROFILE, "refactor", "body").name());
-    assertEquals("body", profiles.readSkillContent(URL, CONTAINER, PROFILE, "refactor").body());
+    assertEquals(PROFILE, profiles.setSkillEnabled(HOST, CONTAINER, PROFILE, "refactor", false).name());
+    assertEquals(PROFILE, profiles.installSkill(HOST, CONTAINER, PROFILE, "refactor").name());
+    assertEquals(PROFILE, profiles.uninstallSkill(HOST, CONTAINER, PROFILE, "refactor").name());
+    assertEquals(PROFILE, profiles.updateSkillContent(HOST, CONTAINER, PROFILE, "refactor", "body").name());
+    assertEquals("body", profiles.readSkillContent(HOST, CONTAINER, PROFILE, "refactor").body());
 
-    verify(skills).setEnabled(URL, CONTAINER, PROFILE, "refactor", false);
-    verify(skills).install(URL, CONTAINER, PROFILE, "refactor");
-    verify(skills).uninstall(URL, CONTAINER, PROFILE, "refactor");
-    verify(skills).updateContent(URL, CONTAINER, PROFILE, "refactor", "body");
+    verify(skills).setEnabled(HOST, CONTAINER, PROFILE, "refactor", false);
+    verify(skills).install(HOST, CONTAINER, PROFILE, "refactor");
+    verify(skills).uninstall(HOST, CONTAINER, PROFILE, "refactor");
+    verify(skills).updateContent(HOST, CONTAINER, PROFILE, "refactor", "body");
   }
 
   // ── mcp ─────────────────────────────────────────────────────────────────
@@ -187,39 +188,39 @@ class HermesProfilesDelegationTest {
   @Test
   void everyMcpEndpointHandsOffToTheMcpCollaboratorAndReturnsTheFreshProfile() {
     AddMcpServerRequest request = new AddMcpServerRequest("files", "http", "http://x:1/mcp", null, null, true);
-    when(mcp.test(URL, CONTAINER, PROFILE, "files"))
+    when(mcp.test(HOST, CONTAINER, PROFILE, "files"))
         .thenReturn(new McpTestResult("files", "connected", 3, 12L, null, 1L));
 
-    assertEquals(PROFILE, profiles.addMcpServer(URL, CONTAINER, PROFILE, request).name());
-    assertEquals(PROFILE, profiles.updateMcpServer(URL, CONTAINER, PROFILE, "files", request).name());
-    assertEquals(PROFILE, profiles.setMcpServerEnabled(URL, CONTAINER, PROFILE, "files", false).name());
-    assertEquals(PROFILE, profiles.removeMcpServer(URL, CONTAINER, PROFILE, "files").name());
-    assertEquals("connected", profiles.testMcpServer(URL, CONTAINER, PROFILE, "files").status());
+    assertEquals(PROFILE, profiles.addMcpServer(HOST, CONTAINER, PROFILE, request).name());
+    assertEquals(PROFILE, profiles.updateMcpServer(HOST, CONTAINER, PROFILE, "files", request).name());
+    assertEquals(PROFILE, profiles.setMcpServerEnabled(HOST, CONTAINER, PROFILE, "files", false).name());
+    assertEquals(PROFILE, profiles.removeMcpServer(HOST, CONTAINER, PROFILE, "files").name());
+    assertEquals("connected", profiles.testMcpServer(HOST, CONTAINER, PROFILE, "files").status());
 
-    verify(mcp).add(URL, CONTAINER, PROFILE, request);
-    verify(mcp).update(URL, CONTAINER, PROFILE, "files", request);
-    verify(mcp).setEnabled(URL, CONTAINER, PROFILE, "files", false);
-    verify(mcp).remove(URL, CONTAINER, PROFILE, "files");
+    verify(mcp).add(HOST, CONTAINER, PROFILE, request);
+    verify(mcp).update(HOST, CONTAINER, PROFILE, "files", request);
+    verify(mcp).setEnabled(HOST, CONTAINER, PROFILE, "files", false);
+    verify(mcp).remove(HOST, CONTAINER, PROFILE, "files");
   }
 
   // ── reads that pass straight through ────────────────────────────────────
 
   @Test
   void integrationsLogsAndSessionsAreReadFromTheirOwnCollaborators() {
-    when(gatewayLogs.read(URL, CONTAINER, PROFILE, 50))
+    when(gatewayLogs.read(HOST, CONTAINER, PROFILE, 50))
         .thenReturn(List.of(new LogLineDto(1L, "info", PROFILE, "started")));
-    when(sessions.list(URL, CONTAINER, PROFILE))
+    when(sessions.list(HOST, CONTAINER, PROFILE))
         .thenReturn(List.of(new SessionDto("s-1", "first", "cli", 1L, 2, "done")));
-    when(sessions.readMessages(URL, CONTAINER, PROFILE, "s-1")).thenReturn("[]");
+    when(sessions.readMessages(HOST, CONTAINER, PROFILE, "s-1")).thenReturn("[]");
 
-    assertTrue(profiles.integrations(URL, CONTAINER, PROFILE).isEmpty());
-    assertEquals("started", profiles.logs(URL, CONTAINER, PROFILE, 50).getFirst().msg());
-    assertEquals("s-1", profiles.listSessions(URL, CONTAINER, PROFILE).getFirst().id());
-    assertEquals("[]", profiles.readSessionMessages(URL, CONTAINER, PROFILE, "s-1"));
+    assertTrue(profiles.integrations(HOST, CONTAINER, PROFILE).isEmpty());
+    assertEquals("started", profiles.logs(HOST, CONTAINER, PROFILE, 50).getFirst().msg());
+    assertEquals("s-1", profiles.listSessions(HOST, CONTAINER, PROFILE).getFirst().id());
+    assertEquals("[]", profiles.readSessionMessages(HOST, CONTAINER, PROFILE, "s-1"));
 
-    profiles.deleteSession(URL, CONTAINER, PROFILE, "s-1");
-    verify(sessions).delete(URL, CONTAINER, PROFILE, "s-1");
-    verify(integrations).list(URL, CONTAINER, PROFILE);
-    verify(gatewayLogs).read(URL, CONTAINER, PROFILE, 50);
+    profiles.deleteSession(HOST, CONTAINER, PROFILE, "s-1");
+    verify(sessions).delete(HOST, CONTAINER, PROFILE, "s-1");
+    verify(integrations).list(HOST, CONTAINER, PROFILE);
+    verify(gatewayLogs).read(HOST, CONTAINER, PROFILE, 50);
   }
 }

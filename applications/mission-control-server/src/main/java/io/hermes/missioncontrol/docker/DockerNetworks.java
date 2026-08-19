@@ -32,16 +32,16 @@ public class DockerNetworks {
    * idempotent, including when another request wins the connect race between
    * our inspection and the Engine call.
    */
-  public void connect(String url, String containerId, String networkName) {
-    connect(url, containerId, networkName, List.of());
+  public void connect(DockerHostRef host, String containerId, String networkName) {
+    connect(host, containerId, networkName, List.of());
   }
 
   /** As above, preserving the network aliases a container was reachable under. */
-  public void connect(String url, String containerId, String networkName, List<String> aliases) {
+  public void connect(DockerHostRef host, String containerId, String networkName, List<String> aliases) {
     if (networkName == null || networkName.isBlank()) {
       throw new IllegalArgumentException("missing network name");
     }
-    DockerClient client = clients.forUrl(url);
+    DockerClient client = clients.forUrl(host.url());
     if (containerUsesNetwork(client, containerId, networkName)) return;
     String networkId = client.listNetworksCmd().withNameFilter(networkName).exec().stream()
         .filter(network -> networkName.equals(network.getName()))
