@@ -93,7 +93,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager = managerReturning(command -> isInspect(command) ? "someone-else" : "");
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.purgeVolume("dh-local", ComposeStackRenderer.PROJECT + "-postgres-data"));
+        () -> manager.purgeVolume("dh-local", ManagedMcpStack.PROJECT + "-postgres-data"));
 
     assertTrue(failure.getMessage().contains("not labeled"));
     assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
@@ -102,9 +102,9 @@ class ComposeStackManagerTest {
 
   @Test
   void purgingRemovesAVolumeThatIsBothCorrectlyNamedAndOwned() {
-    String volume = ComposeStackRenderer.PROJECT + "-postgres-data";
+    String volume = ManagedMcpStack.PROJECT + "-postgres-data";
     ComposeStackManager manager =
-        managerReturning(command -> isInspect(command) ? ComposeStackRenderer.PROJECT : "");
+        managerReturning(command -> isInspect(command) ? ManagedMcpStack.PROJECT : "");
 
     manager.purgeVolume("dh-local", volume);
 
@@ -160,7 +160,7 @@ class ComposeStackManagerTest {
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
         () -> manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
 
-    assertEquals("a network named '" + ComposeStackRenderer.NETWORK
+    assertEquals("a network named '" + ManagedMcpStack.NETWORK
         + "' already exists but is not owned by Mission Control MCP", failure.getMessage());
     assertTrue(commands.stream().noneMatch(ComposeStackManagerTest::isCompose),
         "Compose must not run once ownership fails");
@@ -188,7 +188,7 @@ class ComposeStackManagerTest {
     // same project name; our own owner label is the tiebreak
     ComposeStackManager manager = managerReturning(command -> {
       if (isContainerInspect(command)) return "someone-else";
-      if (isInspect(command)) return ComposeStackRenderer.PROJECT;
+      if (isInspect(command)) return ManagedMcpStack.PROJECT;
       return isDockerPs(command) ? "abc123\n" : "";
     });
 
@@ -218,7 +218,7 @@ class ComposeStackManagerTest {
     // 'no such volume' and 'not found' both come back from the daemon depending on the call
     ComposeStackManager manager = managerReturning(command -> {
       if (isNetworkInspect(command)) throw new UpstreamUnavailableException(
-          "Docker Compose operation failed: Error: no such network: " + ComposeStackRenderer.NETWORK);
+          "Docker Compose operation failed: Error: no such network: " + ManagedMcpStack.NETWORK);
       if (isVolumeInspect(command)) throw new UpstreamUnavailableException(
           "Docker Compose operation failed: get " + VOLUME + ": not found");
       return isCompose(command) ? "ok" : "";
@@ -230,7 +230,7 @@ class ComposeStackManagerTest {
   @Test
   void anOwnedNetworkVolumeAndContainerAreAdopted() {
     ComposeStackManager manager = managerReturning(command -> {
-      if (isInspect(command)) return ComposeStackRenderer.PROJECT;
+      if (isInspect(command)) return ManagedMcpStack.PROJECT;
       if (isDockerPs(command)) return "abc123\ndef456\n";
       return isCompose(command) ? "ok" : "";
     });
@@ -259,7 +259,7 @@ class ComposeStackManagerTest {
   @Test
   void ownershipLabelsAreReadFromConfigLabelsForContainersAndTopLevelForTheRest() {
     ComposeStackManager manager = managerReturning(command -> {
-      if (isInspect(command)) return ComposeStackRenderer.PROJECT;
+      if (isInspect(command)) return ManagedMcpStack.PROJECT;
       return isDockerPs(command) ? "abc123\n" : "";
     });
 
@@ -274,7 +274,7 @@ class ComposeStackManagerTest {
   @Test
   void executeWritesTheFileAndHandsComposeTheProjectTheFileAndTheRenderedEnvironment() {
     ComposeStackManager manager = managerReturning(command -> {
-      if (isInspect(command)) return ComposeStackRenderer.PROJECT;
+      if (isInspect(command)) return ManagedMcpStack.PROJECT;
       return "";
     });
 
@@ -282,7 +282,7 @@ class ComposeStackManagerTest {
 
     List<String> compose = commands.stream().filter(ComposeStackManagerTest::isCompose).findFirst().orElseThrow();
     assertEquals(List.of("docker", "--host", "unix:///sock", "compose",
-        "--project-name", ComposeStackRenderer.PROJECT,
+        "--project-name", ManagedMcpStack.PROJECT,
         "--file", composeFile().toString(), "up", "-d", "--wait"), compose);
     // the decrypted secrets travel in the process environment, never in the file
     assertEquals(Map.of("MC_MCP_0011", "secret"), environments.get(commands.indexOf(compose)));
@@ -337,7 +337,7 @@ class ComposeStackManagerTest {
 
     assertEquals("abc123", manager.serviceContainerId("dh-local", SERVICE));
     assertEquals(List.of("docker", "--host", "unix:///sock", "compose",
-        "--project-name", ComposeStackRenderer.PROJECT,
+        "--project-name", ManagedMcpStack.PROJECT,
         "--file", composeFile().toString(), "ps", "--all", "-q", SERVICE),
         commands.getFirst());
   }
@@ -443,7 +443,7 @@ class ComposeStackManagerTest {
         } finally {
           inFlight.decrementAndGet();
         }
-        return isInspect(command) ? ComposeStackRenderer.PROJECT : "";
+        return isInspect(command) ? ManagedMcpStack.PROJECT : "";
       }
     };
 
@@ -473,7 +473,7 @@ class ComposeStackManagerTest {
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private static final String SERVICE = "mcp-files";
-  private static final String VOLUME = ComposeStackRenderer.PROJECT + "-files-data";
+  private static final String VOLUME = ManagedMcpStack.PROJECT + "-files-data";
   private static final String YAML = "services:\n  mcp-files: {}\n";
 
   private static ComposeStackRenderer.Rendered rendered() {

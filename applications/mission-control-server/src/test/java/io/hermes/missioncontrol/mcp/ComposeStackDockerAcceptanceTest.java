@@ -201,7 +201,7 @@ class ComposeStackDockerAcceptanceTest {
 
   private String containerId() throws Exception {
     String out = output("docker", "ps", "--all", "--quiet",
-        "--filter", "label=com.docker.compose.project=" + ComposeStackRenderer.PROJECT,
+        "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
         "--filter", "label=com.docker.compose.service=" + serviceKey);
     return out.isBlank() ? null : out.lines().findFirst().orElse(null);
   }

@@ -9,12 +9,16 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
-/** Renders the deliberately narrow managed-server model into non-secret Compose YAML. */
+/**
+ * Renders the deliberately narrow managed-server model into non-secret Compose YAML.
+ *
+ * <p>Every name this emits that something else has to recognise — the project, the network, the
+ * ownership labels — comes from {@link ManagedMcpStack}, because the reader is always somewhere
+ * else: {@link ComposeStackManager} inspects the labels back, {@link McpHealthProbe} and the
+ * {@code agents} package join the network.
+ */
 @Component
 final class ComposeStackRenderer {
-
-  static final String PROJECT = "mission-control-mcp";
-  static final String NETWORK = "mission-control-mcp-net";
 
   record Deployment(
       String id,
@@ -72,10 +76,10 @@ final class ComposeStackRenderer {
       volumeNames.put(deployment.id(), List.copyOf(new LinkedHashSet<>(actualVolumes)));
     }
 
-    yaml.append("networks:\n  mcp:\n    name: '").append(NETWORK).append("'\n")
+    yaml.append("networks:\n  mcp:\n    name: '").append(ManagedMcpStack.NETWORK).append("'\n")
         .append("    driver: bridge\n")
         .append("    labels:\n")
-        .append("      io.hermes.mission-control.owner: '").append(PROJECT).append("'\n");
+        .append("      " + ManagedMcpStack.OWNER_LABEL + ": '").append(ManagedMcpStack.PROJECT).append("'\n");
     if (!declaredVolumeKeys.isEmpty()) {
       yaml.append("volumes:\n");
       for (Map.Entry<String, String> volume : declaredVolumeKeys.entrySet()) {
@@ -83,8 +87,8 @@ final class ComposeStackRenderer {
         yaml.append("  ").append(volumeKey).append(":\n")
             .append("    name: '").append(actualVolumeName(volumeKey)).append("'\n")
             .append("    labels:\n")
-            .append("      io.hermes.mission-control.owner: '").append(PROJECT).append("'\n")
-            .append("      io.hermes.mission-control.mcp-server-id: ").append(quote(volume.getValue())).append("\n");
+            .append("      " + ManagedMcpStack.OWNER_LABEL + ": '").append(ManagedMcpStack.PROJECT).append("'\n")
+            .append("      " + ManagedMcpStack.SERVER_ID_LABEL + ": ").append(quote(volume.getValue())).append("\n");
       }
     }
     return new Rendered(yaml.toString(), Map.copyOf(processEnvironment),
@@ -110,8 +114,8 @@ final class ComposeStackRenderer {
         .append("    image: ").append(quote(image)).append("\n")
         .append("    restart: unless-stopped\n")
         .append("    labels:\n")
-        .append("      io.hermes.mission-control.owner: '").append(PROJECT).append("'\n")
-        .append("      io.hermes.mission-control.mcp-server-id: ").append(quote(deployment.id())).append("\n")
+        .append("      " + ManagedMcpStack.OWNER_LABEL + ": '").append(ManagedMcpStack.PROJECT).append("'\n")
+        .append("      " + ManagedMcpStack.SERVER_ID_LABEL + ": ").append(quote(deployment.id())).append("\n")
         .append("    networks:\n      - mcp\n");
     if (platform != null) yaml.append("    platform: ").append(quote(platform)).append("\n");
     appendList(yaml, "entrypoint", entrypoint);
@@ -173,7 +177,7 @@ final class ComposeStackRenderer {
   }
 
   static String actualVolumeName(String volumeKey) {
-    return PROJECT + "-" + volumeKey;
+    return ManagedMcpStack.volumeName(volumeKey);
   }
 
   private static String variableName(String serverId, String service, String key) {

@@ -9,6 +9,7 @@ import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
+import io.hermes.missioncontrol.mcp.ManagedMcpStack;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDeletionListener;
 import io.hermes.missioncontrol.mcp.McpServerDto;
@@ -27,7 +28,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentMcpCatalogService implements McpServerDeletionListener {
 
-  private static final String MCP_NETWORK = "mission-control-mcp-net";
   private static final Pattern ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}");
 
   private final McpRegistryService registry;
@@ -203,7 +203,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
       DockerHostRef agentHost, String containerId, McpServerDto source) {
     if (!"managed".equals(source.kind())) return source.url();
     if (agentHost.id().equals(source.hostId())) {
-      docker.connectNetwork(agentHost, containerId, MCP_NETWORK);
+      docker.connectNetwork(agentHost, containerId, ManagedMcpStack.NETWORK);
       return registry.sameHostConnectionUrl(source.id());
     }
     String crossHost = source.crossHostUrl();

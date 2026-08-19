@@ -6,6 +6,7 @@ import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
+import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.SecretInput;
@@ -42,8 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ProfileTemplateService {
 
-  /** Matches the env-key rule HermesSetup enforces at write time. */
-  private static final Pattern ENV_KEY = Pattern.compile("[A-Z][A-Z0-9_]{1,63}");
+  /** The one env-key rule, shared with the two other places that check it. */
+  private static final Pattern ENV_KEY = Pattern.compile(EnvEntry.KEY_PATTERN);
   /** Generous ceiling for a single secret value (API keys/tokens are short). */
   private static final int MAX_SECRET_LEN = 65_536;
 

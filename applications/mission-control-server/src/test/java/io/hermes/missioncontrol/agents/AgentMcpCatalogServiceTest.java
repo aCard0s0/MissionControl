@@ -25,6 +25,7 @@ import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
+import io.hermes.missioncontrol.mcp.ManagedMcpStack;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import java.util.List;
@@ -99,7 +100,9 @@ class AgentMcpCatalogServiceTest {
         HOST, "container", "default",
         new ConnectCatalogMcpRequest("mcp-1", "tools"));
 
-    verify(docker).connectNetwork(HOST, "container", "mission-control-mcp-net");
+    // the same constant the renderer declares the network under: an Agent joining a name
+    // the stack does not create reaches no managed server, and nothing else would notice
+    verify(docker).connectNetwork(HOST, "container", ManagedMcpStack.NETWORK);
     ArgumentCaptor<McpServerDefinition> definition =
         ArgumentCaptor.forClass(McpServerDefinition.class);
     verify(profiles).addMcpServer(

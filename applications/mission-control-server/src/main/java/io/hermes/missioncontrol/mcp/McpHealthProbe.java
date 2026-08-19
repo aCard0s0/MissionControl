@@ -181,7 +181,7 @@ class McpHealthProbe {
       throw new IllegalStateException(
           "cannot reach the MCP network: Mission Control is not running inside a container");
     }
-    docker.connectNetwork(hosts.ref(hostId), container, ComposeStackRenderer.NETWORK);
+    docker.connectNetwork(hosts.ref(hostId), container, ManagedMcpStack.NETWORK);
   }
 
   /**

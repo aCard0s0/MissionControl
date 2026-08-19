@@ -25,21 +25,34 @@ public class HermesSetup {
 
   private static final Logger log = LoggerFactory.getLogger(HermesSetup.class);
 
-  /** Mirrors the provider tables in /opt/hermes/hermes_cli/status.py inside the
-   *  hermes image — the .env is the source of truth for set/masked, the status
-   *  output only fills in providers configured outside the .env. */
+  /**
+   * Every variable this page can report on. Labels mirror the provider tables in
+   * /opt/hermes/hermes_cli/status.py inside the hermes image, because they are matched against
+   * that command's output; the .env is the source of truth for set/masked, and the status
+   * output only fills in providers configured outside the .env.
+   *
+   * <p>A row for a model provider takes its variable from {@link ModelProviderRegistry} rather
+   * than naming one. The two tables both describe the same {@code .env}, reached from different
+   * screens — {@code HermesEnvFile.maskApiKey} resolves the provider's variable through the
+   * registry for the agent card, this table drives the setup page, and a capture writes a
+   * template's keys from it — so a variable named in only one of them shows a credential as set
+   * on one screen and missing on the other, and captures the wrong one. The labels stay separate
+   * on purpose: these have to match hermes' status output, the registry's are for the UI picker.
+   */
   static final List<ApiKeySpec> API_KEYS = List.of(
-      new ApiKeySpec("OpenRouter", "OPENROUTER_API_KEY", List.of(), false),
-      new ApiKeySpec("OpenAI", "OPENAI_API_KEY", List.of(), false),
-      new ApiKeySpec("Anthropic", "ANTHROPIC_API_KEY", List.of("ANTHROPIC_TOKEN"), false),
-      new ApiKeySpec("Google / Gemini", "GOOGLE_API_KEY", List.of("GEMINI_API_KEY"), false),
-      new ApiKeySpec("DeepSeek", "DEEPSEEK_API_KEY", List.of(), false),
-      new ApiKeySpec("xAI / Grok", "XAI_API_KEY", List.of(), false),
-      new ApiKeySpec("NVIDIA NIM", "NVIDIA_API_KEY", List.of(), false),
-      new ApiKeySpec("Z.AI / GLM", "GLM_API_KEY", List.of(), false),
-      new ApiKeySpec("Kimi", "KIMI_API_KEY", List.of(), false),
-      new ApiKeySpec("StepFun Step Plan", "STEPFUN_API_KEY", List.of(), false),
-      new ApiKeySpec("MiniMax", "MINIMAX_API_KEY", List.of(), false),
+      ApiKeySpec.forProvider("openrouter", "OpenRouter"),
+      ApiKeySpec.forProvider("openai", "OpenAI"),
+      ApiKeySpec.forProvider("anthropic", "Anthropic", "ANTHROPIC_TOKEN"),
+      ApiKeySpec.forProvider("gemini", "Google / Gemini", "GEMINI_API_KEY"),
+      ApiKeySpec.forProvider("deepseek", "DeepSeek"),
+      ApiKeySpec.forProvider("xai", "xAI / Grok"),
+      ApiKeySpec.forProvider("nvidia", "NVIDIA NIM"),
+      ApiKeySpec.forProvider("zai", "Z.AI / GLM"),
+      ApiKeySpec.forProvider("kimi-coding", "Kimi"),
+      ApiKeySpec.forProvider("stepfun", "StepFun Step Plan"),
+      ApiKeySpec.forProvider("minimax", "MiniMax"),
+      // no registry provider behind these: a regional endpoint and a set of tool credentials,
+      // none of which a profile's model can be pointed at
       new ApiKeySpec("MiniMax-CN", "MINIMAX_CN_API_KEY", List.of(), false),
       new ApiKeySpec("Firecrawl", "FIRECRAWL_API_KEY", List.of(), false),
       new ApiKeySpec("Tavily", "TAVILY_API_KEY", List.of(), false),
@@ -75,7 +88,7 @@ public class HermesSetup {
   private static final char CROSS = '✗';
   private static final String SECTION_MARK = "◆";
 
-  private static final Pattern ENV_KEY = Pattern.compile("[A-Z][A-Z0-9_]{1,63}");
+  private static final Pattern ENV_KEY = Pattern.compile(EnvEntry.KEY_PATTERN);
   private static final Pattern RUN_HINT = Pattern.compile("run:\\s*([^)]+)");
   private static final Pattern ANSI = Pattern.compile("\u001B\\[[;\\d]*m");
 
@@ -281,7 +294,23 @@ public class HermesSetup {
     return -1;
   }
 
-  record ApiKeySpec(String label, String envVar, List<String> altVars, boolean optional) {}
+  record ApiKeySpec(String label, String envVar, List<String> altVars, boolean optional) {
+
+    /**
+     * A row for a provider {@link ModelProviderRegistry} already owns, which is therefore the
+     * one place its API-key variable is named. A provider key with no variable there — an OAuth
+     * provider, or a typo — is a wiring mistake and fails at class load rather than reporting
+     * every key for that provider as unset.
+     */
+    static ApiKeySpec forProvider(String providerKey, String label, String... altVars) {
+      String envVar = ModelProviderRegistry.envVar(providerKey);
+      if (envVar == null) {
+        throw new IllegalStateException(
+            "no API-key variable for model provider '" + providerKey + "'");
+      }
+      return new ApiKeySpec(label, envVar, List.of(altVars), false);
+    }
+  }
 
   record MessagingSpec(String label, String tokenVar, String homeVar) {}
 
