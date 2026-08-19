@@ -1,20 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiWebhookSubscription } from '../hermes-api';
-import { AgentStore } from './agent-store';
-import { ContainerStore } from './container-store';
-import { StoreContext } from './store-context';
 import { WebhookStore } from './webhook-store';
-
-const CONTAINER = {
-  id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
-  image: 'hermes', version: 'v1', startedAt: 1, sizeRootFsGb: 1, profiles: ['atlas'],
-};
-
-const profile = (name: string) => ({
-  id: `a-${name}`, containerId: 'c-1', name, role: '', state: 'idle', provider: 'nous',
-  model: 'm', apiKeyMasked: '', cwd: '', soul: '', memoryMd: '', configYaml: '',
-  skills: [], mcp: [], integrations: [], lastActive: 1,
-});
+import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const route = (name: string, patch: Partial<ApiWebhookSubscription> = {}): ApiWebhookSubscription => ({
   name, description: `${name} hook`, url: `http://<agent-host>:8644/webhooks/${name}`,
@@ -33,18 +20,14 @@ const answer = (
 
 /** A store holding one container and its profiles, with the webhook API stubbed. */
 const loaded = async (webhooks: Record<string, unknown>, profiles = ['atlas', 'scribe']) => {
-  const ctx = new StoreContext({ apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' });
-  const containers = new ContainerStore(ctx);
-  const agents = new AgentStore(ctx, containers);
-  (ctx as unknown as { api: unknown }).api = {
-    containers: { list: vi.fn().mockResolvedValue([CONTAINER]) },
-    agents: { list: vi.fn().mockResolvedValue(profiles.map(profile)), webhooks },
+  const slices = await loadedAgentSlices(
+    { agents: { webhooks } },
+    { profiles: profiles.map(name => apiProfile(name)) });
+  return {
+    ...slices,
+    store: new WebhookStore(slices.ctx, slices.agents,
+      () => { /* selection wiring not under test */ }),
   };
-  await containers.refresh();
-  await agents.refresh();
-  containers.select('c-1');
-  const store = new WebhookStore(ctx, agents, () => { /* selection wiring not under test */ });
-  return { ctx, containers, agents, store };
 };
 
 describe('WebhookStore listing', () => {
@@ -220,5 +203,50 @@ describe('WebhookStore mutations', () => {
     store.dropByAgents(new Set(['a-scribe']));
     expect(store.routes()).toEqual([]);
     expect(store.listeners()).toEqual([]);
+  });
+});
+
+describe('WebhookStore listeners', () => {
+  it('shows only the listeners of the selected container\'s profiles', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([route('grafana')]))
+      .mockResolvedValueOnce(answer([route('github')], { port: 8645 }));
+    const { store, containers } = await loaded({ list });
+    await store.refresh();
+
+    expect(store.containerListeners().map(l => l.port)).toEqual([8644, 8645]);
+
+    containers.select('c-2');                  // a container with no profiles of its own
+    expect(store.containerListeners()).toEqual([]);
+    expect(store.forSelectedContainer()).toEqual([]);
+  });
+
+  it('answers what hermes printed for a test delivery', async () => {
+    const { store } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([route('grafana')])),
+      test: vi.fn().mockResolvedValue({ output: 'delivered 200' }),
+    });
+    await store.refresh();
+
+    expect(await store.test('a-atlas', 'grafana')).toBe('delivered 200');
+  });
+
+  it('says why a test delivery could not be made', async () => {
+    const { store, ctx } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([route('grafana')])),
+      test: vi.fn().mockRejectedValue(new Error('listener is off')),
+    });
+    await store.refresh();
+
+    expect(await store.test('a-atlas', 'grafana')).toBeNull();
+    expect(ctx.liveError()).toBe('webhook test failed: listener is off');
+  });
+
+  it('does not test on behalf of a profile it does not hold', async () => {
+    const test = vi.fn();
+    const { store } = await loaded({ list: vi.fn().mockResolvedValue(answer([])), test });
+
+    expect(await store.test('a-gone', 'grafana')).toBeNull();
+    expect(test).not.toHaveBeenCalled();
   });
 });

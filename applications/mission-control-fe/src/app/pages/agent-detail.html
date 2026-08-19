@@ -160,7 +160,7 @@
             <textarea class="input soul" [ngModel]="configDraft()" (ngModelChange)="configDraft.set($event)" spellcheck="false"></textarea>
             <p class="lock-hint">platform tokens (<code>slack</code>, <code>whatsapp</code>, <code>honcho</code>, …) and model overrides (<code>model.default</code> / <code>model.base_url</code>) live here — invalid YAML is rejected by the backend</p>
           } @else {
-            <pre class="file mono">{{ fileContent() }}</pre>
+            <pre class="file mono">{{ a.memoryMd }}</pre>
             <p class="lock-hint">read-only — edit via <code>hermes -p {{ a.name }} setup</code></p>
           }
         </div>

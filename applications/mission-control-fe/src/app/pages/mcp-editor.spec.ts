@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { McpCatalogServer } from '../core/models';
 import {
-  McpEditorDraft, httpEndpointValid, mcpDraftFromServer, mcpDraftToInput, mcpDraftValid,
-  splitMcpLines,
+  McpEditorDraft, applyMcpKindDefaults, httpEndpointValid, mcpDraftFromServer, mcpDraftToInput,
+  mcpDraftValid, newMcpDraft, splitMcpLines,
 } from './mcp-editor';
 
 const draft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
@@ -203,5 +203,93 @@ describe('MCP Servers draft validation', () => {
     expect(valid({ kind: 'external', url: 'ftp://mcp.example.test' })).toBe(false);
     expect(valid({ kind: 'stdio', stdioCommand: 'npx' })).toBe(true);
     expect(valid({ kind: 'stdio', stdioCommand: ' ' })).toBe(false);
+  });
+});
+
+describe('MCP Servers editor drafts', () => {
+  it('starts a managed entry on the defaults the backend expects', () => {
+    expect(newMcpDraft('managed', 'dh-local')).toMatchObject({
+      kind: 'managed', hostId: 'dh-local', transport: 'http', internalPort: 1100, path: '/mcp',
+    });
+  });
+
+  it('starts a stdio entry with no port to publish', () => {
+    expect(newMcpDraft('stdio', 'dh-local')).toMatchObject({
+      transport: 'stdio', internalPort: null,
+    });
+  });
+
+  it('re-applies the defaults a kind switch decides, in place', () => {
+    const d = draft({ kind: 'stdio', transport: 'http', internalPort: null, path: '' });
+
+    applyMcpKindDefaults(d);
+    expect(d).toMatchObject({ transport: 'stdio', internalPort: null, path: '' });
+
+    d.kind = 'managed';
+    applyMcpKindDefaults(d);
+    expect(d).toMatchObject({ transport: 'http', internalPort: 1100, path: '/mcp' });
+  });
+
+  it('leaves a managed entry\'s own port and path alone', () => {
+    const d = draft({ kind: 'managed', internalPort: 9000, path: '/rpc' });
+
+    applyMcpKindDefaults(d);
+
+    expect(d).toMatchObject({ internalPort: 9000, path: '/rpc' });
+  });
+
+  it('copies a support service\'s own environment, volumes and healthcheck', () => {
+    const server = {
+      ...(mcpDraftToInput(draft()) as unknown as McpCatalogServer),
+      id: 'mcp-1', hostId: 'dh-local', createdAt: 1, updatedAt: 1,
+      volumes: [{ name: 'data', target: '/data' }],
+      supportServices: [{
+        name: 'database', image: 'postgres:16', platform: null, entrypoint: [], command: [],
+        environment: [{ key: 'PASSWORD', value: 'p', secret: true, set: true, recoverable: true }],
+        volumes: [{ name: 'db', target: '/var/lib/postgresql' }],
+        healthcheck: { test: ['CMD', 'pg_isready'], interval: '30s', retries: 3 },
+      }],
+    } as unknown as McpCatalogServer;
+
+    const loaded = mcpDraftFromServer(server);
+
+    expect(loaded.supportServices[0]).toMatchObject({
+      name: 'database',
+      volumes: [{ name: 'db', target: '/var/lib/postgresql' }],
+      healthcheck: { test: ['CMD', 'pg_isready'], retries: 3 },
+    });
+    // a stored secret is never re-read into the form, only marked as set
+    expect(loaded.supportServices[0].environment[0]).toMatchObject({ value: '', set: true });
+  });
+
+  it('strips the stored secrets a duplicate cannot inherit', () => {
+    const server = {
+      ...(mcpDraftToInput(draft()) as unknown as McpCatalogServer),
+      id: 'mcp-1', hostId: 'dh-local', createdAt: 1, updatedAt: 1,
+      environment: [{ key: 'TOKEN', value: 't', secret: true, set: true, recoverable: true }],
+      supportServices: [],
+    } as unknown as McpCatalogServer;
+
+    expect(mcpDraftFromServer(server).environment[0]).toMatchObject({ set: true });
+    expect(mcpDraftFromServer(server, true).environment[0])
+      .toMatchObject({ set: false, recoverable: false, value: '' });
+  });
+
+  it('rejects an endpoint carrying credentials, a fragment or the wrong scheme', () => {
+    expect(httpEndpointValid('https://mcp.example.test/mcp')).toBe(true);
+    expect(httpEndpointValid('http://user:pw@mcp.example.test/mcp')).toBe(false);
+    expect(httpEndpointValid('https://mcp.example.test/mcp#frag')).toBe(false);
+    expect(httpEndpointValid('ws://mcp.example.test')).toBe(false);
+    expect(httpEndpointValid('not a url')).toBe(false);
+  });
+
+  it('rejects a support service whose own healthcheck is malformed', () => {
+    const service = {
+      name: 'database', image: 'postgres:16', platform: null, entrypoint: [], command: [],
+      environment: [], volumes: [],
+      healthcheck: { test: ['SHELL'], retries: 3 },
+    };
+
+    expect(mcpDraftValid(draft({ supportServices: [service] as never }), [])).toBe(false);
   });
 });

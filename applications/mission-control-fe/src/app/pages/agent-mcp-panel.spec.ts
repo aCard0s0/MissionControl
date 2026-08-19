@@ -6,32 +6,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { AgentProfile, McpCatalogServer, McpServer } from '../core/models';
 import { AgentMcpPanel } from './agent-mcp-panel';
+import { buttonWith, el, type } from '../testing/dom';
+import {
+  agent, catalogServer as sharedCatalogServer, mcpServer as server,
+} from '../testing/models';
 
-const server = (name: string, patch: Partial<McpServer> = {}): McpServer => ({
-  id: `m-${name}`, name, transport: 'http', enabled: true, origin: 'custom',
-  catalogServerId: null, syncedRevision: null, catalogRevision: null, updateAvailable: false,
-  status: 'connected', tools: 3, latencyMs: 42, error: null, checkedAt: 1,
-  url: `https://${name}.example.test/mcp`, ...patch,
-});
+/** The managed catalog entry these tests connect to. */
+const catalogServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer =>
+  sharedCatalogServer('mcp-browser', {
+    name: 'browser', serviceKey: 'browser', image: 'playwright:latest',
+    connectionUrl: 'http://browser:1100/mcp', ...patch,
+  });
 
-const profile = (mcp: McpServer[]): AgentProfile => ({
-  id: 'a-1', containerId: 'c-1', name: 'ops-bot', role: 'ops', state: 'idle',
-  provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…key', cwd: '/home/hermes/ops-bot',
-  soul: '', memoryMd: '', configYaml: '', skills: [], mcp, integrations: [], sessions: [],
-  msgsToday: 0, tokensToday: 0, errorRate: 0, lastActive: 0,
-});
-
-const catalogServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer => ({
-  id: 'mcp-browser', name: 'browser', description: '', kind: 'managed', hostId: 'dh-local',
-  transport: 'http', url: null, image: 'playwright:latest', platform: null,
-  entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: 1100,
-  publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: 'http://browser:1100/mcp',
-  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
-  desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle', operationError: null,
-  checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null,
-  revision: 1, appliedRevision: 0, pendingChanges: false, serviceKey: 'browser',
-  createdAt: 1, updatedAt: 1, ...patch,
-});
+/** One profile, carrying the MCP servers under test. */
+const profile = (mcp: McpServer[]): AgentProfile => agent('a-1', { name: 'ops-bot', mcp });
 
 /** Only what the panel reaches for on the store, so nothing here touches a backend. */
 const storeStub = (agent: AgentProfile, catalog: McpCatalogServer[] = []) => ({
@@ -59,6 +47,7 @@ class Host {
 }
 
 const render = (store: ReturnType<typeof storeStub>, agent: AgentProfile) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     // the panel links to /mcp-servers, so RouterLink needs a router present
     providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
@@ -69,30 +58,10 @@ const render = (store: ReturnType<typeof storeStub>, agent: AgentProfile) => {
   return fixture;
 };
 
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-const buttonWith = (fixture: { nativeElement: unknown }, label: string): HTMLButtonElement => {
-  const match = Array.from(el(fixture).querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim().toLowerCase() === label.toLowerCase());
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  return match as HTMLButtonElement;
-};
-
 /** Types into an `[(ngModel)]` field and lets the two-way write settle. */
 /** The add form's submit button — the catalog panel above it also says "connect". */
 const submitAdd = (fixture: { nativeElement: unknown }): HTMLButtonElement =>
   el(fixture).querySelector<HTMLButtonElement>('.mcp-add .btn.primary')!;
-
-const type = async (
-  fixture: { nativeElement: unknown; whenStable(): Promise<unknown>; detectChanges(): void },
-  selector: string, value: string,
-): Promise<void> => {
-  const input = el(fixture).querySelector<HTMLInputElement>(selector)!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await fixture.whenStable();
-  fixture.detectChanges();
-};
 
 describe('AgentMcpPanel roster', () => {
   it('summarizes each status, counting unknown and checking as unchecked', () => {
@@ -248,5 +217,196 @@ describe('AgentMcpPanel catalog connect', () => {
 
     expect(el(fixture).textContent).not.toContain('start & connect');
     expect(el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!.disabled).toBe(false);
+  });
+});
+
+/** Picks a catalog entry in the connect form. */
+const pickCatalog = (fixture: { nativeElement: unknown; detectChanges(): void }, id: string): void => {
+  const select = el(fixture).querySelector<HTMLSelectElement>('.catalog-connect .select')!;
+  select.value = id;
+  select.dispatchEvent(new Event('change'));
+  fixture.detectChanges();
+};
+
+describe('AgentMcpPanel catalog links', () => {
+  it('proposes the catalog name as the alias, and connects under it', async () => {
+    const agent = profile([]);
+    const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
+    const fixture = render(store, agent);
+    pickCatalog(fixture, 'mcp-browser');
+    await fixture.whenStable();
+
+    expect(el(fixture).querySelector<HTMLInputElement>('.catalog-connect .input')!.value)
+      .toBe('browser');
+
+    el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!.click();
+    await fixture.whenStable();
+
+    expect(store.connectCatalogMcp).toHaveBeenCalledWith('a-1', 'mcp-browser', 'browser');
+  });
+
+  it('probes the alias it just linked, so the row is not left unchecked', async () => {
+    const linked = server('browser', { origin: 'catalog', catalogServerId: 'mcp-browser' });
+    const agent = profile([linked]);
+    const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
+    const fixture = render(store, agent);
+    await fixture.whenStable();
+    store.testMcp.mockClear();
+    pickCatalog(fixture, 'mcp-browser');
+    await fixture.whenStable();
+
+    el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!.click();
+    await fixture.whenStable();
+
+    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'browser');
+  });
+
+  it('will not connect without an alias, or twice while one is in flight', async () => {
+    const agent = profile([]);
+    const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
+    store.connectCatalogMcp.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const fixture = render(store, agent);
+    const connect = () => el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!;
+
+    expect(connect().disabled).toBe(true);          // nothing picked yet
+
+    pickCatalog(fixture, 'mcp-browser');
+    await fixture.whenStable();
+    connect().click();
+    connect().click();
+    await fixture.whenStable();
+
+    expect(store.connectCatalogMcp).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the form filled in when the connect was refused', async () => {
+    const agent = profile([]);
+    const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
+    store.connectCatalogMcp.mockResolvedValue(false);
+    const fixture = render(store, agent);
+    pickCatalog(fixture, 'mcp-browser');
+    await fixture.whenStable();
+
+    el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelector<HTMLInputElement>('.catalog-connect .input')!.value)
+      .toBe('browser');
+  });
+
+  it('asks twice before detaching an alias, then opens it for editing', async () => {
+    const linked = server('browser', { origin: 'catalog', catalogServerId: 'mcp-browser' });
+    const agent = profile([linked]);
+    const store = storeStub(agent);
+    const fixture = render(store, agent);
+
+    buttonWith(fixture, 'customize').click();
+    fixture.detectChanges();
+    expect(store.unlinkCatalogMcp).not.toHaveBeenCalled();
+
+    buttonWith(fixture, 'confirm customize').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(store.unlinkCatalogMcp).toHaveBeenCalledWith('a-1', 'browser');
+    expect(el(fixture).textContent).toContain('EDIT CUSTOM MCP SERVER');
+    expect(el(fixture).querySelector<HTMLInputElement>('.name-in')!.value).toBe('browser');
+  });
+
+  it('leaves the alias linked when the detach was refused', async () => {
+    const linked = server('browser', { origin: 'catalog', catalogServerId: 'mcp-browser' });
+    const agent = profile([linked]);
+    const store = storeStub(agent);
+    store.unlinkCatalogMcp.mockResolvedValue(false);
+    const fixture = render(store, agent);
+
+    buttonWith(fixture, 'customize').click();
+    fixture.detectChanges();
+    buttonWith(fixture, 'confirm customize').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el(fixture).textContent).not.toContain('EDIT CUSTOM MCP SERVER');
+  });
+
+  it('re-probes an enabled alias after a sync, and leaves a disabled one alone', async () => {
+    const ahead = { origin: 'catalog' as const, catalogServerId: 'mcp-browser', updateAvailable: true };
+    const agent = profile([
+      server('browser', ahead),
+      server('files', { ...ahead, enabled: false, status: 'disabled' }),
+    ]);
+    const store = storeStub(agent);
+    const fixture = render(store, agent);
+    await fixture.whenStable();
+    store.testMcp.mockClear();
+
+    buttonWith(fixture, 'sync').click();
+    await fixture.whenStable();
+
+    expect(store.testMcp).toHaveBeenCalledTimes(1);
+    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'browser');
+  });
+});
+
+describe('AgentMcpPanel probing', () => {
+  it('re-probes a single server on demand, and refuses a second while one runs', async () => {
+    const agent = profile([server('github'), server('files')]);
+    const store = storeStub(agent);
+    store.testMcp.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const fixture = render(store, agent);
+    await fixture.whenStable();
+
+    // github's probe is still open and holds the lock, so files cannot start one
+    buttonWith(fixture, 'retest').click();
+    await fixture.whenStable();
+
+    expect(store.testMcp).toHaveBeenCalledTimes(1);
+    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'github');
+  });
+
+  it('does not probe a server it just disabled', async () => {
+    const agent = profile([server('github')]);
+    const store = storeStub(agent);
+    const fixture = render(store, agent);
+    await fixture.whenStable();
+    store.testMcp.mockClear();
+
+    buttonWith(fixture, 'disconnect').click();
+    await fixture.whenStable();
+
+    expect(store.testMcp).not.toHaveBeenCalled();
+  });
+
+  it('clears the edit form when the server being edited is forgotten', async () => {
+    const agent = profile([server('github')]);
+    const store = storeStub(agent);
+    const fixture = render(store, agent);
+    buttonWith(fixture, 'edit').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    buttonWith(fixture, 'forget').click();
+    fixture.detectChanges();
+    buttonWith(fixture, 'confirm forget').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el(fixture).textContent).not.toContain('EDIT CUSTOM MCP SERVER');
+  });
+
+  it('keeps the confirmation open when the delete was refused', async () => {
+    const agent = profile([server('github')]);
+    const store = storeStub(agent);
+    store.removeMcp.mockResolvedValue(false);
+    const fixture = render(store, agent);
+
+    buttonWith(fixture, 'forget').click();
+    fixture.detectChanges();
+    buttonWith(fixture, 'confirm forget').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el(fixture).textContent).toContain('confirm forget');
   });
 });

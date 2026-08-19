@@ -8,6 +8,9 @@ let batch = 0;
 let resetQueued = false;
 
 /** Attach to any element via `data-reveal` — it fades/slides itself in on creation. */
+// A data attribute on purpose: templates opt in with plain `data-reveal`, so the
+// selector cannot be the camelCase input name the rule expects.
+// eslint-disable-next-line @angular-eslint/directive-selector
 @Directive({ selector: '[data-reveal]' })
 export class Reveal {
   private readonly el: HTMLElement = inject(ElementRef).nativeElement;

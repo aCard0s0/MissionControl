@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { BoardColumn, BoardTask } from '../core/models';
 import { BoardPage } from './board';
+import { el } from '../testing/dom';
 
 const task = (id: string, column: BoardColumn, patch: Partial<BoardTask> = {}): BoardTask => ({
   id, containerId: 'c-1', agentId: 'a-1', title: `task ${id}`, column,
@@ -20,13 +21,12 @@ const storeStub = (tasks: BoardTask[]) => ({
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(BoardPage);
   fixture.detectChanges();
   return { fixture, store };
 };
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
 
 /** The drop the CDK would deliver. Synthesizing a real drag in jsdom is not
  *  possible, so the handler is called with the shape it is given. */

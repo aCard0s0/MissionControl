@@ -27,7 +27,7 @@ export interface RestoredTabs {
  */
 export function readTerminalTabs(): RestoredTabs {
   const empty: RestoredTabs = { tabs: [], activeId: null };
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = localStorage.getItem(TABS_KEY);
   } catch {

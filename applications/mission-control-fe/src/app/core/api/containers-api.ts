@@ -11,11 +11,11 @@ export class ContainersApi {
   }
 
   stats(hostId: string, id: string): Promise<ApiStats> {
-    return this.http.get(`/api/containers/${hostId}/${id}/stats`);
+    return this.http.get(`/api/containers/${seg(hostId)}/${seg(id)}/stats`);
   }
 
   logs(hostId: string, id: string, tail = 100): Promise<ApiLogLine[]> {
-    return this.http.get(`/api/containers/${hostId}/${id}/logs?tail=${tail}`);
+    return this.http.get(`/api/containers/${seg(hostId)}/${seg(id)}/logs?tail=${tail}`);
   }
 
   deploy(hostId: string, name: string, version: string, profiles: string[]): Promise<{ id: string }> {

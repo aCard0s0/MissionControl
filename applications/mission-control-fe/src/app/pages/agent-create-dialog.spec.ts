@@ -6,6 +6,8 @@ import { HermesStore } from '../core/hermes-store';
 import { ApiModelProvider, ApiSetupAuthProvider } from '../core/hermes-api';
 import { HermesContainer, ModelProvider, ProfileTemplate } from '../core/models';
 import { AgentCreateDialog } from './agent-create-dialog';
+import { TestFixture, choose, el, field, fill, settle } from '../testing/dom';
+import { container as buildContainer, template as buildTemplate } from '../testing/models';
 
 const llm: ApiModelProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
@@ -20,17 +22,10 @@ const ollama: ModelProvider[] = [{
   status: 'connected', version: null, detail: null,
 }];
 
-const container: HermesContainer = {
-  id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
-  image: 'hermes', version: 'v1', startedAt: 1, cpu: 0, ram: 0, ramTotal: 0, disk: 0,
-  diskTotal: 0, netIn: 0, netOut: 0, cpuHist: [], ramHist: [], netHist: [],
-};
+const container: HermesContainer = buildContainer('c-1', { name: 'hermes-prod', shortId: 'c1' });
 
-const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 't-1', name: 'researcher', description: '', provider: 'anthropic', model: 'claude-opus-5',
-  baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
-  secrets: [], createdAt: 1, updatedAt: 1, ...patch,
-});
+const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
+  buildTemplate('t-1', { name: 'researcher', model: 'claude-opus-5', ...patch });
 
 /** Only what the dialog reaches for on the store, so nothing here touches a backend. */
 const storeStub = (opts: {
@@ -66,6 +61,7 @@ class Host {
 }
 
 const render = async (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
@@ -74,50 +70,18 @@ const render = async (store: ReturnType<typeof storeStub>) => {
   return { fixture, store, host: fixture.componentInstance };
 };
 
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-/** The `.field` whose label starts with this text — the form's own labels are the
- *  only stable handle on it, and they read the way an operator sees them. */
-const field = (fixture: { nativeElement: unknown }, label: string): HTMLElement => {
-  const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.field'))
-    .find(f => (f.querySelector('label')?.textContent ?? '').trim().toLowerCase()
-      .startsWith(label.toLowerCase()));
-  if (!match) throw new Error(`no field labelled "${label}"`);
-  return match;
-};
-
-type Fixture = { nativeElement: unknown; detectChanges(): void; whenStable(): Promise<unknown> };
-
-const fill = async (fixture: Fixture, label: string, value: string): Promise<void> => {
-  const input = field(fixture, label).querySelector<HTMLInputElement>('.input')!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await fixture.whenStable();
-  fixture.detectChanges();
-};
-
-const choose = async (fixture: Fixture, label: string, value: string): Promise<void> => {
-  const select = field(fixture, label).querySelector<HTMLSelectElement>('.select')!;
-  select.value = value;
-  select.dispatchEvent(new Event('change'));
-  await fixture.whenStable();
-  fixture.detectChanges();
-};
-
-const toggleAux = async (fixture: Fixture): Promise<void> => {
+const toggleAux = async (fixture: TestFixture): Promise<void> => {
   const box = el(fixture).querySelector<HTMLInputElement>('.check input[type=checkbox]')!;
   box.click();
-  await fixture.whenStable();
-  fixture.detectChanges();
+  await settle(fixture);
 };
 
-const submit = async (fixture: Fixture): Promise<void> => {
+const submit = async (fixture: TestFixture): Promise<void> => {
   el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.primary')!.click();
-  await fixture.whenStable();
-  fixture.detectChanges();
+  await settle(fixture);
 };
 
-const submitButton = (fixture: Fixture): HTMLButtonElement =>
+const submitButton = (fixture: TestFixture): HTMLButtonElement =>
   el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.primary')!;
 
 describe('AgentCreateDialog opening', () => {
@@ -341,6 +305,112 @@ describe('AgentCreateDialog create', () => {
     el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.ghost')!.click();
 
     expect(host.closes).toBe(1);
+    expect(store.createAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('AgentCreateDialog templates', () => {
+  /** Picks a blueprint in the "from template" select. */
+  const pickTemplate = async (fixture: TestFixture, id: string): Promise<void> => {
+    const select = Array.from(el(fixture).querySelectorAll<HTMLSelectElement>('.select'))
+      .find(s => Array.from(s.options).some(o => o.value === id));
+    if (!select) throw new Error(`no picker offering "${id}"`);
+    select.value = id;
+    select.dispatchEvent(new Event('change'));
+    await settle(fixture);
+  };
+
+  it('adopts the blueprint\'s provider and its model', async () => {
+    const store = storeStub({
+      templates: [template({ provider: 'nous', model: 'Hermes-4-405B' })],
+      catalog: ['Hermes-4-70B', 'Hermes-4-405B'],
+    });
+    const { fixture } = await render(store);
+
+    await pickTemplate(fixture, 't-1');
+    await fill(fixture, 'profile name', 'ops-bot');
+    await submit(fixture);
+
+    const [, , provider, model] = store.createAgent.mock.calls[0];
+    expect(provider).toBe('nous');
+    expect(model).toBe('Hermes-4-405B');
+  });
+
+  it('keeps a blueprint\'s model even when its provider is no longer registered', async () => {
+    const store = storeStub({ templates: [template({ provider: 'retired-vendor' })] });
+    const { fixture } = await render(store);
+
+    await pickTemplate(fixture, 't-1');
+    await fill(fixture, 'profile name', 'ops-bot');
+    await submit(fixture);
+
+    expect(store.createAgent).toHaveBeenCalledWith(
+      'c-1', 'ops-bot', expect.anything(), 'claude-opus-5', expect.anything(),
+      undefined, undefined, 't-1', undefined);
+  });
+
+  it('sends the blueprint id so the backend seeds the profile from it', async () => {
+    const store = storeStub({ templates: [template({ provider: 'nous' })] });
+    const { fixture } = await render(store);
+
+    await pickTemplate(fixture, 't-1');
+    await fill(fixture, 'profile name', 'ops-bot');
+    await submit(fixture);
+
+    expect(store.createAgent.mock.calls[0][7]).toBe('t-1');
+  });
+});
+
+describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
+  const OLLAMA = 'ollama: workstation';
+
+  it('needs no second key for an ollama instance, whatever the main provider is', async () => {
+    const { fixture } = await render(storeStub());
+    await choose(fixture, 'provider', 'anthropic');
+    await fill(fixture, 'API key', 'sk-test');
+    await toggleAux(fixture);
+
+    await choose(fixture, 'auxiliary provider', OLLAMA);
+
+    expect(() => field(fixture, 'auxiliary API key')).toThrow();
+  });
+
+  it('sends the instance\'s own endpoint with the override', async () => {
+    const { fixture, store } = await render(storeStub());
+    await fill(fixture, 'profile name', 'ops-bot');
+    await toggleAux(fixture);
+    await choose(fixture, 'auxiliary provider', OLLAMA);
+    await fill(fixture, 'auxiliary model', 'gemma3:4b');
+
+    await submit(fixture);
+
+    expect(store.createAgent.mock.calls[0][8]).toEqual({
+      provider: 'ollama', model: 'gemma3:4b',
+      // the OpenAI-compatible endpoint, which is what hermes talks to
+      baseUrl: 'http://10.0.0.5:11434/v1', apiKey: undefined,
+    });
+  });
+
+  it('suggests the models that instance actually has installed', async () => {
+    const { fixture, store } = await render(storeStub());
+    await toggleAux(fixture);
+
+    await choose(fixture, 'auxiliary provider', OLLAMA);
+
+    expect(store.providerModels).toHaveBeenCalledWith('mp-1');
+  });
+
+  it('refuses to create against an instance that has since disappeared', async () => {
+    const store = storeStub();
+    const { fixture } = await render(store);
+    await fill(fixture, 'profile name', 'ops-bot');
+    await toggleAux(fixture);
+    await choose(fixture, 'auxiliary provider', OLLAMA);
+    await fill(fixture, 'auxiliary model', 'gemma3:4b');
+
+    store.modelProviders.set([]);
+    await submit(fixture);
+
     expect(store.createAgent).not.toHaveBeenCalled();
   });
 });

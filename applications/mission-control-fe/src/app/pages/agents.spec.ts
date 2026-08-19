@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { AgentProfile, HermesContainer } from '../core/models';
 import { AgentsPage, agentSessionCommand } from './agents';
+import { el, press, settle } from '../testing/dom';
+import { agent, container as buildContainer } from '../testing/models';
 
 describe('Agent shell shortcut command', () => {
   it('scopes a named profile with -p', () => {
@@ -27,18 +29,7 @@ describe('Agent shell shortcut command', () => {
   });
 });
 
-const agent = (id: string, patch: Partial<AgentProfile> = {}): AgentProfile => ({
-  id, containerId: 'c-1', name: id, role: 'ops', state: 'idle', provider: 'nous', model: 'm',
-  apiKeyMasked: '…', cwd: '/opt/data', soul: '', memoryMd: '', configYaml: '', skills: [],
-  mcp: [], integrations: [], sessions: [], msgsToday: 0, tokensToday: 0, errorRate: 0,
-  lastActive: 1, ...patch,
-});
-
-const container: HermesContainer = {
-  id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
-  image: 'hermes', version: 'v1', startedAt: 1, cpu: 0, ram: 0, ramTotal: 0, disk: 0,
-  diskTotal: 0, netIn: 0, netOut: 0, cpuHist: [], ramHist: [], netHist: [],
-};
+const container: HermesContainer = buildContainer('c-1', { name: 'hermes-prod' });
 
 /** Only what the roster and its create dialog reach for on the store. */
 const storeStub = (agents: AgentProfile[]) => ({
@@ -60,29 +51,13 @@ const storeStub = (agents: AgentProfile[]) => ({
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
   });
   const fixture = TestBed.createComponent(AgentsPage);
   fixture.detectChanges();
   return { fixture, store };
-};
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-type Fixture = { nativeElement: unknown; detectChanges(): void };
-
-const settle = async (fixture: Fixture): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(0);
-  fixture.detectChanges();
-};
-
-const press = (fixture: Fixture, label: string): void => {
-  const match = Array.from(el(fixture).querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
 };
 
 describe('AgentsPage roster', () => {

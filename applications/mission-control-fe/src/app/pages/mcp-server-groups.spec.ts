@@ -1,26 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DockerHost, McpCatalogServer } from '../core/models';
+import { McpCatalogServer } from '../core/models';
 import { mcpDisplayEndpoint, mcpServerGroups } from './mcp-server-groups';
+import { catalogServer as server, dockerHost } from '../testing/models';
 
-const server = (id: string, patch: Partial<McpCatalogServer> = {}): McpCatalogServer => ({
-  id, name: id, description: '', kind: 'managed', hostId: 'dh-local',
-  transport: 'http', url: null, image: 'image:latest', platform: null,
-  entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: 1100,
-  publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: null,
-  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
-  desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle', operationError: null,
-  checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null,
-  revision: 1, appliedRevision: 1, pendingChanges: false, serviceKey: id,
-  createdAt: 1, updatedAt: 1, ...patch,
-});
-
-const host = (id: string, name: string, url: string): DockerHost => ({
-  id, name, url, kind: 'remote', status: 'connected', engine: null, apiVersion: null,
-  latencyMs: null, note: null,
-});
-
-const hosts = [host('dh-local', 'localhost', 'unix:///var/run/docker.sock'),
-                host('dh-edge', 'edge', 'tcp://edge:2375')];
+const hosts = [
+  dockerHost('dh-local', { name: 'localhost', url: 'unix:///var/run/docker.sock' }),
+  dockerHost('dh-edge', { name: 'edge', url: 'tcp://edge:2375' }),
+];
 
 describe('MCP server grouping', () => {
   it('gives each Docker host its own managed section, named after the host', () => {
@@ -78,6 +64,10 @@ describe('MCP server grouping', () => {
 });
 
 describe('MCP server endpoint display', () => {
+  /** An entry the backend has not resolved an address for yet. */
+  const unresolved = (patch: Partial<McpCatalogServer> = {}) =>
+    server('a', { connectionUrl: null, ...patch });
+
   it('shows a stdio definition as the command it would run', () => {
     expect(mcpDisplayEndpoint(server('a', {
       kind: 'stdio', stdioCommand: 'npx', args: ['-y', '@acme/server'],
@@ -88,13 +78,13 @@ describe('MCP server endpoint display', () => {
     expect(mcpDisplayEndpoint(server('a', {
       connectionUrl: 'http://a:1100/mcp', crossHostUrl: 'https://edge.example.test/mcp',
     }))).toBe('http://a:1100/mcp');
-    expect(mcpDisplayEndpoint(server('a', { url: 'https://external.example.test/mcp' })))
+    expect(mcpDisplayEndpoint(unresolved({ url: 'https://external.example.test/mcp' })))
       .toBe('https://external.example.test/mcp');
-    expect(mcpDisplayEndpoint(server('a', { crossHostUrl: 'https://edge.example.test/mcp' })))
+    expect(mcpDisplayEndpoint(unresolved({ crossHostUrl: 'https://edge.example.test/mcp' })))
       .toBe('https://edge.example.test/mcp');
   });
 
   it('says the endpoint is pending rather than showing a blank address', () => {
-    expect(mcpDisplayEndpoint(server('a'))).toBe('endpoint pending');
+    expect(mcpDisplayEndpoint(unresolved())).toBe('endpoint pending');
   });
 });

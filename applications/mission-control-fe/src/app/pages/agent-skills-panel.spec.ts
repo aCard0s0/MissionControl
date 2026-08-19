@@ -5,18 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { AgentProfile, SkillContent, SkillRef } from '../core/models';
 import { AgentSkillsPanel } from './agent-skills-panel';
-
-const skill = (name: string, patch: Partial<SkillRef> = {}): SkillRef => ({
-  id: `s-${name}`, name, source: 'bundled', version: '1.0.0',
-  description: `${name} skill`, enabled: true, ...patch,
-});
-
-const profile = (skills: SkillRef[]): AgentProfile => ({
-  id: 'a-1', containerId: 'c-1', name: 'ops-bot', role: 'ops', state: 'idle',
-  provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…key', cwd: '/home/hermes/ops-bot',
-  soul: '', memoryMd: '', configYaml: '', skills, mcp: [], integrations: [], sessions: [],
-  msgsToday: 0, tokensToday: 0, errorRate: 0, lastActive: 0,
-});
+import { buttonWith, el } from '../testing/dom';
+import { agent, skill } from '../testing/models';
 
 /** Only what the panel actually reaches for on the store. */
 const storeStub = (content: SkillContent | null = null) => ({
@@ -36,6 +26,7 @@ class Host {
 }
 
 const render = (store: ReturnType<typeof storeStub>, agent?: AgentProfile) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(Host);
   if (agent) fixture.componentInstance.agent.set(agent);
@@ -43,15 +34,8 @@ const render = (store: ReturnType<typeof storeStub>, agent?: AgentProfile) => {
   return fixture;
 };
 
-/** The fixture's DOM, typed — ComponentFixture.nativeElement is `any`. */
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-const buttonWith = (fixture: { nativeElement: unknown }, label: string): HTMLButtonElement => {
-  const match = Array.from(el(fixture).querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim().toLowerCase().includes(label.toLowerCase()));
-  if (!match) throw new Error(`no button matching "${label}"`);
-  return match as HTMLButtonElement;
-};
+/** One profile, carrying the skills under test. */
+const profile = (skills: SkillRef[]): AgentProfile => agent('a-1', { name: 'ops-bot', skills });
 
 describe('AgentSkillsPanel', () => {
   it('lists every skill and counts only the enabled ones', () => {

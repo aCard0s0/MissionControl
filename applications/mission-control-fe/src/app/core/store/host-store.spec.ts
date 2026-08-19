@@ -1,23 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DockerHost } from '../models';
 import { HostStore } from './host-store';
-import { StoreContext } from './store-context';
+import { dockerHost } from '../../testing/models';
+import { flush, testContext } from '../../testing/store';
 
-const host = (id: string, patch: Partial<DockerHost> = {}): DockerHost => ({
-  id, name: id, url: `tcp://${id}:2375`, kind: 'remote', status: 'connected',
-  engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, note: null, ...patch,
-});
+const host = (id: string, patch: Partial<DockerHost> = {}): DockerHost =>
+  dockerHost(id, { engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, ...patch });
 
-/** A context whose backend is a stub — `api` is the seam every slice shares. */
 const context = (hosts: {
   list?: unknown; add?: unknown; check?: unknown; remove?: unknown;
-}) => {
-  const ctx = new StoreContext({ apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' });
-  (ctx as unknown as { api: unknown }).api = { hosts };
-  return ctx;
-};
-
-const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+}) => testContext({ hosts });
 
 describe('HostStore', () => {
   it('starts on a placeholder that says why it has nothing yet', () => {
@@ -55,7 +47,7 @@ describe('HostStore', () => {
     const store = new HostStore(context({ add, list }));
 
     store.add('remote', 'tcp://10.0.0.2:2375');
-    await settle();
+    await flush();
 
     expect(add).toHaveBeenCalledWith('remote', 'tcp://10.0.0.2:2375');
     expect(store.hosts().map(h => h.id)).toEqual(['dh-local', 'dh-new']);
@@ -66,7 +58,7 @@ describe('HostStore', () => {
     const store = new HostStore(ctx);
 
     store.add('remote', 'nonsense');
-    await settle();
+    await flush();
 
     expect(ctx.liveError()).toContain('add host failed: bad address');
     expect(store.hosts().map(h => h.id)).toEqual(['dh-local']);
@@ -77,7 +69,7 @@ describe('HostStore', () => {
     const store = new HostStore(context({ remove }));
 
     store.remove('dh-local');
-    await settle();
+    await flush();
 
     expect(remove).not.toHaveBeenCalled();
   });
@@ -91,7 +83,7 @@ describe('HostStore', () => {
     await store.refresh();
 
     store.remove('dh-edge');
-    await settle();
+    await flush();
 
     expect(remove).toHaveBeenCalledWith('dh-edge');
     expect(store.hosts().map(h => h.id)).toEqual(['dh-local']);
@@ -107,7 +99,7 @@ describe('HostStore', () => {
     expect(store.hosts()[0].status).toBe('connecting');
     expect(store.overall()).toBe('connecting');
 
-    await settle();
+    await flush();
     expect(store.hosts()[0]).toMatchObject({ status: 'error', note: 'refused' });
     expect(store.overall()).toBe('error');
   });
@@ -120,8 +112,8 @@ describe('HostStore', () => {
     await store.refresh();
 
     store.check('dh-edge');
-    await settle();
-    await settle();
+    await flush();
+    await flush();
 
     expect(ctx.liveError()).toContain('host check failed: timeout');
     expect(store.hosts()[0].status).toBe('connected');

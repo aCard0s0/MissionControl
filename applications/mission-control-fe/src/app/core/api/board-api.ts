@@ -1,6 +1,6 @@
 import { BoardColumn } from '../models';
 import { ApiBoardTask } from './api-types';
-import { ApiHttp } from './http';
+import { ApiHttp, seg } from './http';
 
 /** `/api/board` — the kanban tasks shared across containers. */
 export class BoardApi {
@@ -11,6 +11,6 @@ export class BoardApi {
   }
 
   moveTask(id: string, column: BoardColumn): Promise<void> {
-    return this.http.patch(`/api/board/tasks/${id}`, { column });
+    return this.http.patch(`/api/board/tasks/${seg(id)}`, { column });
   }
 }

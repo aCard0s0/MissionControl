@@ -4,19 +4,11 @@ import {
   ProfileDraft, catalogTemplateSnapshot, detachedTemplateMcp, envKeyValid, newProfileDraft,
   profileDraftFrom, profileDraftToInput, profileDraftValid, skillIdValid,
 } from './profile-editor';
+import { externalCatalogServer } from '../testing/models';
 
-const server = (patch: Partial<McpCatalogServer>): McpCatalogServer => ({
-  id: 'mcp-1', name: 'Tools', description: '', kind: 'external', hostId: null,
-  transport: 'http', url: 'https://tools.example.test/mcp', image: null, platform: null,
-  entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: null,
-  publishedPort: null, path: null, crossHostUrl: null, connectionUrl: null,
-  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
-  desiredState: 'stopped', runtimeState: 'unknown', operationState: 'idle',
-  operationError: null, checkStatus: 'unknown', checkError: null, checkedAt: null,
-  latencyMs: null, revision: 1, appliedRevision: 0, pendingChanges: false,
-  serviceKey: null, createdAt: 1, updatedAt: 1,
-  ...patch,
-});
+/** The external endpoint these snapshots are taken from. */
+const server = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer =>
+  externalCatalogServer('mcp-1', { name: 'Tools', url: 'https://tools.example.test/mcp', ...patch });
 
 describe('Agent Profile MCP catalog snapshots', () => {
   it('sends only a transient source id with the connection preview', () => {

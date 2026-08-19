@@ -5,24 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { DockerHost, McpCatalogServer, McpRetainedResource } from '../core/models';
 import { McpServersPage } from './mcp-servers';
-
-const server = (id: string, patch: Partial<McpCatalogServer> = {}): McpCatalogServer => ({
-  id, name: id, description: '', kind: 'managed', hostId: 'dh-local',
-  transport: 'http', url: null, image: 'mcp/image:latest', platform: null,
-  entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: 1100,
-  publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: `http://${id}:1100/mcp`,
-  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
-  desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle', operationError: null,
-  checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null,
-  revision: 1, appliedRevision: 1, pendingChanges: false, serviceKey: id,
-  createdAt: 1, updatedAt: 1, ...patch,
-});
+import { button, el, press, settle, text, type } from '../testing/dom';
+import { catalogServer as server, dockerHost } from '../testing/models';
 
 const hosts: DockerHost[] = [
-  { id: 'dh-local', name: 'localhost', url: 'unix:///var/run/docker.sock', kind: 'local',
-    status: 'connected', engine: null, apiVersion: null, latencyMs: null, note: null },
-  { id: 'dh-edge', name: 'edge', url: 'tcp://edge:2375', kind: 'remote',
-    status: 'error', engine: null, apiVersion: null, latencyMs: null, note: 'unreachable' },
+  dockerHost('dh-local', { name: 'localhost', url: 'unix:///var/run/docker.sock', kind: 'local' }),
+  dockerHost('dh-edge', { name: 'edge', status: 'error', note: 'unreachable' }),
 ];
 
 const volume: McpRetainedResource = {
@@ -49,39 +37,11 @@ const storeStub = (servers: McpCatalogServer[], retained: McpRetainedResource[] 
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(McpServersPage);
   fixture.detectChanges();
   return { fixture, store };
-};
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-const settle = async (fixture: { detectChanges(): void }, ms = 0): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(ms);
-  fixture.detectChanges();
-};
-
-/** Clicks the button with this exact label, optionally scoped to one container. */
-const press = (
-  fixture: { nativeElement: unknown; detectChanges(): void }, label: string, within?: string,
-): void => {
-  const scope = within ? el(fixture).querySelector(within) : el(fixture);
-  if (!scope) throw new Error(`no element matching "${within}"`);
-  const match = Array.from(scope.querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
-};
-
-const type = async (
-  fixture: { nativeElement: unknown; detectChanges(): void }, selector: string, value: string,
-): Promise<void> => {
-  const input = el(fixture).querySelector<HTMLInputElement>(selector)!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await settle(fixture);
 };
 
 describe('McpServersPage roster', () => {
@@ -258,5 +218,66 @@ describe('McpServersPage destructive confirmations', () => {
     await settle(fixture);
 
     expect(store.purgeRetainedMcpResource).toHaveBeenCalledWith('vol-1');
+  });
+});
+
+describe('McpServersPage lifecycle verbs', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('restarts a managed server whose definition has moved on', async () => {
+    const { fixture, store } = render(storeStub([
+      server('browser', { runtimeState: 'running', pendingChanges: true, appliedRevision: 0 }),
+    ]));
+
+    expect(text(fixture)).toContain('apply required');
+    press(fixture, 'apply & restart', '.server-actions');
+    await settle(fixture);
+
+    expect(store.applyCatalogMcpServer).toHaveBeenCalledWith('browser');
+  });
+
+  it('probes a server on demand', async () => {
+    const { fixture, store } = render(storeStub([server('browser', { runtimeState: 'running' })]));
+
+    press(fixture, 'check', '.server-actions');
+    await settle(fixture);
+
+    expect(store.checkCatalogMcpServer).toHaveBeenCalledWith('browser');
+  });
+
+  it('will not start the same server twice while the first start is in flight', async () => {
+    const store = storeStub([server('browser')]);
+    store.startCatalogMcpServer.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { fixture } = render(store);
+
+    press(fixture, 'start', '.server-actions');
+    await settle(fixture);
+    expect(button(fixture, 'start', '.server-actions').disabled).toBe(true);
+
+    expect(store.startCatalogMcpServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('locks the probe button while one is already running', () => {
+    const { fixture } = render(storeStub([
+      server('browser', { runtimeState: 'running', checkStatus: 'checking' }),
+    ]));
+
+    expect(button(fixture, 'checking…', '.server-actions').disabled).toBe(true);
+  });
+
+  it('probes an external endpoint too, which has no container to start', async () => {
+    const { fixture, store } = render(storeStub([
+      server('remote', { kind: 'external', hostId: null, url: 'https://mcp.example.test/mcp' }),
+    ]));
+
+    press(fixture, 'check', '.server-actions');
+    await settle(fixture);
+
+    expect(store.checkCatalogMcpServer).toHaveBeenCalledWith('remote');
   });
 });

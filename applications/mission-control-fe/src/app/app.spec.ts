@@ -1,0 +1,197 @@
+import '@angular/compiler';
+import { signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { App } from './app';
+import { HermesStore } from './core/hermes-store';
+import { HermesContainer } from './core/models';
+import { button, el, press, settle, text } from './testing/dom';
+
+const container = (id: string, patch: Partial<HermesContainer> = {}): HermesContainer => ({
+  id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
+  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', startedAt: 1,
+  cpu: 12, ram: 512, ramTotal: 4096, disk: 1, diskTotal: 0, netIn: 0, netOut: 0,
+  cpuHist: [], ramHist: [], netHist: [], ...patch,
+});
+
+/** Only what the shell and the terminal panel it hosts reach for. */
+const storeStub = (containers: HermesContainer[]) => ({
+  config: { apiBaseUrl: '', dockerSocket: '' },
+  containers: signal(containers),
+  selectedContainerId: signal(containers[0]?.id ?? ''),
+  selectedContainer: signal(containers[0] ?? null),
+  agents: signal([{ id: 'a-1' }]),
+  fleetHealth: signal('running'),
+  dockerOverall: signal('connected'),
+  liveNotice: signal<string | null>(null),
+  liveError: signal<string | null>(null),
+  terminalRequest: signal(null),
+  selectContainer: vi.fn(),
+  toast: vi.fn(),
+});
+
+const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({
+    providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
+  });
+  const fixture = TestBed.createComponent(App);
+  fixture.detectChanges();
+  return { fixture, store };
+};
+
+describe('App shell', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-19T09:41:07Z'));
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('lists every destination once, in the order the sidebar declares', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    const links = Array.from(el(fixture).querySelectorAll('nav a'))
+      .map(a => (a.textContent ?? '').replace(/^0\d/, '').trim());
+    expect(links).toEqual([
+      'Containers', 'Overview', 'Agents', 'Profiles', 'Models',
+      'MCP Servers', 'Ops Board', 'Calendar', 'Webhooks',
+    ]);
+  });
+
+  it('shows the fleet counts and the clock in UTC', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    expect(text(fixture)).toContain('1 containers · 1 profiles');
+    expect(text(fixture)).toContain('09:41:07 UTC');
+    expect(text(fixture)).toContain('WED, 19 AUG 2026');
+  });
+
+  it('advances the clock as time passes', async () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    await settle(fixture, 2_000);
+
+    expect(text(fixture)).toContain('09:41:09 UTC');
+  });
+
+  it('reports the version the fleet actually runs, not a literal', () => {
+    const one = render(storeStub([container('hermes-prod')]));
+    expect(text(one.fixture)).toContain('hermes-agent v2026.8.3');
+
+    const mixed = render(storeStub([
+      container('hermes-prod'), container('hermes-lab', { version: 'v2026.7.20' })]));
+    expect(text(mixed.fixture)).toContain('hermes-agent · 2 versions');
+
+    const none = render(storeStub([]));
+    expect(text(none.fixture)).toContain('hermes-agent · no containers');
+  });
+
+  it('names the active container, and says so when there is none', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+    expect(el(fixture).querySelector('.ctx-btn')?.textContent).toContain('hermes-prod');
+
+    const { fixture: empty } = render(storeStub([]));
+    expect(el(empty).querySelector('.ctx-btn')?.textContent).toContain('no container');
+  });
+
+  it('switches the active container from the picker and closes it', () => {
+    const { fixture, store } = render(storeStub([container('hermes-prod'), container('hermes-lab')]));
+
+    el(fixture).querySelector<HTMLButtonElement>('.ctx-btn')!.click();
+    fixture.detectChanges();
+    expect(el(fixture).querySelectorAll('.ctx-row').length).toBe(2);
+
+    el(fixture).querySelectorAll<HTMLButtonElement>('.ctx-row')[1].click();
+    fixture.detectChanges();
+
+    expect(store.selectContainer).toHaveBeenCalledWith('hermes-lab');
+    expect(el(fixture).querySelector('.ctx-pop')).toBeNull();
+  });
+
+  it('shows a live notice and an error banner only while the store has one', () => {
+    const store = storeStub([container('hermes-prod')]);
+    const { fixture } = render(store);
+    expect(el(fixture).querySelector('.live-notice')).toBeNull();
+
+    store.liveNotice.set('reconnecting to the backend');
+    store.liveError.set('deploy failed: name already in use');
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain('reconnecting to the backend');
+    expect(el(fixture).querySelector('.live-notice.crit')?.textContent)
+      .toContain('deploy failed: name already in use');
+  });
+
+  it('opens the sidebar and closes it again from the scrim', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+    expect(el(fixture).querySelector('.side-scrim')).toBeNull();
+
+    el(fixture).querySelector<HTMLButtonElement>('.menu-btn')!.click();
+    fixture.detectChanges();
+    expect(el(fixture).querySelector('aside.side.open')).not.toBeNull();
+
+    el(fixture).querySelector<HTMLElement>('.side-scrim')!.click();
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelector('aside.side.open')).toBeNull();
+  });
+});
+
+describe('App theme', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('starts dark and applies that to the document', () => {
+    const { fixture } = render(storeStub([]));
+
+    expect(document.documentElement.dataset['theme']).toBe('dark');
+    expect(button(fixture, '☀')).not.toBeNull();
+  });
+
+  it('toggles the theme and remembers it for the next visit', () => {
+    const { fixture } = render(storeStub([]));
+
+    press(fixture, '☀');
+
+    expect(document.documentElement.dataset['theme']).toBe('light');
+    expect(localStorage.getItem('mc-theme')).toBe('light');
+  });
+
+  it('restores the saved theme on load', () => {
+    localStorage.setItem('mc-theme', 'light');
+
+    render(storeStub([]));
+
+    expect(document.documentElement.dataset['theme']).toBe('light');
+  });
+
+  it('falls back to dark when storage is unreadable, as in private mode', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => { throw new Error('access denied'); });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => { throw new Error('access denied'); });
+
+    render(storeStub([]));
+
+    expect(document.documentElement.dataset['theme']).toBe('dark');
+    getItem.mockRestore();
+    setItem.mockRestore();
+  });
+});

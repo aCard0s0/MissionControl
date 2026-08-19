@@ -215,7 +215,8 @@ export class ContainersPage {
     this.deployBusy.set(false);
     if (id) {
       this.deployOpen.set(false);
-      this.deployName = this.deployProfiles = '';
+      this.deployName = '';
+      this.deployProfiles = '';
       this.deployTags.set([]);
       this.store.selectContainer(id);
       this.router.navigate(['/overview']);
@@ -270,7 +271,8 @@ export class ContainersPage {
     }
   }
 
-  protected hostName_(id: string): string {
+  /** The docker host's display name, or '?' when it is no longer in the list. */
+  protected hostLabel(id: string): string {
     return this.store.hostById(id)?.name ?? '?';
   }
 }

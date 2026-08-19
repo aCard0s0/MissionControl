@@ -4,13 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { AgentSetupPanel } from './agent-setup-panel';
-
-const profile = (id = 'a-atlas', name = 'atlas') => ({
-  id, containerId: 'c-1', name, role: 'ops', state: 'idle' as const,
-  provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…key', cwd: '/srv',
-  soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [], integrations: [],
-  sessions: [], msgsToday: 0, tokensToday: 0, errorRate: 0, lastActive: 0,
-});
+import { buttonWith, el } from '../testing/dom';
+import { agent } from '../testing/models';
 
 const setupFor = (name: string, patch: object = {}) => ({
   envPath: `/opt/data/profiles/${name}/.env`,
@@ -71,20 +66,14 @@ class Host {
 }
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   return fixture;
 };
 
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-const buttonWith = (fixture: { nativeElement: unknown }, label: string): HTMLButtonElement => {
-  const match = Array.from(el(fixture).querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim().toLowerCase() === label.toLowerCase());
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  return match as HTMLButtonElement;
-};
+const profile = (id = 'a-atlas', name = 'atlas') => agent(id, { name });
 
 describe('AgentSetupPanel', () => {
   it('reads the setup when it opens, and renders what came back', async () => {

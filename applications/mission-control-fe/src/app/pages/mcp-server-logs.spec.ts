@@ -3,20 +3,10 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
-import { LogEntry, McpCatalogServer } from '../core/models';
+import { LogEntry } from '../core/models';
 import { McpServerLogs } from './mcp-server-logs';
-
-const server = (id: string): McpCatalogServer => ({
-  id, name: id, description: '', kind: 'managed', hostId: 'dh-local',
-  transport: 'http', url: null, image: 'image:latest', platform: null,
-  entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: 1100,
-  publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: `http://${id}:1100/mcp`,
-  headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
-  desiredState: 'running', runtimeState: 'running', operationState: 'idle', operationError: null,
-  checkStatus: 'connected', checkError: null, checkedAt: null, latencyMs: null,
-  revision: 1, appliedRevision: 1, pendingChanges: false, serviceKey: id,
-  createdAt: 1, updatedAt: 1,
-});
+import { el, settle } from '../testing/dom';
+import { catalogServer } from '../testing/models';
 
 const line = (msg: string, source = 'browser'): LogEntry =>
   ({ ts: 1_700_000_000_000, level: 'info', source, agentId: null, msg });
@@ -33,19 +23,17 @@ class Host {
 }
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   return { fixture, host: fixture.componentInstance };
 };
 
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-/** Lets the pending read resolve and paints what came back. */
-const settle = async (fixture: { detectChanges(): void }, ms = 0): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(ms);
-  fixture.detectChanges();
-};
+/** A managed server that is up, which is the only state its logs are read in. */
+const server = (id: string) => catalogServer(id, {
+  desiredState: 'running', runtimeState: 'running', checkStatus: 'connected',
+});
 
 describe('McpServerLogs', () => {
   beforeEach(() => vi.useFakeTimers());
