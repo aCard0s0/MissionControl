@@ -31,7 +31,10 @@ export class ContainerLifecycle {
 
   setStatus(id: string, status: ContainerStatus): void {
     const container = this.containers.byId(id);
-    if (!container) return;
+    if (!container) {
+      this.ctx.gone('container');
+      return;
+    }
     const call = status === 'running'
       ? this.ctx.api.containers.start(container.hostId, id)
       : this.ctx.api.containers.stop(container.hostId, id);
@@ -48,7 +51,11 @@ export class ContainerLifecycle {
    */
   async update(id: string, version: string): Promise<string> {
     const container = this.containers.byId(id);
-    if (!container || !version || version === container.version) return '';
+    if (!container) {
+      this.ctx.gone('container');
+      return '';
+    }
+    if (!version || version === container.version) return '';   // nothing to do
     const wasSelected = this.containers.selectedContainerId() === id;
     try {
       const r = await this.ctx.api.containers.update(container.hostId, id, version);
@@ -65,7 +72,7 @@ export class ContainerLifecycle {
 
   async remove(id: string): Promise<boolean> {
     const container = this.containers.byId(id);
-    if (!container) return false;
+    if (!container) return this.ctx.gone('container');
     try {
       await this.ctx.api.containers.remove(container.hostId, id);
       if (this.containers.selectedContainerId() === id) this.containers.selectedContainerId.set('');

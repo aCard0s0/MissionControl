@@ -1,3 +1,4 @@
+import { errorMessage } from '../errors';
 import { McpServer } from '../models';
 import { McpEndpointOptions } from '../../shared/mcp-endpoint-form';
 import { AgentStore } from './agent-store';
@@ -19,7 +20,7 @@ export class AgentMcpStore {
   async add(
     agentId: string, name: string, transport: McpServer['transport'], opts?: McpEndpointOptions,
   ): Promise<boolean> {
-    if (!this.agents.byId(agentId)) return false;
+    if (!this.agents.byId(agentId)) return this.ctx.gone('profile');
     return this.agents.mutate(agentId, 'mcp add', ref => this.ctx.api.agents.mcp.add(ref, {
       name, transport, url: opts?.url, command: opts?.command, args: opts?.args,
     }));
@@ -33,7 +34,7 @@ export class AgentMcpStore {
   ): Promise<boolean> {
     const agent = this.agents.byId(agentId);
     const existing = agent?.mcp.find(server => server.name === oldName);
-    if (!agent || !existing) return false;
+    if (!agent || !existing) return this.ctx.gone('MCP server');
     if (oldName !== name && agent.mcp.some(server => server.name === name)) {
       this.ctx.toast(`MCP alias already exists: ${name}`);
       return false;
@@ -47,7 +48,9 @@ export class AgentMcpStore {
 
   async setEnabled(agentId: string, serverName: string, enabled: boolean): Promise<boolean> {
     const agent = this.agents.byId(agentId);
-    if (!agent?.mcp.some(server => server.name === serverName)) return false;
+    if (!agent?.mcp.some(server => server.name === serverName)) {
+      return this.ctx.gone('MCP server');
+    }
     return this.agents.mutate(agentId, `MCP ${enabled ? 'connect' : 'disconnect'}`,
       ref => this.ctx.api.agents.mcp.setEnabled(ref, serverName, enabled));
   }
@@ -55,9 +58,11 @@ export class AgentMcpStore {
   /** Starts a stopped managed catalog server and waits for the real runtime
    *  state before writing any Agent configuration. */
   async connectCatalog(agentId: string, serverId: string, alias: string): Promise<boolean> {
+    if (!alias.trim()) return false;   // the form's own guard, not a failure
     const resolved = this.agents.resolve(agentId);
     const catalog = this.catalog.byId(serverId);
-    if (!resolved || !catalog || !alias.trim()) return false;
+    if (!resolved) return this.ctx.gone('profile');
+    if (!catalog) return this.ctx.gone('catalog entry');
     const { agent, ref } = resolved;
     if (agent.mcp.some(server => server.name === alias)) {
       this.ctx.toast(`MCP alias already exists: ${alias}`);
@@ -80,7 +85,7 @@ export class AgentMcpStore {
   async syncCatalog(agentId: string, alias: string): Promise<boolean> {
     const agent = this.agents.byId(agentId);
     const linked = agent?.mcp.find(server => server.name === alias && server.catalogServerId);
-    if (!agent || !linked?.catalogServerId) return false;
+    if (!agent || !linked?.catalogServerId) return this.ctx.gone('catalog link');
     return this.agents.mutate(agentId, 'MCP sync',
       ref => this.ctx.api.agents.mcp.syncCatalog(ref, alias));
   }
@@ -88,7 +93,7 @@ export class AgentMcpStore {
   /** Detaches the alias from the catalog so it can be edited directly. */
   async unlinkCatalog(agentId: string, alias: string): Promise<boolean> {
     const agent = this.agents.byId(agentId);
-    if (!agent?.mcp.some(server => server.name === alias)) return false;
+    if (!agent?.mcp.some(server => server.name === alias)) return this.ctx.gone('MCP server');
     return this.agents.mutate(agentId, 'MCP customize',
       ref => this.ctx.api.agents.mcp.unlinkCatalog(ref, alias));
   }
@@ -96,7 +101,7 @@ export class AgentMcpStore {
   async remove(agentId: string, mcpId: string): Promise<boolean> {
     const agent = this.agents.byId(agentId);
     const server = agent?.mcp.find(m => m.id === mcpId);
-    if (!agent || !server) return false;
+    if (!agent || !server) return this.ctx.gone('MCP server');
     return this.agents.mutate(agentId, 'mcp remove',
       ref => this.ctx.api.agents.mcp.remove(ref, server.name));
   }
@@ -104,13 +109,13 @@ export class AgentMcpStore {
   /** Retest a single MCP server's reachability. */
   async test(agentId: string, serverName: string): Promise<boolean> {
     const agent = this.agents.byId(agentId);
-    if (!agent) return false;
+    if (!agent) return this.ctx.gone('profile');
     this.patchServer(agentId, serverName, server => server.status === 'disabled'
       ? server
       : { ...server, status: 'checking' as const, error: null });
 
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const r = await this.ctx.api.agents.mcp.test(resolved.ref, serverName);
       this.patchServer(agentId, serverName, server => ({
@@ -120,7 +125,7 @@ export class AgentMcpStore {
       if (r.error) this.ctx.toast(`mcp ${serverName}: ${r.error}`);
       return r.status === 'connected';
     } catch (e) {
-      const message = (e as { message?: string } | null)?.message ?? String(e);
+      const message = errorMessage(e);
       this.ctx.toast(`mcp test failed: ${message}`);
       this.patchServer(agentId, serverName, server => ({
         ...server, status: 'error' as const, latencyMs: null,

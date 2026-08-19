@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { HermesStore } from '../core/hermes-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
+import { errorMessage } from '../core/errors';
 import { ago } from '../core/format';
 import { ModelProvider, OllamaModel } from '../core/models';
 import { ApiPullState } from '../core/hermes-api';
@@ -92,8 +93,7 @@ export class ModelsPage {
       this.models.set(models);
     } catch (error) {
       if (id !== this.selectedId()) return;
-      const message = error instanceof Error ? error.message : String(error);
-      this.modelsError.set(message || 'failed to load models');
+      this.modelsError.set(errorMessage(error, 'failed to load models'));
       this.models.set([]);
     } finally {
       if (id === this.selectedId()) this.modelsLoading.set(false);

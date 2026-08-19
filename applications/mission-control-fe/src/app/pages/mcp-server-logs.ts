@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy, Component, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
 import { HermesStore } from '../core/hermes-store';
+import { errorMessage } from '../core/errors';
 import { clock } from '../core/format';
 import { LogEntry, McpCatalogServer } from '../core/models';
 
@@ -58,7 +59,7 @@ export class McpServerLogs {
       this.error.set(null);
     } catch (error) {
       if (this.server().id !== id) return;
-      this.error.set(error instanceof Error ? error.message : String(error));
+      this.error.set(errorMessage(error, 'log read failed'));
     } finally {
       this.loading.set(false);
     }

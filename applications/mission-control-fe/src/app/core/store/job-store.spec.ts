@@ -315,11 +315,13 @@ describe('JobStore wire tolerance', () => {
     expect(ctx.liveError()).toBe('resume job failed: scheduler down');
   });
 
-  it('refuses to act on a job it does not hold', async () => {
+  it('refuses to act on a job it does not hold, and says so', async () => {
     const setEnabled = vi.fn();
-    const { jobs } = await loaded({ list: vi.fn().mockResolvedValue(answer([])), setEnabled });
+    const { jobs, ctx } =
+      await loaded({ list: vi.fn().mockResolvedValue(answer([])), setEnabled });
 
     expect(await jobs.toggle('j-missing')).toBe(false);
     expect(setEnabled).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('job is no longer available');
   });
 });

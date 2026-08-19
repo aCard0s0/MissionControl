@@ -44,7 +44,11 @@ export class HostStore {
 
   remove(id: string): void {
     const host = this.byId(id);
-    if (!host || host.kind === 'local') return;   // local socket is not removable
+    if (!host) {
+      this.ctx.gone('docker host');
+      return;
+    }
+    if (host.kind === 'local') return;   // not removable, and the page offers no button
     this.ctx.api.hosts.remove(id)
       .then(() => this.refresh())
       .catch(e => this.ctx.toastFailure('remove host', e));

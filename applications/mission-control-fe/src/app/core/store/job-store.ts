@@ -80,7 +80,7 @@ export class JobStore {
 
   update(id: string, patch: Partial<CronJob>): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, 'job update', ref =>
       this.ctx.api.agents.cron.update(ref, id, request({
         schedule: patch.schedule, prompt: patch.prompt, name: patch.name,
@@ -90,7 +90,7 @@ export class JobStore {
 
   toggle(id: string): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, job.enabled ? 'pause job' : 'resume job',
       ref => this.ctx.api.agents.cron.setEnabled(ref, id, !job.enabled));
   }
@@ -98,13 +98,13 @@ export class JobStore {
   /** Asks for the job on the next scheduler tick rather than at its schedule. */
   runNow(id: string): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, 'run job', ref => this.ctx.api.agents.cron.runNow(ref, id));
   }
 
   remove(id: string): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, 'remove job', ref => this.ctx.api.agents.cron.remove(ref, id));
   }
 
@@ -131,7 +131,7 @@ export class JobStore {
       Promise<{ jobs: ApiCronJob[]; schedulerRunning: boolean }>,
   ): Promise<boolean> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const answer = await call(resolved.ref);
       const fresh = answer.jobs.map(job => toCronJob(job, resolved.agent.containerId, agentId));

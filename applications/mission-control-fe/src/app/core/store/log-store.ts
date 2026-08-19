@@ -1,4 +1,5 @@
 import { computed, signal } from '@angular/core';
+import { errorMessage } from '../errors';
 import { LogEntry } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
@@ -52,7 +53,7 @@ export class LogStore {
       }));
       if (this.isSelected(c.id)) this.updatedAt.set(Date.now());
     } catch (e) {
-      const detail = (e as { message?: string } | null)?.message ?? 'log refresh failed';
+      const detail = errorMessage(e, 'log refresh failed');
       if (this.isSelected(c.id)) this.error.set(detail);
     } finally {
       this.inFlight.delete(c.id);

@@ -93,7 +93,10 @@ export class WebhookStore {
   /** The full HMAC secret, or null when it could not be read. */
   async secretOf(agentId: string, route: string): Promise<string | null> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return null;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return null;
+    }
     try {
       return (await this.ctx.api.agents.webhooks.secret(resolved.ref, route)).secret;
     } catch (e) {
@@ -105,7 +108,10 @@ export class WebhookStore {
   /** Fires hermes' test POST at the route and answers with what it printed. */
   async test(agentId: string, route: string): Promise<string | null> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return null;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return null;
+    }
     try {
       return (await this.ctx.api.agents.webhooks.test(resolved.ref, route)).output;
     } catch (e) {
@@ -130,7 +136,7 @@ export class WebhookStore {
     call: (ref: { hostId: string; containerId: string; name: string }) => Promise<ApiWebhooks>,
   ): Promise<boolean> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const answer = await call(resolved.ref);
       const containerId = resolved.agent.containerId;

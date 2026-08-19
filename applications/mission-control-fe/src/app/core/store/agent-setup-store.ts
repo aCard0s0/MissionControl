@@ -67,10 +67,11 @@ export class AgentSetupStore {
 
   /** Empty/null entry value removes that key from the .env file. */
   setEnv(agentId: string, entries: Array<{ key: string; value: string | null }>): Promise<ApiAgentSetup | null> {
-    const agent = this.agents.byId(agentId);
-    if (!agent) return Promise.resolve(null);
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return Promise.resolve(null);
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return Promise.resolve(null);
+    }
     return this.ctx.api.agents.setEnv(resolved.ref, entries)
       .then(setup => this.remember(agentId, setup))
       .catch(e => {
@@ -81,10 +82,11 @@ export class AgentSetupStore {
 
   /** Writes the commented-out .env template only when the file is missing. */
   initEnv(agentId: string): Promise<ApiAgentSetup | null> {
-    const agent = this.agents.byId(agentId);
-    if (!agent) return Promise.resolve(null);
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return Promise.resolve(null);
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return Promise.resolve(null);
+    }
     return this.ctx.api.agents.initEnv(resolved.ref)
       .then(setup => this.remember(agentId, setup))
       .catch(e => {
@@ -118,7 +120,10 @@ export class AgentSetupStore {
   /** Chat history (messages) for a single session. */
   sessionMessages(agentId: string, sessionId: string): Promise<ChatMessage[] | null> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return Promise.resolve(null);
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return Promise.resolve(null);
+    }
     return this.ctx.api.agents.sessionMessages(resolved.ref, sessionId)
       .catch(e => { this.ctx.toastFailure('session load', e); return null; });
   }
@@ -126,7 +131,10 @@ export class AgentSetupStore {
   /** Deletes a session file. */
   deleteSession(agentId: string, sessionId: string): Promise<void> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return Promise.resolve();
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return Promise.resolve();
+    }
     return this.ctx.api.agents.deleteSession(resolved.ref, sessionId);
   }
 

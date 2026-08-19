@@ -12,6 +12,7 @@ import { AgentMcpPanel } from './agent-mcp-panel';
 import { AgentSetupPanel } from './agent-setup-panel';
 import { AgentSkillsPanel } from './agent-skills-panel';
 import { ago, clock, until } from '../core/format';
+import { errorMessage } from '../core/errors';
 import { ChatMessage, LogEntry, SessionInfo } from '../core/models';
 import { SessionViewer } from './session-viewer';
 
@@ -154,8 +155,7 @@ export class AgentDetailPage {
       }
     } catch (e) {
       if (this.agent()?.id === a.id && this.tab() === 'activity') {
-        const reason = e instanceof Error ? e.message : null;
-        this.agentLogsError.set(reason ?? 'agent log refresh failed');
+        this.agentLogsError.set(errorMessage(e, 'agent log refresh failed'));
       }
     } finally {
       this.agentLogsInFlight.delete(a.id);
@@ -188,7 +188,7 @@ export class AgentDetailPage {
         }
       })
       .catch(e => {
-        this.store.toast(`session load failed: ${e.message}`);
+        this.store.toast(`session load failed: ${errorMessage(e)}`);
         this.viewingSession.set(null);
       });
   }
@@ -217,7 +217,7 @@ export class AgentDetailPage {
         this.sessions.update(list => (list ?? []).filter(x => x.id !== s.id));
         if (this.viewingSession()?.session.id === s.id) this.viewingSession.set(null);
       })
-      .catch(e => this.store.toast(`session delete failed: ${e.message}`));
+      .catch(e => this.store.toast(`session delete failed: ${errorMessage(e)}`));
   }
 
   protected async saveSoul(): Promise<void> {

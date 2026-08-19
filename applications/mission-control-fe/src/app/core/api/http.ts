@@ -1,3 +1,5 @@
+import { ApiError } from '../errors';
+
 /**
  * The one place that talks to `fetch`. Every resource client under this folder
  * composes a path and hands it to {@link ApiHttp.req} — so timeouts, the JSON
@@ -24,7 +26,10 @@ export class ApiHttp {
         const body = await res.json();
         if (body?.error) detail = body.error;
       } catch { /* non-json error body */ }
-      throw new Error(detail);
+      // carries the status too: a caller that only shows the text reads
+      // `message` as before, one that has to tell 404 from 500 no longer has to
+      // parse it back out of a string
+      throw new ApiError(res.status, detail);
     }
     const text = await res.text();
     return (text ? JSON.parse(text) : undefined) as T;

@@ -1,4 +1,5 @@
 import { WritableSignal, signal } from '@angular/core';
+import { errorMessage } from '../errors';
 import { McpServerOperation } from '../hermes-api';
 import { duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
 import { LogEntry, McpCatalogServer, McpCatalogServerInput, McpRetainedResource } from '../models';
@@ -75,7 +76,7 @@ export class McpCatalogStore {
   }
 
   async remove(id: string): Promise<boolean> {
-    if (!this.byId(id)) return false;
+    if (!this.byId(id)) return this.ctx.gone('MCP server');
     try {
       const response = await this.ctx.api.mcp.remove(id);
       if (response) this.upsert(toMcpCatalogServer(response));
@@ -153,7 +154,7 @@ export class McpCatalogStore {
 
   private async run(id: string, operation: McpServerOperation): Promise<boolean> {
     const server = this.byId(id);
-    if (!server) return false;
+    if (!server) return this.ctx.gone('MCP server');
     this.patch(id, item => ({
       ...item,
       operationState: operation === 'check' ? item.operationState : IN_FLIGHT_STATE[operation],
@@ -171,7 +172,7 @@ export class McpCatalogStore {
       if (operation !== 'check') void this.pollOperation(id);
       return operation !== 'check' || this.byId(id)?.checkStatus === 'connected';
     } catch (e) {
-      const message = (e as { message?: string } | null)?.message ?? String(e);
+      const message = errorMessage(e);
       this.patch(id, item => ({
         ...item,
         operationState: operation === 'check' ? item.operationState : 'error',

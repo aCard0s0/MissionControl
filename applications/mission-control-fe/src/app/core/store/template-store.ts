@@ -53,9 +53,15 @@ export class TemplateStore {
   /** Deploy a template into a container as a new agent. Returns the agent id, or ''. */
   async deploy(templateId: string, containerId: string, name: string): Promise<string> {
     const template = this.byId(templateId);
-    if (!template) return '';
+    if (!template) {
+      this.ctx.gone('template');
+      return '';
+    }
     const container = this.containers.byId(containerId);
-    if (!container) return '';
+    if (!container) {
+      this.ctx.gone('container');
+      return '';
+    }
     try {
       const created = await this.ctx.api.templates.deploy(templateId, {
         hostId: container.hostId, containerId, name,
@@ -70,7 +76,10 @@ export class TemplateStore {
   /** Snapshot a running agent's config into a new template. Returns the template id. */
   async capture(agentId: string, templateName?: string): Promise<string> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return '';
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return '';
+    }
     try {
       const t = await this.ctx.api.templates.capture(resolved.ref, templateName);
       this.upsert(toProfileTemplate(t));

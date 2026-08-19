@@ -62,7 +62,7 @@ export class AgentStore {
     agentId: string, label: string, call: (ref: AgentRef) => Promise<ApiAgentProfile>,
   ): Promise<boolean> {
     const resolved = this.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const updated = await call(resolved.ref);
       // guard: the profile may have been removed while the request was in flight
@@ -110,7 +110,10 @@ export class AgentStore {
     auxiliary?: ApiAuxiliaryModel,
   ): Promise<string> {
     const container = this.containers.byId(containerId);
-    if (!container) return '';
+    if (!container) {
+      this.ctx.gone('container');
+      return '';
+    }
     try {
       const created = await this.ctx.api.agents.create({
         hostId: container.hostId,
@@ -142,7 +145,10 @@ export class AgentStore {
   /** Removes the profile and everything keyed to it. */
   remove(id: string, onRemoved: (agentId: string) => void): void {
     const resolved = this.resolve(id);
-    if (!resolved) return;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return;
+    }
     this.ctx.api.agents.remove(resolved.ref)
       .then(() => {
         this.agents.update(as => as.filter(a => a.id !== id));
@@ -153,7 +159,7 @@ export class AgentStore {
 
   async updateSoul(id: string, soul: string): Promise<boolean> {
     const resolved = this.resolve(id);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       await this.ctx.api.agents.updateSoul(resolved.ref, soul);
       // guard: the profile may have been removed while the request was in flight
@@ -184,7 +190,10 @@ export class AgentStore {
   /** Re-reads every integration's connectivity from the container. */
   pingIntegrations(agentId: string): void {
     const resolved = this.resolve(agentId);
-    if (!resolved) return;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return;
+    }
     this.ctx.api.agents.integrations(resolved.ref)
       .then(integrations => this.patch(agentId, {
         integrations: integrations.map(i => ({

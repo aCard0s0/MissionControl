@@ -155,12 +155,13 @@ describe('AgentStore create', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ cloneFrom: 'atlas' }));
   });
 
-  it('refuses to create in a container it does not hold', async () => {
+  it('refuses to create in a container it does not hold, and says why', async () => {
     const create = vi.fn();
-    const { agents } = await built({ list: vi.fn().mockResolvedValue([]), create });
+    const { agents, ctx } = await built({ list: vi.fn().mockResolvedValue([]), create });
 
     expect(await agents.create('c-missing', 'sre', 'anthropic', 'm', '')).toBe('');
     expect(create).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('container is no longer available');
   });
 
   it('answers an empty id and says why a create failed', async () => {

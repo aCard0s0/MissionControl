@@ -5,6 +5,7 @@ import { HermesStore } from '../core/hermes-store';
 import { StatusDot } from '../shared/status-dot';
 import { Sparkline } from '../shared/sparkline';
 import { Reveal } from '../shared/reveal';
+import { errorMessage } from '../core/errors';
 import { uptime } from '../core/format';
 import { HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 
@@ -262,8 +263,7 @@ export class ContainersPage {
       }
     } catch (error) {
       if (hostId !== this.deployHost) return;
-      const message = error instanceof Error ? error.message : String(error);
-      this.tagsError.set(message || 'failed to load image tags');
+      this.tagsError.set(errorMessage(error, 'failed to load image tags'));
       this.deployTags.set([]);
       this.deployVersion = '';
     } finally {
