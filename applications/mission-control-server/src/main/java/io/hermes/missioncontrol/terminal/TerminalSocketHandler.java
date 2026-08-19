@@ -23,7 +23,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -104,10 +103,8 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   private final ObjectMapper mapper = new ObjectMapper();
   private final Map<String, Shell> shells = new ConcurrentHashMap<>();
 
-  // concurrency caps — globalCount is the source of truth, not shells.size()
-  private final AtomicInteger globalCount = new AtomicInteger();
-  private final Map<String, AtomicInteger> perClientCount = new ConcurrentHashMap<>();
-  private final TerminalSessionLimiter globalSlots;
+  /** Both concurrency caps, reserved and released as one — see {@link TerminalSessionLimiter}. */
+  private final TerminalSessionLimiter slots;
 
   // idle/heartbeat reaper — single daemon thread, mirrors ModelProviderService's executor pattern
   private final ScheduledExecutorService reaper = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -120,7 +117,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
     this.clients = clients;
     this.hosts = hosts;
     this.props = props;
-    this.globalSlots = new TerminalSessionLimiter(props.maxSessions());
+    this.slots = new TerminalSessionLimiter(props.maxSessions(), props.maxSessionsPerClient());
   }
 
   @PostConstruct
@@ -156,24 +153,21 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
       return;
     }
 
-    // ── admission: global + per-client caps (atomic reserve, back out on per-client overflow) ──
     String clientKey = remoteKey(session);
-    if (!globalSlots.tryAcquire()) {
-      log.warn("terminal session rejected — global cap {} reached", props.maxSessions());
-      session.close(CloseStatus.SERVICE_OVERLOAD.withReason("terminal session limit reached"));
-      return;
+    switch (slots.tryAcquire(clientKey)) {
+      case GLOBAL_CAP -> {
+        log.warn("terminal session rejected — global cap {} reached", props.maxSessions());
+        session.close(CloseStatus.SERVICE_OVERLOAD.withReason("terminal session limit reached"));
+        return;
+      }
+      case PER_CLIENT_CAP -> {
+        log.warn("terminal session rejected — per-client cap {} reached for {}",
+            props.maxSessionsPerClient(), clientKey);
+        session.close(CloseStatus.SERVICE_OVERLOAD.withReason("per-client terminal limit reached"));
+        return;
+      }
+      case ADMITTED -> { /* reserved — every exit path below releases it */ }
     }
-    AtomicInteger perClient = perClientCount.computeIfAbsent(clientKey, k -> new AtomicInteger());
-    if (perClient.incrementAndGet() > props.maxSessionsPerClient()) {
-      perClientCount.computeIfPresent(clientKey, (k, c) -> c.decrementAndGet() <= 0 ? null : c);
-      globalSlots.release();
-      log.warn("terminal session rejected — per-client cap {} reached for {}",
-          props.maxSessionsPerClient(), clientKey);
-      session.close(CloseStatus.SERVICE_OVERLOAD.withReason("per-client terminal limit reached"));
-      return;
-    }
-    globalCount.incrementAndGet();
-    // a slot is now reserved — every exit path below must release it (teardown / releaseSlot do)
 
     Shell shell = null;
     try {
@@ -233,7 +227,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
         teardown(shells.remove(session.getId()),
             CloseStatus.SERVER_ERROR.withReason("setup failed"), "setup-failure");
       } else {
-        releaseSlot(clientKey);   // shell never built — release the reserved slot directly
+        slots.release(clientKey);   // shell never built — release the reserved slot directly
       }
       closeQuietly(session, CloseStatus.SERVER_ERROR.withReason("setup failed"));
     }
@@ -297,7 +291,8 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
       }
     }
     if (log.isDebugEnabled()) {
-      log.debug("terminal sweep: {} live session(s), global slot count {}", shells.size(), globalCount.get());
+      log.debug("terminal sweep: {} live session(s), {} slot(s) free",
+          shells.size(), slots.available());
     }
   }
 
@@ -348,15 +343,10 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
     // 4. close the websocket if still open
     closeQuietly(shell.sender, status == null ? CloseStatus.NORMAL : status);
     // 5. release the concurrency slot (exactly once, inside the CAS guard)
-    releaseSlot(shell.clientKey);
+    slots.release(shell.clientKey);
     log.debug("terminal teardown {} ({})", shell.execId, reason);
   }
 
-  private void releaseSlot(String clientKey) {
-    globalCount.decrementAndGet();
-    perClientCount.computeIfPresent(clientKey, (k, c) -> c.decrementAndGet() <= 0 ? null : c);
-    globalSlots.release();
-  }
 
   private static String remoteKey(WebSocketSession session) {
     InetSocketAddress addr = session.getRemoteAddress();
