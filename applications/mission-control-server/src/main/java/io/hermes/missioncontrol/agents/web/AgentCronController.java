@@ -36,8 +36,7 @@ class AgentCronController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.list(host, containerId, name);
+    return cron.list(endpoints.host(hostId), containerId, name);
   }
 
   @PostMapping
@@ -46,8 +45,7 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody CreateCronJobRequest request) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.create(host, containerId, name, request);
+    return cron.create(endpoints.host(hostId), containerId, name, request);
   }
 
   @PatchMapping("/{jobId}")
@@ -57,8 +55,7 @@ class AgentCronController {
       @PathVariable String name,
       @PathVariable String jobId,
       @RequestBody UpdateCronJobRequest request) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.update(host, containerId, name, jobId, request);
+    return cron.update(endpoints.host(hostId), containerId, name, jobId, request);
   }
 
   @PostMapping("/{jobId}/pause")
@@ -67,8 +64,7 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.setEnabled(host, containerId, name, jobId, false);
+    return cron.setEnabled(endpoints.host(hostId), containerId, name, jobId, false);
   }
 
   @PostMapping("/{jobId}/resume")
@@ -77,8 +73,7 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.setEnabled(host, containerId, name, jobId, true);
+    return cron.setEnabled(endpoints.host(hostId), containerId, name, jobId, true);
   }
 
   /** Asks for the job on the next scheduler tick, rather than waiting for its schedule. */
@@ -88,8 +83,7 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.runNow(host, containerId, name, jobId);
+    return cron.runNow(endpoints.host(hostId), containerId, name, jobId);
   }
 
   @DeleteMapping("/{jobId}")
@@ -98,7 +92,6 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    DockerHostRef host = endpoints.host(hostId);
-    return cron.remove(host, containerId, name, jobId);
+    return cron.remove(endpoints.host(hostId), containerId, name, jobId);
   }
 }

@@ -25,7 +25,6 @@ import com.github.dockerjava.api.model.Statistics;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Version;
 import io.hermes.missioncontrol.config.AppProperties;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
