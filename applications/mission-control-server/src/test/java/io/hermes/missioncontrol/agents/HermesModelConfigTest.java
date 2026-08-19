@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 class HermesModelConfigTest {
 
   /** The parser needs no collaborators, so nulls are safe for the pure read path. */
-  private final HermesModelConfig modelConfig = new HermesModelConfig(null, null);
+  private final HermesModelConfig modelConfig = new HermesModelConfig(null, null, null);
 
   private static Map<String, String> entries(String provider, String model, String baseUrl) {
     Map<String, String> out = new LinkedHashMap<>();

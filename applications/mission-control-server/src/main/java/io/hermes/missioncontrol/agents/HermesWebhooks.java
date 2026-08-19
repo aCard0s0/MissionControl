@@ -10,9 +10,6 @@ import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.secrets.Secrets;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -64,12 +61,15 @@ public class HermesWebhooks {
   private static final int PORT_SEARCH_RANGE = 64;
 
   private final HermesContainerFiles files;
+  private final HermesCli cli;
   private final ObjectMapper objectMapper;
   private final ProfileInventory inventory;
 
   HermesWebhooks(
-      HermesContainerFiles files, ObjectMapper objectMapper, ProfileInventory inventory) {
+      HermesContainerFiles files,
+      HermesCli cli, ObjectMapper objectMapper, ProfileInventory inventory) {
     this.files = files;
+    this.cli = cli;
     this.objectMapper = objectMapper;
     this.inventory = inventory;
   }
@@ -94,14 +94,14 @@ public class HermesWebhooks {
     String bindHost = null;
     Integer port = null;
     if (request.enabled()) {
-      bindHost = notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
+      bindHost = HermesCli.notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
       port = resolvePort(host, containerId, profileName, request.port());
     }
-    setConfig(host, containerId, profileName, PLATFORM_KEY + ".enabled",
+    cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".enabled",
         String.valueOf(request.enabled()));
     if (request.enabled()) {
-      setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.host", bindHost);
-      setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
+      cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.host", bindHost);
+      cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
     }
     return list(host, containerId, profileName);
   }
@@ -162,26 +162,26 @@ public class HermesWebhooks {
       DockerHostRef host, String containerId, String profileName, SubscribeWebhookRequest request) {
     List<String> command = new ArrayList<>(
         List.of("webhook", "subscribe", requireRoute(request.name())));
-    addOption(command, "--prompt", request.prompt());
-    addOption(command, "--description", request.description());
-    addOption(command, "--events", joined(request.events()));
-    addOption(command, "--skills", joined(request.skills()));
-    addOption(command, "--deliver", request.deliver());
-    addOption(command, "--deliver-chat-id", request.deliverChatId());
+    HermesCli.addOption(command, "--prompt", request.prompt());
+    HermesCli.addOption(command, "--description", request.description());
+    HermesCli.addOption(command, "--events", joined(request.events()));
+    HermesCli.addOption(command, "--skills", joined(request.skills()));
+    HermesCli.addOption(command, "--deliver", request.deliver());
+    HermesCli.addOption(command, "--deliver-chat-id", request.deliverChatId());
     if (request.deliverOnly()) command.add("--deliver-only");
     // no --secret: hermes generates one, so a secret never travels through the dashboard
-    run(host, containerId, profileName, command);
+    cli.stdout(host, containerId, profileName, command);
     return list(host, containerId, profileName);
   }
 
   public WebhooksDto remove(DockerHostRef host, String containerId, String profileName, String route) {
-    run(host, containerId, profileName, List.of("webhook", "remove", requireRoute(route)));
+    cli.stdout(host, containerId, profileName, List.of("webhook", "remove", requireRoute(route)));
     return list(host, containerId, profileName);
   }
 
   /** Fires hermes' own test POST at the route, so an operator can prove it is wired. */
   public String test(DockerHostRef host, String containerId, String profileName, String route) {
-    return run(host, containerId, profileName, List.of("webhook", "test", requireRoute(route)));
+    return cli.stdout(host, containerId, profileName, List.of("webhook", "test", requireRoute(route)));
   }
 
   /**
@@ -233,15 +233,15 @@ public class HermesWebhooks {
     for (JsonNode skill : node.path("skills")) skills.add(skill.asText());
     return new WebhookSubscriptionDto(
         name,
-        text(node, "description"),
+        HermesCli.text(node, "description"),
         routeUrl(platform, name),
         events,
-        text(node, "prompt"),
+        HermesCli.text(node, "prompt"),
         skills,
-        text(node, "deliver"),
+        HermesCli.text(node, "deliver"),
         node.path("deliver_only").asBoolean(false),
-        Secrets.mask(text(node, "secret")),
-        epochMillis(text(node, "created_at")));
+        Secrets.mask(HermesCli.text(node, "secret")),
+        HermesCli.epochMillis(HermesCli.text(node, "created_at")));
   }
 
   /**
@@ -272,20 +272,6 @@ public class HermesWebhooks {
 
   // ── writing ────────────────────────────────────────────────────────────────
 
-  private String run(
-      DockerHostRef host, String containerId, String profileName, List<String> hermesArgs) {
-    List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName));
-    command.addAll(hermesArgs);
-    return files.exec(host, containerId, command, true).stdout();
-  }
-
-  private void setConfig(
-      DockerHostRef host, String containerId, String profileName, String key, String value) {
-    List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName));
-    command.addAll(List.of("config", "set", key, value));
-    files.exec(host, containerId, command, true);
-  }
-
   /** One level down a parsed config, or an empty map when the key is absent or not a map. */
   private static Map<?, ?> childMap(Map<?, ?> parent, String key) {
     return parent.get(key) instanceof Map<?, ?> child ? child : Map.of();
@@ -293,20 +279,11 @@ public class HermesWebhooks {
 
   private static String joined(List<String> values) {
     if (values == null) return null;
-    List<String> kept = values.stream().filter(HermesWebhooks::notBlank).map(String::trim).toList();
+    List<String> kept = values.stream().filter(HermesCli::notBlank).map(String::trim).toList();
     return kept.isEmpty() ? null : String.join(",", kept);
   }
 
-  private static void addOption(List<String> command, String flag, String value) {
-    if (notBlank(value)) {
-      command.add(flag);
-      command.add(value.trim());
-    }
-  }
 
-  private static boolean notBlank(String value) {
-    return value != null && !value.isBlank();
-  }
 
   private static String requireRoute(String route) {
     if (route == null || !ROUTE.matcher(route).matches()) {
@@ -319,21 +296,5 @@ public class HermesWebhooks {
     if (port < 1 || port > 65_535) throw new IllegalArgumentException("invalid webhook port");
   }
 
-  private static String text(JsonNode node, String field) {
-    JsonNode value = node.path(field);
-    return value.isNull() || value.isMissingNode() ? null : value.asText();
-  }
 
-  private static Long epochMillis(String isoTimestamp) {
-    if (!notBlank(isoTimestamp)) return null;
-    try {
-      return OffsetDateTime.parse(isoTimestamp).toInstant().toEpochMilli();
-    } catch (DateTimeParseException e) {
-      try {
-        return Instant.parse(isoTimestamp).toEpochMilli();
-      } catch (DateTimeParseException ignored) {
-        return null;
-      }
-    }
-  }
 }

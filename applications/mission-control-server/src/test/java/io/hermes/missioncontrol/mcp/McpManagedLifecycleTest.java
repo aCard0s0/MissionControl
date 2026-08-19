@@ -60,12 +60,10 @@ class McpManagedLifecycleTest {
     hosts = mock(HostService.class);
     when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
 
-    service = new McpRegistryService(repository,
+    service = McpWiring.registry(repository,
         new RetainedResourceRepository(database.jdbc()),
         new AgentMcpLinkRepository(database.jdbc()),
-        hosts, mock(DockerGateway.class),
-        new SecretCipher("test-secret", "", false), new ObjectMapper(), compose,
-        LIVE_MODE, new DirectExecutorService());
+        hosts, mock(DockerGateway.class), compose, LIVE_MODE, new DirectExecutorService());
   }
 
   @AfterEach

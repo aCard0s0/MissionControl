@@ -8,9 +8,6 @@ import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.UpdateCronJobRequest;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -46,10 +43,12 @@ public class HermesCron {
   private static final Pattern JOB_ID = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
 
   private final HermesContainerFiles files;
+  private final HermesCli cli;
   private final ObjectMapper objectMapper;
 
-  HermesCron(HermesContainerFiles files, ObjectMapper objectMapper) {
+  HermesCron(HermesContainerFiles files, HermesCli cli, ObjectMapper objectMapper) {
     this.files = files;
+    this.cli = cli;
     this.objectMapper = objectMapper;
   }
 
@@ -63,13 +62,13 @@ public class HermesCron {
       DockerHostRef host, String containerId, String profileName, CreateCronJobRequest request) {
     String schedule = required(request.schedule(), "schedule");
     List<String> command = new ArrayList<>(List.of("cron", "create", schedule));
-    if (notBlank(request.prompt())) command.add(request.prompt());
-    addOption(command, "--name", request.name());
-    addOption(command, "--deliver", request.deliver());
-    if (request.repeat() != null) addOption(command, "--repeat", String.valueOf(request.repeat()));
-    for (String skill : skills(request.skills())) addOption(command, "--skill", skill);
+    if (HermesCli.notBlank(request.prompt())) command.add(request.prompt());
+    HermesCli.addOption(command, "--name", request.name());
+    HermesCli.addOption(command, "--deliver", request.deliver());
+    if (request.repeat() != null) HermesCli.addOption(command, "--repeat", String.valueOf(request.repeat()));
+    for (String skill : skills(request.skills())) HermesCli.addOption(command, "--skill", skill);
 
-    run(host, containerId, profileName, command);
+    cli.run(host, containerId, profileName, command);
     return list(host, containerId, profileName);
   }
 
@@ -77,35 +76,35 @@ public class HermesCron {
       DockerHostRef host, String containerId, String profileName, String jobId,
       UpdateCronJobRequest request) {
     List<String> command = new ArrayList<>(List.of("cron", "edit", requireJobId(jobId)));
-    addOption(command, "--schedule", request.schedule());
-    addOption(command, "--prompt", request.prompt());
-    addOption(command, "--name", request.name());
-    addOption(command, "--deliver", request.deliver());
-    if (request.repeat() != null) addOption(command, "--repeat", String.valueOf(request.repeat()));
+    HermesCli.addOption(command, "--schedule", request.schedule());
+    HermesCli.addOption(command, "--prompt", request.prompt());
+    HermesCli.addOption(command, "--name", request.name());
+    HermesCli.addOption(command, "--deliver", request.deliver());
+    if (request.repeat() != null) HermesCli.addOption(command, "--repeat", String.valueOf(request.repeat()));
     // --skill replaces the set, which is what an editor's "these are the skills" means
-    for (String skill : skills(request.skills())) addOption(command, "--skill", skill);
+    for (String skill : skills(request.skills())) HermesCli.addOption(command, "--skill", skill);
     if (command.size() == 3) return list(host, containerId, profileName);   // nothing to change
 
-    run(host, containerId, profileName, command);
+    cli.run(host, containerId, profileName, command);
     return list(host, containerId, profileName);
   }
 
   /** Pauses or resumes one job. Hermes keeps a paused job in the file, disabled. */
   public CronJobsDto setEnabled(
       DockerHostRef host, String containerId, String profileName, String jobId, boolean enabled) {
-    run(host, containerId, profileName,
+    cli.run(host, containerId, profileName,
         List.of("cron", enabled ? "resume" : "pause", requireJobId(jobId)));
     return list(host, containerId, profileName);
   }
 
   public CronJobsDto remove(DockerHostRef host, String containerId, String profileName, String jobId) {
-    run(host, containerId, profileName, List.of("cron", "remove", requireJobId(jobId)));
+    cli.run(host, containerId, profileName, List.of("cron", "remove", requireJobId(jobId)));
     return list(host, containerId, profileName);
   }
 
   /** Asks for the job to fire on the next scheduler tick rather than at its schedule. */
   public CronJobsDto runNow(DockerHostRef host, String containerId, String profileName, String jobId) {
-    run(host, containerId, profileName, List.of("cron", "run", requireJobId(jobId)));
+    cli.run(host, containerId, profileName, List.of("cron", "run", requireJobId(jobId)));
     return list(host, containerId, profileName);
   }
 
@@ -139,20 +138,20 @@ public class HermesCron {
     for (JsonNode skill : job.path("skills")) skills.add(skill.asText());
     return new CronJobDto(
         job.path("id").asText(),
-        text(job, "name"),
-        text(job, "prompt"),
-        firstNonBlank(text(job, "schedule_display"), text(schedule, "display")),
-        text(schedule, "kind"),
-        text(job, "deliver"),
+        HermesCli.text(job, "name"),
+        HermesCli.text(job, "prompt"),
+        firstNonBlank(HermesCli.text(job, "schedule_display"), HermesCli.text(schedule, "display")),
+        HermesCli.text(schedule, "kind"),
+        HermesCli.text(job, "deliver"),
         job.path("enabled").asBoolean(true),
-        text(job, "state"),
+        HermesCli.text(job, "state"),
         repeat.path("times").isNumber() ? repeat.path("times").asInt() : null,
         repeat.path("completed").asInt(0),
-        epochMillis(text(job, "created_at")),
-        epochMillis(text(job, "next_run_at")),
-        epochMillis(text(job, "last_run_at")),
-        text(job, "last_status"),
-        firstNonBlank(text(job, "last_error"), text(job, "last_delivery_error")),
+        HermesCli.epochMillis(HermesCli.text(job, "created_at")),
+        HermesCli.epochMillis(HermesCli.text(job, "next_run_at")),
+        HermesCli.epochMillis(HermesCli.text(job, "last_run_at")),
+        HermesCli.text(job, "last_status"),
+        firstNonBlank(HermesCli.text(job, "last_error"), HermesCli.text(job, "last_delivery_error")),
         skills);
   }
 
@@ -163,7 +162,7 @@ public class HermesCron {
    */
   private boolean schedulerRunning(DockerHostRef host, String containerId, String profileName) {
     try {
-      ExecResult result = run(host, containerId, profileName, List.of("cron", "status"), false);
+      ExecResult result = cli.run(host, containerId, profileName, List.of("cron", "status"), false);
       String out = (result.stdout() + result.stderr()).toLowerCase();
       return out.contains("running") && !out.contains("not running");
     } catch (RuntimeException e) {
@@ -174,36 +173,15 @@ public class HermesCron {
 
   // ── writing ────────────────────────────────────────────────────────────────
 
-  private ExecResult run(
-      DockerHostRef host, String containerId, String profileName, List<String> hermesArgs) {
-    return run(host, containerId, profileName, hermesArgs, true);
-  }
-
-  private ExecResult run(
-      DockerHostRef host, String containerId, String profileName, List<String> hermesArgs, boolean check) {
-    List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName));
-    command.addAll(hermesArgs);
-    return files.exec(host, containerId, command, check);
-  }
-
   private static List<String> skills(List<String> skills) {
     if (skills == null) return List.of();
-    return skills.stream().filter(HermesCron::notBlank).map(String::trim).toList();
+    return skills.stream().filter(HermesCli::notBlank).map(String::trim).toList();
   }
 
-  private static void addOption(List<String> command, String flag, String value) {
-    if (notBlank(value)) {
-      command.add(flag);
-      command.add(value.trim());
-    }
-  }
 
-  private static boolean notBlank(String value) {
-    return value != null && !value.isBlank();
-  }
 
   private static String required(String value, String field) {
-    if (!notBlank(value)) throw new IllegalArgumentException(field + " is required");
+    if (!HermesCli.notBlank(value)) throw new IllegalArgumentException(field + " is required");
     return value.trim();
   }
 
@@ -214,26 +192,9 @@ public class HermesCron {
     return jobId;
   }
 
-  private static String text(JsonNode node, String field) {
-    JsonNode value = node.path(field);
-    return value.isNull() || value.isMissingNode() ? null : value.asText();
-  }
 
   private static String firstNonBlank(String first, String second) {
-    return notBlank(first) ? first : (notBlank(second) ? second : null);
+    return HermesCli.notBlank(first) ? first : (HermesCli.notBlank(second) ? second : null);
   }
 
-  /** Hermes writes ISO-8601 with an offset; the dashboard works in epoch millis. */
-  private static Long epochMillis(String isoTimestamp) {
-    if (!notBlank(isoTimestamp)) return null;
-    try {
-      return OffsetDateTime.parse(isoTimestamp).toInstant().toEpochMilli();
-    } catch (DateTimeParseException e) {
-      try {
-        return Instant.parse(isoTimestamp).toEpochMilli();
-      } catch (DateTimeParseException ignored) {
-        return null;
-      }
-    }
-  }
 }

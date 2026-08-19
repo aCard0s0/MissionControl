@@ -19,6 +19,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * Whether an MCP server actually answers.
@@ -29,6 +30,7 @@ import org.slf4j.LoggerFactory;
  * image whose MCP transport rejects that name as a Host header, which is the failure this
  * check exists to surface.
  */
+@Component
 class McpHealthProbe {
 
   private static final Logger log = LoggerFactory.getLogger(McpHealthProbe.class);

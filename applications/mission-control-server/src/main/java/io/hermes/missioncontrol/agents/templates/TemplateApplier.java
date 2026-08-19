@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * Writing a template's contents — soul, memory, skills, MCP entries, secrets — onto a live
@@ -23,6 +24,7 @@ import org.slf4j.LoggerFactory;
  * created it. {@link #deployNew} owns the profile and is all-or-nothing;
  * {@link #layerOnto} writes into a profile someone else owns and only surfaces the error.
  */
+@Component
 class TemplateApplier {
 
   private static final Logger log = LoggerFactory.getLogger(TemplateApplier.class);

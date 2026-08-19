@@ -1,23 +1,17 @@
 package io.hermes.missioncontrol.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.config.AppProperties;
-import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
-import io.hermes.missioncontrol.secrets.SecretCipher;
 import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -26,7 +20,11 @@ import org.springframework.stereotype.Service;
  * Global MCP catalog and managed Compose lifecycle.
  *
  * <p>This class owns the catalog's rules — naming, immutability, single-flight operations,
- * and what may be deleted — and delegates everything those rules guard to a collaborator:
+ * and what may be deleted — and delegates everything those rules guard to an injected
+ * collaborator. It used to build all six itself, which meant its constructor collected their
+ * transitive dependencies too: a cipher, an object mapper, a Docker gateway and a compose
+ * manager it never touched, present only to be handed on. Changing what one collaborator
+ * needed changed this signature.
  *
  * <ul>
  *   <li>{@link McpConfigStore} — the stored envelope, its encryption and its redaction
@@ -52,49 +50,29 @@ public class McpRegistryService {
   private final McpLogReader logReader;
   private final boolean startupReconcile;
 
-  @Autowired
   public McpRegistryService(
       McpServerRepository repository,
       RetainedResourceRepository retained,
       AgentMcpLinkRepository links,
       HostService hosts,
-      DockerGateway docker,
-      SecretCipher cipher,
-      ObjectMapper json,
-      ComposeStackManager compose,
+      McpConfigStore configs,
+      McpServerDtoMapper mapper,
+      McpComposeLifecycle lifecycle,
+      McpHealthProbe health,
+      McpCatalogSeeder seeder,
+      McpLogReader logReader,
       AppProperties props) {
-    this(repository, retained, links, hosts, docker, cipher, json, compose, props,
-        Executors.newVirtualThreadPerTaskExecutor());
-  }
-
-  /**
-   * Test seam: a caller-supplied executor. Passing a same-thread executor makes the
-   * compose lifecycle — desired state, {@code operation_state}, {@code applied_revision},
-   * the recorded failure — observable, which an async task offers no way to await.
-   */
-  McpRegistryService(
-      McpServerRepository repository,
-      RetainedResourceRepository retained,
-      AgentMcpLinkRepository links,
-      HostService hosts,
-      DockerGateway docker,
-      SecretCipher cipher,
-      ObjectMapper json,
-      ComposeStackManager compose,
-      AppProperties props,
-      ExecutorService operations) {
     this.repository = repository;
     this.retained = retained;
     this.links = links;
     this.hosts = hosts;
+    this.configs = configs;
+    this.mapper = mapper;
+    this.lifecycle = lifecycle;
+    this.health = health;
+    this.seeder = seeder;
+    this.logReader = logReader;
     this.startupReconcile = props.startupReconcile();
-    this.configs = new McpConfigStore(cipher, json);
-    this.mapper = new McpServerDtoMapper(configs);
-    this.lifecycle = new McpComposeLifecycle(repository, retained, hosts, docker, compose,
-        new ComposeStackRenderer(), configs, operations);
-    this.health = new McpHealthProbe(repository, configs, hosts, docker);
-    this.seeder = new McpCatalogSeeder(repository, configs);
-    this.logReader = new McpLogReader(hosts, docker, compose, configs);
   }
 
   // ── reads ──────────────────────────────────────────────────────────────────

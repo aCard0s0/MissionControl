@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.stereotype.Component;
 
 /**
  * The stored form of an MCP definition: the JSON envelope in {@code config_json} and the
@@ -20,6 +21,7 @@ import java.util.Map;
  * gets it redacted; and an envelope this key can no longer open is preserved rather than
  * destroyed, so editing an unrelated field never loses it.
  */
+@Component
 class McpConfigStore {
 
   private final SecretCipher cipher;

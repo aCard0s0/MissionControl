@@ -8,8 +8,6 @@ import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
-import io.hermes.missioncontrol.mcp.McpRegistryService;
-import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretInput;
 import io.hermes.missioncontrol.secrets.SecretRef;
 import io.hermes.missioncontrol.secrets.StoredSecret;
@@ -20,13 +18,18 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.regex.Pattern;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Reusable {@link ProfileTemplate}s: their CRUD, the API view of them, and capturing one
  * from a running agent.
+ *
+ * <p>The three collaborators are injected rather than built here. Building them meant this
+ * constructor also took their dependencies — a cipher it never used — and it forced a second
+ * constructor that passed {@code null} for the MCP registry so a CRUD-only test could skip it,
+ * which in turn needed a null check in {@link TemplateMcpSnapshots} that reported a test wiring
+ * accident to the operator as a 503.
  *
  * <p>The two halves that are not about the record itself belong to a collaborator:
  * {@link TemplateApplier} writes a template onto a live profile and owns the rollback rule
@@ -50,28 +53,19 @@ public class ProfileTemplateService {
   private final HermesProfiles profiles;
   private final HermesSetup setup;
 
-  @Autowired
   public ProfileTemplateService(
       ProfileTemplateRepository repository,
-      SecretCipher cipher,
-      HermesProfiles profiles,
-      HermesSetup setup,
-      McpRegistryService mcpRegistry) {
-    this.repository = repository;
-    this.secrets = new TemplateSecrets(cipher);
-    this.applier = new TemplateApplier(profiles, setup, secrets);
-    this.snapshots = new TemplateMcpSnapshots(mcpRegistry, secrets);
-    this.profiles = profiles;
-    this.setup = setup;
-  }
-
-  /** Narrow constructor retained for CRUD-focused unit tests. */
-  ProfileTemplateService(
-      ProfileTemplateRepository repository,
-      SecretCipher cipher,
+      TemplateSecrets secrets,
+      TemplateApplier applier,
+      TemplateMcpSnapshots snapshots,
       HermesProfiles profiles,
       HermesSetup setup) {
-    this(repository, cipher, profiles, setup, null);
+    this.repository = repository;
+    this.secrets = secrets;
+    this.applier = applier;
+    this.snapshots = snapshots;
+    this.profiles = profiles;
+    this.setup = setup;
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────

@@ -60,11 +60,11 @@ public class ContainerUpgrader {
     Map<String, String> labels = config == null || config.getLabels() == null
         ? Map.of() : config.getLabels();
 
-    if (!"true".equals(labels.get("mc.managed"))) {
+    if (!ManagedContainer.isManaged(labels)) {
       throw new IllegalArgumentException("not a Mission Control-managed container");
     }
-    String dataVolume = labels.get("mc.dataVolume");
-    if (dataVolume == null || !dataVolume.startsWith("mc-hermes-")) {
+    String dataVolume = ManagedContainer.dataVolumeOf(labels);
+    if (dataVolume == null) {
       throw new IllegalArgumentException("container has no recorded managed data volume");
     }
     String[] imageParts = ImageRef.splitImage(config.getImage());

@@ -8,6 +8,7 @@ import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import org.springframework.stereotype.Component;
 
 /**
  * The log tail of a managed MCP server, merged across its support services.
@@ -16,6 +17,7 @@ import java.util.List;
  * containers — a server plus, say, its private database — and only a single interleaved,
  * service-labelled stream is useful for diagnosing one.
  */
+@Component
 class McpLogReader {
 
   private final HostService hosts;

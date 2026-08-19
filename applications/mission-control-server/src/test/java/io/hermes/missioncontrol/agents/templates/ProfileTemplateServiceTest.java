@@ -41,7 +41,7 @@ class ProfileTemplateServiceTest {
   private final SecretCipher cipher = new SecretCipher("unit-test-key", "", true);
   // create/update never touch the docker-backed collaborators, so null is safe
   private final ProfileTemplateService service =
-      new ProfileTemplateService(repository, cipher, null, null);
+      TemplatesWiring.service(repository, cipher, null, null);
 
   private static UpsertProfileTemplateRequest request(String name, List<SecretInput> secrets) {
     return new UpsertProfileTemplateRequest(
@@ -96,7 +96,7 @@ class ProfileTemplateServiceTest {
     HermesProfiles profiles = Mockito.mock(HermesProfiles.class);
     HermesSetup setup = Mockito.mock(HermesSetup.class);
     ProfileTemplateService ownedService =
-        new ProfileTemplateService(repository, cipher, profiles, setup);
+        TemplatesWiring.service(repository, cipher, profiles, setup);
     ProfileTemplate template = new ProfileTemplate(
         "pt-1", "ops", "", "anthropic", "model", "", "", "soul", "",
         List.of(), List.of(), List.of(), 1L, 1L);
@@ -127,7 +127,7 @@ class ProfileTemplateServiceTest {
         .thenReturn(Map.of("Authorization", "Bearer raw-catalog-secret"));
     when(repository.existsByName("ops")).thenReturn(false);
     ProfileTemplateService catalogService =
-        new ProfileTemplateService(repository, cipher, null, null, registry);
+        TemplatesWiring.service(repository, cipher, null, null, registry);
     UpsertProfileTemplateRequest input = new UpsertProfileTemplateRequest(
         "ops", "", "nous", "model", "", "/opt/data", "", "", List.of(),
         List.of(new McpServerSpec(
@@ -161,7 +161,7 @@ class ProfileTemplateServiceTest {
     when(repository.findById("pt-1")).thenReturn(Optional.of(existing));
     when(repository.existsByNameExcept("ops", "pt-1")).thenReturn(false);
     ProfileTemplateService catalogService =
-        new ProfileTemplateService(repository, cipher, null, null, registry);
+        TemplatesWiring.service(repository, cipher, null, null, registry);
     UpsertProfileTemplateRequest input = new UpsertProfileTemplateRequest(
         "ops", "updated", "nous", "model", "", "/opt/data", "", "", List.of(),
         List.of(new McpServerSpec(
@@ -195,7 +195,7 @@ class ProfileTemplateServiceTest {
         List.of(), List.of(network, stdio), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(template));
     ProfileTemplateService runtimeService =
-        new ProfileTemplateService(repository, cipher, profiles, setup);
+        TemplatesWiring.service(repository, cipher, profiles, setup);
 
     runtimeService.applyExisting("pt-1", HOST, "cid", "ops");
 

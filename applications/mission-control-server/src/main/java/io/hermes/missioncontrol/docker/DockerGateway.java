@@ -5,8 +5,15 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /**
- * Thin, stateless gateway over the Docker Engine API. The daemon is the
- * source of truth — nothing here is cached or persisted.
+ * Stateless gateway over the Docker Engine API. The daemon is the source of truth — nothing
+ * here is cached or persisted.
+ *
+ * <p>Not a generic Docker adapter, despite the package name, and worth being honest about:
+ * a deploy seeds Hermes profiles, the inventory filters the fleet by the configured Hermes
+ * image, an upgrade checks a container runs that image and reuses its data volume, and
+ * readiness waits on {@code hermes gateway status}. What the whole package models is the
+ * Docker side of a fleet of Mission Control-managed Hermes containers. The vocabulary that
+ * makes a container one of ours lives in {@link ManagedContainer}.
  *
  * <p>This class is the one entry point the rest of the application talks to; each concern
  * behind it is a collaborator of its own:

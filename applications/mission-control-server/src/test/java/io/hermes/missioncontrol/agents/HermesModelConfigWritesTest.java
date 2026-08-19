@@ -42,7 +42,7 @@ class HermesModelConfigWritesTest {
   void setUp() {
     files = mock(HermesContainerFiles.class);
     env = mock(HermesEnvFile.class);
-    modelConfig = new HermesModelConfig(files, env);
+    modelConfig = new HermesModelConfig(files, new HermesCli(files), env);
   }
 
   // ── the profile's own key ───────────────────────────────────────────────
