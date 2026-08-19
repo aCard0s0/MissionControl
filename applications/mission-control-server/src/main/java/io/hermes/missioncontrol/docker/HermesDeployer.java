@@ -49,7 +49,7 @@ public class HermesDeployer {
     DockerClient client = clients.forUrl(host.url());
     String tag = ImageStore.tagOf(version);
     String image = images.reference(tag);
-    String volumeName = "mc-hermes-" + name;
+    String volumeName = ManagedContainer.dataVolumeName(name);
     List<String> seedProfiles = normalizeProfiles(profiles);
 
     try {
@@ -60,10 +60,7 @@ public class HermesDeployer {
       // no legacy data to attach accidentally
     }
 
-    Map<String, String> labels = Map.of(
-        "mc.managed", "true",
-        "mc.profiles", String.join(",", seedProfiles),
-        "mc.dataVolume", volumeName);
+    Map<String, String> labels = ManagedContainer.labelsFor(volumeName, seedProfiles);
 
     String containerId = null;
     boolean volumeCreated = false;
@@ -71,7 +68,7 @@ public class HermesDeployer {
       client.createVolumeCmd().withName(volumeName).exec();
       volumeCreated = true;
       HostConfig dataHostConfig = HostConfig.newHostConfig()
-          .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw));
+          .withBinds(new Bind(volumeName, new Volume(ManagedContainer.DATA_MOUNT), AccessMode.rw));
       // One-shot containers run the image's normal init hooks before their main
       // command. This seeds the default profile and creates named profiles while
       // the long-running gateway is still stopped, avoiding restart/exec races.
@@ -83,7 +80,7 @@ public class HermesDeployer {
       }
 
       HostConfig hostConfig = HostConfig.newHostConfig()
-          .withBinds(new Bind(volumeName, new Volume("/opt/data"), AccessMode.rw))
+          .withBinds(new Bind(volumeName, new Volume(ManagedContainer.DATA_MOUNT), AccessMode.rw))
           .withRestartPolicy(RestartPolicy.unlessStoppedRestart());
 
       CreateContainerResponse created;
@@ -182,7 +179,7 @@ public class HermesDeployer {
   private static CreateContainerResponse createHelper(
       DockerClient client, String image, HostConfig hostConfig, List<String> command) {
     return client.createContainerCmd(image)
-        .withLabels(Map.of("mc.bootstrap", "true"))
+        .withLabels(ManagedContainer.bootstrapLabels())
         .withHostConfig(hostConfig)
         .withCmd(command)
         .exec();

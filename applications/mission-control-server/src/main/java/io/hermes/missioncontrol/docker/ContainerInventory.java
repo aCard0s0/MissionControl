@@ -74,7 +74,7 @@ public class ContainerInventory {
       log.warn("ignoring container left parked by an interrupted upgrade: {}", name);
       return false;
     }
-    if ("true".equals(labels.get("mc.bootstrap"))) {
+    if (ManagedContainer.isBootstrap(labels)) {
       // a short-lived seeding helper, or one stranded by a failed deploy — never an Agent
       return false;
     }
@@ -83,7 +83,7 @@ public class ContainerInventory {
     // reference stops resolving — moving the `latest` tag during one Agent's upgrade
     // does exactly that to every other Agent on that tag — and an ID parses as
     // repository "sha256", matching nothing and dropping a live Agent out of the fleet.
-    if ("true".equals(labels.get("mc.managed"))) return true;
+    if (ManagedContainer.isManaged(labels)) return true;
 
     if (isImageIdReference(image)) {
       log.warn("container {} reports an image id rather than a reference and is not "
@@ -124,9 +124,7 @@ public class ContainerInventory {
 
     Double sizeGb = c.getSizeRootFs() != null ? c.getSizeRootFs() / 1_073_741_824.0 : null;
     Map<String, String> labels = c.getLabels() == null ? Map.of() : c.getLabels();
-    List<String> profiles = labels.containsKey("mc.profiles") && !labels.get("mc.profiles").isBlank()
-        ? List.of(labels.get("mc.profiles").split(","))
-        : List.of();
+    List<String> profiles = ManagedContainer.seedProfilesOf(labels);
 
     return new ContainerDto(
         c.getId(), c.getId().substring(0, Math.min(7, c.getId().length())), name, hostId,

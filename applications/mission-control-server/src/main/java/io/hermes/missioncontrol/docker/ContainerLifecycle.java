@@ -36,9 +36,9 @@ public class ContainerLifecycle {
     var inspected = client.inspectContainerCmd(containerId).exec();
     Map<String, String> labels = inspected.getConfig() == null || inspected.getConfig().getLabels() == null
         ? Map.of() : inspected.getConfig().getLabels();
-    String volumeName = "true".equals(labels.get("mc.managed")) ? labels.get("mc.dataVolume") : null;
+    String volumeName = ManagedContainer.dataVolumeOf(labels);
     client.removeContainerCmd(containerId).withForce(true).exec();
-    if (volumeName == null || !volumeName.startsWith("mc-hermes-")) return;
+    if (volumeName == null) return;
     try {
       client.removeVolumeCmd(volumeName).exec();
     } catch (NotFoundException ignored) {
