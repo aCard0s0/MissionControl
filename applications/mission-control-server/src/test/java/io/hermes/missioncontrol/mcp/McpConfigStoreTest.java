@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -33,9 +34,9 @@ class McpConfigStoreTest {
   /** A different key: anything CIPHER wrote is unrecoverable to this one, and vice versa. */
   private static final SecretCipher OTHER_KEY = new SecretCipher("a-different-secret", "", false);
 
-  private final McpConfigStore store = new McpConfigStore(CIPHER, new ObjectMapper());
+  private final McpConfigStore store = new McpConfigStore(new SecretsAtRest(CIPHER), new ObjectMapper());
   private final McpConfigStore storeWithWrongKey =
-      new McpConfigStore(OTHER_KEY, new ObjectMapper());
+      new McpConfigStore(new SecretsAtRest(OTHER_KEY), new ObjectMapper());
 
   // ── storing ────────────────────────────────────────────────────────────────
 

@@ -219,7 +219,7 @@ class McpHealthProbeRequestTest {
 
     attaching.check(row("managed", "running", HostService.LOCAL_HOST_ID, "localhost"));
 
-    verify(docker).connectNetwork(new DockerHostRef(HostService.LOCAL_HOST_ID, "unix:///sock"), OWN_CONTAINER, ComposeStackRenderer.NETWORK);
+    verify(docker).connectNetwork(new DockerHostRef(HostService.LOCAL_HOST_ID, "unix:///sock"), OWN_CONTAINER, ManagedMcpStack.NETWORK);
     assertEquals(List.of("POST /mcp"), requests);
     verify(repository).updateCheck(eq(ID), eq("connected"), isNull(), anyLong(), anyLong());
   }

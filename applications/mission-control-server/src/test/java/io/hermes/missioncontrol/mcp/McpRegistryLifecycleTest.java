@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,6 +56,7 @@ class McpRegistryLifecycleTest {
   private HostService hosts;
   private ComposeStackManager compose;
   private QueuedOperations operations;
+  private McpWiring.Graph graph;
   private McpRegistryService service;
 
   @BeforeEach
@@ -68,13 +70,14 @@ class McpRegistryLifecycleTest {
     compose = mock(ComposeStackManager.class);
     operations = new QueuedOperations();
     when(hosts.ref("dh-local")).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
-    service = McpWiring.registry(repository, retained, links, hosts, mock(DockerGateway.class),
+    graph = McpWiring.graph(repository, retained, links, hosts, mock(DockerGateway.class),
         compose, LIVE_MODE, operations);
+    service = graph.service();
   }
 
   @AfterEach
   void tearDown() throws Exception {
-    service.close();
+    graph.close();
     database.close();
   }
 
@@ -355,13 +358,15 @@ class McpRegistryLifecycleTest {
 
   @Test
   void startupSeedsOnceAndThenReconcilesEveryManagedRecord() {
-    service.initialize();
+    graph.startup().onApplicationReady();
     int afterFirst = operations.queued();
     long seeded = repository.findAll().size();
 
-    service.initialize();
+    graph.startup().onApplicationReady();
 
-    verify(hosts, times(2)).seedLocalHost();
+    // seeding the local host row is HostService's own ordered listener, not this one's business:
+    // it used to be called from here to force an ordering that @Order now states outright
+    verifyNoInteractions(hosts);
     assertEquals(seeded, repository.findAll().size(), "defaults are seeded once, not on every boot");
     // every managed record is reconciled on each boot: the daemon may have been restarted under us
     assertTrue(afterFirst > 0);
@@ -377,7 +382,7 @@ class McpRegistryLifecycleTest {
     repository.beginOperation(id, "stopped", "deleting");
     operations.clear();
 
-    service.initialize();
+    graph.startup().onApplicationReady();
 
     // the row stays 'deleting': a reconcile here would re-provision a server the operator
     // already asked to remove
@@ -524,7 +529,7 @@ class McpRegistryLifecycleTest {
   void startupReconciliationRunsForEveryManagedRecord() {
     String id = service.create(managed("Files", "dh-local")).id();
     operations.runAll();
-    service.initialize();
+    graph.startup().onApplicationReady();
 
     operations.runAll();
 
@@ -538,7 +543,7 @@ class McpRegistryLifecycleTest {
     operations.runAll();
     repository.beginOperation(id, "stopped", "deleting");
     operations.clear();
-    service.initialize();
+    graph.startup().onApplicationReady();
 
     operations.runAll();
 

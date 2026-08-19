@@ -20,6 +20,7 @@ import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.time.Duration;
 import java.util.List;
@@ -61,7 +62,7 @@ class McpComposeLifecycleTest {
     JdbcTemplate jdbc = database.jdbc();
     repository = new McpServerRepository(jdbc);
     retained = new RetainedResourceRepository(jdbc);
-    configs = new McpConfigStore(new SecretCipher("test-secret", "", false), new ObjectMapper());
+    configs = new McpConfigStore(new SecretsAtRest(new SecretCipher("test-secret", "", false)), new ObjectMapper());
     compose = mock(ComposeStackManager.class);
     docker = mock(DockerGateway.class);
     hosts = mock(HostService.class);
@@ -417,7 +418,7 @@ class McpComposeLifecycleTest {
   /** A record whose secret was encrypted with a key this store does not have. */
   private String insertManagedWithUndecryptableSecret() {
     McpConfigStore otherKey =
-        new McpConfigStore(new SecretCipher("a-different-secret", "", false), new ObjectMapper());
+        new McpConfigStore(new SecretsAtRest(new SecretCipher("a-different-secret", "", false)), new ObjectMapper());
     Validated validated = McpRequestValidator.validate(new McpServerRequest(
         "Files", null, "managed", HOST, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,

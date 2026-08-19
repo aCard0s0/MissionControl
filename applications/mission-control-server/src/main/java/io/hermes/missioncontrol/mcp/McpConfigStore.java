@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
-import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,19 +16,24 @@ import org.springframework.stereotype.Component;
  * The stored form of an MCP definition: the JSON envelope in {@code config_json} and the
  * encrypted values inside it.
  *
- * <p>Split out of {@link McpRegistryService} because this is the trust boundary. A secret
- * only ever leaves here decrypted for a render or a connection; a caller asking for a DTO
- * gets it redacted; and an envelope this key can no longer open is preserved rather than
- * destroyed, so editing an unrelated field never loses it.
+ * <p>Split out of {@link McpRegistryService} because this is the catalog's trust boundary. A
+ * secret only ever leaves here decrypted for a render or a connection, and a caller asking
+ * for a DTO gets it redacted.
+ *
+ * <p>The rules a stored secret obeys — seal on the way in, keep and re-seal on a blank
+ * submission, preserve an envelope this key cannot open, degrade rather than fail a read —
+ * belong to {@link SecretsAtRest}, which the template store shares. What stays here is the
+ * catalog's own shape: which values are secret at all, and what a redacted one looks like on
+ * the wire.
  */
 @Component
 class McpConfigStore {
 
-  private final SecretCipher cipher;
+  private final SecretsAtRest secrets;
   private final ObjectMapper json;
 
-  McpConfigStore(SecretCipher cipher, ObjectMapper json) {
-    this.cipher = cipher;
+  McpConfigStore(SecretsAtRest secrets, ObjectMapper json) {
+    this.secrets = secrets;
     this.json = json;
   }
 
@@ -89,33 +94,23 @@ class McpConfigStore {
     List<StoredValue> result = new ArrayList<>();
     for (ConfigValueInput item : input) {
       if (item.shouldClear()) continue;
-      String stored;
-      if (!item.secret()) {
-        stored = item.value() == null ? "" : item.value();
-      } else if (item.value() != null && !item.value().isBlank()) {
-        stored = cipher.encrypt(item.value());
-      } else {
-        StoredValue old = previous.get(item.key());
-        if (old == null || !old.secret()) {
-          throw new IllegalArgumentException("secret value is required: " + item.key());
-        }
-        stored = rotateIfRecoverable(old.value());
-      }
+      String stored = item.secret()
+          ? secrets.sealOrKeep(item.value(), priorEnvelope(previous, item.key()), item.key())
+          : item.value() == null ? "" : item.value();
       result.add(new StoredValue(item.key(), stored, item.secret()));
     }
     return List.copyOf(result);
   }
 
-  private String rotateIfRecoverable(String stored) {
-    if (stored == null) return null;
-    try {
-      return cipher.encrypt(cipher.decrypt(stored));
-    } catch (RuntimeException unrecoverable) {
-      // Preserve the opaque envelope so editing unrelated fields never destroys
-      // it. DTO recoverable=false tells the operator it must be replaced before
-      // the definition can be applied or connected.
-      return stored;
-    }
+  /**
+   * The envelope a blank submission may carry forward, or null when there is none to keep.
+   *
+   * <p>A stored value that was not marked secret is not one: it is readable plaintext, and
+   * promoting it to a secret's envelope would hand back something never encrypted.
+   */
+  private static String priorEnvelope(Map<String, StoredValue> previous, String key) {
+    StoredValue old = previous.get(key);
+    return old == null || !old.secret() ? null : old.value();
   }
 
   // ── decryption ─────────────────────────────────────────────────────────────
@@ -124,7 +119,7 @@ class McpConfigStore {
     Map<String, String> result = new LinkedHashMap<>();
     for (StoredValue value : values) {
       result.put(value.key(), value.value() == null ? ""
-          : value.secret() ? cipher.decrypt(value.value()) : value.value());
+          : value.secret() ? secrets.open(value.value()) : value.value());
     }
     return Map.copyOf(result);
   }
@@ -135,12 +130,8 @@ class McpConfigStore {
   Map<String, String> materializeForRender(List<StoredValue> values) {
     Map<String, String> result = new LinkedHashMap<>();
     for (StoredValue value : values) {
-      try {
-        result.put(value.key(), value.value() == null ? ""
-            : value.secret() ? cipher.decrypt(value.value()) : value.value());
-      } catch (RuntimeException unrecoverable) {
-        result.put(value.key(), "");
-      }
+      String clear = value.secret() ? secrets.openOrNull(value.value()) : value.value();
+      result.put(value.key(), clear == null ? "" : clear);
     }
     return Map.copyOf(result);
   }
@@ -158,10 +149,8 @@ class McpConfigStore {
       if (value.value() == null) {
         throw new ResourceConflictException("secret value is not set: " + value.key());
       }
-      try {
-        cipher.decrypt(value.value());
-      } catch (RuntimeException error) {
-        throw new ResourceConflictException("secret value is unrecoverable: " + value.key(), error);
+      if (!secrets.isRecoverable(value.value())) {
+        throw new ResourceConflictException("secret value is unrecoverable: " + value.key());
       }
     }
   }
@@ -171,14 +160,7 @@ class McpConfigStore {
     return values.stream().map(value -> {
       if (!value.secret()) return new ConfigValueDto(value.key(), value.value(), false, true, true);
       boolean set = value.value() != null;
-      boolean recoverable = false;
-      if (set) {
-        try {
-          cipher.decrypt(value.value());
-          recoverable = true;
-        } catch (RuntimeException ignored) { }
-      }
-      return new ConfigValueDto(value.key(), null, true, set, recoverable);
+      return new ConfigValueDto(value.key(), null, true, set, secrets.isRecoverable(value.value()));
     }).toList();
   }
 

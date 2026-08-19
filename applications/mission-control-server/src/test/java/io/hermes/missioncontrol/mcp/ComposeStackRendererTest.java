@@ -30,7 +30,7 @@ class ComposeStackRendererTest {
         Map.of("database", Map.of("POSTGRES_PASSWORD", "very-secret"), "cache", Map.of()))));
 
     assertTrue(rendered.yaml().contains("io.hermes.mission-control.owner: 'mission-control-mcp'"));
-    assertTrue(rendered.yaml().contains("name: 'mission-control-mcp-net'"));
+    assertTrue(rendered.yaml().contains("name: '" + ManagedMcpStack.NETWORK + "'"));
     assertTrue(rendered.yaml().contains("condition: service_healthy"));
     assertTrue(rendered.yaml().contains("condition: service_started"));
     assertTrue(rendered.yaml().contains("'postgres-mcp-database-data:/var/lib/postgresql/data'"));
@@ -133,8 +133,8 @@ class ComposeStackRendererTest {
         render(config(c -> c.volumes = List.of(new VolumeSpec(logicalName, "/data"))));
 
     String volume = rendered.volumeNames().values().iterator().next().getFirst();
-    assertTrue(volume.startsWith(ComposeStackRenderer.PROJECT + "-"), volume);
-    assertTrue(volume.length() <= ComposeStackRenderer.PROJECT.length() + 1 + 63, volume);
+    assertTrue(volume.startsWith(ManagedMcpStack.PROJECT + "-"), volume);
+    assertTrue(volume.length() <= ManagedMcpStack.PROJECT.length() + 1 + 63, volume);
   }
 
   /** One managed deployment, so each test above sets only the field it is about. */

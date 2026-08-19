@@ -9,6 +9,7 @@ import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
+import io.hermes.missioncontrol.mcp.ManagedMcpStack;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDeletionListener;
 import io.hermes.missioncontrol.mcp.McpServerDto;
@@ -27,7 +28,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentMcpCatalogService implements McpServerDeletionListener {
 
-  private static final String MCP_NETWORK = "mission-control-mcp-net";
   private static final Pattern ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}");
 
   private final McpRegistryService registry;
@@ -190,20 +190,37 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
           source.args() == null ? List.of() : source.args(), enabled, null,
           registry.materializedEnvironment(source.id()));
     }
+    // Joining the network is part of making the endpoint reachable, not part of working out
+    // what it is — so it happens at this level, where a reader sees the Agent's networking
+    // being changed. It used to sit inside the endpoint resolver below, which read as a pure
+    // lookup and quietly reconfigured a container.
+    joinMcpNetwork(agentHost, containerId, source);
     return new McpServerDefinition(
         alias, McpServerDefinition.Transport.of(source.transport()),
-        connectionEndpoint(agentHost, containerId, source), null, List.of(),
+        connectionEndpoint(agentHost, source), null, List.of(),
         enabled, registry.materializedHeaders(source.id()), null);
   }
 
-  /** Where an Agent on this host reaches a network catalog entry. A managed server on the
-   *  Agent's own host is reached over the shared MCP network, which the Agent is attached to
-   *  here; one on another host needs an address its operator published. */
-  private String connectionEndpoint(
+  /**
+   * Attaches the Agent's container to the shared MCP network, when that is how it will reach
+   * this server: a managed entry on the Agent's own host is addressed by Compose service name,
+   * which resolves only from the network. Idempotent, so connecting a second server is a no-op.
+   *
+   * <p>Nothing to do for an external entry, a stdio one, or a managed server on another host —
+   * those are reached by a URL that does not depend on this network.
+   */
+  private void joinMcpNetwork(
       DockerHostRef agentHost, String containerId, McpServerDto source) {
+    if (!"managed".equals(source.kind()) || !agentHost.id().equals(source.hostId())) return;
+    docker.connectNetwork(agentHost, containerId, ManagedMcpStack.NETWORK);
+  }
+
+  /** Where an Agent on this host reaches a network catalog entry: a managed server on its own
+   *  host by Compose service name over the shared MCP network, one on another host by the
+   *  address its operator published. A pure lookup — see {@link #joinMcpNetwork}. */
+  private String connectionEndpoint(DockerHostRef agentHost, McpServerDto source) {
     if (!"managed".equals(source.kind())) return source.url();
     if (agentHost.id().equals(source.hostId())) {
-      docker.connectNetwork(agentHost, containerId, MCP_NETWORK);
       return registry.sameHostConnectionUrl(source.id());
     }
     String crossHost = source.crossHostUrl();

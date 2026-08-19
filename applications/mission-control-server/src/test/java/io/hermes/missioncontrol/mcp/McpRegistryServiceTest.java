@@ -32,6 +32,7 @@ class McpRegistryServiceTest {
   private SqliteTestDatabase database;
   private McpServerRepository repository;
   private AgentMcpLinkRepository links;
+  private McpWiring.Graph graph;
   private McpRegistryService service;
 
   @BeforeEach
@@ -40,16 +41,17 @@ class McpRegistryServiceTest {
     JdbcTemplate jdbc = database.jdbc();
     repository = new McpServerRepository(jdbc);
     links = new AgentMcpLinkRepository(jdbc);
-    service = McpWiring.registry(repository, new RetainedResourceRepository(jdbc), links,
+    graph = McpWiring.graph(repository, new RetainedResourceRepository(jdbc), links,
         mock(HostService.class), mock(DockerGateway.class), mock(ComposeStackManager.class),
         PROPS, Executors.newVirtualThreadPerTaskExecutor());
+    service = graph.service();
   }
 
   // one @AfterEach, not two: JUnit 5 does not order sibling teardown methods, and the
   // service has to release its executor before the database goes away
   @AfterEach
   void tearDown() throws Exception {
-    service.close();
+    graph.close();
     database.close();
   }
 
@@ -57,21 +59,21 @@ class McpRegistryServiceTest {
   void startupTouchesNothingWhenReconciliationIsOff() throws Exception {
     // a context test boots the whole application with no daemon behind it, so this
     // switch has to keep startup from seeding rows or creating real resources
-    HostService hosts = mock(HostService.class);
     DockerGateway docker = mock(DockerGateway.class);
+    ComposeStackManager compose = mock(ComposeStackManager.class);
     AppProperties noReconcile =
         new AppProperties("", "unix:///var/run/docker.sock", "hermes/agent", "hermes", "test", false);
 
-    McpRegistryService quiet = McpWiring.registry(repository,
-        new RetainedResourceRepository(database.jdbc()), links, hosts, docker,
-        mock(ComposeStackManager.class), noReconcile,
-        Executors.newVirtualThreadPerTaskExecutor());
+    McpWiring.Graph quiet = McpWiring.graph(repository,
+        new RetainedResourceRepository(database.jdbc()), links, mock(HostService.class), docker,
+        compose, noReconcile, Executors.newVirtualThreadPerTaskExecutor());
     try {
-      quiet.initialize();
+      quiet.startup().onApplicationReady();
 
-      verifyNoInteractions(hosts);
-      verifyNoInteractions(docker);
+      // no seeded rows, and nothing asked of the daemon or of Compose on the way there
       assertTrue(repository.findAll().isEmpty());
+      verifyNoInteractions(docker);
+      verifyNoInteractions(compose);
     } finally {
       quiet.close();
     }
@@ -120,7 +122,7 @@ class McpRegistryServiceTest {
 
   @Test
   void theSeededPostgresServerBootsThroughAnExplicitEntrypoint() {
-    service.seedDefaults();
+    graph.seeder().seedDefaults();
 
     StoredConfig config = configOf(postgresRow());
     assertEquals(List.of("python", "-c"), config.entrypoint());
@@ -137,12 +139,12 @@ class McpRegistryServiceTest {
 
   @Test
   void repairRewritesTheBrokenPostgresSeedAndKeepsItsSecrets() {
-    service.seedDefaults();
+    graph.seeder().seedDefaults();
     String id = postgresRow().id();
     Map<String, String> environmentBefore = service.materializedEnvironment(id);
     breakPostgresSeed(config -> config.image());
 
-    service.repairSeeds();
+    graph.seeder().repairSeeds();
 
     ServerRow repaired = postgresRow();
     StoredConfig config = configOf(repaired);
@@ -157,21 +159,21 @@ class McpRegistryServiceTest {
 
   @Test
   void repairLeavesACustomizedPostgresSeedAlone() {
-    service.seedDefaults();
+    graph.seeder().seedDefaults();
     breakPostgresSeed(config -> "example/my-own-postgres-mcp:latest");
 
-    service.repairSeeds();
+    graph.seeder().repairSeeds();
 
     assertTrue(configOf(postgresRow()).entrypoint().isEmpty());
   }
 
   @Test
   void repairDoesNothingToAnAlreadyCorrectSeed() {
-    service.seedDefaults();
+    graph.seeder().seedDefaults();
     long revision = postgresRow().revision();
 
-    service.repairSeeds();
-    service.repairSeeds();
+    graph.seeder().repairSeeds();
+    graph.seeder().repairSeeds();
 
     assertEquals(revision, postgresRow().revision());
   }

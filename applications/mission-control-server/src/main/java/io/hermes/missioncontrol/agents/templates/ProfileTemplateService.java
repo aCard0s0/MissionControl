@@ -6,6 +6,7 @@ import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
+import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.SecretInput;
@@ -34,15 +35,16 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The two halves that are not about the record itself belong to a collaborator:
  * {@link TemplateApplier} writes a template onto a live profile and owns the rollback rule
  * that goes with it, and {@link TemplateMcpSnapshots} decides what an MCP entry becomes when
- * it is stored. {@link TemplateSecrets} is the trust boundary all three share — secrets are
+ * it is stored. {@link TemplateSecrets} is how all three reach the trust boundary — secrets are
  * encrypted on the way in (kept on blank input), never returned to the client (only a
- * set/recoverable flag), and decrypted only when applied to a live agent.
+ * set/recoverable flag), and decrypted only when applied to a live agent. The rules themselves
+ * are {@link io.hermes.missioncontrol.secrets.SecretsAtRest}, shared with the MCP catalog.
  */
 @Service
 public class ProfileTemplateService {
 
-  /** Matches the env-key rule HermesSetup enforces at write time. */
-  private static final Pattern ENV_KEY = Pattern.compile("[A-Z][A-Z0-9_]{1,63}");
+  /** The one env-key rule, shared with the two other places that check it. */
+  private static final Pattern ENV_KEY = Pattern.compile(EnvEntry.KEY_PATTERN);
   /** Generous ceiling for a single secret value (API keys/tokens are short). */
   private static final int MAX_SECRET_LEN = 65_536;
 
@@ -181,8 +183,17 @@ public class ProfileTemplateService {
         storedSecrets(r.secrets(), existing), created, updated);
   }
 
-  /** Encrypts the supplied secrets, keeping the stored value wherever the input is blank —
-   *  the editor never receives ciphertext, so blank is how it says "unchanged". */
+  /**
+   * Encrypts the supplied secrets, keeping the stored value wherever the input is blank — the
+   * editor never receives ciphertext, so blank is how it says "unchanged".
+   *
+   * <p>Three states, not two. A key with a stored envelope is re-sealed under the current key.
+   * A key captured from a running agent has no envelope at all — {@code captureFromAgent}
+   * records which variables were set, never their values — and that placeholder is kept as-is
+   * so it keeps prompting the operator for the value. A key with neither is refused: the
+   * request asked to store a secret and sent none, and dropping it silently was how a template
+   * came to be deployed without a credential it appeared to carry.
+   */
   private List<StoredSecret> storedSecrets(List<SecretInput> input, ProfileTemplate existing) {
     Map<String, String> prior = new HashMap<>();   // enc may be null for capture-only placeholder keys
     if (existing != null) {
@@ -193,24 +204,21 @@ public class ProfileTemplateService {
     List<StoredSecret> stored = new ArrayList<>();
     for (SecretInput s : nz(input)) {
       if (s == null || s.key() == null || s.key().isBlank()) {
-        continue;
+        continue;   // an editor row nobody filled in is not a secret
       }
       String key = s.key().trim();
       if (!ENV_KEY.matcher(key).matches()) {
         throw new IllegalArgumentException("invalid secret key: " + key);
       }
       String value = s.value();
-      if (value == null || value.isBlank()) {
-        // blank input keeps the stored secret (or its capture placeholder)
-        if (prior.containsKey(key)) {
-          stored.add(new StoredSecret(key, prior.get(key)));
-        }
-      } else {
-        if (value.length() > MAX_SECRET_LEN) {
-          throw new IllegalArgumentException("secret value too large for " + key);
-        }
-        stored.add(new StoredSecret(key, secrets.encrypt(value)));
+      if (value != null && value.length() > MAX_SECRET_LEN) {
+        throw new IllegalArgumentException("secret value too large for " + key);
       }
+      boolean placeholder = (value == null || value.isBlank())
+          && prior.containsKey(key) && prior.get(key) == null;
+      stored.add(placeholder
+          ? new StoredSecret(key, null)
+          : new StoredSecret(key, secrets.encryptOrKeep(value, prior.get(key), key)));
     }
     return stored;
   }
@@ -219,11 +227,7 @@ public class ProfileTemplateService {
     // never echo secret material (not even a suffix) to the client — surface only
     // whether a value is stored and whether it still decrypts with the current key
     List<SecretRef> refs = t.secrets().stream()
-        .map(s -> {
-          boolean set = s.enc() != null;
-          boolean recoverable = set && secrets.decryptOrNull(s.enc()) != null;
-          return new SecretRef(s.key(), set, recoverable);
-        })
+        .map(s -> new SecretRef(s.key(), s.enc() != null, secrets.isRecoverable(s.enc())))
         .toList();
     List<McpServerSpec> mcp = t.mcpServers().stream().map(TemplateSecrets::redacted).toList();
     return new ProfileTemplateDto(

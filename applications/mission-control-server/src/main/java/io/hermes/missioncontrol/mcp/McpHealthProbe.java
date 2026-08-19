@@ -104,6 +104,10 @@ class McpHealthProbe {
     }
     String target;
     try {
+      // Both steps can fail for the same operational reason — this process not being on the
+      // network, or a remote server with no published address — so both report through the
+      // same catch. Kept apart because only the first one changes anything.
+      joinMcpNetworkIfLocal(row);
       target = probeTarget(row, config);
     } catch (RuntimeException unreachable) {
       repository.updateCheck(id, "error", unreachable.getMessage(), checkedAt, null);
@@ -161,9 +165,10 @@ class McpHealthProbe {
     return null;
   }
 
-  private String probeTarget(ServerRow row, StoredConfig config) {
+  /** Where the probe should address this server. A pure lookup — see
+   *  {@link #joinMcpNetworkIfLocal}, which is what makes the local answer resolvable. */
+  private static String probeTarget(ServerRow row, StoredConfig config) {
     if (HostService.LOCAL_HOST_ID.equals(row.hostId())) {
-      attachMcpNetwork(row.hostId());
       return McpServerDtoMapper.connectionUrl(row, config);
     }
     String crossHost = config.crossHostUrl();
@@ -174,14 +179,23 @@ class McpHealthProbe {
     return crossHost;
   }
 
-  /** Joins the MCP network so service names resolve. Idempotent, and cheap once attached. */
-  private void attachMcpNetwork(String hostId) {
+  /**
+   * Attaches this process' own container to the MCP network, so that the Compose service name
+   * {@link #probeTarget} returns for a local server resolves. Idempotent, and cheap once
+   * attached; nothing to do for a server on a remote host, which is probed by published URL.
+   *
+   * <p>Its own step rather than a line inside the target lookup: it reconfigures Mission
+   * Control's own networking, which is not something a method named for computing an address
+   * should be doing.
+   */
+  private void joinMcpNetworkIfLocal(ServerRow row) {
+    if (!HostService.LOCAL_HOST_ID.equals(row.hostId())) return;
     String container = ownNetworkContainerId();
     if (container == null) {
       throw new IllegalStateException(
           "cannot reach the MCP network: Mission Control is not running inside a container");
     }
-    docker.connectNetwork(hosts.ref(hostId), container, ComposeStackRenderer.NETWORK);
+    docker.connectNetwork(hosts.ref(row.hostId()), container, ManagedMcpStack.NETWORK);
   }
 
   /**
@@ -192,7 +206,7 @@ class McpHealthProbe {
    * That is exactly the container a network has to be attached to for this process to use it.
    *
    * <p>Package-private and non-static so a test can substitute it: the answer comes from this
-   * process' own {@code /proc/self/mountinfo}, so what {@link #attachMcpNetwork} does with it is
+   * process' own {@code /proc/self/mountinfo}, so what {@link #joinMcpNetworkIfLocal} does with it is
    * otherwise decided by whether the test run itself happens to be containerized.
    */
   String ownNetworkContainerId() {

@@ -1,23 +1,19 @@
 package io.hermes.missioncontrol.mcp;
 
-import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
-import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 /**
- * Global MCP catalog and managed Compose lifecycle.
+ * The global MCP catalog: what a record may be, and what may be done to one.
  *
  * <p>This class owns the catalog's rules — naming, immutability, single-flight operations,
  * and what may be deleted — and delegates everything those rules guard to an injected
@@ -31,9 +27,12 @@ import org.springframework.stereotype.Service;
  *   <li>{@link McpServerDtoMapper} — a row rendered for the API
  *   <li>{@link McpComposeLifecycle} — rendering and running the host's Compose stack
  *   <li>{@link McpHealthProbe} — whether a server actually answers
- *   <li>{@link McpCatalogSeeder} — the default entries, and repairs to broken ones
  *   <li>{@link McpLogReader} — the log tail across a record's services
  * </ul>
+ *
+ * <p>What happens once at boot — seeding, repairing a bad default, reconciling every record
+ * back to its desired state — is {@link McpStartupReconciler}'s. It was here, which made
+ * ordering against the rest of the application's startup this class's problem as well.
  */
 @Service
 public class McpRegistryService {
@@ -46,9 +45,7 @@ public class McpRegistryService {
   private final McpServerDtoMapper mapper;
   private final McpComposeLifecycle lifecycle;
   private final McpHealthProbe health;
-  private final McpCatalogSeeder seeder;
   private final McpLogReader logReader;
-  private final boolean startupReconcile;
 
   public McpRegistryService(
       McpServerRepository repository,
@@ -59,9 +56,7 @@ public class McpRegistryService {
       McpServerDtoMapper mapper,
       McpComposeLifecycle lifecycle,
       McpHealthProbe health,
-      McpCatalogSeeder seeder,
-      McpLogReader logReader,
-      AppProperties props) {
+      McpLogReader logReader) {
     this.repository = repository;
     this.retained = retained;
     this.links = links;
@@ -70,9 +65,7 @@ public class McpRegistryService {
     this.mapper = mapper;
     this.lifecycle = lifecycle;
     this.health = health;
-    this.seeder = seeder;
     this.logReader = logReader;
-    this.startupReconcile = props.startupReconcile();
   }
 
   // ── reads ──────────────────────────────────────────────────────────────────
@@ -209,7 +202,7 @@ public class McpRegistryService {
   public McpServerDto apply(String id) {
     ServerRow row = requireManagedIdle(id);
     repository.beginOperation(id, row.desiredState(), "applying");
-    lifecycle.submit(id, () -> reconcile(id));
+    lifecycle.submit(id, () -> lifecycle.reconcile(id));
     return require(id);
   }
 
@@ -232,61 +225,6 @@ public class McpRegistryService {
     RetainedResourceDto resource = retained.require(id);
     lifecycle.purgeVolume(resource.hostId(), resource.name());
     retained.delete(id);
-  }
-
-  // ── startup ────────────────────────────────────────────────────────────────
-
-  @EventListener(ApplicationReadyEvent.class)
-  public void initialize() {
-    // A context test boots the whole application without a daemon, so seeding and
-    // reconciliation — which pull images and create containers — must be skippable.
-    if (!startupReconcile) return;
-    hosts.seedLocalHost();
-    if (!repository.meta(McpCatalogSeeder.SEED_META)
-        .map(McpCatalogSeeder.SEED_VERSION::equals).orElse(false)) {
-      seeder.seedDefaults();
-      repository.putMeta(McpCatalogSeeder.SEED_META, McpCatalogSeeder.SEED_VERSION);
-    }
-    // Seeding only ever inserts, so a corrected default never reaches a catalog that was
-    // seeded by an earlier version. Repair runs before the reconcile loop below, which then
-    // applies the rewritten definition as part of its normal startup pass.
-    if (!repository.meta(McpCatalogSeeder.SEED_REPAIR_META)
-        .map(McpCatalogSeeder.SEED_REPAIR_VERSION::equals).orElse(false)) {
-      seeder.repairSeeds();
-      repository.putMeta(McpCatalogSeeder.SEED_REPAIR_META, McpCatalogSeeder.SEED_REPAIR_VERSION);
-    }
-    // Reconcile persisted desired state after a dashboard restart. Per-host locks
-    // serialize this with any seed provisioning already queued above.
-    for (ServerRow row : repository.findAll()) {
-      if (!"managed".equals(row.kind())) continue;
-      if ("deleting".equals(row.operationState())) {
-        lifecycle.submit(row.id(), () -> lifecycle.runDelete(row.id()));
-      } else {
-        repository.beginOperation(row.id(), row.desiredState(), "reconciling");
-        lifecycle.submit(row.id(), () -> reconcile(row.id()));
-      }
-    }
-  }
-
-  @PreDestroy
-  void close() {
-    lifecycle.shutdown();
-  }
-
-  /** Named startup steps, so {@link #initialize} reads as the sequence it is — and so each
-   *  can be driven on its own against a real catalog. */
-  void seedDefaults() {
-    seeder.seedDefaults();
-  }
-
-  void repairSeeds() {
-    seeder.repairSeeds();
-  }
-
-  /** Brings one record to whatever its recorded desired state now says. */
-  private void reconcile(String id) {
-    if ("running".equals(requireRow(id).desiredState())) lifecycle.runStart(id, true);
-    else lifecycle.provisionStopped(id);
   }
 
   // ── catalog rules ──────────────────────────────────────────────────────────

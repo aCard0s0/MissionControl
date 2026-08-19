@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 final class McpRequestValidator {
 
-  private static final Pattern ENV_KEY = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,127}");
+  private static final Pattern ENV_KEY = Pattern.compile(ConfigValueInput.ENV_KEY_PATTERN);
   private static final Pattern HEADER_KEY = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}");
   private static final Pattern IMAGE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._/@:-]{0,499}");
   private static final Pattern PLATFORM = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_./-]{0,127}");

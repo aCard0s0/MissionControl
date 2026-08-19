@@ -23,7 +23,6 @@ import org.springframework.stereotype.Component;
 @Component
 class TemplateMcpSnapshots {
 
-  /** Null outside the full wiring — the CRUD-only paths never resolve a catalog id. */
   private final McpRegistryService registry;
   private final TemplateSecrets secrets;
 

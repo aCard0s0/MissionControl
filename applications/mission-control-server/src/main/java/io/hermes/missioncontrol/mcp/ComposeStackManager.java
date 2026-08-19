@@ -40,7 +40,7 @@ class ComposeStackManager {
     ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
     lock.lock();
     try {
-      verifyOwnedOrMissing(hostId, "network", ComposeStackRenderer.NETWORK);
+      verifyOwnedOrMissing(hostId, "network", ManagedMcpStack.NETWORK);
       for (List<String> volumes : rendered.volumeNames().values()) {
         for (String volume : volumes) verifyOwnedOrMissing(hostId, "volume", volume);
       }
@@ -82,14 +82,14 @@ class ComposeStackManager {
   }
 
   void purgeVolume(String hostId, String volumeName) {
-    if (volumeName == null || !volumeName.startsWith(ComposeStackRenderer.PROJECT + "-")) {
+    if (volumeName == null || !volumeName.startsWith(ManagedMcpStack.PROJECT + "-")) {
       throw new IllegalArgumentException("refusing to purge a volume not owned by Mission Control MCP");
     }
     ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
     lock.lock();
     try {
       String owner = inspectOwner(hostId, "volume", volumeName);
-      if (!ComposeStackRenderer.PROJECT.equals(owner)) {
+      if (!ManagedMcpStack.PROJECT.equals(owner)) {
         throw new IllegalArgumentException("refusing to purge a volume not labeled as Mission Control MCP-owned");
       }
       run(List.of("docker", "--host", hosts.ref(hostId).url(), "volume", "rm", volumeName),
@@ -128,14 +128,14 @@ class ComposeStackManager {
   private List<String> composeBase(String hostId, Path composeFile) {
     return new ArrayList<>(List.of(
         "docker", "--host", hosts.ref(hostId).url(), "compose",
-        "--project-name", ComposeStackRenderer.PROJECT,
+        "--project-name", ManagedMcpStack.PROJECT,
         "--file", composeFile.toString()));
   }
 
   private void verifyOwnedOrMissing(String hostId, String type, String name) {
     try {
       String owner = inspectOwner(hostId, type, name);
-      if (!ComposeStackRenderer.PROJECT.equals(owner)) {
+      if (!ManagedMcpStack.PROJECT.equals(owner)) {
         throw new IllegalArgumentException(
             "a " + type + " named '" + name + "' already exists but is not owned by Mission Control MCP");
       }
@@ -147,12 +147,12 @@ class ComposeStackManager {
   private void verifyComposeServiceOwnership(String hostId, String service) {
     String ids = run(List.of(
         "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
-        "--filter", "label=com.docker.compose.project=" + ComposeStackRenderer.PROJECT,
+        "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
         "--filter", "label=com.docker.compose.service=" + service,
         "--format", "{{.ID}}"), Map.of(), Duration.ofSeconds(20));
     for (String id : ids.lines().map(String::trim).filter(value -> !value.isEmpty()).toList()) {
       String owner = inspectOwner(hostId, "container", id);
-      if (!ComposeStackRenderer.PROJECT.equals(owner)) {
+      if (!ManagedMcpStack.PROJECT.equals(owner)) {
         throw new IllegalArgumentException(
             "a Compose container for service '" + service + "' exists but is not owned by Mission Control MCP");
       }
@@ -164,7 +164,7 @@ class ComposeStackManager {
     String labels = "container".equals(type) ? ".Config.Labels" : ".Labels";
     List<String> command = List.of(
         "docker", "--host", hosts.ref(hostId).url(), type, "inspect",
-        "--format", "{{ index " + labels + " \"io.hermes.mission-control.owner\" }}", name);
+        "--format", "{{ index " + labels + " \"" + ManagedMcpStack.OWNER_LABEL + "\" }}", name);
     try {
       return run(command, Map.of(), Duration.ofSeconds(20)).trim();
     } catch (RuntimeException e) {

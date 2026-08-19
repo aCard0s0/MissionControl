@@ -16,6 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -42,7 +44,20 @@ public class HostService {
     this.props = props;
   }
 
-  /** The local daemon row always exists — seeded from MC_DOCKER_SOCKET. */
+  /**
+   * The local daemon row always exists — seeded from MC_DOCKER_SOCKET.
+   *
+   * <p>Ordered ahead of every other {@code ApplicationReadyEvent} listener because they may
+   * assume the row: the MCP catalog's startup reconciler seeds default servers onto this host
+   * and cannot resolve it otherwise. It used to call this method itself to be sure, since two
+   * unordered listeners have no defined order between them — this annotation is what replaced
+   * that, and it must stay for as long as anything downstream reads a host row at startup.
+   *
+   * <p>Not {@code @PostConstruct}: the row is written through the schema this application
+   * populates during context refresh, which a bean's own initialization is not guaranteed to
+   * follow.
+   */
+  @Order(Ordered.HIGHEST_PRECEDENCE)
   @EventListener(ApplicationReadyEvent.class)
   public void seedLocalHost() {
     if (repository.findById(LOCAL_HOST_ID).isEmpty()) {

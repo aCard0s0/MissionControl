@@ -1,11 +1,13 @@
 package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
+import io.hermes.missioncontrol.mcp.ConfigValueInput;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * One MCP server as this package writes it: already validated, already normalised.
@@ -42,6 +44,9 @@ public record McpServerDefinition(
     Boolean enabled,
     Map<String, String> headers,
     Map<String, String> environment) {
+
+  /** The catalog's rule for the same variable — see {@link ConfigValueInput#ENV_KEY_PATTERN}. */
+  private static final Pattern ENV_KEY = Pattern.compile(ConfigValueInput.ENV_KEY_PATTERN);
 
   /** The transports hermes understands. SSE cannot be inferred from a URL, so it is carried
    *  explicitly — inferring it is what once reported an SSE server as HTTP. */
@@ -158,7 +163,7 @@ public record McpServerDefinition(
     for (Map.Entry<String, String> entry : input.entrySet()) {
       String name = entry.getKey() == null ? "" : entry.getKey().trim();
       String value = entry.getValue();
-      if (!name.matches("[A-Za-z_][A-Za-z0-9_]{0,127}")) {
+      if (!ENV_KEY.matcher(name).matches()) {
         throw new IllegalArgumentException("invalid MCP environment key: " + name);
       }
       if (value == null) {
