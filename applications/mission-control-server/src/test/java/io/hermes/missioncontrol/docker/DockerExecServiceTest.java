@@ -36,7 +36,7 @@ class DockerExecServiceTest {
 
   @Test
   void sensitiveFailureNeverContainsCommandOutput() {
-    RuntimeException failure = DockerExecService.commandFailure(
+    ContainerCommandFailedException failure = DockerExecService.commandFailure(
         "write profile environment", 1, true, "", "failed for sk-ant-secret-value");
 
     assertTrue(failure.getMessage().contains("write profile environment"));
@@ -139,6 +139,20 @@ class DockerExecServiceTest {
         false, false, Duration.ofSeconds(1));
 
     assertEquals(1, result.exitCode());
+  }
+
+  @Test
+  void aCheckedNonZeroExitThrowsATypeTheHttpLayerCanMapToAClientError() {
+    // the type is the contract: as a bare RuntimeException this reached the advice's
+    // catch-all, so every hermes CLI rejection was answered 500 with a stack trace at ERROR
+    DockerClients clients = stubbedClients(1, frame(StreamType.STDERR, "unknown skill: reserch"));
+
+    ContainerCommandFailedException failure = assertThrows(ContainerCommandFailedException.class,
+        () -> new DockerExecService(clients).runAsUser(
+            HOST, "cid", "hermes", List.of("hermes", "skills", "install", "reserch"),
+            "install skill", true, false, Duration.ofSeconds(1)));
+
+    assertTrue(failure.getMessage().contains("unknown skill: reserch"), failure.getMessage());
   }
 
   @Test

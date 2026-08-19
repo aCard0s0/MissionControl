@@ -25,6 +25,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * made a client upgrade that renamed an exception a change to {@code errors} as well as to
  * this package.
  *
+ * <p>Also home to the exec seam's own translations — {@link ContainerNotRunningException} and
+ * {@link ContainerCommandFailedException} — for the same reason: they exist so callers do not
+ * import docker-java, and this is where their statuses belong.
+ *
  * <p>Answers the same {@code {"error": …}} body shape as {@code ApiExceptionHandler}, because
  * a client cannot tell which advice handled its request and should not have to.
  *
@@ -61,6 +65,18 @@ public class DockerExceptionAdvice {
   @ExceptionHandler(ContainerNotRunningException.class)
   public ResponseEntity<Map<String, String>> containerNotRunning(ContainerNotRunningException e) {
     return error(HttpStatus.CONFLICT, brief(e.getMessage()));
+  }
+
+  /**
+   * A command inside a container exited non-zero: the CLI refused what was asked, not a defect
+   * in this application. Without this these reach {@code ApiExceptionHandler}'s
+   * {@code RuntimeException} catch-all, which reports every rejected schedule expression and
+   * unknown skill id as a 500 with a stack trace at ERROR.
+   */
+  @ExceptionHandler(ContainerCommandFailedException.class)
+  public ResponseEntity<Map<String, String>> containerCommandFailed(
+      ContainerCommandFailedException e) {
+    return error(HttpStatus.BAD_REQUEST, brief(e.getMessage()));
   }
 
   /**

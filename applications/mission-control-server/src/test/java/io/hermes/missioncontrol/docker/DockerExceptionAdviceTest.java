@@ -90,6 +90,19 @@ class DockerExceptionAdviceTest {
             org.hamcrest.Matchers.containsString("needs a running container")));
   }
 
+  /**
+   * A container command that exited non-zero. This is the mapping the type exists for: the
+   * failure used to be a bare {@code RuntimeException} that only the catch-all matched, so a
+   * hermes CLI rejection was answered as 500 with a stack trace at ERROR.
+   */
+  @Test
+  void aContainerCommandThatExitedNonZeroIsABadRequestNotAServerError() throws Exception {
+    mvc.perform(get("/boom/container-command-failed"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value(
+            org.hamcrest.Matchers.containsString("unknown schedule expression")));
+  }
+
   // --- the daemon rejecting us vs. the daemon being broken ----------------------------
   //
   // The DockerException catch-all answered 502 for the whole family, so a malformed image
@@ -160,6 +173,12 @@ class DockerExceptionAdviceTest {
       throw new ContainerNotRunningException(
           "Hermes command needs a running container: c1",
           new ConflictException("is not running"));
+    }
+
+    @RequestMapping("/container-command-failed")
+    void containerCommandFailed() {
+      throw new ContainerCommandFailedException(
+          "create cron job failed: unknown schedule expression 'evry 5m'");
     }
 
     @RequestMapping("/docker-bad-request")
