@@ -1,21 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiCronJob } from '../hermes-api';
-import { AgentProfile } from '../models';
-import { AgentStore } from './agent-store';
-import { ContainerStore } from './container-store';
 import { JobStore } from './job-store';
-import { StoreContext } from './store-context';
-
-const CONTAINER = {
-  id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
-  image: 'hermes', version: 'v1', startedAt: 1, sizeRootFsGb: 1, profiles: ['atlas'],
-};
-
-const profile = (id: string, name: string, containerId = 'c-1') => ({
-  id, containerId, name, role: '', state: 'idle', provider: 'nous', model: 'm',
-  apiKeyMasked: '', cwd: '', soul: '', memoryMd: '', configYaml: '',
-  skills: [], mcp: [], integrations: [], lastActive: 1,
-});
+import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
   id, name: `job ${id}`, prompt: 'do it', schedule: '0 9 * * *', scheduleKind: 'cron',
@@ -26,22 +12,9 @@ const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
 
 /** A store holding one container and two profiles, with the cron API stubbed. */
 const loaded = async (cron: Record<string, unknown>, profiles = ['atlas', 'scribe']) => {
-  const ctx = new StoreContext({ apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' });
-  const containers = new ContainerStore(ctx);
-  const agents = new AgentStore(ctx, containers);
-  (ctx as unknown as { api: unknown }).api = {
-    containers: { list: vi.fn().mockResolvedValue([CONTAINER]) },
-    agents: {
-      list: vi.fn().mockResolvedValue(
-        profiles.map((name, i) => profile(`a-${name}`, name))),
-      cron,
-    },
-  };
-  await containers.refresh();
-  await agents.refresh();
-  containers.select('c-1');
-  const jobs = new JobStore(ctx, containers, agents);
-  return { ctx, containers, agents, jobs };
+  const slices = await loadedAgentSlices(
+    { agents: { cron } }, { profiles: profiles.map(name => apiProfile(name)) });
+  return { ...slices, jobs: new JobStore(slices.ctx, slices.containers, slices.agents) };
 };
 
 const answer = (jobs: ApiCronJob[], schedulerRunning = true) => ({ jobs, schedulerRunning });
@@ -240,5 +213,113 @@ describe('JobStore mutations', () => {
 
     jobs.dropByContainer('c-1');
     expect(jobs.jobs()).toEqual([]);
+  });
+});
+
+describe('JobStore ordering', () => {
+  it('keeps the schedule sorted by what runs next, after a write', async () => {
+    const list = vi.fn().mockResolvedValue(answer([]));
+    const create = vi.fn().mockResolvedValue(answer([
+      job('later', { nextRunAt: 9_000 }),
+      job('sooner', { nextRunAt: 2_000 }),
+    ]));
+    const { jobs } = await loaded({ list, create });
+    await jobs.refresh();
+
+    expect(await jobs.create('c-1', 'a-atlas', 'digest', '@daily', 'go', 'log')).toBe(true);
+    expect(jobs.jobs().map(j => j.id)).toEqual(['sooner', 'later']);
+  });
+
+  it('replaces only the writing profile\'s jobs, and re-sorts the union', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('atlas-1', { nextRunAt: 5_000 })]))
+      .mockResolvedValueOnce(answer([job('scribe-1', { nextRunAt: 1_000 })]));
+    const toggle = vi.fn().mockResolvedValue(answer([job('atlas-2', { nextRunAt: 3_000 })]));
+    const { jobs } = await loaded({ list, setEnabled: toggle });
+    await jobs.refresh();
+
+    expect(await jobs.toggle('atlas-1')).toBe(true);
+    expect(jobs.jobs().map(j => j.id)).toEqual(['scribe-1', 'atlas-2']);
+  });
+});
+
+describe('JobStore wire tolerance', () => {
+  /** Everything hermes may legally leave out of a job row. */
+  const sparse = (id: string) => ({
+    id, name: null, prompt: null, schedule: null, scheduleKind: 'cron', deliver: null,
+    enabled: true, state: 'scheduled', repeatTimes: null, repeatDone: 0,
+    createdAt: 1_000, nextRunAt: null, lastRunAt: null, lastStatus: null, lastError: null,
+    skills: [],
+  }) as unknown as ApiCronJob;
+
+  it('falls back to the job id when hermes recorded no name', async () => {
+    const { jobs } = await loaded({ list: vi.fn().mockResolvedValue(answer([sparse('j-1')])) });
+
+    await jobs.refresh();
+
+    expect(jobs.jobs()[0]).toMatchObject({
+      name: 'j-1', schedule: '', prompt: '', deliverTo: 'local',
+    });
+  });
+
+  it('sorts a job that has never been scheduled last, not as due now', async () => {
+    const list = vi.fn().mockResolvedValue(answer([
+      sparse('never'), job('soon', { nextRunAt: 2_000 }),
+    ]));
+    const { jobs } = await loaded({ list }, ['atlas']);
+
+    await jobs.refresh();
+
+    expect(jobs.jobs().map(j => j.id)).toEqual(['soon', 'never']);
+    expect(jobs.jobs()[1].nextRun).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('keeps only the two outcomes the page renders', async () => {
+    const list = vi.fn().mockResolvedValue(answer([
+      job('a', { lastStatus: 'ok' }),
+      job('b', { lastStatus: 'fail' }),
+      job('c', { lastStatus: 'skipped' as never }),
+    ]));
+    const { jobs } = await loaded({ list }, ['atlas']);
+
+    await jobs.refresh();
+
+    expect(jobs.jobs().map(j => j.lastStatus)).toEqual(['ok', 'fail', null]);
+  });
+
+  it('sends only the fields an edit actually filled in', async () => {
+    const update = vi.fn().mockResolvedValue(answer([job('j-1')]));
+    const { jobs } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([job('j-1')])), update,
+    });
+    await jobs.refresh();
+
+    await jobs.update('j-1', { name: '  digest  ', prompt: '   ', schedule: '@daily' });
+
+    expect(update).toHaveBeenCalledWith(
+      expect.anything(), 'j-1', { schedule: '@daily', name: 'digest' });
+  });
+
+  it('names the verb by what the toggle is about to do', async () => {
+    const setEnabled = vi.fn().mockRejectedValue(new Error('scheduler down'));
+    const { jobs, ctx } = await loaded({
+      list: vi.fn().mockResolvedValue(answer([job('on'), job('off', { enabled: false })])),
+      setEnabled,
+    });
+    await jobs.refresh();
+
+    await jobs.toggle('on');
+    expect(ctx.liveError()).toBe('pause job failed: scheduler down');
+
+    await jobs.toggle('off');
+    expect(ctx.liveError()).toBe('resume job failed: scheduler down');
+  });
+
+  it('refuses to act on a job it does not hold', async () => {
+    const setEnabled = vi.fn();
+    const { jobs } = await loaded({ list: vi.fn().mockResolvedValue(answer([])), setEnabled });
+
+    expect(await jobs.toggle('j-missing')).toBe(false);
+    expect(setEnabled).not.toHaveBeenCalled();
   });
 });

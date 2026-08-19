@@ -1,12 +1,14 @@
 import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { ApiModelProvider } from '../core/hermes-api';
 import { ProfileTemplate } from '../core/models';
 import { AgentProfilesPage } from './agent-profiles';
+import { TestFixture, el, field, press, settle, type } from '../testing/dom';
+import { template as buildTemplate } from '../testing/models';
 
 const llm: ApiModelProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
@@ -14,21 +16,21 @@ const llm: ApiModelProvider[] = [
     envVar: 'ANTHROPIC_API_KEY' },
 ];
 
-const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 'pt-ops', name: 'ops-sre', description: 'Production SRE copilot.',
-  provider: 'anthropic', model: 'claude-fable-5', baseUrl: '', cwd: '/opt/data',
-  soul: '# SOUL.md — ops-sre\n', memory: '# MEMORY.md\n',
-  skills: ['daily-briefing', 'web-research'],
-  mcpServers: [
-    { name: 'github', transport: 'http', url: 'https://api.github.test/mcp', enabled: true },
-    { name: 'grafana', transport: 'stdio', command: 'mcp-grafana', args: '--url http://g:3000', enabled: true },
-  ],
-  secrets: [
-    { key: 'ANTHROPIC_API_KEY', set: true, recoverable: true },
-    { key: 'GITHUB_TOKEN', set: true, recoverable: true },
-  ],
-  createdAt: 1, updatedAt: 2, ...patch,
-});
+const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
+  buildTemplate('pt-ops', {
+    name: 'ops-sre', description: 'Production SRE copilot.',
+    soul: '# SOUL.md — ops-sre\n', memory: '# MEMORY.md\n',
+    skills: ['daily-briefing', 'web-research'],
+    mcpServers: [
+      { name: 'github', transport: 'http', url: 'https://api.github.test/mcp', enabled: true },
+      { name: 'grafana', transport: 'stdio', command: 'mcp-grafana', args: '--url http://g:3000', enabled: true },
+    ],
+    secrets: [
+      { key: 'ANTHROPIC_API_KEY', set: true, recoverable: true },
+      { key: 'GITHUB_TOKEN', set: true, recoverable: true },
+    ],
+    updatedAt: 2, ...patch,
+  });
 
 /** Only what the page, the editor pane and the deploy dialog reach for. */
 const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
@@ -41,58 +43,30 @@ const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
   mcpServerById: () => null,
   llmProviders: signal(llm),
   modelProviders: signal([]),
-  containers: signal([]),
-  selectedContainerId: signal(''),
+  containers: signal([{ id: 'c-1', name: 'hermes-prod', status: 'running', hostId: 'dh-local' }]),
+  selectedContainerId: signal('c-1'),
   toast: vi.fn(),
 });
 
-const render = () => {
+const render = (store = storeStub()) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: HermesStore, useValue: storeStub() }],
+    providers: [
+      provideRouter([]),
+      { provide: HermesStore, useValue: store },
+    ],
   });
+  // the real router, with navigation recorded — RouterLink in these templates
+  // needs the routes provider intact
+  const router = TestBed.inject(Router);
+  const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(AgentProfilesPage);
   fixture.detectChanges();
-  return fixture;
-};
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-type Fixture = { nativeElement: unknown; detectChanges(): void };
-
-const press = (fixture: Fixture, label: string, within?: string | Element): void => {
-  const scope = typeof within === 'string' ? el(fixture).querySelector(within)
-    : (within ?? el(fixture));
-  if (!scope) throw new Error(`no element matching "${String(within)}"`);
-  const match = Array.from(scope.querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
-};
-
-/** The `.field` whose label starts with this text. */
-const field = (fixture: Fixture, label: string): HTMLElement => {
-  const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.field'))
-    .find(f => (f.querySelector('label')?.textContent ?? '').trim().toLowerCase()
-      .startsWith(label.toLowerCase()));
-  if (!match) throw new Error(`no field labelled "${label}"`);
-  return match;
-};
-
-const settle = async (fixture: Fixture): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(0);
-  fixture.detectChanges();
-};
-
-const type = async (fixture: Fixture, selector: string, value: string): Promise<void> => {
-  const input = el(fixture).querySelector<HTMLInputElement>(selector)!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await settle(fixture);
+  return Object.assign(fixture, { store, navigate });
 };
 
 /** Opens the blueprint whose card carries this name. */
-const openTemplate = (fixture: Fixture, name: string): void => {
+const openTemplate = (fixture: TestFixture, name: string): void => {
   const card = Array.from(el(fixture).querySelectorAll<HTMLElement>('.tmpl'))
     .find(t => (t.querySelector('.nm')?.textContent ?? '').trim() === name);
   if (!card) throw new Error(`no template card named "${name}"`);
@@ -267,5 +241,76 @@ describe('AgentProfilesPage', () => {
 
     expect(el(fixture).querySelector('.editor')).toBeNull();
     expect(el(fixture).querySelector('.tmpl.active')).toBeNull();
+  });
+});
+
+describe('AgentProfilesPage blueprint lifecycle', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('asks before deleting a blueprint, and does not on a refusal', async () => {
+    vi.stubGlobal('confirm', () => false);
+    const fixture = render();
+    openTemplate(fixture, 'ops-sre');
+    await settle(fixture);
+
+    press(fixture, 'delete', '.editor-actions');
+    await settle(fixture);
+
+    expect(fixture.store.deleteTemplate).not.toHaveBeenCalled();
+    expect(el(fixture).querySelector('.editor')).not.toBeNull();
+  });
+
+  it('deletes the blueprint and closes the editor it was open in', async () => {
+    vi.stubGlobal('confirm', () => true);
+    const fixture = render();
+    openTemplate(fixture, 'ops-sre');
+    await settle(fixture);
+
+    press(fixture, 'delete', '.editor-actions');
+    await settle(fixture);
+
+    expect(fixture.store.deleteTemplate).toHaveBeenCalledWith('pt-ops');
+    expect(el(fixture).querySelector('.editor')).toBeNull();
+  });
+
+  it('goes straight to the agent a deploy produced', async () => {
+    const fixture = render();
+    openTemplate(fixture, 'ops-sre');
+    await settle(fixture);
+    press(fixture, 'deploy →', '.editor-actions');
+    await settle(fixture);
+
+    await type(fixture, '.modal .input', 'sre-1');
+    press(fixture, 'deploy agent', '.modal');
+    await settle(fixture);
+
+    expect(fixture.store.deployTemplate).toHaveBeenCalledWith('pt-ops', 'c-1', 'sre-1');
+    expect(fixture.navigate).toHaveBeenCalledWith(['/agents', 'a-new']);
+    expect(el(fixture).querySelector('mc-profile-deploy-dialog')).toBeNull();
+  });
+
+  it('deploys straight from a card, without opening the editor first', async () => {
+    const fixture = render();
+
+    press(fixture, 'deploy →', '.card-actions');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('mc-profile-deploy-dialog')).not.toBeNull();
+    expect(el(fixture).querySelector('.editor')).toBeNull();
+  });
+
+  it('offers a way in from the empty state', () => {
+    const fixture = render(storeStub([]));
+
+    expect(el(fixture).textContent).toContain('No reusable profiles yet.');
+    press(fixture, '+ create one');
+
+    expect(el(fixture).querySelector('.editor')).not.toBeNull();
   });
 });

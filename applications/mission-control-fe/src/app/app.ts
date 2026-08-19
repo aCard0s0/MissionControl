@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal,
+} from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { HermesStore } from './core/hermes-store';
 import { StatusDot } from './shared/status-dot';
@@ -49,7 +51,10 @@ export class App {
   });
 
   constructor() {
-    setInterval(() => this.now.set(new Date()), 1000);
+    // the header clock ticks for as long as the shell is mounted; stopping it on
+    // destroy keeps a torn-down app (and a finished test) from being woken again
+    const clock = setInterval(() => this.now.set(new Date()), 1000);
+    inject(DestroyRef).onDestroy(() => clearInterval(clock));
     effect(() => {
       const theme = this.theme();
       document.documentElement.dataset['theme'] = theme;

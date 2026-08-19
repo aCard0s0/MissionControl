@@ -47,7 +47,8 @@
 <div class="grid" data-reveal>
   @for (c of store.containers(); track c.id) {
     <div class="panel card" [class.sel]="c.id === store.selectedContainerId()"
-         role="button" tabindex="0" (click)="open(c.id)" (keydown.enter)="open(c.id)">
+         role="button" tabindex="0" (click)="open(c.id)"
+         (keydown.enter)="open(c.id)" (keydown.space)="open(c.id); $event.preventDefault()">
       <div class="panel-h">
         <mc-status [status]="c.status" [live]="c.status !== 'stopped'" />
         <span class="spacer"></span>
@@ -56,7 +57,7 @@
       <div class="panel-b">
         <h3 class="mono">{{ c.name }}</h3>
         <div class="meta mono faint">
-          {{ c.image }}:{{ c.version }} · on {{ hostName_(c.hostId) }}
+          {{ c.image }}:{{ c.version }} · on {{ hostLabel(c.hostId) }}
           @if (updates().get(c.id); as target) {
             <span class="chip warn" [title]="updateHint(c, target)">update {{ target.tag }}</span>
           }

@@ -1,4 +1,4 @@
-import { WritableSignal, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { ApiModelProvider, ApiPullState } from '../hermes-api';
 import { ModelProvider, OllamaModel } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';

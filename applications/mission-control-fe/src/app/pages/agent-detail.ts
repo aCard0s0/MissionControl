@@ -152,9 +152,10 @@ export class AgentDetailPage {
         this.agentLogEntries.set(lines);
         this.agentLogsUpdatedAt.set(Date.now());
       }
-    } catch (e: any) {
+    } catch (e) {
       if (this.agent()?.id === a.id && this.tab() === 'activity') {
-        this.agentLogsError.set(e?.message ?? 'agent log refresh failed');
+        const reason = e instanceof Error ? e.message : null;
+        this.agentLogsError.set(reason ?? 'agent log refresh failed');
       }
     } finally {
       this.agentLogsInFlight.delete(a.id);
@@ -217,16 +218,6 @@ export class AgentDetailPage {
         if (this.viewingSession()?.session.id === s.id) this.viewingSession.set(null);
       })
       .catch(e => this.store.toast(`session delete failed: ${e.message}`));
-  }
-
-  protected fileContent(): string {
-    const a = this.agent();
-    if (!a) return '';
-    switch (this.fileView()) {
-      case 'SOUL.md': return a.soul;
-      case 'MEMORY.md': return a.memoryMd;
-      case 'config.yaml': return a.configYaml;
-    }
   }
 
   protected async saveSoul(): Promise<void> {

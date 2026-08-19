@@ -79,6 +79,7 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
+            "runnerConfig": "vitest-base.config.ts",
             "coverageReporters": [
               "text-summary",
               "html",
@@ -90,13 +91,14 @@
             ],
             "coverageExclude": [
               "src/main.ts",
-              "src/**/*.html"
+              "src/**/*.html",
+              "src/app/testing/**"
             ],
             "coverageThresholds": {
-              "statements": 71,
-              "branches": 68,
-              "functions": 67,
-              "lines": 74
+              "statements": 85,
+              "branches": 85,
+              "functions": 85,
+              "lines": 85
             }
           }
         }

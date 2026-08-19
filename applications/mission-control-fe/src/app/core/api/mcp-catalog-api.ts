@@ -32,7 +32,7 @@ export class McpCatalogApi {
   }
 
   logs(id: string, tail = 100): Promise<ApiLogLine[]> {
-    return this.http.get(`/api/mcp-servers/${seg(id)}/logs?tail=${seg(tail)}`);
+    return this.http.get(`/api/mcp-servers/${seg(id)}/logs?tail=${tail}`);
   }
 
   retainedResources(): Promise<ApiMcpRetainedResource[]> {

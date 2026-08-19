@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { CronJob } from '../core/models';
 import { CalendarPage } from './calendar';
+import { TestFixture, el, field, fill, press, settle } from '../testing/dom';
+import { cronJob } from '../testing/models';
 
 /** A Wednesday, so the Monday-first grid has to lead with the previous month. */
 const TODAY = new Date('2026-04-15T09:00:00Z');
@@ -12,11 +14,8 @@ const at = (iso: string) => new Date(iso).getTime();
 
 const agents = [{ id: 'a-1', name: 'atlas' }, { id: 'a-2', name: 'scribe' }];
 
-const job = (id: string, nextRun: number, patch: Partial<CronJob> = {}): CronJob => ({
-  id, containerId: 'c-1', agentId: 'a-1', name: `job ${id}`, schedule: '0 9 * * *',
-  prompt: 'do the thing', deliverTo: 'slack', enabled: true, nextRun, lastRun: null,
-  lastStatus: 'ok', ...patch,
-} as CronJob);
+const job = (id: string, nextRun: number, patch: Partial<CronJob> = {}): CronJob =>
+  cronJob(id, { nextRun, ...patch });
 
 const storeStub = (jobs: CronJob[] = []) => ({
   containerJobs: signal(jobs),
@@ -32,55 +31,20 @@ const storeStub = (jobs: CronJob[] = []) => ({
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(CalendarPage);
   fixture.detectChanges();
   return { fixture, store };
 };
 
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-type Fixture = { nativeElement: unknown; detectChanges(): void };
-
-/** Fake timers are on for the fixed clock, so stability is reached by advancing
- *  them rather than awaiting whenStable(). */
-const settle = async (fixture: Fixture): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(0);
-  fixture.detectChanges();
-};
-
-const press = (fixture: Fixture, label: string, within?: string): void => {
-  const scope = within ? el(fixture).querySelector(within) : el(fixture);
-  if (!scope) throw new Error(`no element matching "${within}"`);
-  const match = Array.from(scope.querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
-};
-
 /** The grid cell for this day-of-month in the shown month. */
-const day = (fixture: Fixture, num: number): HTMLElement => {
+const day = (fixture: TestFixture, num: number): HTMLElement => {
   const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.day'))
     .find(d => (d.querySelector('.num')?.textContent ?? '').trim() === String(num)
       && !d.className.includes('out'));
   if (!match) throw new Error(`no cell for day ${num}`);
   return match;
-};
-
-const field = (fixture: Fixture, label: string): HTMLElement => {
-  const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.field'))
-    .find(f => (f.querySelector('label')?.textContent ?? '').trim().toLowerCase()
-      .startsWith(label.toLowerCase()));
-  if (!match) throw new Error(`no field labelled "${label}"`);
-  return match;
-};
-
-const fill = async (fixture: Fixture, label: string, value: string): Promise<void> => {
-  const input = field(fixture, label).querySelector<HTMLInputElement | HTMLTextAreaElement>('.input')!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await settle(fixture);
 };
 
 describe('CalendarPage month grid', () => {

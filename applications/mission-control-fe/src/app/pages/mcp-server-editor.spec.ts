@@ -6,6 +6,7 @@ import { HermesStore } from '../core/hermes-store';
 import { DockerHost } from '../core/models';
 import { McpEditorDraft, newMcpDraft } from './mcp-editor';
 import { McpServerEditor } from './mcp-server-editor';
+import { el, press } from '../testing/dom';
 
 const managedDraft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
   ...newMcpDraft('managed', 'dh-local'), name: 'browser', image: 'mcp/playwright:latest', ...patch,
@@ -34,26 +35,12 @@ class Host {
 }
 
 const render = (draft: McpEditorDraft, store = storeStub()) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.draft.set(draft);
   fixture.detectChanges();
   return { fixture, store, host: fixture.componentInstance };
-};
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-/** Clicks the button with this exact label, optionally scoped to one container. */
-const press = (
-  fixture: { nativeElement: unknown; detectChanges(): void }, label: string, within = ':scope',
-): void => {
-  const scope = within === ':scope' ? el(fixture) : el(fixture).querySelector(within);
-  if (!scope) throw new Error(`no element matching "${within}"`);
-  const match = Array.from(scope.querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
 };
 
 const primary = (fixture: { nativeElement: unknown }): HTMLButtonElement =>

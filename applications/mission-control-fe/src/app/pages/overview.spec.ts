@@ -8,6 +8,8 @@ import {
   AgentProfile, CronJob, HermesContainer, Integration, LogEntry, McpServer, SkillRef,
 } from '../core/models';
 import { OverviewPage } from './overview';
+import { el, text } from '../testing/dom';
+import { agent, cronJob as job, mcpServer, skill as buildSkill } from '../testing/models';
 
 const container: HermesContainer = {
   id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
@@ -15,30 +17,8 @@ const container: HermesContainer = {
   disk: 4, diskTotal: 40, netIn: 1, netOut: 2, cpuHist: [1, 2], ramHist: [1, 2], netHist: [1, 2],
 };
 
-const skill = (source: SkillRef['source']): SkillRef =>
-  ({ id: `s-${source}`, name: source, source, version: '1', description: '', enabled: true });
-
-const mcp = (name: string, status: McpServer['status'], tools = 0): McpServer => ({
-  id: `m-${name}`, name, transport: 'http', enabled: true, origin: 'custom', catalogServerId: null,
-  syncedRevision: null, catalogRevision: null, updateAvailable: false, status, tools,
-  latencyMs: null, url: 'https://x.test/mcp',
-} as McpServer);
-
-const agent = (id: string, patch: Partial<AgentProfile> = {}): AgentProfile => ({
-  id, containerId: 'c-1', name: id, role: 'ops', state: 'idle', provider: 'nous', model: 'm',
-  apiKeyMasked: '…', cwd: '/opt/data', soul: '', memoryMd: '', configYaml: '', skills: [],
-  mcp: [], integrations: [], sessions: [], msgsToday: 0, tokensToday: 0, errorRate: 0,
-  lastActive: 1, ...patch,
-});
-
 const log = (level: LogEntry['level'], msg: string): LogEntry =>
   ({ ts: 1_700_000_000_000, level, source: 'gateway', agentId: null, msg });
-
-const job = (id: string, patch: Partial<CronJob> = {}): CronJob => ({
-  id, containerId: 'c-1', agentId: 'a-1', name: `job ${id}`, schedule: '0 9 * * *',
-  prompt: '', deliverTo: 'slack', enabled: true, nextRun: 2_000, lastRun: null,
-  lastStatus: 'ok', ...patch,
-} as CronJob);
 
 const storeStub = (opts: {
   agents?: AgentProfile[]; logs?: LogEntry[]; jobs?: CronJob[];
@@ -54,6 +34,7 @@ const storeStub = (opts: {
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
   });
@@ -61,11 +42,6 @@ const render = (store: ReturnType<typeof storeStub>) => {
   fixture.detectChanges();
   return { fixture, store };
 };
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-const text = (fixture: { nativeElement: unknown }): string =>
-  (el(fixture).textContent ?? '').replace(/\s+/g, ' ');
 
 /** The panel whose header names this section — several panels carry a count row. */
 const panel = (fixture: { nativeElement: unknown }, heading: string): HTMLElement => {
@@ -86,6 +62,12 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
 });
+
+/** A skill from a given source — what the overview counts by. */
+const skill = (source: SkillRef['source']): SkillRef => buildSkill(source, { source });
+
+const mcp = (name: string, status: McpServer['status'], tools = 0): McpServer =>
+  mcpServer(name, { status, tools, latencyMs: null });
 
 describe('OverviewPage tallies', () => {
   it('counts the profiles by the state they are in', () => {

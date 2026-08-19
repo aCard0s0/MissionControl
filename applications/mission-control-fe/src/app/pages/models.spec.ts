@@ -6,6 +6,7 @@ import { HermesStore } from '../core/hermes-store';
 import { ApiPullState } from '../core/hermes-api';
 import { ModelProvider, OllamaModel } from '../core/models';
 import { ModelsPage } from './models';
+import { el, press, settle, type } from '../testing/dom';
 
 const provider = (id: string, name: string): ModelProvider => ({
   id, name, url: `http://${name}:11434`, kind: 'ollama', status: 'connected',
@@ -28,36 +29,11 @@ const storeStub = (providers: ModelProvider[] = [provider('mp-1', 'workstation')
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(ModelsPage);
   fixture.detectChanges();
   return { fixture, store };
-};
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-type Fixture = { nativeElement: unknown; detectChanges(): void };
-
-const settle = async (fixture: Fixture, ms = 0): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(ms);
-  fixture.detectChanges();
-};
-
-const press = (fixture: Fixture, label: string, within?: string): void => {
-  const scope = within ? el(fixture).querySelector(within) : el(fixture);
-  if (!scope) throw new Error(`no element matching "${within}"`);
-  const match = Array.from(scope.querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
-};
-
-const fill = async (fixture: Fixture, selector: string, value: string): Promise<void> => {
-  const input = el(fixture).querySelector<HTMLInputElement>(selector)!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await settle(fixture);
 };
 
 describe('ModelsPage providers', () => {
@@ -94,7 +70,7 @@ describe('ModelsPage providers', () => {
     const add = () => el(fixture).querySelector<HTMLButtonElement>('.provider-add .btn')!;
     expect(add().disabled).toBe(true);
 
-    await fill(fixture, '.provider-add .input', 'mac');
+    await type(fixture, '.provider-add .input', 'mac');
     expect(add().disabled).toBe(true);   // still no url
 
     const url = el(fixture).querySelectorAll<HTMLInputElement>('.provider-add .input')[1];
@@ -231,7 +207,7 @@ describe('ModelsPage pulls', () => {
   it('pulls the model that was typed, and clears the field', async () => {
     const { fixture, store } = await open(storeStub());
 
-    await fill(fixture, '.pull-bar .input', ' gemma3:4b ');
+    await type(fixture, '.pull-bar .input', ' gemma3:4b ');
     press(fixture, 'pull model', '.pull-bar');
     await settle(fixture);
 
@@ -274,6 +250,19 @@ describe('ModelsPage pulls', () => {
     await settle(fixture, 3_000);
 
     expect(store.providerModels.mock.calls.length).toBeGreaterThan(afterOpen);
+  });
+
+  it('gives up polling when the pull status cannot be read', async () => {
+    const store = storeStub();
+    store.pullStatus.mockResolvedValueOnce([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
+    const { fixture } = await open(store);
+    store.pullStatus.mockRejectedValue(new Error('provider gone'));
+
+    await settle(fixture, 3_000);
+    const afterFailure = store.pullStatus.mock.calls.length;
+    await settle(fixture, 9_000);
+
+    expect(store.pullStatus.mock.calls.length).toBe(afterFailure);
   });
 
   it('stops polling once the page is gone', async () => {

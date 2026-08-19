@@ -35,7 +35,13 @@ jobs:
       - name: Frontend install
         working-directory: applications/mission-control-fe
         run: npm ci
+      - name: Frontend lint
+        working-directory: applications/mission-control-fe
+        run: npm run lint
       - name: Frontend tests
+        # also republishes api-contract.txt, which the backend's RouteContractTest reads. On CI
+        # a drifted file fails the snapshot instead of being rewritten, so a route renamed on one
+        # side and not the other cannot reach main.
         working-directory: applications/mission-control-fe
         run: npm run test:coverage
       - name: Frontend coverage summary

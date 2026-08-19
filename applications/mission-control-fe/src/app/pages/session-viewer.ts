@@ -66,8 +66,9 @@ export class SessionViewer {
   constructor() {
     // a different session in the same modal starts from a clean toolbar
     effect(() => {
-      this.session().id;
+      const shown = this.session().id;
       untracked(() => {
+        void shown;                       // the dependency; the reset is the point
         this.view.set('chat');
         this.search.set('');
         this.matchIndex.set(0);

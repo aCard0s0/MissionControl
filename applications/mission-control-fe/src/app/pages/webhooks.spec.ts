@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HermesStore } from '../core/hermes-store';
 import { WebhookListener, WebhookRoute } from '../core/models';
 import { WebhooksPage } from './webhooks';
+import { el, fill, press, settle, text } from '../testing/dom';
 
 const agents = [{ id: 'a-1', name: 'atlas' }, { id: 'a-2', name: 'scribe' }];
 
@@ -34,44 +35,11 @@ const storeStub = (routes: WebhookRoute[], listeners: WebhookListener[]) => ({
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(WebhooksPage);
   fixture.detectChanges();
   return { fixture, store };
-};
-
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-type Fixture = { nativeElement: unknown; detectChanges(): void };
-
-const settle = async (fixture: Fixture): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(0);
-  fixture.detectChanges();
-};
-
-const press = (fixture: Fixture, label: string, within?: string): void => {
-  const scope = within ? el(fixture).querySelector(within) : el(fixture);
-  if (!scope) throw new Error(`no element matching "${within}"`);
-  const match = Array.from(scope.querySelectorAll('button'))
-    .find(b => (b.textContent ?? '').trim() === label);
-  if (!match) throw new Error(`no button labelled "${label}"`);
-  (match as HTMLButtonElement).click();
-  fixture.detectChanges();
-};
-
-const field = (fixture: Fixture, label: string): HTMLElement => {
-  const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.field'))
-    .find(f => (f.querySelector('label')?.textContent ?? '').trim().toLowerCase()
-      .startsWith(label.toLowerCase()));
-  if (!match) throw new Error(`no field labelled "${label}"`);
-  return match;
-};
-
-const fill = async (fixture: Fixture, label: string, value: string): Promise<void> => {
-  const input = field(fixture, label).querySelector<HTMLInputElement>('.input')!;
-  input.value = value;
-  input.dispatchEvent(new Event('input'));
-  await settle(fixture);
 };
 
 describe('WebhooksPage', () => {
@@ -227,5 +195,74 @@ describe('WebhooksPage', () => {
     const { fixture } = render(store);
 
     expect(el(fixture).querySelector<HTMLButtonElement>('.page-head .btn')!.disabled).toBe(true);
+  });
+});
+
+describe('WebhooksPage route details', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('reveals the full signing secret only when asked', async () => {
+    const { fixture, store } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+    expect(text(fixture)).toContain('...Wjd0');
+
+    press(fixture, 'reveal');
+    await settle(fixture);
+
+    expect(store.webhookSecret).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(el(fixture).querySelector('code.secret')?.textContent).toBe('the-real-secret');
+  });
+
+  it('keeps the mask when the secret could not be read', async () => {
+    const store = storeStub([route('grafana', 'a-1')], [listener('a-1')]);
+    store.webhookSecret.mockResolvedValue(null);
+    const { fixture } = render(store);
+
+    press(fixture, 'reveal');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('code.secret')).toBeNull();
+    expect(text(fixture)).toContain('...Wjd0');
+  });
+
+  it('shows what a test delivery printed', async () => {
+    const { fixture } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+
+    press(fixture, 'test');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.test-output')?.textContent).toBe('delivered 200');
+  });
+
+  it('says so rather than showing a blank pane when a test printed nothing', async () => {
+    const store = storeStub([route('grafana', 'a-1')], [listener('a-1')]);
+    store.testWebhook.mockResolvedValue('   ');
+    const { fixture } = render(store);
+
+    press(fixture, 'test');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.test-output')?.textContent).toBe('no output');
+  });
+
+  it('shows nothing at all when the test itself could not be made', async () => {
+    const store = storeStub([route('grafana', 'a-1')], [listener('a-1')]);
+    store.testWebhook.mockResolvedValue(null);
+    const { fixture } = render(store);
+
+    press(fixture, 'test');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.test-output')).toBeNull();
+  });
+
+  it('marks a route whose owning profile is gone rather than rendering a blank name', () => {
+    const { fixture } = render(storeStub([route('orphan', 'a-deleted')], []));
+
+    expect(text(fixture)).toContain('?');
   });
 });

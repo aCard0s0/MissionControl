@@ -6,24 +6,14 @@ import { HermesStore } from '../core/hermes-store';
 import { ApiModelProvider } from '../core/hermes-api';
 import { HermesContainer, ProfileTemplate } from '../core/models';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
+import { TestFixture, el, settle } from '../testing/dom';
+import { container as buildContainer, template as buildTemplate } from '../testing/models';
 
 const llm: ApiModelProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
   { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
     envVar: 'ANTHROPIC_API_KEY' },
 ];
-
-const container = (id: string, name: string): HermesContainer => ({
-  id, name, shortId: id, hostId: 'dh-local', status: 'running', image: 'hermes', version: 'v1',
-  startedAt: 1, cpu: 0, ram: 0, ramTotal: 0, disk: 0, diskTotal: 0, netIn: 0, netOut: 0,
-  cpuHist: [], ramHist: [], netHist: [],
-});
-
-const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 't-1', name: 'ops-sre', description: '', provider: 'nous', model: 'Hermes-4-405B',
-  baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
-  secrets: [], createdAt: 1, updatedAt: 1, ...patch,
-});
 
 /** Only what the dialog reaches for on the store, so nothing here touches a backend. */
 const storeStub = (selected = '') => ({
@@ -46,6 +36,7 @@ class Host {
 }
 
 const render = (store: ReturnType<typeof storeStub>, t = template()) => {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.template.set(t);
@@ -53,17 +44,14 @@ const render = (store: ReturnType<typeof storeStub>, t = template()) => {
   return { fixture, store, host: fixture.componentInstance };
 };
 
-const el = (fixture: { nativeElement: unknown }): HTMLElement => fixture.nativeElement as HTMLElement;
-
-type Fixture = { nativeElement: unknown; detectChanges(): void; whenStable(): Promise<unknown> };
-
-const settle = async (fixture: Fixture): Promise<void> => {
-  await fixture.whenStable();
-  fixture.detectChanges();
-};
-
-const submit = (fixture: Fixture): HTMLButtonElement =>
+const submit = (fixture: TestFixture): HTMLButtonElement =>
   el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.primary')!;
+
+const container = (id: string, name: string): HermesContainer =>
+  buildContainer(id, { name, shortId: id });
+
+const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
+  buildTemplate('t-1', { name: 'ops-sre', provider: 'nous', model: 'Hermes-4-405B', ...patch });
 
 describe('ProfileDeployDialog', () => {
   afterEach(() => vi.restoreAllMocks());
