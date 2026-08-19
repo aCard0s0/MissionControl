@@ -282,19 +282,57 @@ class TemplateCaptureAndApplyTest {
   // ── stored secrets on the way in ────────────────────────────────────────
 
   @Test
-  void aBlankSecretValueKeepsWhatIsStoredAndDropsAKeyThatHasNothingStored() {
+  void aBlankSecretValueKeepsWhatIsStoredAndReSealsIt() {
     // the editor never receives ciphertext, so blank is how it says 'unchanged'
     String stored = cipher.encrypt("sk-ant-real");
     ProfileTemplate existing = template(t -> t.secrets = List.of(new StoredSecret("ANTHROPIC_API_KEY", stored)));
     when(repository.findById("pt-1")).thenReturn(Optional.of(existing));
 
     ProfileTemplateDto updated = service.update("pt-1", upsert(List.of(
-        new SecretInput("ANTHROPIC_API_KEY", "  "),
-        new SecretInput("OPENAI_API_KEY", ""))));
+        new SecretInput("ANTHROPIC_API_KEY", "  "))));
 
     assertEquals(List.of("ANTHROPIC_API_KEY"), updated.secrets().stream().map(SecretRef::key).toList());
     assertTrue(updated.secrets().getFirst().set());
     assertTrue(updated.secrets().getFirst().recoverable());
+
+    // a save is also the rotation opportunity — a kept secret comes back under the current
+    // key rather than riding on whatever wrote it, which is what retires MC_SECRET_KEY_PREVIOUS
+    ArgumentCaptor<ProfileTemplate> saved = ArgumentCaptor.forClass(ProfileTemplate.class);
+    verify(repository).update(saved.capture());
+    String resealed = saved.getValue().secrets().getFirst().enc();
+    assertFalse(stored.equals(resealed), "the envelope was carried over verbatim");
+    assertEquals("sk-ant-real", cipher.decrypt(resealed));
+  }
+
+  @Test
+  void aBlankSecretValueWithNothingStoredIsRefusedRatherThanDropped() {
+    // Dropping it reported a success that did not happen: the template came back without the
+    // key, and the next deploy produced an agent missing a credential it appeared to carry.
+    // The MCP catalog already refused this; the two paths had drifted apart.
+    when(repository.findById("pt-1")).thenReturn(Optional.of(template(t -> { })));
+
+    assertEquals("secret value is required: OPENAI_API_KEY",
+        assertThrows(IllegalArgumentException.class, () -> service.update("pt-1",
+            upsert(List.of(new SecretInput("OPENAI_API_KEY", ""))))).getMessage());
+
+    verify(repository, never()).update(any());
+  }
+
+  @Test
+  void aCapturedPlaceholderSurvivesASaveThatDoesNotFillItIn() {
+    // a capture records which keys were set and never their values, so a placeholder has no
+    // envelope at all — refusing it would make every captured template unsaveable until the
+    // operator typed in every credential at once
+    ProfileTemplate captured =
+        template(t -> t.secrets = List.of(new StoredSecret("ANTHROPIC_API_KEY", null)));
+    when(repository.findById("pt-1")).thenReturn(Optional.of(captured));
+
+    ProfileTemplateDto updated = service.update("pt-1", upsert(List.of(
+        new SecretInput("ANTHROPIC_API_KEY", ""))));
+
+    assertEquals(List.of("ANTHROPIC_API_KEY"), updated.secrets().stream().map(SecretRef::key).toList());
+    assertFalse(updated.secrets().getFirst().set(), "a placeholder must not look like a stored key");
+    assertFalse(updated.secrets().getFirst().recoverable());
   }
 
   @Test

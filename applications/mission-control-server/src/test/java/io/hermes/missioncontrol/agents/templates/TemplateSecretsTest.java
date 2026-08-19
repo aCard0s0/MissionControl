@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +29,8 @@ class TemplateSecretsTest {
   /** A different key: anything CIPHER wrote is unrecoverable to this one. */
   private static final SecretCipher OTHER_KEY = new SecretCipher("a-different-secret", "", false);
 
-  private final TemplateSecrets secrets = new TemplateSecrets(CIPHER);
-  private final TemplateSecrets wrongKey = new TemplateSecrets(OTHER_KEY);
+  private final TemplateSecrets secrets = new TemplateSecrets(new SecretsAtRest(CIPHER));
+  private final TemplateSecrets wrongKey = new TemplateSecrets(new SecretsAtRest(OTHER_KEY));
 
   // ── round trip ─────────────────────────────────────────────────────────────
 

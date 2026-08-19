@@ -15,6 +15,7 @@ import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -88,7 +89,7 @@ class ComposeStackDockerAcceptanceTest {
     HostService hosts = mock(HostService.class);
     when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", SOCKET));
     McpConfigStore configs =
-        new McpConfigStore(new SecretCipher("acceptance-secret", "", false), new ObjectMapper());
+        new McpConfigStore(new SecretsAtRest(new SecretCipher("acceptance-secret", "", false)), new ObjectMapper());
     compose = new ComposeStackManager(hosts, stackDirectory.toString());
     lifecycle = new McpComposeLifecycle(repository, retained, hosts, mock(
         io.hermes.missioncontrol.docker.DockerGateway.class), compose, new ComposeStackRenderer(),

@@ -1,85 +1,95 @@
 package io.hermes.missioncontrol.agents.templates;
 
-import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Component;
 
 /**
- * The secrets a reusable template carries: template-owned API keys and the MCP snapshot
- * values captured with it.
+ * The secrets a reusable template carries — template-owned API keys and the MCP snapshot
+ * values captured with it — in the shapes this package stores them in.
  *
- * <p>Split out of {@link ProfileTemplateService} because this is its trust boundary. A value
- * is decrypted only on the way into a container, is never returned to a caller, and an
- * envelope this key can no longer open degrades to "unrecoverable" rather than failing a
- * whole read or deploy — a loss the operator has to be able to see and act on.
+ * <p>Not the trust boundary itself: the rules a stored secret obeys live in
+ * {@link SecretsAtRest}, which {@code mcp/McpConfigStore} shares. This package implemented all
+ * four of them separately once, and they had drifted — a blank submission for a secret with no
+ * stored value was dropped here and refused there, and the re-encryption these snapshots
+ * documented as "matching the behavior of template-owned API keys" was not what that path
+ * actually did.
+ *
+ * <p>What remains here is the template's own shape: a {@link TemplateMcpConfigValue} list per
+ * snapshot, and what one looks like once redacted for the API.
  */
 @Component
 class TemplateSecrets {
 
-  private static final Logger log = LoggerFactory.getLogger(TemplateSecrets.class);
+  private final SecretsAtRest secrets;
 
-  private final SecretCipher cipher;
-
-  TemplateSecrets(SecretCipher cipher) {
-    this.cipher = cipher;
+  TemplateSecrets(SecretsAtRest secrets) {
+    this.secrets = secrets;
   }
 
+  // ── one value ──────────────────────────────────────────────────────────────
+
   String encrypt(String clear) {
-    return cipher.encrypt(clear);
+    return secrets.seal(clear);
   }
 
   /**
-   * The stored value in the clear, or null when it cannot be recovered.
-   *
-   * <p>A wrong MC_SECRET_KEY or corrupt ciphertext makes one secret unrecoverable; failing
-   * the read or deploy over it would take the rest of the template with it, so the loss is
-   * logged and reported through {@code recoverable=false} instead.
+   * The envelope to store for a submitted secret, keeping {@code prior} when the editor sent
+   * a blank — which it does for every secret it did not touch, having never received the
+   * ciphertext to send back.
    */
-  String decryptOrNull(String encrypted) {
-    if (encrypted == null) return null;
-    try {
-      return cipher.decrypt(encrypted);
-    } catch (RuntimeException e) {
-      log.warn("failed to decrypt a stored template secret (check MC_SECRET_KEY): {}", e.getMessage());
-      return null;
-    }
+  String encryptOrKeep(String submitted, String prior, String key) {
+    return secrets.sealOrKeep(submitted, prior, key);
   }
+
+  /** The stored value in the clear, or null when this key can no longer recover it. */
+  String decryptOrNull(String encrypted) {
+    return secrets.openOrNull(encrypted);
+  }
+
+  /** Whether a stored envelope still opens — what the API reports as {@code recoverable}. */
+  boolean isRecoverable(String encrypted) {
+    return secrets.isRecoverable(encrypted);
+  }
+
+  // ── a snapshot's value list ────────────────────────────────────────────────
 
   List<TemplateMcpConfigValue> encryptValues(Map<String, String> values) {
     if (values == null || values.isEmpty()) return List.of();
     return values.entrySet().stream()
         .filter(entry -> entry.getKey() != null && entry.getValue() != null)
-        .map(entry -> new TemplateMcpConfigValue(entry.getKey(), cipher.encrypt(entry.getValue())))
+        .map(entry -> new TemplateMcpConfigValue(entry.getKey(), secrets.seal(entry.getValue())))
         .toList();
   }
 
+  /**
+   * The values a deploy can actually use. An unrecoverable one is dropped rather than failing
+   * the deploy: the rest of the template still applies, minus that credential.
+   */
   Map<String, String> decryptValues(List<TemplateMcpConfigValue> values) {
     Map<String, String> result = new LinkedHashMap<>();
-    for (TemplateMcpConfigValue value : values == null ? List.<TemplateMcpConfigValue>of() : values) {
-      if (value == null || value.key() == null || value.key().isBlank()) continue;
-      String clear = decryptOrNull(value.encryptedValue());
+    for (TemplateMcpConfigValue value : stream(values).toList()) {
+      if (value.key() == null || value.key().isBlank()) continue;
+      String clear = secrets.openOrNull(value.encryptedValue());
       if (clear != null) result.put(value.key(), clear);
     }
     return result;
   }
 
-  /** A normal template save is also the key-rotation opportunity for MCP
-   * snapshot values, matching the behavior of template-owned API keys. */
+  /** A normal template save is also the key-rotation opportunity for MCP snapshot values,
+   *  matching what a template-owned API key now does on the same save. */
   List<TemplateMcpConfigValue> reencryptValues(List<TemplateMcpConfigValue> values) {
     return stream(values)
-        .map(value -> {
-          String clear = decryptOrNull(value.encryptedValue());
-          return clear == null
-              ? value
-              : new TemplateMcpConfigValue(value.key(), cipher.encrypt(clear));
-        })
+        .map(value -> new TemplateMcpConfigValue(
+            value.key(), secrets.reseal(value.encryptedValue())))
         .toList();
   }
+
+  // ── redaction ──────────────────────────────────────────────────────────────
 
   /** An MCP snapshot as the API exposes it: keys visible, every value withheld. */
   static McpServerSpec redacted(McpServerSpec value) {
@@ -92,8 +102,7 @@ class TemplateSecrets {
     return stream(values).map(value -> new TemplateMcpConfigValue(value.key(), null)).toList();
   }
 
-  private static java.util.stream.Stream<TemplateMcpConfigValue> stream(
-      List<TemplateMcpConfigValue> values) {
+  private static Stream<TemplateMcpConfigValue> stream(List<TemplateMcpConfigValue> values) {
     return (values == null ? List.<TemplateMcpConfigValue>of() : values).stream()
         .filter(Objects::nonNull);
   }

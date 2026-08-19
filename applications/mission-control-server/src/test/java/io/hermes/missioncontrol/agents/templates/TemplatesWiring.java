@@ -4,6 +4,7 @@ import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 
 /**
  * Builds the template collaborator graph the way Spring does, for tests that drive a whole flow
@@ -29,7 +30,7 @@ final class TemplatesWiring {
       HermesProfiles profiles,
       HermesSetup setup,
       McpRegistryService registry) {
-    TemplateSecrets secrets = new TemplateSecrets(cipher);
+    TemplateSecrets secrets = new TemplateSecrets(new SecretsAtRest(cipher));
     return new ProfileTemplateService(
         repository,
         secrets,

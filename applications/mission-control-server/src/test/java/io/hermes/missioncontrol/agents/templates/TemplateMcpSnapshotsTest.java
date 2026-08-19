@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,7 @@ class TemplateMcpSnapshotsTest {
 
   private final McpRegistryService registry = mock(McpRegistryService.class);
   private final SecretCipher cipher = new SecretCipher("unit-test-key", "", true);
-  private final TemplateSecrets secrets = new TemplateSecrets(cipher);
+  private final TemplateSecrets secrets = new TemplateSecrets(new SecretsAtRest(cipher));
   private final TemplateMcpSnapshots snapshots = new TemplateMcpSnapshots(registry, secrets);
 
   // ── custom entries and carried-forward secrets ──────────────────────────

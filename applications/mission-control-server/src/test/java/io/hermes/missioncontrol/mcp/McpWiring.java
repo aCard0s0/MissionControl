@@ -5,6 +5,7 @@ import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.concurrent.ExecutorService;
 
 /**
@@ -40,7 +41,7 @@ final class McpWiring {
       ComposeStackManager compose,
       AppProperties props,
       ExecutorService operations) {
-    McpConfigStore configs = new McpConfigStore(cipher(), new ObjectMapper());
+    McpConfigStore configs = new McpConfigStore(new SecretsAtRest(cipher()), new ObjectMapper());
     return new McpRegistryService(
         repository,
         retained,
