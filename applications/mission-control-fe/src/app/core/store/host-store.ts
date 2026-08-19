@@ -1,4 +1,4 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { DockerHost } from '../models';
 import { StoreContext } from './store-context';
 
@@ -7,6 +7,7 @@ import { StoreContext } from './store-context';
  * write goes to the backend, and the answer is what lands in the signal — the
  * daemon decides what is reachable, so nothing here guesses.
  */
+@Injectable({ providedIn: 'root' })
 export class HostStore {
   readonly hosts: WritableSignal<DockerHost[]>;
 
@@ -19,10 +20,12 @@ export class HostStore {
     return 'disconnected';
   });
 
-  constructor(private readonly ctx: StoreContext) {
+  private readonly ctx = inject(StoreContext);
+
+  constructor() {
     // the local socket, as the backend will describe it once it answers
     this.hosts = signal([{
-      id: 'dh-local', name: 'localhost', url: ctx.config.dockerSocket, kind: 'local',
+      id: 'dh-local', name: 'localhost', url: this.ctx.config.dockerSocket, kind: 'local',
       status: 'disconnected', engine: null, apiVersion: null, latencyMs: null,
       note: 'waiting for backend connection',
     }]);
@@ -44,7 +47,11 @@ export class HostStore {
 
   remove(id: string): void {
     const host = this.byId(id);
-    if (!host || host.kind === 'local') return;   // local socket is not removable
+    if (!host) {
+      this.ctx.gone('docker host');
+      return;
+    }
+    if (host.kind === 'local') return;   // not removable, and the page offers no button
     this.ctx.api.hosts.remove(id)
       .then(() => this.refresh())
       .catch(e => this.ctx.toastFailure('remove host', e));

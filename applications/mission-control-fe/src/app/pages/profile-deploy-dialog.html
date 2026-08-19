@@ -7,14 +7,14 @@
       <div class="field">
         <label>target container</label>
         <select class="select" [(ngModel)]="containerId">
-          @for (c of store.containers(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+          @for (c of containers.containers(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
         </select>
       </div>
       <div class="field">
         <label>agent name</label>
         <input class="input" [(ngModel)]="name" placeholder="ops-bot" />
       </div>
-      @if (!store.containers().length) {
+      @if (!containers.containers().length) {
         <p class="lock-hint">no containers available — deploy one from the Containers page first.</p>
       }
       <div class="modal-actions">

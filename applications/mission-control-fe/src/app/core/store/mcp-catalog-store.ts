@@ -1,9 +1,10 @@
-import { WritableSignal, signal } from '@angular/core';
+import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { errorMessage } from '../errors';
 import { McpServerOperation } from '../hermes-api';
-import { mcpOperationActive } from '../mcp-lifecycle';
+import { duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
 import { LogEntry, McpCatalogServer, McpCatalogServerInput, McpRetainedResource } from '../models';
 import { StoreContext } from './store-context';
-import { toMcpCatalogServer } from './wire-mappers';
+import { toMcpCatalogServer, toMcpRetainedResource } from './wire-mappers';
 
 /** Image pulls (notably Playwright) can take minutes on a cold host, so the
  *  operation poll has to outlast the backend's ten-minute Compose timeout. */
@@ -21,6 +22,7 @@ const IN_FLIGHT_STATE = { start: 'starting', stop: 'stopping', apply: 'applying'
  * the managed Compose services Mission Control runs itself. Also owns the
  * volumes a delete deliberately leaves behind.
  */
+@Injectable({ providedIn: 'root' })
 export class McpCatalogStore {
   readonly servers: WritableSignal<McpCatalogServer[]>;
   readonly loading = signal(false);
@@ -28,7 +30,9 @@ export class McpCatalogStore {
 
   private readonly operationPolls = new Set<string>();
 
-  constructor(private readonly ctx: StoreContext) {
+  private readonly ctx = inject(StoreContext);
+
+  constructor() {
     this.servers = signal([]);
   }
 
@@ -48,14 +52,14 @@ export class McpCatalogStore {
 
   async refreshRetainedResources(): Promise<void> {
     try {
-      this.retainedResources.set(await this.ctx.api.mcp.retainedResources());
+      this.retainedResources.set(
+        (await this.ctx.api.mcp.retainedResources()).map(toMcpRetainedResource));
     } catch { /* retained data inventory is non-critical */ }
   }
 
   /** Create or update a catalog entry. Returns its id, or an empty string. */
   async save(input: McpCatalogServerInput, id?: string): Promise<string> {
-    const duplicate = this.servers().find(server =>
-      server.id !== id && server.name.toLowerCase() === input.name.toLowerCase());
+    const duplicate = duplicateCatalogName(input.name, this.servers(), id);
     if (duplicate) {
       this.ctx.toast(`MCP server name already exists: ${duplicate.name}`);
       return '';
@@ -75,7 +79,7 @@ export class McpCatalogStore {
   }
 
   async remove(id: string): Promise<boolean> {
-    if (!this.byId(id)) return false;
+    if (!this.byId(id)) return this.ctx.gone('MCP server');
     try {
       const response = await this.ctx.api.mcp.remove(id);
       if (response) this.upsert(toMcpCatalogServer(response));
@@ -153,7 +157,7 @@ export class McpCatalogStore {
 
   private async run(id: string, operation: McpServerOperation): Promise<boolean> {
     const server = this.byId(id);
-    if (!server) return false;
+    if (!server) return this.ctx.gone('MCP server');
     this.patch(id, item => ({
       ...item,
       operationState: operation === 'check' ? item.operationState : IN_FLIGHT_STATE[operation],
@@ -171,7 +175,7 @@ export class McpCatalogStore {
       if (operation !== 'check') void this.pollOperation(id);
       return operation !== 'check' || this.byId(id)?.checkStatus === 'connected';
     } catch (e) {
-      const message = (e as { message?: string } | null)?.message ?? String(e);
+      const message = errorMessage(e);
       this.patch(id, item => ({
         ...item,
         operationState: operation === 'check' ? item.operationState : 'error',

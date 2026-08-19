@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiProfileTemplate } from '../hermes-api';
-import { TemplateStore } from './template-store';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const template = (id: string, patch: Partial<ApiProfileTemplate> = {}): ApiProfileTemplate => ({
@@ -14,7 +13,7 @@ const loaded = async (templates: Record<string, unknown>, list: ApiProfileTempla
   const slices = await loadedAgentSlices(
     { templates: { list: vi.fn().mockResolvedValue(list), ...templates } },
     { profiles: [apiProfile('atlas')] });
-  const store = new TemplateStore(slices.ctx, slices.containers, slices.agents);
+  const store = slices.templates;
   await store.refresh();
   return { ...slices, store };
 };

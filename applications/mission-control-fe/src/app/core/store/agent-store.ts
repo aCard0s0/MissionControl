@@ -1,4 +1,4 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { AgentRef, ApiAgentProfile, ApiAuxiliaryModel } from '../hermes-api';
 import { AgentProfile, Integration, LogEntry } from '../models';
 import { ContainerStore } from './container-store';
@@ -17,6 +17,7 @@ interface ResolvedAgent {
  * are separate slices that address profiles through {@link AgentStore.resolve}
  * and write back through {@link AgentStore.mutate}.
  */
+@Injectable({ providedIn: 'root' })
 export class AgentStore {
   readonly agents: WritableSignal<AgentProfile[]>;
 
@@ -25,10 +26,10 @@ export class AgentStore {
 
   private refreshInFlight = false;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-  ) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+
+  constructor() {
     this.agents = signal([]);
   }
 
@@ -62,7 +63,7 @@ export class AgentStore {
     agentId: string, label: string, call: (ref: AgentRef) => Promise<ApiAgentProfile>,
   ): Promise<boolean> {
     const resolved = this.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const updated = await call(resolved.ref);
       // guard: the profile may have been removed while the request was in flight
@@ -110,7 +111,10 @@ export class AgentStore {
     auxiliary?: ApiAuxiliaryModel,
   ): Promise<string> {
     const container = this.containers.byId(containerId);
-    if (!container) return '';
+    if (!container) {
+      this.ctx.gone('container');
+      return '';
+    }
     try {
       const created = await this.ctx.api.agents.create({
         hostId: container.hostId,
@@ -139,21 +143,24 @@ export class AgentStore {
     return agent.id;
   }
 
-  /** Removes the profile and everything keyed to it. */
-  remove(id: string, onRemoved: (agentId: string) => void): void {
+  /** Removes the profile itself. What else was keyed to it is {@link AgentRemoval}'s
+   *  to forget — this slice does not know the stores that hold it. */
+  async remove(id: string): Promise<boolean> {
     const resolved = this.resolve(id);
-    if (!resolved) return;
-    this.ctx.api.agents.remove(resolved.ref)
-      .then(() => {
-        this.agents.update(as => as.filter(a => a.id !== id));
-        onRemoved(id);
-      })
-      .catch(e => this.ctx.toastFailure('remove profile', e));
+    if (!resolved) return this.ctx.gone('profile');
+    try {
+      await this.ctx.api.agents.remove(resolved.ref);
+      this.agents.update(as => as.filter(a => a.id !== id));
+      return true;
+    } catch (e) {
+      this.ctx.toastFailure('remove profile', e);
+      return false;
+    }
   }
 
   async updateSoul(id: string, soul: string): Promise<boolean> {
     const resolved = this.resolve(id);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       await this.ctx.api.agents.updateSoul(resolved.ref, soul);
       // guard: the profile may have been removed while the request was in flight
@@ -184,7 +191,10 @@ export class AgentStore {
   /** Re-reads every integration's connectivity from the container. */
   pingIntegrations(agentId: string): void {
     const resolved = this.resolve(agentId);
-    if (!resolved) return;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return;
+    }
     this.ctx.api.agents.integrations(resolved.ref)
       .then(integrations => this.patch(agentId, {
         integrations: integrations.map(i => ({

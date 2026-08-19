@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiAgentProfile, ApiMcpServer } from '../hermes-api';
-import { AgentMcpStore } from './agent-mcp-store';
-import { McpCatalogStore } from './mcp-catalog-store';
 import { catalogServer } from '../../testing/models';
 import { apiProfile, loadedAgentSlices, stubBackend } from '../../testing/store';
 
@@ -27,13 +25,13 @@ const loaded = async (
 ) => {
   const slices = await loadedAgentSlices(
     { agents: { mcp } }, { profiles: [withServers(servers)] });
-  const catalog = new McpCatalogStore(slices.ctx);
+  const { catalog } = slices;
   stubBackend(slices.ctx, {
     ...(slices.ctx.api as unknown as object),
     mcp: { list: vi.fn().mockResolvedValue(catalogEntries), run: vi.fn() },
   });
   await catalog.refresh();
-  return { ...slices, catalog, store: new AgentMcpStore(slices.ctx, slices.agents, catalog) };
+  return { ...slices, catalog, store: slices.agentMcp };
 };
 
 describe('AgentMcpStore direct servers', () => {

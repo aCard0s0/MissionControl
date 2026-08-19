@@ -2,7 +2,9 @@ import {
   ChangeDetectionStrategy, Component, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { ContainerStore } from '../core/store/container-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { TemplateStore } from '../core/store/template-store';
 import { ProfileTemplate } from '../core/models';
 import { templateProvidesKey } from '../shared/provider-resolve';
 
@@ -27,7 +29,9 @@ export class ProfileDeployDialog {
   readonly deployed = output<string>();
   readonly closed = output<void>();
 
-  protected readonly store = inject(HermesStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly providers = inject(ProviderStore);
+  protected readonly templates = inject(TemplateStore);
   protected readonly busy = signal(false);
 
   protected containerId = '';
@@ -40,7 +44,7 @@ export class ProfileDeployDialog {
       untracked(() => {
         this.name = template.name;
         this.containerId =
-          this.store.selectedContainerId() || this.store.containers()[0]?.id || '';
+          this.containers.selectedContainerId() || this.containers.containers()[0]?.id || '';
       });
     });
   }
@@ -52,14 +56,14 @@ export class ProfileDeployDialog {
     if (!this.confirmMissingKey(template)) return;
 
     this.busy.set(true);
-    const id = await this.store.deployTemplate(template.id, this.containerId, name);
+    const id = await this.templates.deploy(template.id, this.containerId, name);
     this.busy.set(false);
     if (id) this.deployed.emit(id);
   }
 
   /** True to go ahead: either the key is there, or the operator accepted the risk. */
   private confirmMissingKey(template: ProfileTemplate): boolean {
-    const info = this.store.llmProviders().find(p => p.key === template.provider);
+    const info = this.providers.llmProviders().find(p => p.key === template.provider);
     if (!info?.needsKey || !info.envVar || templateProvidesKey(template, info)) return true;
     return confirm(
       `This template has no usable ${info.envVar} for ${info.label}. The deployed agent `

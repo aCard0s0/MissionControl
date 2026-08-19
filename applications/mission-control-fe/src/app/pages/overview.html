@@ -81,7 +81,7 @@
             <span class="count">{{ skillToolCounts().skills }} skills</span>
             <span class="count">{{ skillToolCounts().tools }} tools</span>
           </div>
-          @for (a of store.containerAgents(); track a.id) {
+          @for (a of agents.forSelectedContainer(); track a.id) {
             @let m = agentMeta(a);
             <div class="agent-row">
               <div class="agent-pick">
@@ -124,7 +124,7 @@
               <span class="faint">→ {{ next.deliverTo }}</span>
             </div>
           }
-          @for (j of store.containerJobs().slice(0, 4); track j.id) {
+          @for (j of jobs.forSelectedContainer().slice(0, 4); track j.id) {
             <div class="job-row mono">
               <mc-status [status]="j.enabled ? (j.lastStatus === 'fail' ? 'fail' : 'ok') : 'off'" label=" " />
               <span>{{ j.name }}</span>
@@ -162,10 +162,10 @@
         CONTAINER LOG TAIL
         <span class="faint">Docker output is not profile-attributed</span>
         <span class="spacer"></span>
-        @if (store.logsUpdatedAt(); as updated) { <span class="faint">updated {{ ago(updated) }}</span> }
-        @if (store.logsLoading()) { <span class="faint">refreshing…</span> }
+        @if (logs.updatedAt(); as updated) { <span class="faint">updated {{ ago(updated) }}</span> }
+        @if (logs.loading()) { <span class="faint">refreshing…</span> }
         @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }} in tail</span> }
-        <button class="btn sm ghost" [disabled]="store.logsLoading()" (click)="store.refreshLogs()">refresh</button>
+        <button class="btn sm ghost" [disabled]="logs.loading()" (click)="logs.refresh()">refresh</button>
         <div class="log-filter mono">
           <button [class.on]="logLevel() === 'all'" (click)="logLevel.set('all')">all</button>
           <button [class.on]="logLevel() === 'error'" (click)="logLevel.set('error')">error</button>
@@ -181,8 +181,8 @@
             <span class="msg">{{ l.msg }}</span>
           </div>
         }
-        @if (store.logsError()) { <p class="dim">Log refresh failed — {{ store.logsError() }}</p> }
-        @else if (!recentLogs().length) { <p class="dim">{{ store.logsLoading() ? 'Loading container logs…' : 'No log entries match this filter.' }}</p> }
+        @if (logs.error()) { <p class="dim">Log refresh failed — {{ logs.error() }}</p> }
+        @else if (!recentLogs().length) { <p class="dim">{{ logs.loading() ? 'Loading container logs…' : 'No log entries match this filter.' }}</p> }
       </div>
     </div>
   }

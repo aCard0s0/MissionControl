@@ -15,13 +15,13 @@
     <span class="chip on">mission-control-mcp</span>
     <span class="mono dim">Managed services are isolated in a dedicated Compose project on each Docker host.</span>
     <span class="spacer"></span>
-    <button class="btn sm ghost" [disabled]="store.mcpServersLoading()" (click)="store.refreshMcpServers()">
-      {{ store.mcpServersLoading() ? 'refreshing…' : 'refresh' }}
+    <button class="btn sm ghost" [disabled]="catalog.loading()" (click)="catalog.refresh()">
+      {{ catalog.loading() ? 'refreshing…' : 'refresh' }}
     </button>
   </div>
 </div>
 
-@if (store.mcpServersLoading() && !store.mcpServers().length) {
+@if (catalog.loading() && !catalog.servers().length) {
   <div class="panel empty" data-reveal><p class="mono dim">Loading MCP server registry…</p></div>
 } @else {
   @for (group of serverGroups(); track group.key) {
@@ -113,10 +113,10 @@
   <div class="panel-h">
     RETAINED DATA
     <span class="spacer"></span>
-    <button class="btn sm ghost" (click)="store.refreshRetainedMcpResources()">refresh</button>
+    <button class="btn sm ghost" (click)="catalog.refreshRetainedResources()">refresh</button>
   </div>
   <div class="panel-b">
-    @for (resource of store.retainedMcpResources(); track resource.id) {
+    @for (resource of catalog.retainedResources(); track resource.id) {
       <div class="resource-row mono">
         <span class="chip warn">{{ resource.type }}</span>
         <strong>{{ resource.name }}</strong>

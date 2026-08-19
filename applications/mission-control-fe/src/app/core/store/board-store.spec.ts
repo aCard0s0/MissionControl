@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiBoardTask } from '../hermes-api';
-import { BoardStore } from './board-store';
-import { ContainerStore } from './container-store';
-import { apiContainer, flush, testContext } from '../../testing/store';
+import { apiContainer, flush, testSlices } from '../../testing/store';
 
 const task = (id: string, patch: Partial<ApiBoardTask> = {}): ApiBoardTask => ({
   id, containerId: 'c-1', agentId: 'a-atlas', title: `task ${id}`, column: 'queued',
@@ -11,15 +9,12 @@ const task = (id: string, patch: Partial<ApiBoardTask> = {}): ApiBoardTask => ({
 
 /** A board holding `tasks`, scoped to the selected container. */
 const loaded = async (tasks: ApiBoardTask[], board: Record<string, unknown> = {}) => {
-  const ctx = testContext();
-  const containers = new ContainerStore(ctx);
-  (ctx as unknown as { api: unknown }).api = {
+  const { ctx, containers, board: store } = testSlices({
     containers: { list: vi.fn().mockResolvedValue([apiContainer()]) },
     board: { tasks: vi.fn().mockResolvedValue(tasks), ...board },
-  };
+  });
   await containers.refresh();
   containers.select('c-1');
-  const store = new BoardStore(ctx, containers);
   await store.refresh();
   return { ctx, containers, store };
 };

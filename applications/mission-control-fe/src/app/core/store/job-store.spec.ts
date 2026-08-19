@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiCronJob } from '../hermes-api';
-import { JobStore } from './job-store';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
@@ -14,7 +13,7 @@ const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
 const loaded = async (cron: Record<string, unknown>, profiles = ['atlas', 'scribe']) => {
   const slices = await loadedAgentSlices(
     { agents: { cron } }, { profiles: profiles.map(name => apiProfile(name)) });
-  return { ...slices, jobs: new JobStore(slices.ctx, slices.containers, slices.agents) };
+  return slices;
 };
 
 const answer = (jobs: ApiCronJob[], schedulerRunning = true) => ({ jobs, schedulerRunning });
@@ -315,11 +314,13 @@ describe('JobStore wire tolerance', () => {
     expect(ctx.liveError()).toBe('resume job failed: scheduler down');
   });
 
-  it('refuses to act on a job it does not hold', async () => {
+  it('refuses to act on a job it does not hold, and says so', async () => {
     const setEnabled = vi.fn();
-    const { jobs } = await loaded({ list: vi.fn().mockResolvedValue(answer([])), setEnabled });
+    const { jobs, ctx } =
+      await loaded({ list: vi.fn().mockResolvedValue(answer([])), setEnabled });
 
     expect(await jobs.toggle('j-missing')).toBe(false);
     expect(setEnabled).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('job is no longer available');
   });
 });

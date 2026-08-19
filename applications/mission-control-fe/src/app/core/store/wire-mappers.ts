@@ -1,7 +1,12 @@
 import {
-  ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiProfileTemplate,
+  ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck,
+  ApiMcpRetainedResource, ApiMcpSupportService, ApiProfileTemplate,
 } from '../hermes-api';
-import { AgentProfile, ImageCatalog, McpCatalogServer, ProfileTemplate } from '../models';
+import {
+  AgentProfile, ImageCatalog, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
+  McpHealthcheck, McpRetainedResource, McpRuntimeState, McpSupportService, McpTransport,
+  ProfileTemplate,
+} from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
 // additive fields and of older rows written by a previous backend version: this
@@ -61,17 +66,67 @@ export function toAgentProfile(api: ApiAgentProfile): AgentProfile {
   };
 }
 
-/** Keeps tolerance for additive backend fields and older rows in one place. */
-export function toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
-  const runtime = String(api.runtimeState ?? 'unknown').toLowerCase();
-  const check = String(api.checkStatus ?? 'unknown').toLowerCase();
+const KINDS: McpCatalogKind[] = ['managed', 'external', 'stdio'];
+const TRANSPORTS: McpTransport[] = ['stdio', 'http', 'sse'];
+const RUNTIME_STATES: McpRuntimeState[] = ['running', 'stopped', 'missing', 'error'];
+const CHECK_STATUSES: McpCheckStatus[] = ['checking', 'connected', 'error'];
+
+/** One of `allowed`, matched case-insensitively, or `fallback`. The backend
+ *  spells its enums in mixed case and can name a state this build predates. */
+function oneOf<T extends string>(value: string | undefined, allowed: T[], fallback: T): T {
+  const wanted = String(value ?? '').toLowerCase();
+  return allowed.find(item => item === wanted) ?? fallback;
+}
+
+function toConfigEntry(entry: ApiMcpConfigEntry): McpConfigEntry {
   return {
-    ...api,
+    key: entry.key,
+    value: entry.value ?? null,
+    secret: !!entry.secret,
+    set: entry.set,
+    recoverable: entry.recoverable,
+  };
+}
+
+function toHealthcheck(api: ApiMcpHealthcheck | null | undefined): McpHealthcheck | null {
+  return api ? { ...api, test: [...api.test] } : null;
+}
+
+/**
+ * The list fields stay absent when the row omits them rather than becoming empty
+ * arrays: the editor sends this shape back on save, and an empty `entrypoint` or
+ * `command` is a Compose override that clears the image's own — which is not
+ * what a service that never named one meant.
+ */
+function toSupportService(api: ApiMcpSupportService): McpSupportService {
+  return {
+    name: api.name,
+    image: api.image,
+    platform: api.platform ?? null,
+    entrypoint: api.entrypoint,
+    command: api.command,
+    environment: api.environment?.map(toConfigEntry),
+    volumes: api.volumes?.map(volume => ({ ...volume })),
+    healthcheck: toHealthcheck(api.healthcheck),
+  };
+}
+
+/**
+ * Keeps tolerance for older rows in one place. Every field is named: the wire
+ * type is deliberately looser than the model, so a field this build does not
+ * know about stays out of the store rather than riding in on a spread, and a
+ * field the backend stops sending fails here instead of reaching a template as
+ * undefined.
+ */
+export function toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
+  const kind = oneOf(api.kind, KINDS, 'external');
+  return {
+    id: api.id,
     name: api.name ?? '',
     description: api.description ?? '',
-    kind: api.kind ?? 'external',
+    kind,
     hostId: api.hostId || null,
-    transport: api.transport ?? (api.kind === 'stdio' ? 'stdio' : 'http'),
+    transport: oneOf(api.transport, TRANSPORTS, kind === 'stdio' ? 'stdio' : 'http'),
     url: api.url || null,
     image: api.image || null,
     platform: api.platform || null,
@@ -84,16 +139,16 @@ export function toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
     path: api.path || null,
     crossHostUrl: api.crossHostUrl || null,
     connectionUrl: api.connectionUrl || null,
-    headers: (api.headers ?? []).map(e => ({ ...e, secret: !!e.secret })),
-    environment: (api.environment ?? []).map(e => ({ ...e, secret: !!e.secret })),
-    volumes: api.volumes ?? [],
-    healthcheck: api.healthcheck ?? null,
-    supportServices: api.supportServices ?? [],
-    desiredState: String(api.desiredState).toLowerCase() === 'running' ? 'running' : 'stopped',
-    runtimeState: (['running', 'stopped', 'missing', 'error'].includes(runtime) ? runtime : 'unknown') as McpCatalogServer['runtimeState'],
+    headers: (api.headers ?? []).map(toConfigEntry),
+    environment: (api.environment ?? []).map(toConfigEntry),
+    volumes: (api.volumes ?? []).map(volume => ({ ...volume })),
+    healthcheck: toHealthcheck(api.healthcheck),
+    supportServices: (api.supportServices ?? []).map(toSupportService),
+    desiredState: oneOf(api.desiredState, ['running', 'stopped'], 'stopped'),
+    runtimeState: oneOf(api.runtimeState, RUNTIME_STATES, 'unknown'),
     operationState: String(api.operationState ?? 'idle').toLowerCase(),
     operationError: api.operationError ?? null,
-    checkStatus: (['checking', 'connected', 'error'].includes(check) ? check : 'unknown') as McpCatalogServer['checkStatus'],
+    checkStatus: oneOf(api.checkStatus, CHECK_STATUSES, 'unknown'),
     checkError: api.checkError ?? null,
     checkedAt: api.checkedAt ?? null,
     latencyMs: api.latencyMs ?? null,
@@ -103,6 +158,20 @@ export function toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
     serviceKey: api.serviceKey || null,
     createdAt: api.createdAt ?? Date.now(),
     updatedAt: api.updatedAt ?? Date.now(),
+  };
+}
+
+/** A retained volume is rendered straight from this, so every label it shows
+ *  has to survive a row that omits it. */
+export function toMcpRetainedResource(api: ApiMcpRetainedResource): McpRetainedResource {
+  return {
+    id: api.id,
+    serverId: api.serverId ?? null,
+    serverName: api.serverName ?? '',
+    hostId: api.hostId ?? '',
+    type: api.type ?? 'volume',
+    name: api.name ?? '',
+    createdAt: api.createdAt ?? 0,
   };
 }
 

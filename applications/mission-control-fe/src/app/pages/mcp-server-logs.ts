@@ -1,7 +1,8 @@
 import {
   ChangeDetectionStrategy, Component, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
-import { HermesStore } from '../core/hermes-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { errorMessage } from '../core/errors';
 import { clock } from '../core/format';
 import { LogEntry, McpCatalogServer } from '../core/models';
 
@@ -24,7 +25,7 @@ export class McpServerLogs {
   readonly server = input.required<McpCatalogServer>();
   readonly closed = output<void>();
 
-  private readonly store = inject(HermesStore);
+  private readonly catalog = inject(McpCatalogStore);
   protected readonly clock = clock;
 
   protected readonly lines = signal<LogEntry[]>([]);
@@ -52,13 +53,13 @@ export class McpServerLogs {
     if (this.loading()) return;
     this.loading.set(true);
     try {
-      const lines = await this.store.mcpServerLogTail(id, TAIL);
+      const lines = await this.catalog.logTail(id, TAIL);
       if (this.server().id !== id) return;
       this.lines.set(lines);
       this.error.set(null);
     } catch (error) {
       if (this.server().id !== id) return;
-      this.error.set(error instanceof Error ? error.message : String(error));
+      this.error.set(errorMessage(error, 'log read failed'));
     } finally {
       this.loading.set(false);
     }

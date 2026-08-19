@@ -2,7 +2,10 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { ContainerStore } from '../core/store/container-store';
+import { HostStore } from '../core/store/host-store';
+import { StoreContext } from '../core/store/store-context';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { HermesContainer } from '../core/models';
 import { TerminalPanel } from './terminal-panel';
 import { el, settle, text } from '../testing/dom';
@@ -40,12 +43,20 @@ class FakeSocket {
 
 /** Only what the panel reaches for on the store. */
 const storeStub = (containers: HermesContainer[] = [], selected: HermesContainer | null = null) => ({
-  config: { apiBaseUrl: '', dockerSocket: '' },
-  terminalRequest: signal<unknown>(null),
-  containers: signal(containers),
-  selectedContainer: signal(selected),
-  hostById: (id: string) => ({ id, name: 'localhost' }),
-  toast: vi.fn(),
+  containers: {
+    containers: signal(containers),
+    selected: signal(selected),
+  },
+  ctx: {
+    config: { apiBaseUrl: '', dockerSocket: '' },
+    toast: vi.fn(),
+  },
+  hosts: {
+    byId: (id: string) => ({ id, name: 'localhost' }),
+  },
+  terminal: {
+    request: signal<unknown>(null),
+  },
 });
 
 /**
@@ -83,7 +94,7 @@ const liveShells = (): void => {
 
 const render = (store: ReturnType<typeof storeStub> = storeStub()) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: ContainerStore, useValue: store.containers }, { provide: HostStore, useValue: store.hosts }, { provide: StoreContext, useValue: store.ctx }, { provide: TerminalRequestStore, useValue: store.terminal }] });
   const fixture = TestBed.createComponent(TerminalPanel);
   fixture.detectChanges();
   return { fixture, store };
@@ -202,7 +213,7 @@ describe('TerminalPanel tabs', () => {
     await settle(fixture);
 
     expect(tabs(fixture).length).toBe(12);
-    expect(store.toast).toHaveBeenCalledWith(
+    expect(store.ctx.toast).toHaveBeenCalledWith(
       'terminal tab limit (12) reached — close a tab first');
   });
 
@@ -241,7 +252,7 @@ describe('TerminalPanel tabs', () => {
     const { fixture } = render(store);
     await openPanel(fixture);
 
-    store.containers.set([container('hermes-prod', { name: 'hermes-renamed' })]);
+    store.containers.containers.set([container('hermes-prod', { name: 'hermes-renamed' })]);
     await settle(fixture);
 
     expect(labels(fixture)).toEqual(['hermes-renamed']);
@@ -298,7 +309,7 @@ describe('TerminalPanel tabs', () => {
     const { fixture } = render(store);
     await openPanel(fixture);
 
-    store.containers.set([]);
+    store.containers.containers.set([]);
     await settle(fixture);
 
     expect(FakeSocket.opened[0].closed).toBe(true);
@@ -358,7 +369,7 @@ describe('TerminalPanel requests from other pages', () => {
     const store = storeStub([c], c);
     const { fixture } = render(store);
 
-    store.terminalRequest.set({ seq: 1 });
+    store.terminal.request.set({ seq: 1 });
     await settle(fixture);
 
     expect(el(fixture).querySelector('.tabs')).not.toBeNull();
@@ -369,7 +380,7 @@ describe('TerminalPanel requests from other pages', () => {
     const store = storeStub([container('hermes-prod'), container('hermes-lab')]);
     const { fixture } = render(store);
 
-    store.terminalRequest.set({
+    store.terminal.request.set({
       seq: 1, hostId: 'dh-local', containerId: 'hermes-lab', label: 'ops-bot',
       agentKey: 'a-ops', command: 'hermes -p ops-bot',
     });
@@ -385,10 +396,10 @@ describe('TerminalPanel requests from other pages', () => {
     const request = {
       seq: 1, hostId: 'dh-local', containerId: 'hermes-prod', label: 'ops-bot', agentKey: 'a-ops',
     };
-    store.terminalRequest.set(request);
+    store.terminal.request.set(request);
     await settle(fixture);
 
-    store.terminalRequest.set({ ...request, seq: 2 });
+    store.terminal.request.set({ ...request, seq: 2 });
     await settle(fixture);
 
     expect(tabs(fixture).length).toBe(1);
@@ -401,12 +412,12 @@ describe('TerminalPanel requests from other pages', () => {
     const request = {
       seq: 1, hostId: 'dh-local', containerId: 'hermes-prod', label: 'ops-bot', agentKey: 'a-ops',
     };
-    store.terminalRequest.set(request);
+    store.terminal.request.set(request);
     await settle(fixture);
     FakeSocket.opened[0].close();
     await settle(fixture);
 
-    store.terminalRequest.set({ ...request, seq: 2 });
+    store.terminal.request.set({ ...request, seq: 2 });
     await settle(fixture);
 
     expect(FakeSocket.opened.length).toBe(2);
@@ -417,7 +428,7 @@ describe('TerminalPanel requests from other pages', () => {
     const store = storeStub([c], c);
     const { fixture } = render(store);
 
-    store.terminalRequest.set({ seq: 1 });
+    store.terminal.request.set({ seq: 1 });
     await settle(fixture);
     fixture.detectChanges();
     await settle(fixture);

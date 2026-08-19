@@ -2,7 +2,7 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { LogEntry } from '../core/models';
 import { McpServerLogs } from './mcp-server-logs';
 import { el, settle } from '../testing/dom';
@@ -11,7 +11,9 @@ import { catalogServer } from '../testing/models';
 const line = (msg: string, source = 'browser'): LogEntry =>
   ({ ts: 1_700_000_000_000, level: 'info', source, agentId: null, msg });
 
-const storeStub = () => ({ mcpServerLogTail: vi.fn().mockResolvedValue([line('ready')]) });
+const storeStub = () => ({
+  catalog: { logTail: vi.fn().mockResolvedValue([line('ready')]) },
+});
 
 @Component({
   imports: [McpServerLogs],
@@ -24,7 +26,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: McpCatalogStore, useValue: store.catalog }] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   return { fixture, host: fixture.componentInstance };
@@ -45,11 +47,11 @@ describe('McpServerLogs', () => {
 
   it('reads the tail when it opens and renders one row per line', async () => {
     const store = storeStub();
-    store.mcpServerLogTail.mockResolvedValue([line('ready'), line('listening on 1100')]);
+    store.catalog.logTail.mockResolvedValue([line('ready'), line('listening on 1100')]);
     const { fixture } = render(store);
     await settle(fixture);
 
-    expect(store.mcpServerLogTail).toHaveBeenCalledWith('browser', 150);
+    expect(store.catalog.logTail).toHaveBeenCalledWith('browser', 150);
     expect(el(fixture).querySelectorAll('.log-line').length).toBe(2);
     expect(el(fixture).textContent).toContain('listening on 1100');
     expect(el(fixture).textContent).toContain('LOGS — browser');
@@ -57,7 +59,7 @@ describe('McpServerLogs', () => {
 
   it('says the server returned nothing rather than looking still busy', async () => {
     const store = storeStub();
-    store.mcpServerLogTail.mockResolvedValue([]);
+    store.catalog.logTail.mockResolvedValue([]);
     const { fixture } = render(store);
     await settle(fixture);
 
@@ -66,7 +68,7 @@ describe('McpServerLogs', () => {
 
   it('surfaces why a read failed instead of blanking the pane', async () => {
     const store = storeStub();
-    store.mcpServerLogTail.mockRejectedValue(new Error('container is not running'));
+    store.catalog.logTail.mockRejectedValue(new Error('container is not running'));
     const { fixture } = render(store);
     await settle(fixture);
 
@@ -79,17 +81,17 @@ describe('McpServerLogs', () => {
     await settle(fixture);
 
     await settle(fixture, 3_000);
-    expect(store.mcpServerLogTail).toHaveBeenCalledTimes(2);
+    expect(store.catalog.logTail).toHaveBeenCalledTimes(2);
     await settle(fixture, 3_000);
-    expect(store.mcpServerLogTail).toHaveBeenCalledTimes(3);
+    expect(store.catalog.logTail).toHaveBeenCalledTimes(3);
   });
 
   it('drops a read that lands after the viewer moved to another server', async () => {
     const store = storeStub();
     let answerFirst: (lines: LogEntry[]) => void = () => { /* replaced below */ };
-    store.mcpServerLogTail.mockImplementationOnce(
+    store.catalog.logTail.mockImplementationOnce(
       () => new Promise<LogEntry[]>(resolve => { answerFirst = resolve; }));
-    store.mcpServerLogTail.mockResolvedValue([line('gateway up', 'gateway')]);
+    store.catalog.logTail.mockResolvedValue([line('gateway up', 'gateway')]);
 
     const { fixture, host } = render(store);
     host.server.set(server('gateway'));
@@ -106,12 +108,12 @@ describe('McpServerLogs', () => {
     const store = storeStub();
     const { fixture } = render(store);
     await settle(fixture);
-    expect(store.mcpServerLogTail).toHaveBeenCalledTimes(1);
+    expect(store.catalog.logTail).toHaveBeenCalledTimes(1);
 
     fixture.destroy();
     await vi.advanceTimersByTimeAsync(30_000);
 
-    expect(store.mcpServerLogTail).toHaveBeenCalledTimes(1);
+    expect(store.catalog.logTail).toHaveBeenCalledTimes(1);
   });
 
   it('reports a close request to the page rather than hiding itself', () => {

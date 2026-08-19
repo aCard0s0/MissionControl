@@ -1,6 +1,6 @@
 <div class="page-head" data-reveal>
   <div>
-    <div class="crumb mono">{{ store.selectedContainer()?.name ?? '—' }} · SCHEDULER</div>
+    <div class="crumb mono">{{ containers.selected()?.name ?? '—' }} · SCHEDULER</div>
     <h2>Calendar</h2>
   </div>
   <div class="month-nav mono">
@@ -8,12 +8,12 @@
     <span class="label">{{ monthLabel() }}</span>
     <button class="btn sm ghost" (click)="shiftMonth(1)">→</button>
   </div>
-  <button class="btn primary" [disabled]="!store.selectedContainer() || !store.containerAgents().length"
-          [title]="store.containerAgents().length ? '' : 'no agent profiles in this container'"
+  <button class="btn primary" [disabled]="!containers.selected() || !agents.forSelectedContainer().length"
+          [title]="agents.forSelectedContainer().length ? '' : 'no agent profiles in this container'"
           (click)="startCreate()">+ schedule job</button>
 </div>
 
-@if (!store.schedulerRunning() && store.containerAgents().length) {
+@if (!jobs.schedulerRunning() && agents.forSelectedContainer().length) {
   <div class="panel sched-warn" data-reveal>
     <div class="panel-b mono">
       <mc-status status="off" label="scheduler down" />
@@ -93,7 +93,7 @@
             <div class="field">
               <label>assigned agent</label>
               <select class="select" [(ngModel)]="fAgent">
-                @for (a of store.containerAgents(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
+                @for (a of agents.forSelectedContainer(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
               </select>
             </div>
             <div class="field"><label>deliver to</label><input class="input" [(ngModel)]="fDeliver" placeholder="slack #ops" /></div>
@@ -114,11 +114,11 @@
             <span class="mono name">{{ j.name }}</span>
             <span class="chip info mono">{{ until(j.nextRun) }}</span>
             <span class="spacer"></span>
-            <button class="btn sm ghost" (click)="store.toggleJob(j.id)">{{ j.enabled ? 'pause' : 'resume' }}</button>
+            <button class="btn sm ghost" (click)="jobs.toggle(j.id)">{{ j.enabled ? 'pause' : 'resume' }}</button>
             <button class="btn sm ghost" title="run on the next scheduler tick"
                     (click)="runNow(j)">run now</button>
             <button class="btn sm ghost" (click)="startEdit(j)">edit</button>
-            <button class="btn sm danger ghost" (click)="store.removeJob(j.id)">delete</button>
+            <button class="btn sm danger ghost" (click)="jobs.remove(j.id)">delete</button>
           </div>
           <div class="job-meta mono faint">
             <span>{{ j.schedule }}</span>

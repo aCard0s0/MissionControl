@@ -1,6 +1,4 @@
-import {
-  BoardColumn, McpCatalogServer, McpRetainedResource, SkillContent, TemplateMcp,
-} from '../models';
+import { BoardColumn, TemplateMcp } from '../models';
 
 // Wire shapes for mission-control-server. Everything the backend sends or
 // accepts is declared here; the clients under this folder only compose URLs and
@@ -70,9 +68,14 @@ export interface ApiSkillRef {
   enabled: boolean;
 }
 
-/** Wire shape for a skill's SKILL.md + files — identical to the domain
- *  {@link SkillContent}, aliased so the two can't drift. */
-export type ApiSkillContent = SkillContent;
+/** A skill's SKILL.md body and the files beside it. A backend that lists no
+ *  files omits the key rather than sending an empty array. */
+export interface ApiSkillContent {
+  name: string;
+  path: string;
+  body: string;
+  files?: string[];
+}
 
 export interface ApiMcpServer {
   id: string;
@@ -103,10 +106,102 @@ export interface ApiMcpTestResult {
   checkedAt: number;
 }
 
-/** Catalog wire models are deliberately aliases of the domain contracts. All
- *  normalization of optional/legacy backend fields lives in HermesStore. */
-export type ApiMcpCatalogServer = McpCatalogServer;
-export type ApiMcpRetainedResource = McpRetainedResource;
+/** An environment variable or HTTP header as the backend sends it. A row written
+ *  before secrets were flagged carries no `secret`, and a secret's value never
+ *  comes back at all. */
+export interface ApiMcpConfigEntry {
+  key: string;
+  value?: string | null;
+  secret?: boolean;
+  set?: boolean;
+  recoverable?: boolean;
+}
+
+export interface ApiMcpNamedVolume {
+  name: string;
+  target: string;
+}
+
+export interface ApiMcpHealthcheck {
+  test: string[];
+  interval?: string | null;
+  timeout?: string | null;
+  retries?: number | null;
+  startPeriod?: string | null;
+}
+
+/** A service the backend renders into the managed stack alongside the server. */
+export interface ApiMcpSupportService {
+  name: string;
+  image: string;
+  platform?: string | null;
+  entrypoint?: string[];
+  command?: string[];
+  environment?: ApiMcpConfigEntry[];
+  volumes?: ApiMcpNamedVolume[];
+  healthcheck?: ApiMcpHealthcheck | null;
+}
+
+/**
+ * A catalog entry as the backend sends it, which is looser than the domain
+ * `McpCatalogServer` in two ways worth stating in the type: a row an older
+ * backend wrote can be missing any field that version did not have yet, and the
+ * lifecycle states arrive in whatever case the backend spells them.
+ *
+ * `toMcpCatalogServer` is what closes both gaps. Declaring this as an alias of
+ * the domain model — which it was — made the mapper's `?? []` defaults invisible
+ * to the compiler and let unknown fields ride into the store on a spread.
+ */
+export interface ApiMcpCatalogServer {
+  id: string;
+  name?: string;
+  description?: string;
+  kind?: string;
+  hostId?: string | null;
+  transport?: string;
+  url?: string | null;
+  image?: string | null;
+  platform?: string | null;
+  entrypoint?: string[];
+  command?: string[];
+  stdioCommand?: string | null;
+  args?: string[];
+  internalPort?: number | null;
+  publishedPort?: number | null;
+  path?: string | null;
+  crossHostUrl?: string | null;
+  connectionUrl?: string | null;
+  headers?: ApiMcpConfigEntry[];
+  environment?: ApiMcpConfigEntry[];
+  volumes?: ApiMcpNamedVolume[];
+  healthcheck?: ApiMcpHealthcheck | null;
+  supportServices?: ApiMcpSupportService[];
+  desiredState?: string;
+  runtimeState?: string;
+  operationState?: string;
+  operationError?: string | null;
+  checkStatus?: string;
+  checkError?: string | null;
+  checkedAt?: number | null;
+  latencyMs?: number | null;
+  revision?: number;
+  appliedRevision?: number;
+  pendingChanges?: boolean;
+  serviceKey?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+/** A named volume a delete deliberately left behind. */
+export interface ApiMcpRetainedResource {
+  id: string;
+  serverId?: string | null;
+  serverName?: string;
+  hostId?: string;
+  type?: string;
+  name?: string;
+  createdAt?: number;
+}
 
 export interface ApiIntegration {
   kind: string;

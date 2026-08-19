@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SkillRef } from '../models';
-import { AgentSkillStore } from './agent-skill-store';
 import { skill as buildSkill } from '../../testing/models';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
@@ -17,7 +16,7 @@ const refreshed = (skills: SkillRef[]) => ({ ...PROFILE, skills });
 /** A store holding one profile, with the API stubbed per test. */
 const loaded = async (skills: Record<string, unknown>) => {
   const slices = await loadedAgentSlices({ agents: { skills } }, { profiles: [PROFILE] });
-  return { ...slices, store: new AgentSkillStore(slices.ctx, slices.agents) };
+  return { ...slices, store: slices.skills };
 };
 
 

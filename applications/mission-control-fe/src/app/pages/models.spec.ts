@@ -2,7 +2,7 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { ProviderStore } from '../core/store/provider-store';
 import { ApiPullState } from '../core/hermes-api';
 import { ModelProvider, OllamaModel } from '../core/models';
 import { ModelsPage } from './models';
@@ -17,20 +17,22 @@ const model = (name: string): OllamaModel =>
   ({ name, sizeBytes: 4.3e9, family: 'gemma3', parameterSize: '4.3B', modifiedAt: 1 });
 
 const storeStub = (providers: ModelProvider[] = [provider('mp-1', 'workstation')]) => ({
-  modelProviders: signal(providers),
-  refreshModelProviders: vi.fn().mockResolvedValue(undefined),
-  addModelProvider: vi.fn(),
-  removeModelProvider: vi.fn(),
-  checkModelProvider: vi.fn(),
-  providerModels: vi.fn().mockResolvedValue([model('gemma3:4b')]),
-  pullModel: vi.fn().mockResolvedValue(undefined),
-  deleteProviderModel: vi.fn().mockResolvedValue(undefined),
-  pullStatus: vi.fn().mockResolvedValue([] as ApiPullState[]),
+  providers: {
+    ollamaProviders: signal(providers),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn(),
+    remove: vi.fn(),
+    check: vi.fn(),
+    models: vi.fn().mockResolvedValue([model('gemma3:4b')]),
+    pullModel: vi.fn().mockResolvedValue(undefined),
+    deleteModel: vi.fn().mockResolvedValue(undefined),
+    pullStatus: vi.fn().mockResolvedValue([] as ApiPullState[]),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: ProviderStore, useValue: store.providers }] });
   const fixture = TestBed.createComponent(ModelsPage);
   fixture.detectChanges();
   return { fixture, store };
@@ -47,7 +49,7 @@ describe('ModelsPage providers', () => {
   it('reads the provider list when it opens', () => {
     const { store } = render(storeStub());
 
-    expect(store.refreshModelProviders).toHaveBeenCalled();
+    expect(store.providers.refresh).toHaveBeenCalled();
   });
 
   it('lists each provider with the endpoint an agent would reach it on', () => {
@@ -85,7 +87,7 @@ describe('ModelsPage providers', () => {
     expect(add().disabled).toBe(false);
     add().click();
 
-    expect(store.addModelProvider)
+    expect(store.providers.add)
       .toHaveBeenCalledWith('mac', 'http://host.docker.internal:11434');
   });
 
@@ -94,7 +96,7 @@ describe('ModelsPage providers', () => {
 
     press(fixture, 'check', '.provider-row');
 
-    expect(store.checkModelProvider).toHaveBeenCalledWith('mp-1');
+    expect(store.providers.check).toHaveBeenCalledWith('mp-1');
   });
 });
 
@@ -112,7 +114,7 @@ describe('ModelsPage model list', () => {
     press(fixture, 'models', '.provider-row');
     await settle(fixture);
 
-    expect(store.providerModels).toHaveBeenCalledWith('mp-1');
+    expect(store.providers.models).toHaveBeenCalledWith('mp-1');
     expect(el(fixture).textContent).toContain('MODELS — workstation');
     expect(el(fixture).textContent).toContain('gemma3:4b');
     expect(el(fixture).textContent).toContain('4.3 GB');
@@ -120,7 +122,7 @@ describe('ModelsPage model list', () => {
 
   it('says the provider is empty rather than looking still busy', async () => {
     const store = storeStub();
-    store.providerModels.mockResolvedValue([]);
+    store.providers.models.mockResolvedValue([]);
     const { fixture } = render(store);
 
     press(fixture, 'models', '.provider-row');
@@ -131,7 +133,7 @@ describe('ModelsPage model list', () => {
 
   it('surfaces why a read failed', async () => {
     const store = storeStub();
-    store.providerModels.mockRejectedValue(new Error('connection refused'));
+    store.providers.models.mockRejectedValue(new Error('connection refused'));
     const { fixture } = render(store);
 
     press(fixture, 'models', '.provider-row');
@@ -143,9 +145,9 @@ describe('ModelsPage model list', () => {
   it('drops a read that lands after another provider was selected', async () => {
     const store = storeStub([provider('mp-1', 'workstation'), provider('mp-2', 'laptop')]);
     let answerFirst: (models: OllamaModel[]) => void = () => { /* replaced below */ };
-    store.providerModels.mockImplementationOnce(
+    store.providers.models.mockImplementationOnce(
       () => new Promise<OllamaModel[]>(resolve => { answerFirst = resolve; }));
-    store.providerModels.mockResolvedValue([model('llama3:8b')]);
+    store.providers.models.mockResolvedValue([model('llama3:8b')]);
     const { fixture } = render(store);
 
     press(fixture, 'models', '.provider-row');                      // workstation, pending
@@ -168,12 +170,12 @@ describe('ModelsPage model list', () => {
     await settle(fixture);
 
     press(fixture, 'remove', '.model-row:not(.head)');
-    expect(store.deleteProviderModel).not.toHaveBeenCalled();
+    expect(store.providers.deleteModel).not.toHaveBeenCalled();
 
     press(fixture, 'confirm', '.model-row:not(.head)');
     await settle(fixture);
 
-    expect(store.deleteProviderModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.providers.deleteModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
   });
 
   it('forgets the selection when the selected provider is removed', async () => {
@@ -184,7 +186,7 @@ describe('ModelsPage model list', () => {
 
     press(fixture, 'remove', '.provider-row');
 
-    expect(store.removeModelProvider).toHaveBeenCalledWith('mp-1');
+    expect(store.providers.remove).toHaveBeenCalledWith('mp-1');
     expect(el(fixture).querySelector('.models-panel')).toBeNull();
   });
 });
@@ -211,13 +213,13 @@ describe('ModelsPage pulls', () => {
     press(fixture, 'pull model', '.pull-bar');
     await settle(fixture);
 
-    expect(store.pullModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.providers.pullModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
     expect(el(fixture).querySelector<HTMLInputElement>('.pull-bar .input')!.value).toBe('');
   });
 
   it('shows what each pull is doing', async () => {
     const store = storeStub();
-    store.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: '40%' }]);
+    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: '40%' }]);
     const { fixture } = await open(store);
 
     expect(el(fixture).textContent).toContain('gemma3:4b · pulling');
@@ -225,55 +227,55 @@ describe('ModelsPage pulls', () => {
 
   it('keeps polling while a pull is running, and stops once it is not', async () => {
     const store = storeStub();
-    store.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
+    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
-    const afterOpen = store.pullStatus.mock.calls.length;
+    const afterOpen = store.providers.pullStatus.mock.calls.length;
 
     await settle(fixture, 3_000);
-    expect(store.pullStatus.mock.calls.length).toBeGreaterThan(afterOpen);
+    expect(store.providers.pullStatus.mock.calls.length).toBeGreaterThan(afterOpen);
 
-    store.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
+    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
     await settle(fixture, 3_000);
-    const afterDone = store.pullStatus.mock.calls.length;
+    const afterDone = store.providers.pullStatus.mock.calls.length;
 
     await settle(fixture, 30_000);
-    expect(store.pullStatus.mock.calls.length).toBe(afterDone);
+    expect(store.providers.pullStatus.mock.calls.length).toBe(afterDone);
   });
 
   it('re-reads the model list once a pull finishes', async () => {
     const store = storeStub();
-    store.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
+    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
-    const afterOpen = store.providerModels.mock.calls.length;
+    const afterOpen = store.providers.models.mock.calls.length;
 
-    store.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
+    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
     await settle(fixture, 3_000);
 
-    expect(store.providerModels.mock.calls.length).toBeGreaterThan(afterOpen);
+    expect(store.providers.models.mock.calls.length).toBeGreaterThan(afterOpen);
   });
 
   it('gives up polling when the pull status cannot be read', async () => {
     const store = storeStub();
-    store.pullStatus.mockResolvedValueOnce([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
+    store.providers.pullStatus.mockResolvedValueOnce([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
-    store.pullStatus.mockRejectedValue(new Error('provider gone'));
+    store.providers.pullStatus.mockRejectedValue(new Error('provider gone'));
 
     await settle(fixture, 3_000);
-    const afterFailure = store.pullStatus.mock.calls.length;
+    const afterFailure = store.providers.pullStatus.mock.calls.length;
     await settle(fixture, 9_000);
 
-    expect(store.pullStatus.mock.calls.length).toBe(afterFailure);
+    expect(store.providers.pullStatus.mock.calls.length).toBe(afterFailure);
   });
 
   it('stops polling once the page is gone', async () => {
     const store = storeStub();
-    store.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
+    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
 
     fixture.destroy();
-    const afterDestroy = store.pullStatus.mock.calls.length;
+    const afterDestroy = store.providers.pullStatus.mock.calls.length;
     await vi.advanceTimersByTimeAsync(30_000);
 
-    expect(store.pullStatus.mock.calls.length).toBe(afterDestroy);
+    expect(store.providers.pullStatus.mock.calls.length).toBe(afterDestroy);
   });
 });

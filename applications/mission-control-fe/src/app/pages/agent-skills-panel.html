@@ -4,7 +4,7 @@
     @for (s of agent().skills; track s.id) {
       <div class="skill-item" [class.expanded]="expandedSkill() === s.id">
         <div class="skill-row">
-          <button class="toggle mono" [class.on]="s.enabled" (click)="store.toggleSkill(agent().id, s.id)">
+          <button class="toggle mono" [class.on]="s.enabled" (click)="skills.toggle(agent().id, s.id)">
             {{ s.enabled ? 'ON' : 'OFF' }}
           </button>
           <div class="skill-id">
@@ -17,7 +17,7 @@
           </div>
           <span class="dim desc">{{ s.description }}</span>
           <button class="btn sm ghost" (click)="viewSkill(s)">{{ expandedSkill() === s.id ? 'close' : 'view / edit' }}</button>
-          <button class="btn sm danger ghost" (click)="store.removeSkill(agent().id, s.id)">remove</button>
+          <button class="btn sm danger ghost" (click)="skills.remove(agent().id, s.id)">remove</button>
         </div>
         @if (expandedSkill() === s.id) {
           <div class="skill-editor">

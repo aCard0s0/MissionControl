@@ -22,7 +22,7 @@
       <div class="field">
         <label>provider</label>
         <select class="select" [(ngModel)]="form.provider">
-          @for (p of providers(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
+          @for (p of providerChoices(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
         </select>
       </div>
       <div class="field">
@@ -89,7 +89,7 @@
         </div>
         <select class="select" [ngModel]="mcpCatalogId" (ngModelChange)="selectCatalogMcp($event)">
           <option value="">select a server…</option>
-          @for (server of catalog(); track server.id) {
+          @for (server of catalog.servers(); track server.id) {
             <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
           }
         </select>

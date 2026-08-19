@@ -1,4 +1,4 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ApiCronJob, ApiCronJobRequest } from '../hermes-api';
 import { CronJob } from '../models';
 import { AgentStore } from './agent-store';
@@ -16,6 +16,7 @@ import { StoreContext } from './store-context';
  * Nothing here computes a schedule or an id: hermes parses the expression, mints the id
  * and decides the next run, and each call answers with the schedule it now holds.
  */
+@Injectable({ providedIn: 'root' })
 export class JobStore {
   readonly jobs: WritableSignal<CronJob[]> = signal([]);
 
@@ -31,14 +32,14 @@ export class JobStore {
 
   private refreshInFlight = false;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-    private readonly agents: AgentStore,
-  ) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+  private readonly agents = inject(AgentStore);
+
+  constructor() {
     // the schedule on screen belongs to the selected container's profiles, so a
     // switch re-reads rather than waiting out the poll
-    containers.onSelect(() => void this.refresh());
+    this.containers.onSelect(() => void this.refresh());
   }
 
   /** One read per profile in the selected container, unioned. */
@@ -80,7 +81,7 @@ export class JobStore {
 
   update(id: string, patch: Partial<CronJob>): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, 'job update', ref =>
       this.ctx.api.agents.cron.update(ref, id, request({
         schedule: patch.schedule, prompt: patch.prompt, name: patch.name,
@@ -90,7 +91,7 @@ export class JobStore {
 
   toggle(id: string): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, job.enabled ? 'pause job' : 'resume job',
       ref => this.ctx.api.agents.cron.setEnabled(ref, id, !job.enabled));
   }
@@ -98,13 +99,13 @@ export class JobStore {
   /** Asks for the job on the next scheduler tick rather than at its schedule. */
   runNow(id: string): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, 'run job', ref => this.ctx.api.agents.cron.runNow(ref, id));
   }
 
   remove(id: string): Promise<boolean> {
     const job = this.byId(id);
-    if (!job) return Promise.resolve(false);
+    if (!job) return Promise.resolve(this.ctx.gone('job'));
     return this.mutate(job.agentId, 'remove job', ref => this.ctx.api.agents.cron.remove(ref, id));
   }
 
@@ -131,7 +132,7 @@ export class JobStore {
       Promise<{ jobs: ApiCronJob[]; schedulerRunning: boolean }>,
   ): Promise<boolean> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const answer = await call(resolved.ref);
       const fresh = answer.jobs.map(job => toCronJob(job, resolved.agent.containerId, agentId));

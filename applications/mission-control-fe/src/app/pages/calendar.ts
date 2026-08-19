@@ -4,7 +4,9 @@ import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth,
   isToday, startOfMonth, startOfWeek,
 } from 'date-fns';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { JobStore } from '../core/store/job-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { ago, until } from '../core/format';
@@ -19,7 +21,9 @@ import { CronJob } from '../core/models';
   styleUrl: './calendar.scss',
 })
 export class CalendarPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly jobs = inject(JobStore);
 
   protected readonly ago = ago;
   protected readonly until = until;
@@ -53,13 +57,13 @@ export class CalendarPage {
       date: d,
       inMonth: isSameMonth(d, m),
       today: isToday(d),
-      jobs: this.store.containerJobs().filter(j => isSameDay(new Date(j.nextRun), d)),
+      jobs: this.jobs.forSelectedContainer().filter(j => isSameDay(new Date(j.nextRun), d)),
     }));
   });
 
   protected readonly dayJobs = computed(() => {
     const d = this.selectedDay();
-    const js = this.store.containerJobs();
+    const js = this.jobs.forSelectedContainer();
     if (!d) return js.slice().sort((a, b) => a.nextRun - b.nextRun);
     return js.filter(j => isSameDay(new Date(j.nextRun), d));
   });
@@ -80,7 +84,7 @@ export class CalendarPage {
   }
 
   protected agentName(id: string): string {
-    return this.store.agentById(id)?.name ?? '?';
+    return this.agents.byId(id)?.name ?? '?';
   }
 
   protected startEdit(j: CronJob): void {
@@ -97,7 +101,7 @@ export class CalendarPage {
     this.editing.set(null);
     this.creating.set(true);
     this.fName = this.fSchedule = this.fPrompt = this.fDeliver = '';
-    this.fAgent = this.store.containerAgents()[0]?.id ?? '';
+    this.fAgent = this.agents.forSelectedContainer()[0]?.id ?? '';
   }
 
   /**
@@ -106,16 +110,16 @@ export class CalendarPage {
    * a schedule that does not contain what they just typed.
    */
   protected async save(): Promise<void> {
-    const container = this.store.selectedContainer();
+    const container = this.containers.selected();
     if (!this.fName.trim() || !this.scheduleHelp().valid || !this.fAgent || this.saving()) return;
     const job = this.editing();
     this.saving.set(true);
     const saved = job
-      ? await this.store.updateJob(job.id, {
+      ? await this.jobs.update(job.id, {
           name: this.fName, schedule: this.fSchedule, prompt: this.fPrompt,
           deliverTo: this.fDeliver,
         })
-      : !!container && await this.store.createJob(
+      : !!container && await this.jobs.create(
           container.id, this.fAgent, this.fName, this.fSchedule, this.fPrompt,
           this.fDeliver || 'local');
     this.saving.set(false);
@@ -126,7 +130,7 @@ export class CalendarPage {
 
   /** Runs the job on the next scheduler tick instead of waiting for its schedule. */
   protected runNow(job: CronJob): void {
-    void this.store.runJobNow(job.id);
+    void this.jobs.runNow(job.id);
   }
 
   protected cancelForm(): void {

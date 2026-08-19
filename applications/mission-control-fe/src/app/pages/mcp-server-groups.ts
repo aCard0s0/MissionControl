@@ -57,10 +57,3 @@ export function mcpServerGroups(
     }] : []),
   ];
 }
-
-/** What the row shows as the server's address: the command for a stdio
- *  definition, and otherwise whichever URL the backend considers current. */
-export function mcpDisplayEndpoint(server: McpCatalogServer): string {
-  if (server.kind === 'stdio') return [server.stdioCommand, ...server.args].filter(Boolean).join(' ');
-  return server.connectionUrl ?? server.url ?? server.crossHostUrl ?? 'endpoint pending';
-}

@@ -3,7 +3,10 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { JobStore } from '../core/store/job-store';
+import { LogStore } from '../core/store/log-store';
 import {
   AgentProfile, CronJob, HermesContainer, Integration, LogEntry, McpServer, SkillRef,
 } from '../core/models';
@@ -23,20 +26,28 @@ const log = (level: LogEntry['level'], msg: string): LogEntry =>
 const storeStub = (opts: {
   agents?: AgentProfile[]; logs?: LogEntry[]; jobs?: CronJob[];
 } = {}) => ({
-  selectedContainer: signal(container),
-  containerAgents: signal(opts.agents ?? []),
-  containerLogs: signal(opts.logs ?? []),
-  containerJobs: signal(opts.jobs ?? []),
-  logsLoading: signal(false),
-  logsError: signal<string | null>(null),
-  logsUpdatedAt: signal<number | null>(1),
-  refreshLogs: vi.fn(),
+  containers: { selected: signal(container) },
+  agents: { forSelectedContainer: signal(opts.agents ?? []) },
+  jobs: { forSelectedContainer: signal(opts.jobs ?? []) },
+  logs: {
+    selectedLogs: signal(opts.logs ?? []),
+    loading: signal(false),
+    error: signal<string | null>(null),
+    updatedAt: signal<number | null>(1),
+    refresh: vi.fn(),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
+    providers: [
+      provideRouter([]),
+      { provide: AgentStore, useValue: store.agents },
+      { provide: ContainerStore, useValue: store.containers },
+      { provide: JobStore, useValue: store.jobs },
+      { provide: LogStore, useValue: store.logs },
+    ],
   });
   const fixture = TestBed.createComponent(OverviewPage);
   fixture.detectChanges();

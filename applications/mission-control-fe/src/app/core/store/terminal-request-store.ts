@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 
 /**
  * A request to open the bottom terminal panel. Everything past `seq` is
@@ -19,6 +19,7 @@ export interface TerminalRequest {
 }
 
 /** The channel pages use to summon the terminal panel. */
+@Injectable({ providedIn: 'root' })
 export class TerminalRequestStore {
   /** Set by pages that want the bottom terminal panel opened. Null until the
    *  first request; `seq` is what makes a repeat request with an identical

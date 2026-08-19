@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ContainerStore } from './container-store';
-import { apiContainer, testContext } from '../../testing/store';
+import { apiContainer, testSlices } from '../../testing/store';
 
 /** A store over `list`, with the rest of the container client stubbed per test. */
 const loaded = async (containers: unknown[], api: Record<string, unknown> = {}) => {
-  const ctx = testContext({
+  const { ctx, containers: store } = testSlices({
     containers: { list: vi.fn().mockResolvedValue(containers), ...api },
   });
-  const store = new ContainerStore(ctx);
   await store.refresh();
   return { ctx, store };
 };

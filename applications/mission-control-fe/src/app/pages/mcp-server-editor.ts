@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { HostStore } from '../core/store/host-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { McpHealthcheck, McpNamedVolume } from '../core/models';
 import {
   McpEditorDraft, McpEditorEntry, applyMcpKindDefaults, blankConfigEntry, blankSupportService,
@@ -34,8 +35,8 @@ export class McpServerEditor {
   readonly saved = output<string>();
   readonly closed = output<void>();
 
-  private readonly store = inject(HermesStore);
-  protected readonly hosts = this.store.dockerHosts;
+  private readonly catalog = inject(McpCatalogStore);
+  protected readonly hosts = inject(HostStore);
   protected readonly splitLines = splitMcpLines;
   protected readonly saveBusy = signal(false);
 
@@ -65,14 +66,14 @@ export class McpServerEditor {
   }
 
   protected draftValid(): boolean {
-    return mcpDraftValid(this.draft(), this.store.mcpServers());
+    return mcpDraftValid(this.draft(), this.catalog.servers());
   }
 
   protected async save(): Promise<void> {
     const draft = this.draft();
     if (!this.draftValid() || this.saveBusy()) return;
     this.saveBusy.set(true);
-    const id = await this.store.saveCatalogMcpServer(mcpDraftToInput(draft), draft.id ?? undefined);
+    const id = await this.catalog.save(mcpDraftToInput(draft), draft.id ?? undefined);
     this.saveBusy.set(false);
     if (id) this.saved.emit(id);
   }

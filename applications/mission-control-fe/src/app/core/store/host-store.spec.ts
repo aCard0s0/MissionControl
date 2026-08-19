@@ -1,19 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DockerHost } from '../models';
-import { HostStore } from './host-store';
 import { dockerHost } from '../../testing/models';
-import { flush, testContext } from '../../testing/store';
+import { flush, testSlices } from '../../testing/store';
 
 const host = (id: string, patch: Partial<DockerHost> = {}): DockerHost =>
   dockerHost(id, { engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, ...patch });
 
-const context = (hosts: {
+const built = (hosts: {
   list?: unknown; add?: unknown; check?: unknown; remove?: unknown;
-}) => testContext({ hosts });
+}) => testSlices({ hosts });
 
 describe('HostStore', () => {
   it('starts on a placeholder that says why it has nothing yet', () => {
-    const store = new HostStore(context({}));
+    const store = built({}).hosts;
 
     expect(store.hosts()).toEqual([expect.objectContaining({
       id: 'dh-local', kind: 'local', status: 'disconnected',
@@ -23,7 +22,7 @@ describe('HostStore', () => {
   });
 
   it('replaces the placeholder with what the backend reported', async () => {
-    const store = new HostStore(context({ list: vi.fn().mockResolvedValue([host('dh-local')]) }));
+    const store = built({ list: vi.fn().mockResolvedValue([host('dh-local')]) }).hosts;
 
     await store.refresh();
 
@@ -33,7 +32,7 @@ describe('HostStore', () => {
 
   it('keeps the last inventory when a read fails, rather than blanking it', async () => {
     const list = vi.fn().mockResolvedValueOnce([host('dh-a')]).mockRejectedValue(new Error('offline'));
-    const store = new HostStore(context({ list }));
+    const store = built({ list }).hosts;
     await store.refresh();
 
     await store.refresh();
@@ -44,7 +43,7 @@ describe('HostStore', () => {
   it('re-reads the list after adding a host, since the backend assigns the id', async () => {
     const add = vi.fn().mockResolvedValue(host('dh-new'));
     const list = vi.fn().mockResolvedValue([host('dh-local'), host('dh-new')]);
-    const store = new HostStore(context({ add, list }));
+    const store = built({ add, list }).hosts;
 
     store.add('remote', 'tcp://10.0.0.2:2375');
     await flush();
@@ -54,8 +53,7 @@ describe('HostStore', () => {
   });
 
   it('toasts a failed add and leaves the inventory alone', async () => {
-    const ctx = context({ add: vi.fn().mockRejectedValue(new Error('bad address')) });
-    const store = new HostStore(ctx);
+    const { ctx, hosts: store } = built({ add: vi.fn().mockRejectedValue(new Error('bad address')) });
 
     store.add('remote', 'nonsense');
     await flush();
@@ -66,7 +64,7 @@ describe('HostStore', () => {
 
   it('refuses to remove the local socket, which is not the operator\'s to delete', async () => {
     const remove = vi.fn();
-    const store = new HostStore(context({ remove }));
+    const store = built({ remove }).hosts;
 
     store.remove('dh-local');
     await flush();
@@ -79,7 +77,7 @@ describe('HostStore', () => {
     const list = vi.fn()
       .mockResolvedValueOnce([host('dh-local', { kind: 'local' }), host('dh-edge')])
       .mockResolvedValue([host('dh-local', { kind: 'local' })]);
-    const store = new HostStore(context({ remove, list }));
+    const store = built({ remove, list }).hosts;
     await store.refresh();
 
     store.remove('dh-edge');
@@ -92,7 +90,7 @@ describe('HostStore', () => {
   it('shows a check in flight, then what the daemon answered', async () => {
     const check = vi.fn().mockResolvedValue(host('dh-edge', { status: 'error', note: 'refused' }));
     const list = vi.fn().mockResolvedValue([host('dh-edge')]);
-    const store = new HostStore(context({ check, list }));
+    const store = built({ check, list }).hosts;
     await store.refresh();
 
     store.check('dh-edge');
@@ -107,8 +105,7 @@ describe('HostStore', () => {
   it('toasts a failed check and re-reads the real state', async () => {
     const check = vi.fn().mockRejectedValue(new Error('timeout'));
     const list = vi.fn().mockResolvedValue([host('dh-edge')]);
-    const ctx = context({ check, list });
-    const store = new HostStore(ctx);
+    const { ctx, hosts: store } = built({ check, list });
     await store.refresh();
 
     store.check('dh-edge');

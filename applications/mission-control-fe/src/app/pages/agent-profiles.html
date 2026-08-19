@@ -4,7 +4,7 @@
     <h2>Agent Profiles</h2>
   </div>
   <div class="head-stats mono">
-    <span>{{ store.profileTemplates().length }} templates</span>
+    <span>{{ templates.templates().length }} templates</span>
   </div>
   <button class="btn primary" (click)="newTemplate()">+ new profile</button>
 </div>
@@ -12,14 +12,14 @@
 <div class="layout" data-reveal>
   <!-- ── template list ───────────────────────────────────────────────────── -->
   <div class="list">
-    @if (store.profileTemplates().length === 0) {
+    @if (templates.templates().length === 0) {
       <div class="panel empty">
         <p class="mono dim">No reusable profiles yet.</p>
         <p class="lock-hint">Build a blueprint once, deploy it to any container.</p>
         <button class="btn primary" (click)="newTemplate()">+ create one</button>
       </div>
     }
-    @for (t of store.profileTemplates(); track t.id) {
+    @for (t of templates.templates(); track t.id) {
       <div class="panel tmpl" [class.active]="draft().id === t.id" (click)="edit(t)">
         <div class="panel-h">
           <span class="nm mono">{{ t.name }}</span>

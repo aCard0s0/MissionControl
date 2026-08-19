@@ -29,12 +29,12 @@
         @if (pickerForId() === s.id) {
           <div class="scrim" (click)="pickerForId.set(null); $event.stopPropagation()"></div>
           <div class="pop">
-            @for (c of store.containers(); track c.id) {
+            @for (c of containers.containers(); track c.id) {
               <button class="row" [class.sel]="c.id === s.target().containerId"
                       (click)="pickContainer(s, c); $event.stopPropagation()">
                 <mc-status [status]="c.status" label=" " />
                 <span class="nm">{{ c.name }}</span>
-                <span class="meta">{{ store.hostById(c.hostId)?.name }}</span>
+                <span class="meta">{{ hosts.byId(c.hostId)?.name }}</span>
               </button>
             } @empty {
               <div class="none">no containers</div>

@@ -2,7 +2,8 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { HostStore } from '../core/store/host-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { DockerHost } from '../core/models';
 import { McpEditorDraft, newMcpDraft } from './mcp-editor';
 import { McpServerEditor } from './mcp-server-editor';
@@ -19,9 +20,13 @@ const hosts: DockerHost[] = [{
 
 /** Only what the editor reaches for on the store, so nothing here touches a backend. */
 const storeStub = () => ({
-  dockerHosts: signal(hosts),
-  mcpServers: signal([]),
-  saveCatalogMcpServer: vi.fn().mockResolvedValue('mcp-1'),
+  catalog: {
+    servers: signal([]),
+    save: vi.fn().mockResolvedValue('mcp-1'),
+  },
+  hosts: {
+    hosts: signal(hosts),
+  },
 });
 
 @Component({
@@ -36,7 +41,7 @@ class Host {
 
 const render = (draft: McpEditorDraft, store = storeStub()) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: HostStore, useValue: store.hosts }, { provide: McpCatalogStore, useValue: store.catalog }] });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.draft.set(draft);
   fixture.detectChanges();
@@ -110,13 +115,13 @@ describe('McpServerEditor save', () => {
     press(fixture, 'add server');
     await fixture.whenStable();
 
-    expect(store.saveCatalogMcpServer).toHaveBeenCalledTimes(1);
-    expect(store.saveCatalogMcpServer.mock.calls[0][0]).toMatchObject({
+    expect(store.catalog.save).toHaveBeenCalledTimes(1);
+    expect(store.catalog.save.mock.calls[0][0]).toMatchObject({
       name: 'browser', description: 'browser stack', kind: 'managed',
       hostId: 'dh-local', image: 'mcp/playwright:latest', internalPort: 1100, path: '/mcp',
     });
     // a new entry carries no id for the store to update
-    expect(store.saveCatalogMcpServer.mock.calls[0][1]).toBeUndefined();
+    expect(store.catalog.save.mock.calls[0][1]).toBeUndefined();
     expect(host.savedId).toBe('mcp-1');
   });
 
@@ -126,12 +131,12 @@ describe('McpServerEditor save', () => {
     press(fixture, 'save changes');
     await fixture.whenStable();
 
-    expect(store.saveCatalogMcpServer.mock.calls[0][1]).toBe('mcp-7');
+    expect(store.catalog.save.mock.calls[0][1]).toBe('mcp-7');
   });
 
   it('stays open when the store refuses the save', async () => {
     const store = storeStub();
-    store.saveCatalogMcpServer.mockResolvedValue('');
+    store.catalog.save.mockResolvedValue('');
     const { fixture, host } = render(managedDraft(), store);
 
     press(fixture, 'add server');
@@ -143,14 +148,14 @@ describe('McpServerEditor save', () => {
 
   it('will not send a second save while the first is still in flight', async () => {
     const store = storeStub();
-    store.saveCatalogMcpServer.mockReturnValue(new Promise(() => { /* never settles */ }));
+    store.catalog.save.mockReturnValue(new Promise(() => { /* never settles */ }));
     const { fixture } = render(managedDraft(), store);
 
     press(fixture, 'add server');
     expect(primary(fixture).textContent?.trim()).toBe('saving…');
 
     primary(fixture).click();
-    expect(store.saveCatalogMcpServer).toHaveBeenCalledTimes(1);
+    expect(store.catalog.save).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a draft the backend would reject anyway', () => {
@@ -161,7 +166,7 @@ describe('McpServerEditor save', () => {
 
   it('refuses a name another catalog entry already answers to', () => {
     const store = storeStub();
-    store.mcpServers.set([{ id: 'other', name: 'BROWSER' }] as never);
+    store.catalog.servers.set([{ id: 'other', name: 'BROWSER' }] as never);
     const { fixture } = render(managedDraft(), store);
 
     expect(primary(fixture).disabled).toBe(true);
@@ -174,6 +179,6 @@ describe('McpServerEditor save', () => {
 
     expect(host.closes).toBe(1);
     expect(host.savedId).toBeNull();
-    expect(store.saveCatalogMcpServer).not.toHaveBeenCalled();
+    expect(store.catalog.save).not.toHaveBeenCalled();
   });
 });

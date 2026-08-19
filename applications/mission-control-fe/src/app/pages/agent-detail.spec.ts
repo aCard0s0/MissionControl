@@ -4,7 +4,16 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentMcpStore } from '../core/store/agent-mcp-store';
+import { AgentRemoval } from '../core/store/agent-removal';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { AgentSkillStore } from '../core/store/agent-skill-store';
+import { AgentStore } from '../core/store/agent-store';
+import { HostStore } from '../core/store/host-store';
+import { JobStore } from '../core/store/job-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { StoreContext } from '../core/store/store-context';
+import { TemplateStore } from '../core/store/template-store';
 import { AgentProfile, ChatMessage, SessionInfo } from '../core/models';
 import { AgentDetailPage } from './agent-detail';
 import { TestFixture, button, el, fill, press, settle, text } from '../testing/dom';
@@ -32,42 +41,48 @@ const messages: ChatMessage[] = [
 const storeStub = (profile: AgentProfile | null) => {
   const held = signal(profile ? [profile] : []);
   return {
-  held,
-  agentById: (id: string | null) => held().find(a => a.id === id) ?? null,
-  containerJobs: signal([]),
-  agentSessions: vi.fn().mockResolvedValue([session]),
-  agentSessionMessages: vi.fn().mockResolvedValue(messages),
-  deleteAgentSession: vi.fn().mockResolvedValue(undefined),
-  agentLogTail: vi.fn().mockResolvedValue([]),
-  updateSoul: vi.fn().mockResolvedValue(true),
-  updateAgentConfig: vi.fn().mockResolvedValue(true),
-  pingIntegrations: vi.fn(),
-  removeAgent: vi.fn(),
-  captureTemplate: vi.fn().mockResolvedValue('pt-new'),
-  toast: vi.fn(),
-  // the tab panels, rendered as children
-  agentSetupOf: () => null,
-  agentSetupLoading: () => false,
-  agentSetup: vi.fn().mockResolvedValue(null),
-  setAgentEnv: vi.fn().mockResolvedValue(null),
-  initAgentEnv: vi.fn().mockResolvedValue(null),
-  toggleSkill: vi.fn(),
-  addSkill: vi.fn(),
-  removeSkill: vi.fn(),
-  getSkillContent: vi.fn().mockResolvedValue(null),
-  saveSkillContent: vi.fn().mockResolvedValue(true),
-  mcpServers: signal([]),
-  mcpServerById: () => null,
-  dockerHosts: signal([]),
-  hostById: () => null,
-  addMcp: vi.fn().mockResolvedValue(true),
-  updateMcp: vi.fn().mockResolvedValue(true),
-  setMcpEnabled: vi.fn().mockResolvedValue(true),
-  connectCatalogMcp: vi.fn().mockResolvedValue(true),
-  syncCatalogMcp: vi.fn().mockResolvedValue(true),
-  unlinkCatalogMcp: vi.fn().mockResolvedValue(true),
-  removeMcp: vi.fn().mockResolvedValue(true),
-  testMcp: vi.fn().mockResolvedValue(true),
+    held,
+    agents: {
+      byId: (id: string | null) => held().find(a => a.id === id) ?? null,
+      logTail: vi.fn().mockResolvedValue([]),
+      updateSoul: vi.fn().mockResolvedValue(true),
+      updateConfig: vi.fn().mockResolvedValue(true),
+      pingIntegrations: vi.fn(),
+    },
+    removal: { remove: vi.fn() },
+    jobs: { forSelectedContainer: signal([]) },
+    templates: { capture: vi.fn().mockResolvedValue('pt-new') },
+    ctx: { toast: vi.fn() },
+    // the tab panels, rendered as children
+    setup: {
+      setupOf: () => null,
+      isSetupLoading: () => false,
+      setup: vi.fn().mockResolvedValue(null),
+      setEnv: vi.fn().mockResolvedValue(null),
+      initEnv: vi.fn().mockResolvedValue(null),
+      sessions: vi.fn().mockResolvedValue([session]),
+      sessionMessages: vi.fn().mockResolvedValue(messages),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+    },
+    skills: {
+      toggle: vi.fn(),
+      add: vi.fn(),
+      remove: vi.fn(),
+      content: vi.fn().mockResolvedValue(null),
+      saveContent: vi.fn().mockResolvedValue(true),
+    },
+    catalog: { servers: signal([]), byId: () => null },
+    hosts: { hosts: signal([]), byId: () => null },
+    agentMcp: {
+      add: vi.fn().mockResolvedValue(true),
+      update: vi.fn().mockResolvedValue(true),
+      setEnabled: vi.fn().mockResolvedValue(true),
+      connectCatalog: vi.fn().mockResolvedValue(true),
+      syncCatalog: vi.fn().mockResolvedValue(true),
+      unlinkCatalog: vi.fn().mockResolvedValue(true),
+      remove: vi.fn().mockResolvedValue(true),
+      test: vi.fn().mockResolvedValue(true),
+    },
   };
 };
 
@@ -79,7 +94,16 @@ const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas') => {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: HermesStore, useValue: store },
+      { provide: AgentMcpStore, useValue: store.agentMcp },
+      { provide: AgentRemoval, useValue: store.removal },
+      { provide: AgentSetupStore, useValue: store.setup },
+      { provide: AgentSkillStore, useValue: store.skills },
+      { provide: AgentStore, useValue: store.agents },
+      { provide: HostStore, useValue: store.hosts },
+      { provide: JobStore, useValue: store.jobs },
+      { provide: McpCatalogStore, useValue: store.catalog },
+      { provide: StoreContext, useValue: store.ctx },
+      { provide: TemplateStore, useValue: store.templates },
       { provide: ActivatedRoute, useValue: { paramMap: route } },
     ],
   });
@@ -151,7 +175,7 @@ describe('AgentDetailPage', () => {
 
     openTab(fixture, 'sessions');
     await settle(fixture);
-    expect(store.agentSessions).toHaveBeenCalledWith('a-atlas');
+    expect(store.setup.sessions).toHaveBeenCalledWith('a-atlas');
     expect(el(fixture).querySelectorAll('.sess-row').length).toBe(1);
 
     const view = Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.sess-row button'))
@@ -180,16 +204,16 @@ describe('AgentDetailPage', () => {
 
   it('polls the gateway log only while Activity is open', async () => {
     const { fixture, store } = render(storeStub(agent()));
-    expect(store.agentLogTail).not.toHaveBeenCalled();
+    expect(store.agents.logTail).not.toHaveBeenCalled();
 
     openTab(fixture, 'activity');
     await settle(fixture);
-    expect(store.agentLogTail).toHaveBeenCalledWith('a-atlas', 100);
+    expect(store.agents.logTail).toHaveBeenCalledWith('a-atlas', 100);
 
-    const afterOpen = store.agentLogTail.mock.calls.length;
+    const afterOpen = store.agents.logTail.mock.calls.length;
     openTab(fixture, 'overview');
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(store.agentLogTail.mock.calls.length).toBe(afterOpen);
+    expect(store.agents.logTail.mock.calls.length).toBe(afterOpen);
   });
 });
 
@@ -233,7 +257,7 @@ describe('AgentDetailPage profile files', () => {
     press(fixture, 'save');
     await settle(fixture);
 
-    expect(store.updateSoul).toHaveBeenCalledWith('a-atlas', '# SOUL.md — edited\n');
+    expect(store.agents.updateSoul).toHaveBeenCalledWith('a-atlas', '# SOUL.md — edited\n');
     expect(text(fixture)).toContain('saved ✓');
 
     await settle(fixture, 2_000);
@@ -242,7 +266,7 @@ describe('AgentDetailPage profile files', () => {
 
   it('does not claim a save that failed', async () => {
     const store = storeStub(agent());
-    store.updateSoul.mockResolvedValue(false);
+    store.agents.updateSoul.mockResolvedValue(false);
     const { fixture } = render(store);
     openTab(fixture, 'files');
     await edit(fixture, '# SOUL.md — edited\n');
@@ -262,7 +286,7 @@ describe('AgentDetailPage profile files', () => {
     await settle(fixture);
 
     expect(button(fixture, 'save').disabled).toBe(true);
-    expect(store.updateSoul).not.toHaveBeenCalled();
+    expect(store.agents.updateSoul).not.toHaveBeenCalled();
   });
 
   it('saves config.yaml through its own call', async () => {
@@ -274,13 +298,13 @@ describe('AgentDetailPage profile files', () => {
     press(fixture, 'save');
     await settle(fixture);
 
-    expect(store.updateAgentConfig).toHaveBeenCalledWith('a-atlas', 'provider: nous\n');
-    expect(store.updateSoul).not.toHaveBeenCalled();
+    expect(store.agents.updateConfig).toHaveBeenCalledWith('a-atlas', 'provider: nous\n');
+    expect(store.agents.updateSoul).not.toHaveBeenCalled();
   });
 
   it('lists only this profile\'s jobs, and says so when it has none', () => {
     const store = storeStub(agent());
-    store.containerJobs.set([
+    store.jobs.forSelectedContainer.set([
       { id: 'j-1', agentId: 'a-atlas', name: 'digest', schedule: '@daily', deliverTo: 'log',
         enabled: true, prompt: 'summarize', lastRun: null, lastStatus: null, nextRun: 5_000 },
       { id: 'j-2', agentId: 'a-scribe', name: 'other', schedule: '@daily', deliverTo: 'log',
@@ -325,7 +349,7 @@ describe('AgentDetailPage sessions', () => {
 
   it('says so when the profile has no recorded sessions', async () => {
     const store = storeStub(agent());
-    store.agentSessions.mockResolvedValue([]);
+    store.setup.sessions.mockResolvedValue([]);
     const { fixture } = render(store);
 
     openTab(fixture, 'sessions');
@@ -336,7 +360,7 @@ describe('AgentDetailPage sessions', () => {
 
   it('treats a failed listing as no sessions rather than as a broken tab', async () => {
     const store = storeStub(agent());
-    store.agentSessions.mockRejectedValue(new Error('no session dir'));
+    store.setup.sessions.mockRejectedValue(new Error('no session dir'));
     const { fixture } = render(store);
 
     openTab(fixture, 'sessions');
@@ -353,11 +377,11 @@ describe('AgentDetailPage sessions', () => {
     openTab(fixture, 'overview');
     openTab(fixture, 'sessions');
     await settle(fixture);
-    expect(store.agentSessions).toHaveBeenCalledTimes(1);
+    expect(store.setup.sessions).toHaveBeenCalledTimes(1);
 
     press(fixture, 'refresh');
     await settle(fixture);
-    expect(store.agentSessions).toHaveBeenCalledTimes(2);
+    expect(store.setup.sessions).toHaveBeenCalledTimes(2);
   });
 
   it('drops a deleted session from the list, and closes it if it was open', async () => {
@@ -371,7 +395,7 @@ describe('AgentDetailPage sessions', () => {
     press(fixture, 'delete', '.sess-row');
     await settle(fixture);
 
-    expect(store.deleteAgentSession).toHaveBeenCalledWith('a-atlas', 'sess-1');
+    expect(store.setup.deleteSession).toHaveBeenCalledWith('a-atlas', 'sess-1');
     expect(el(fixture).querySelectorAll('.sess-row').length).toBe(0);
     expect(el(fixture).querySelector('mc-session-viewer')).toBeNull();
     vi.unstubAllGlobals();
@@ -386,7 +410,7 @@ describe('AgentDetailPage sessions', () => {
     press(fixture, 'delete', '.sess-row');
     await settle(fixture);
 
-    expect(store.deleteAgentSession).not.toHaveBeenCalled();
+    expect(store.setup.deleteSession).not.toHaveBeenCalled();
     expect(el(fixture).querySelectorAll('.sess-row').length).toBe(1);
     vi.unstubAllGlobals();
   });
@@ -394,7 +418,7 @@ describe('AgentDetailPage sessions', () => {
   it('says why a session could not be deleted, and keeps it', async () => {
     vi.stubGlobal('confirm', () => true);
     const store = storeStub(agent());
-    store.deleteAgentSession.mockRejectedValue(new Error('file locked'));
+    store.setup.deleteSession.mockRejectedValue(new Error('file locked'));
     const { fixture } = render(store);
     openTab(fixture, 'sessions');
     await settle(fixture);
@@ -402,14 +426,14 @@ describe('AgentDetailPage sessions', () => {
     press(fixture, 'delete', '.sess-row');
     await settle(fixture);
 
-    expect(store.toast).toHaveBeenCalledWith('session delete failed: file locked');
+    expect(store.ctx.toast).toHaveBeenCalledWith('session delete failed: file locked');
     expect(el(fixture).querySelectorAll('.sess-row').length).toBe(1);
     vi.unstubAllGlobals();
   });
 
   it('closes the viewer and says why when a transcript cannot be read', async () => {
     const store = storeStub(agent());
-    store.agentSessionMessages.mockRejectedValue(new Error('corrupt transcript'));
+    store.setup.sessionMessages.mockRejectedValue(new Error('corrupt transcript'));
     const { fixture } = render(store);
     openTab(fixture, 'sessions');
     await settle(fixture);
@@ -417,7 +441,7 @@ describe('AgentDetailPage sessions', () => {
     press(fixture, 'view', '.sess-row');
     await settle(fixture);
 
-    expect(store.toast).toHaveBeenCalledWith('session load failed: corrupt transcript');
+    expect(store.ctx.toast).toHaveBeenCalledWith('session load failed: corrupt transcript');
     expect(el(fixture).querySelector('mc-session-viewer')).toBeNull();
   });
 
@@ -441,7 +465,7 @@ describe('AgentDetailPage sessions', () => {
     press(fixture, 'download', '.sess-row');
     await settle(fixture);
 
-    expect(store.agentSessionMessages).toHaveBeenCalledWith('a-atlas', 'sess-1');
+    expect(store.setup.sessionMessages).toHaveBeenCalledWith('a-atlas', 'sess-1');
     expect(anchor.download).toBe('atlas-sess-1.json');
     expect(click).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:transcript');
@@ -449,7 +473,7 @@ describe('AgentDetailPage sessions', () => {
 
   it('says so rather than downloading nothing when the transcript cannot be read', async () => {
     const store = storeStub(agent());
-    store.agentSessionMessages.mockRejectedValue(new Error('gone'));
+    store.setup.sessionMessages.mockRejectedValue(new Error('gone'));
     const { fixture } = render(store);
     openTab(fixture, 'sessions');
     await settle(fixture);
@@ -457,7 +481,7 @@ describe('AgentDetailPage sessions', () => {
     press(fixture, 'download', '.sess-row');
     await settle(fixture);
 
-    expect(store.toast).toHaveBeenCalledWith('session download failed');
+    expect(store.ctx.toast).toHaveBeenCalledWith('session download failed');
   });
 });
 
@@ -476,7 +500,7 @@ describe('AgentDetailPage profile actions', () => {
 
     press(fixture, 'check connectivity');
 
-    expect(store.pingIntegrations).toHaveBeenCalledWith('a-atlas');
+    expect(store.agents.pingIntegrations).toHaveBeenCalledWith('a-atlas');
     expect(text(fixture)).toContain('checking…');
 
     await settle(fixture, 1_200);
@@ -495,7 +519,7 @@ describe('AgentDetailPage profile actions', () => {
     await fill(fixture, 'type', 'atlas');
     press(fixture, 'delete permanently');
 
-    expect(store.removeAgent).toHaveBeenCalledWith('a-atlas');
+    expect(store.removal.remove).toHaveBeenCalledWith('a-atlas');
     expect(navigate).toHaveBeenCalledWith(['/agents']);
   });
 
@@ -506,7 +530,7 @@ describe('AgentDetailPage profile actions', () => {
     press(fixture, 'cancel');
 
     expect(el(fixture).querySelector('.modal')).toBeNull();
-    expect(store.removeAgent).not.toHaveBeenCalled();
+    expect(store.removal.remove).not.toHaveBeenCalled();
   });
 
   it('proposes a template name derived from the profile', async () => {
@@ -527,8 +551,8 @@ describe('AgentDetailPage profile actions', () => {
     press(fixture, 'save template');
     await settle(fixture);
 
-    expect(store.captureTemplate).toHaveBeenCalledWith('a-atlas', 'ops-blueprint');
-    expect(store.toast).toHaveBeenCalledWith('saved template "ops-blueprint"');
+    expect(store.templates.capture).toHaveBeenCalledWith('a-atlas', 'ops-blueprint');
+    expect(store.ctx.toast).toHaveBeenCalledWith('saved template "ops-blueprint"');
     expect(navigate).toHaveBeenCalledWith(['/profiles']);
   });
 
@@ -540,12 +564,12 @@ describe('AgentDetailPage profile actions', () => {
     press(fixture, 'save template');
     await settle(fixture);
 
-    expect(store.captureTemplate).toHaveBeenCalledWith('a-atlas', 'atlas-template');
+    expect(store.templates.capture).toHaveBeenCalledWith('a-atlas', 'atlas-template');
   });
 
   it('keeps the modal open when the capture failed', async () => {
     const store = storeStub(agent());
-    store.captureTemplate.mockResolvedValue('');
+    store.templates.capture.mockResolvedValue('');
     const { fixture, navigate } = render(store);
     press(fixture, 'save as template');
 
@@ -574,12 +598,12 @@ describe('AgentDetailPage activity', () => {
 
     await settle(fixture, 10_000);
 
-    expect(store.agentLogTail.mock.calls.length).toBeGreaterThan(1);
+    expect(store.agents.logTail.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('shows why the log could not be read', async () => {
     const store = storeStub(agent());
-    store.agentLogTail.mockRejectedValue(new Error('gateway down'));
+    store.agents.logTail.mockRejectedValue(new Error('gateway down'));
     const { fixture } = render(store);
 
     openTab(fixture, 'activity');
@@ -658,13 +682,13 @@ describe('AgentDetailPage against the poll', () => {
     navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe' }));
     await settle(fixture);
 
-    expect(store.agentSessions).toHaveBeenCalledWith('a-scribe');
+    expect(store.setup.sessions).toHaveBeenCalledWith('a-scribe');
   });
 
   it('drops a session listing that landed after the profile changed', async () => {
     let land!: (value: unknown[]) => void;
     const store = storeStub(agent());
-    store.agentSessions.mockReturnValueOnce(new Promise(resolve => { land = resolve; }))
+    store.setup.sessions.mockReturnValueOnce(new Promise(resolve => { land = resolve; }))
       .mockResolvedValue([]);
     const { fixture, route } = render(store);
     openTab(fixture, 'sessions');
@@ -680,7 +704,7 @@ describe('AgentDetailPage against the poll', () => {
   it('drops a transcript that landed after the modal was closed', async () => {
     let land!: (value: unknown[]) => void;
     const store = storeStub(agent());
-    store.agentSessionMessages.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    store.setup.sessionMessages.mockReturnValue(new Promise(resolve => { land = resolve; }));
     const { fixture } = render(store);
     openTab(fixture, 'sessions');
     await settle(fixture);
@@ -701,7 +725,7 @@ describe('AgentDetailPage against the poll', () => {
     await settle(fixture);
     press(fixture, 'view', '.sess-row');
     await settle(fixture);
-    const afterView = store.agentSessionMessages.mock.calls.length;
+    const afterView = store.setup.sessionMessages.mock.calls.length;
 
     const anchor = document.createElement('a');
     vi.spyOn(anchor, 'click').mockImplementation(() => { /* no navigation */ });
@@ -716,14 +740,14 @@ describe('AgentDetailPage against the poll', () => {
     press(fixture, 'download', 'mc-session-viewer');
     await settle(fixture);
 
-    expect(store.agentSessionMessages.mock.calls.length).toBe(afterView);
+    expect(store.setup.sessionMessages.mock.calls.length).toBe(afterView);
     expect(anchor.download).toBe('atlas-sess-1.json');
   });
 
   it('does not confirm a save that landed after the profile changed', async () => {
     let land!: (value: boolean) => void;
     const store = storeStub(agent());
-    store.updateSoul.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    store.agents.updateSoul.mockReturnValue(new Promise(resolve => { land = resolve; }));
     const { fixture, route } = render(store);
     openTab(fixture, 'files');
     await edit(fixture, '# SOUL.md — edited\n');
@@ -746,7 +770,7 @@ describe('AgentDetailPage against the poll', () => {
     navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe' }));
     await settle(fixture, 6_000);
 
-    const asked = store.agentLogTail.mock.calls.map(c => c[0]);
+    const asked = store.agents.logTail.mock.calls.map(c => c[0]);
     expect(asked.at(-1)).toBe('a-scribe');
   });
 });

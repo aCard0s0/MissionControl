@@ -3,7 +3,10 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { StoreContext } from '../core/store/store-context';
+import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate } from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
@@ -18,13 +21,21 @@ const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
 
 /** Only what the panel reaches for on the store, so nothing here touches a backend. */
 const storeStub = (templates: ProfileTemplate[] = [], catalog: McpCatalogServer[] = []) => ({
-  mcpServers: signal(catalog),
-  mcpServerById: (id: string | null) => catalog.find(s => s.id === id) ?? null,
-  llmProviders: signal([]),
-  modelProviders: signal([]),
-  templateById: (id: string | null) => templates.find(t => t.id === id) ?? null,
-  saveTemplate: vi.fn().mockResolvedValue('t-new'),
-  toast: vi.fn(),
+  catalog: {
+    servers: signal(catalog),
+    byId: (id: string | null) => catalog.find(s => s.id === id) ?? null,
+  },
+  ctx: {
+    toast: vi.fn(),
+  },
+  providers: {
+    llmProviders: signal([]),
+    ollamaProviders: signal([]),
+  },
+  templates: {
+    byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
+    save: vi.fn().mockResolvedValue('t-new'),
+  },
 });
 
 @Component({
@@ -49,7 +60,7 @@ const render = async (store: ReturnType<typeof storeStub>, draft = newProfileDra
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     // the pane links to /agents, so RouterLink needs a router present
-    providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
+    providers: [provideRouter([]), { provide: McpCatalogStore, useValue: store.catalog }, { provide: ProviderStore, useValue: store.providers }, { provide: StoreContext, useValue: store.ctx }, { provide: TemplateStore, useValue: store.templates }],
   });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.draft.set(draft);
@@ -105,8 +116,8 @@ describe('ProfileEditorPanel', () => {
     press(fixture, 'create template', '.editor-actions');
     await fixture.whenStable();
 
-    expect(store.saveTemplate.mock.calls[0][0]).toMatchObject({ name: 'ops-sre' });
-    expect(store.saveTemplate.mock.calls[0][1]).toBeUndefined();
+    expect(store.templates.save.mock.calls[0][0]).toMatchObject({ name: 'ops-sre' });
+    expect(store.templates.save.mock.calls[0][1]).toBeUndefined();
     expect(host.savedId).toBe('t-new');
     // the saved id lands on the draft, so a second save updates in place
     expect(draft.id).toBe('t-new');
@@ -119,14 +130,14 @@ describe('ProfileEditorPanel', () => {
 
   it('will not send a second save while the first is in flight', async () => {
     const store = storeStub();
-    store.saveTemplate.mockReturnValue(new Promise(() => { /* never settles */ }));
+    store.templates.save.mockReturnValue(new Promise(() => { /* never settles */ }));
     const { fixture } = await render(store, { ...newProfileDraft(), name: 'ops-sre' });
 
     press(fixture, 'create template', '.editor-actions');
     expect(submit(fixture).textContent?.trim()).toBe('saving…');
     submit(fixture).click();
 
-    expect(store.saveTemplate).toHaveBeenCalledTimes(1);
+    expect(store.templates.save).toHaveBeenCalledTimes(1);
   });
 
   it('asks the page to deploy or delete rather than doing either itself', async () => {
@@ -154,7 +165,7 @@ describe('ProfileEditorPanel', () => {
     press(fixture, 'cancel', '.editor-actions');
 
     expect(host.closes).toBe(1);
-    expect(store.saveTemplate).not.toHaveBeenCalled();
+    expect(store.templates.save).not.toHaveBeenCalled();
   });
 });
 
@@ -225,7 +236,7 @@ describe('ProfileEditorPanel skills', () => {
     addRow(fixture, 'skills');
 
     expect(draft.skills).toEqual([]);
-    expect(store.toast).toHaveBeenCalledWith(
+    expect(store.ctx.toast).toHaveBeenCalledWith(
       'invalid skill id "web research" — use letters, digits, . _ - (no spaces)');
   });
 
@@ -237,7 +248,7 @@ describe('ProfileEditorPanel skills', () => {
     addRow(fixture, 'skills');
 
     expect(draft.skills).toEqual([]);
-    expect(store.toast).not.toHaveBeenCalled();
+    expect(store.ctx.toast).not.toHaveBeenCalled();
   });
 
   it('drops a skill from the chip row', async () => {
@@ -312,7 +323,7 @@ describe('ProfileEditorPanel mcp servers', () => {
     press(fixture, 'add snapshot');
 
     expect(draft.mcpServers).toHaveLength(1);
-    expect(store.toast).toHaveBeenCalledWith(
+    expect(store.ctx.toast).toHaveBeenCalledWith(
       'an MCP server named "browser" is already in this template');
   });
 
@@ -325,7 +336,7 @@ describe('ProfileEditorPanel mcp servers', () => {
     press(fixture, 'add snapshot');
 
     expect(draft.mcpServers).toEqual([]);
-    expect(store.toast).toHaveBeenCalledWith(
+    expect(store.ctx.toast).toHaveBeenCalledWith(
       'browser does not have a usable connection definition');
   });
 });
@@ -376,12 +387,12 @@ describe('ProfileEditorPanel saving', () => {
     press(fixture, 'save changes', '.editor-actions');
     await fixture.whenStable();
 
-    expect(store.saveTemplate.mock.calls[0][1]).toBe('t-1');
+    expect(store.templates.save.mock.calls[0][1]).toBe('t-1');
   });
 
   it('keeps the draft editable when the save was refused', async () => {
     const store = storeStub();
-    store.saveTemplate.mockResolvedValue('');
+    store.templates.save.mockResolvedValue('');
     const draft = { ...newProfileDraft(), name: 'ops-sre' };
     const { fixture, host } = await render(store, draft);
 

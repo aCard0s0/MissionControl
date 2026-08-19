@@ -1,16 +1,20 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { BoardColumn, BoardTask } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
 
 /** The kanban board. Moves are optimistic and roll back if the backend says no. */
+@Injectable({ providedIn: 'root' })
 export class BoardStore {
   readonly tasks: WritableSignal<BoardTask[]>;
 
   readonly forSelectedContainer = computed(() =>
     this.tasks().filter(t => t.containerId === this.containers.selectedContainerId()));
 
-  constructor(private readonly ctx: StoreContext, private readonly containers: ContainerStore) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+
+  constructor() {
     this.tasks = signal([]);
   }
 

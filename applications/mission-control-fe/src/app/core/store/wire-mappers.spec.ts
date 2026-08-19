@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiProfileTemplate } from '../hermes-api';
-import { toAgentProfile, toImageCatalog, toMcpCatalogServer, toProfileTemplate } from './wire-mappers';
+import {
+  toAgentProfile, toImageCatalog, toMcpCatalogServer, toMcpRetainedResource, toProfileTemplate,
+} from './wire-mappers';
 
 /**
  * These mappers exist because the wire is looser than the model: a field the
@@ -78,7 +80,7 @@ describe('toAgentProfile', () => {
 });
 
 describe('toMcpCatalogServer', () => {
-  const minimal = { id: 'mcp-1', desiredState: 'stopped' } as ApiMcpCatalogServer;
+  const minimal: ApiMcpCatalogServer = { id: 'mcp-1', desiredState: 'stopped' };
 
   it('fills in every list and label a sparse row leaves out', () => {
     expect(toMcpCatalogServer(minimal)).toMatchObject({
@@ -93,8 +95,7 @@ describe('toMcpCatalogServer', () => {
   });
 
   it('defaults a stdio entry to the stdio transport', () => {
-    expect(toMcpCatalogServer({ ...minimal, kind: 'stdio' } as ApiMcpCatalogServer).transport)
-      .toBe('stdio');
+    expect(toMcpCatalogServer({ ...minimal, kind: 'stdio' }).transport).toBe('stdio');
   });
 
   it('normalizes the states the backend spells in mixed case', () => {
@@ -126,6 +127,71 @@ describe('toMcpCatalogServer', () => {
 
     expect(server.headers[0].secret).toBe(false);
     expect(server.environment[0].secret).toBe(true);
+  });
+
+  it('reads a support service\'s own entries the same way, not just the top-level ones', () => {
+    const service = toMcpCatalogServer({
+      ...minimal,
+      supportServices: [{
+        name: 'database', image: 'postgres:16',
+        environment: [{ key: 'POSTGRES_PASSWORD', value: null }],
+      }],
+    }).supportServices[0];
+
+    expect(service.environment?.[0]).toMatchObject({ secret: false, value: null });
+    // absent lists stay absent — the editor sends this shape back, and an empty
+    // entrypoint would clear the image's own instead of leaving it alone
+    expect(service).toMatchObject({ platform: null });
+    expect(service.entrypoint).toBeUndefined();
+    expect(service.command).toBeUndefined();
+    expect(service.volumes).toBeUndefined();
+  });
+
+  it('falls back to an external HTTP entry for a kind this build does not know', () => {
+    const server = toMcpCatalogServer({ ...minimal, kind: 'quantum' } as never);
+
+    expect(server).toMatchObject({ kind: 'external', transport: 'http' });
+  });
+
+  it('falls back to the kind\'s own transport when the row names an unknown one', () => {
+    expect(toMcpCatalogServer({ ...minimal, kind: 'stdio', transport: 'carrier-pigeon' } as never)
+      .transport).toBe('stdio');
+  });
+
+  it('leaves a field this build knows nothing about out of the store', () => {
+    const server = toMcpCatalogServer({ ...minimal, quantumEntanglement: true } as never);
+
+    expect(server).not.toHaveProperty('quantumEntanglement');
+  });
+
+  it('copies nested structures, so the store cannot alias the response body', () => {
+    const payload = {
+      ...minimal,
+      volumes: [{ name: 'data', target: '/data' }],
+      healthcheck: { test: ['CMD', 'true'] },
+    };
+    const server = toMcpCatalogServer(payload as never);
+    server.volumes[0].name = 'edited';
+    server.healthcheck!.test.push('extra');
+
+    expect(payload.volumes[0].name).toBe('data');
+    expect(payload.healthcheck.test).toEqual(['CMD', 'true']);
+  });
+});
+
+describe('toMcpRetainedResource', () => {
+  it('gives every label the row is rendered by something to show', () => {
+    expect(toMcpRetainedResource({ id: 'vol-1' })).toEqual({
+      id: 'vol-1', serverId: null, serverName: '', hostId: '', type: 'volume', name: '',
+      createdAt: 0,
+    });
+  });
+
+  it('keeps what the row does carry', () => {
+    expect(toMcpRetainedResource({
+      id: 'vol-1', serverId: 'mcp-1', serverName: 'browser', hostId: 'dh-local',
+      type: 'volume', name: 'browser-data', createdAt: 7,
+    })).toMatchObject({ serverId: 'mcp-1', serverName: 'browser', name: 'browser-data' });
   });
 });
 

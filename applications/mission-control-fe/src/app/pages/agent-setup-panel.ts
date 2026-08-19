@@ -2,7 +2,8 @@ import {
   ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 
@@ -25,10 +26,11 @@ import { StatusDot } from '../shared/status-dot';
 export class AgentSetupPanel {
   readonly agent = input.required<AgentProfile>();
 
-  protected readonly store = inject(HermesStore);
+  protected readonly setup = inject(AgentSetupStore);
+  protected readonly terminal = inject(TerminalRequestStore);
 
-  protected readonly setup = computed(() => this.store.agentSetupOf(this.agent().id));
-  protected readonly setupLoading = computed(() => this.store.agentSetupLoading(this.agent().id));
+  protected readonly profileSetup = computed(() => this.setup.setupOf(this.agent().id));
+  protected readonly setupLoading = computed(() => this.setup.isSetupLoading(this.agent().id));
 
   /** env var (or '.env' for the init call) with a write in flight. */
   protected readonly envBusy = signal<string | null>(null);
@@ -44,18 +46,18 @@ export class AgentSetupPanel {
       untracked(() => {
         this.msgOpen.set(null);
         this.envDrafts = {};
-        void this.store.agentSetup(id);
+        void this.setup.setup(id);
       });
     });
   }
 
   protected refresh(): void {
-    void this.store.agentSetup(this.agent().id, true);
+    void this.setup.setup(this.agent().id, true);
   }
 
   protected initEnv(): void {
     this.envBusy.set('.env');
-    this.store.initAgentEnv(this.agent().id)
+    this.setup.initEnv(this.agent().id)
       .catch(() => null)
       .finally(() => this.envBusy.set(null));
   }
@@ -77,7 +79,7 @@ export class AgentSetupPanel {
   /** An empty value removes the key; the store caches whatever comes back. */
   private applyEnv(key: string, value: string | null): void {
     this.envBusy.set(key);
-    this.store.setAgentEnv(this.agent().id, [{ key, value }])
+    this.setup.setEnv(this.agent().id, [{ key, value }])
       .catch(() => null)
       .then(saved => { if (saved) delete this.envDrafts[key]; })
       .finally(() => this.envBusy.set(null));

@@ -1,4 +1,5 @@
-import { computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
+import { errorMessage } from '../errors';
 import { LogEntry } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
@@ -8,6 +9,7 @@ import { StoreContext } from './store-context';
  * known output immediately. The loading/error signals describe the *selected*
  * container only — a background poll never repaints another page's state.
  */
+@Injectable({ providedIn: 'root' })
 export class LogStore {
   private readonly byContainer = signal<Record<string, LogEntry[]>>({});
 
@@ -21,10 +23,13 @@ export class LogStore {
 
   private readonly inFlight = new Set<string>();
 
-  constructor(private readonly ctx: StoreContext, private readonly containers: ContainerStore) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+
+  constructor() {
     // a fresh selection has its own loading/error story, and its tail is fetched
     // immediately instead of waiting out the 5s poll
-    containers.onSelect(() => {
+    this.containers.onSelect(() => {
       this.loading.set(false);
       this.updatedAt.set(null);
       this.error.set(null);
@@ -52,7 +57,7 @@ export class LogStore {
       }));
       if (this.isSelected(c.id)) this.updatedAt.set(Date.now());
     } catch (e) {
-      const detail = (e as { message?: string } | null)?.message ?? 'log refresh failed';
+      const detail = errorMessage(e, 'log refresh failed');
       if (this.isSelected(c.id)) this.error.set(detail);
     } finally {
       this.inFlight.delete(c.id);

@@ -1,18 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LogStore } from './log-store';
-import { ContainerStore } from './container-store';
-import { apiContainer, testContext } from '../../testing/store';
+import { apiContainer, testSlices } from '../../testing/store';
 
 const line = (ts: number, msg: string) => ({ ts, level: 'info' as const, source: 'container', msg });
 
 /** Two containers, with the docker log endpoint stubbed. */
 const loaded = async (logs: unknown, containers = [apiContainer(), apiContainer({ id: 'c-2' })]) => {
-  const ctx = testContext({
+  const { ctx, containers: containerStore, logs: store } = testSlices({
     containers: { list: vi.fn().mockResolvedValue(containers), logs },
   });
-  const containerStore = new ContainerStore(ctx);
   await containerStore.refresh();
-  const store = new LogStore(ctx, containerStore);
   return { ctx, containers: containerStore, store };
 };
 

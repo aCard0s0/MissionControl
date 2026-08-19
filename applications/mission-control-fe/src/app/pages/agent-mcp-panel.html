@@ -5,9 +5,9 @@
       <select class="select" [ngModel]="catalogServerId"
               (ngModelChange)="selectCatalogServer($event)">
         <option value="">select a saved server…</option>
-        @for (server of store.mcpServers(); track server.id) {
+        @for (server of catalog.servers(); track server.id) {
           <option [value]="server.id">
-            {{ server.name }} · {{ server.kind }}{{ server.hostId ? ' · ' + (store.hostById(server.hostId)?.name ?? server.hostId) : '' }}
+            {{ server.name }} · {{ server.kind }}{{ server.hostId ? ' · ' + (hosts.byId(server.hostId)?.name ?? server.hostId) : '' }}
           </option>
         }
       </select>
@@ -21,7 +21,7 @@
     @if (selectedCatalogServer(); as selected) {
       <p class="lock-hint">
         @if (selected.kind === 'managed') {
-          {{ selected.runtimeState }} on {{ store.hostById(selected.hostId ?? '')?.name ?? selected.hostId }} ·
+          {{ selected.runtimeState }} on {{ hosts.byId(selected.hostId ?? '')?.name ?? selected.hostId }} ·
           {{ selected.connectionUrl ?? selected.crossHostUrl ?? 'no cross-host url configured' }}
         } @else if (selected.kind === 'external') {
           {{ selected.url }}

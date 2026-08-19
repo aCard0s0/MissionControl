@@ -33,7 +33,7 @@
           <div class="field">
             <label>Docker host</label>
             <select class="select" [(ngModel)]="form.hostId" [disabled]="form.hostLocked">
-              @for (host of hosts(); track host.id) {
+              @for (host of hosts.hosts(); track host.id) {
                 <option [value]="host.id">{{ host.name }} — {{ host.status }}</option>
               }
             </select>

@@ -1,7 +1,8 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ApiSubscribeWebhookRequest, ApiWebhooks } from '../hermes-api';
 import { WebhookListener, WebhookRoute } from '../models';
 import { AgentStore } from './agent-store';
+import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
 
 /**
@@ -15,6 +16,7 @@ import { StoreContext } from './store-context';
  * Secrets are hermes'. A listing carries only a masked tail; {@link secretOf} asks for the
  * full value, once, when an operator opens it.
  */
+@Injectable({ providedIn: 'root' })
 export class WebhookStore {
   readonly routes: WritableSignal<WebhookRoute[]> = signal([]);
   readonly listeners: WritableSignal<WebhookListener[]> = signal([]);
@@ -32,12 +34,13 @@ export class WebhookStore {
 
   private refreshInFlight = false;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly agents: AgentStore,
-    onContainerSelect: (listener: () => void) => void,
-  ) {
-    onContainerSelect(() => void this.refresh());
+  private readonly ctx = inject(StoreContext);
+  private readonly agents = inject(AgentStore);
+
+  constructor() {
+    // the routes on screen belong to the selected container's profiles, so a
+    // switch re-reads rather than waiting out the poll
+    inject(ContainerStore).onSelect(() => void this.refresh());
   }
 
   /** One read per profile in the selected container, unioned. */
@@ -93,7 +96,10 @@ export class WebhookStore {
   /** The full HMAC secret, or null when it could not be read. */
   async secretOf(agentId: string, route: string): Promise<string | null> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return null;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return null;
+    }
     try {
       return (await this.ctx.api.agents.webhooks.secret(resolved.ref, route)).secret;
     } catch (e) {
@@ -105,7 +111,10 @@ export class WebhookStore {
   /** Fires hermes' test POST at the route and answers with what it printed. */
   async test(agentId: string, route: string): Promise<string | null> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return null;
+    if (!resolved) {
+      this.ctx.gone('profile');
+      return null;
+    }
     try {
       return (await this.ctx.api.agents.webhooks.test(resolved.ref, route)).output;
     } catch (e) {
@@ -130,7 +139,7 @@ export class WebhookStore {
     call: (ref: { hostId: string; containerId: string; name: string }) => Promise<ApiWebhooks>,
   ): Promise<boolean> {
     const resolved = this.agents.resolve(agentId);
-    if (!resolved) return false;
+    if (!resolved) return this.ctx.gone('profile');
     try {
       const answer = await call(resolved.ref);
       const containerId = resolved.agent.containerId;

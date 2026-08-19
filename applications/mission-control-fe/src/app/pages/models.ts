@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { ProviderStore } from '../core/store/provider-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
+import { errorMessage } from '../core/errors';
 import { ago } from '../core/format';
 import { ModelProvider, OllamaModel } from '../core/models';
 import { ApiPullState } from '../core/hermes-api';
@@ -15,7 +16,7 @@ import { ApiPullState } from '../core/hermes-api';
   styleUrl: './models.scss',
 })
 export class ModelsPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly providers = inject(ProviderStore);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly ago = ago;
@@ -38,7 +39,7 @@ export class ModelsPage {
   private static readonly HTTP_URL = /^https?:\/\/.+/;
 
   constructor() {
-    void this.store.refreshModelProviders();
+    void this.providers.refresh();
     this.destroyRef.onDestroy(() => this.stopPolling());
   }
 
@@ -50,7 +51,7 @@ export class ModelsPage {
     const name = this.provName.trim();
     const url = this.provUrl.trim();
     if (!name || !ModelsPage.HTTP_URL.test(url)) return;
-    this.store.addModelProvider(name, url);
+    this.providers.add(name, url);
     this.addingProvider.set(false);
     this.provName = '';
     this.provUrl = '';
@@ -63,12 +64,12 @@ export class ModelsPage {
       this.models.set([]);
       this.pulls.set([]);
     }
-    this.store.removeModelProvider(id);
+    this.providers.remove(id);
   }
 
   protected selected(): ModelProvider | null {
     const id = this.selectedId();
-    return this.store.modelProviders().find(p => p.id === id) ?? null;
+    return this.providers.ollamaProviders().find(p => p.id === id) ?? null;
   }
 
   protected select(id: string): void {
@@ -87,13 +88,12 @@ export class ModelsPage {
     this.modelsLoading.set(true);
     this.modelsError.set(null);
     try {
-      const models = await this.store.providerModels(id);
+      const models = await this.providers.models(id);
       if (id !== this.selectedId()) return;   // provider changed mid-flight — stale response
       this.models.set(models);
     } catch (error) {
       if (id !== this.selectedId()) return;
-      const message = error instanceof Error ? error.message : String(error);
-      this.modelsError.set(message || 'failed to load models');
+      this.modelsError.set(errorMessage(error, 'failed to load models'));
       this.models.set([]);
     } finally {
       if (id === this.selectedId()) this.modelsLoading.set(false);
@@ -105,7 +105,7 @@ export class ModelsPage {
     const name = this.pullName.trim();
     if (!id || !name) return;
     this.pullName = '';
-    await this.store.pullModel(id, name);
+    await this.providers.pullModel(id, name);
     if (id !== this.selectedId()) return;
     await this.refreshPulls(id);
   }
@@ -114,13 +114,13 @@ export class ModelsPage {
     const id = this.selectedId();
     if (!id) return;
     this.removingModel.set(null);
-    await this.store.deleteProviderModel(id, name);
+    await this.providers.deleteModel(id, name);
     if (id === this.selectedId()) void this.loadModels(id);
   }
 
   private async refreshPulls(id: string): Promise<void> {
     try {
-      const pulls = await this.store.pullStatus(id);
+      const pulls = await this.providers.pullStatus(id);
       if (id !== this.selectedId()) return;
       const wasPulling = this.pulls().some(p => p.status === 'pulling');
       this.pulls.set(pulls);

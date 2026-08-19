@@ -1,22 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ContainerLifecycle } from './container-lifecycle';
-import { ContainerStore } from './container-store';
-import { HostStore } from './host-store';
-import { ImageCatalogStore } from './image-catalog-store';
-import { apiContainer, testContext } from '../../testing/store';
+import { apiContainer, testSlices } from '../../testing/store';
 
 /** The three slices a lifecycle action touches, sharing one stubbed backend. */
 const loaded = async (containersApi: Record<string, unknown>, images: Record<string, unknown> = {}) => {
-  const ctx = testContext();
-  const containers = new ContainerStore(ctx);
-  const hosts = new HostStore(ctx);
-  const imageStore = new ImageCatalogStore(ctx, containers, hosts);
-  (ctx as unknown as { api: unknown }).api = {
+  const slices = testSlices({
     containers: { list: vi.fn().mockResolvedValue([apiContainer()]), ...containersApi, ...images },
-  };
-  await containers.refresh();
-  containers.select('c-1');
-  return { ctx, containers, images: imageStore, lifecycle: new ContainerLifecycle(ctx, containers, imageStore) };
+  });
+  await slices.containers.refresh();
+  slices.containers.select('c-1');
+  return slices;
 };
 
 describe('ContainerLifecycle deploy', () => {
@@ -105,13 +97,14 @@ describe('ContainerLifecycle start and stop', () => {
     expect(ctx.liveError()).toBe('start failed: port bound');
   });
 
-  it('ignores a container it does not hold', async () => {
+  it('says so rather than going quiet on a container it does not hold', async () => {
     const start = vi.fn();
-    const { lifecycle } = await loaded({ start });
+    const { lifecycle, ctx } = await loaded({ start });
 
     lifecycle.setStatus('c-missing', 'running');
 
     expect(start).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('container is no longer available');
   });
 });
 
@@ -143,14 +136,23 @@ describe('ContainerLifecycle update', () => {
     expect(containers.selectedContainerId()).toBe('c-1');
   });
 
-  it('refuses an update that would be a no-op, or one for an unknown container', async () => {
+  it('refuses an update that would be a no-op, quietly — nothing failed', async () => {
     const update = vi.fn();
-    const { lifecycle } = await loaded({ update });
+    const { lifecycle, ctx } = await loaded({ update });
 
     expect(await lifecycle.update('c-1', 'v2026.8.3')).toBe('');   // already on this tag
     expect(await lifecycle.update('c-1', '')).toBe('');
+    expect(update).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBeNull();
+  });
+
+  it('says so when the container to update is no longer there', async () => {
+    const update = vi.fn();
+    const { lifecycle, ctx } = await loaded({ update });
+
     expect(await lifecycle.update('c-missing', 'v2026.8.4')).toBe('');
     expect(update).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('container is no longer available');
   });
 
   it('re-reads the inventory after a failed update, which may have half landed', async () => {
@@ -190,11 +192,12 @@ describe('ContainerLifecycle remove', () => {
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it('ignores a container it does not hold', async () => {
+  it('says so rather than going quiet on a container it does not hold', async () => {
     const remove = vi.fn();
-    const { lifecycle } = await loaded({ remove });
+    const { lifecycle, ctx } = await loaded({ remove });
 
     expect(await lifecycle.remove('c-missing')).toBe(false);
     expect(remove).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('container is no longer available');
   });
 });

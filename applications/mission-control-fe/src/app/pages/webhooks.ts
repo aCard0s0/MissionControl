@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { WebhookStore } from '../core/store/webhook-store';
 import { WebhookRoute } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
@@ -24,7 +26,9 @@ const DEFAULT_WEBHOOK_PORT = 8644;
   styleUrl: './webhooks.scss',
 })
 export class WebhooksPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly webhooks = inject(WebhookStore);
   protected readonly ago = ago;
 
   protected readonly agentFilter = signal<string>('all');
@@ -47,25 +51,25 @@ export class WebhooksPage {
   protected fAgent = '';
 
   constructor() {
-    void this.store.refreshWebhooks();
+    void this.webhooks.refresh();
   }
 
   protected readonly hooks = computed(() => {
-    const all = this.store.containerWebhooks();
+    const all = this.webhooks.forSelectedContainer();
     const filter = this.agentFilter();
     return filter === 'all' ? all : all.filter(w => w.agentId === filter);
   });
 
   /** The profiles whose listener is off, so the page can offer to turn it on. */
   protected readonly listenersOff = computed(() =>
-    this.store.webhookListeners().filter(l => !l.enabled));
+    this.webhooks.containerListeners().filter(l => !l.enabled));
 
   protected agentName(id: string): string {
-    return this.store.agentById(id)?.name ?? '?';
+    return this.agents.byId(id)?.name ?? '?';
   }
 
   protected listenerOf(agentId: string) {
-    return this.store.webhookListenerOf(agentId);
+    return this.webhooks.listenerOf(agentId);
   }
 
   /** The port a `-p` would have to map. Hermes' own default stands in when the listener
@@ -77,7 +81,7 @@ export class WebhooksPage {
   protected async toggleListener(agentId: string, enabled: boolean): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
-    await this.store.setWebhookListener(agentId, enabled);
+    await this.webhooks.setListenerEnabled(agentId, enabled);
     this.busy.set(false);
   }
 
@@ -85,7 +89,7 @@ export class WebhooksPage {
     this.adding.set(true);
     this.fAgent = this.agentFilter() !== 'all'
       ? this.agentFilter()
-      : this.store.containerAgents()[0]?.id ?? '';
+      : this.agents.forSelectedContainer()[0]?.id ?? '';
     this.fName = this.fPrompt = this.fEvents = this.fDescription = this.fDeliver = '';
   }
 
@@ -93,7 +97,7 @@ export class WebhooksPage {
     const name = this.fName.trim();
     if (!name || !this.fAgent || this.busy()) return;
     this.busy.set(true);
-    const added = await this.store.addWebhook(this.fAgent, {
+    const added = await this.webhooks.subscribe(this.fAgent, {
       name,
       prompt: this.fPrompt.trim() || undefined,
       description: this.fDescription.trim() || undefined,
@@ -108,12 +112,12 @@ export class WebhooksPage {
     if (!confirm(`Remove webhook "${route.name}"? Anything posting to it will stop working.`)) {
       return;
     }
-    await this.store.removeWebhook(route.agentId, route.name);
+    await this.webhooks.remove(route.agentId, route.name);
   }
 
   /** Reads the full HMAC secret, which a listing deliberately does not carry. */
   protected async reveal(route: WebhookRoute): Promise<void> {
-    const secret = await this.store.webhookSecret(route.agentId, route.name);
+    const secret = await this.webhooks.secretOf(route.agentId, route.name);
     if (secret) this.revealed.update(all => ({ ...all, [route.name]: secret }));
   }
 
@@ -126,7 +130,7 @@ export class WebhooksPage {
   }
 
   protected async test(route: WebhookRoute): Promise<void> {
-    const output = await this.store.testWebhook(route.agentId, route.name);
+    const output = await this.webhooks.test(route.agentId, route.name);
     if (output !== null) {
       this.tested.update(all => ({ ...all, [route.name]: output.trim() || 'no output' }));
     }

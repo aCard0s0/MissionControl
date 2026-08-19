@@ -3,7 +3,12 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerLifecycle } from '../core/store/container-lifecycle';
+import { ContainerStore } from '../core/store/container-store';
+import { HostStore } from '../core/store/host-store';
+import { ImageCatalogStore } from '../core/store/image-catalog-store';
+import { StoreContext } from '../core/store/store-context';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 import { ContainersPage, containerUpdate, newerImageTags, normalizeSeedProfiles } from './containers';
 import {
@@ -120,23 +125,31 @@ const HOSTS: DockerHost[] = [
 const storeStub = (containers: HermesContainer[], catalogs: Record<string, ImageCatalog> = {}) => {
   const dockerHosts = signal(HOSTS);
   return {
-  containers: signal(containers),
-  selectedContainerId: signal(containers[0]?.id ?? ''),
-  dockerHosts,
-  agents: signal([{ id: 'a-1', containerId: 'hermes-prod' }]),
-  backendStatus: signal('connected'),
-  imageCatalog: signal(catalogs),
-  hostById: (id: string) => dockerHosts().find(h => h.id === id) ?? null,
-  refreshImageCatalogs: vi.fn().mockResolvedValue(undefined),
-  imageTags: vi.fn().mockResolvedValue({ repository: HERMES, tags: ['latest', 'v2026.8.3'] }),
-  selectContainer: vi.fn(),
-  setContainerStatus: vi.fn(),
-  addDockerHost: vi.fn(),
-  removeDockerHost: vi.fn(),
-  checkDockerHost: vi.fn(),
-  deployContainer: vi.fn().mockResolvedValue('c-new'),
-  updateContainer: vi.fn().mockResolvedValue('c-updated'),
-  removeContainer: vi.fn().mockResolvedValue(true),
+    containers: {
+      containers: signal(containers),
+      selectedContainerId: signal(containers[0]?.id ?? ''),
+      select: vi.fn(),
+    },
+    hosts: {
+      hosts: dockerHosts,
+      byId: (id: string) => dockerHosts().find(h => h.id === id) ?? null,
+      add: vi.fn(),
+      remove: vi.fn(),
+      check: vi.fn(),
+    },
+    agents: { agents: signal([{ id: 'a-1', containerId: 'hermes-prod' }]) },
+    ctx: { backendStatus: signal('connected') },
+    images: {
+      catalog: signal(catalogs),
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+      tags: vi.fn().mockResolvedValue({ repository: HERMES, tags: ['latest', 'v2026.8.3'] }),
+    },
+    lifecycle: {
+      setStatus: vi.fn(),
+      deploy: vi.fn().mockResolvedValue('c-new'),
+      update: vi.fn().mockResolvedValue('c-updated'),
+      remove: vi.fn().mockResolvedValue(true),
+    },
   };
 };
 
@@ -144,7 +157,15 @@ const render = (store: ReturnType<typeof storeStub>) => {
   const router = { navigate: vi.fn() };
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [{ provide: Router, useValue: router }, { provide: HermesStore, useValue: store }],
+    providers: [
+      { provide: Router, useValue: router },
+      { provide: AgentStore, useValue: store.agents },
+      { provide: ContainerLifecycle, useValue: store.lifecycle },
+      { provide: ContainerStore, useValue: store.containers },
+      { provide: HostStore, useValue: store.hosts },
+      { provide: ImageCatalogStore, useValue: store.images },
+      { provide: StoreContext, useValue: store.ctx },
+    ],
   });
   const fixture = TestBed.createComponent(ContainersPage);
   fixture.detectChanges();
@@ -168,7 +189,7 @@ describe('ContainersPage fleet', () => {
   it('reads the image catalogs on arrival, so update badges are not a poll behind', () => {
     const { store } = render(storeStub([container('hermes-prod')]));
 
-    expect(store.refreshImageCatalogs).toHaveBeenCalled();
+    expect(store.images.refreshAll).toHaveBeenCalled();
   });
 
   it('names the host a container runs on, and falls back when that host is gone', () => {
@@ -191,7 +212,7 @@ describe('ContainersPage fleet', () => {
 
   it('blames the backend for an empty fleet while it is unreachable', () => {
     const waiting = storeStub([]);
-    waiting.backendStatus.set('unreachable');
+    waiting.ctx.backendStatus.set('unreachable');
 
     const { fixture } = render(waiting);
 
@@ -209,14 +230,14 @@ describe('ContainersPage fleet', () => {
     const card = el(fixture).querySelector<HTMLElement>('.card')!;
 
     card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(store.selectContainer).toHaveBeenCalledWith('hermes-prod');
+    expect(store.containers.select).toHaveBeenCalledWith('hermes-prod');
 
-    store.selectContainer.mockClear();
+    store.containers.select.mockClear();
     const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
     card.dispatchEvent(space);
 
     // a real button fires on Space too, and does not scroll the page doing it
-    expect(store.selectContainer).toHaveBeenCalledWith('hermes-prod');
+    expect(store.containers.select).toHaveBeenCalledWith('hermes-prod');
     expect(space.defaultPrevented).toBe(true);
   });
 
@@ -225,7 +246,7 @@ describe('ContainersPage fleet', () => {
 
     press(fixture, 'select', '.card');
 
-    expect(store.selectContainer).toHaveBeenCalledWith('hermes-prod');
+    expect(store.containers.select).toHaveBeenCalledWith('hermes-prod');
     expect(router.navigate).toHaveBeenCalledWith(['/overview']);
   });
 
@@ -235,7 +256,7 @@ describe('ContainersPage fleet', () => {
     expect(text(fixture)).toContain('no telemetry — stopped');
     press(fixture, 'start', '.card');
 
-    expect(store.setContainerStatus).toHaveBeenCalledWith('hermes-prod', 'running');
+    expect(store.lifecycle.setStatus).toHaveBeenCalledWith('hermes-prod', 'running');
   });
 
   it('offers stop for a running one', () => {
@@ -243,7 +264,7 @@ describe('ContainersPage fleet', () => {
 
     press(fixture, 'stop', '.card');
 
-    expect(store.setContainerStatus).toHaveBeenCalledWith('hermes-prod', 'stopped');
+    expect(store.lifecycle.setStatus).toHaveBeenCalledWith('hermes-prod', 'stopped');
   });
 });
 
@@ -267,12 +288,12 @@ describe('ContainersPage docker hosts', () => {
     const { fixture, store } = render(storeStub([]));
 
     press(fixture, 'check', '.host-row');
-    expect(store.checkDockerHost).toHaveBeenCalledWith('dh-local');
+    expect(store.hosts.check).toHaveBeenCalledWith('dh-local');
 
     const rows = el(fixture).querySelectorAll('.host-row');
     expect(rows[0].textContent).not.toContain('remove');   // the local socket is not removable
     press(fixture, 'remove', rows[1]);
-    expect(store.removeDockerHost).toHaveBeenCalledWith('dh-edge');
+    expect(store.hosts.remove).toHaveBeenCalledWith('dh-edge');
   });
 
   it('only accepts a tcp URL carrying an explicit port', async () => {
@@ -295,7 +316,7 @@ describe('ContainersPage docker hosts', () => {
 
     await fillInput(url, 'tcp://10.0.0.5:2376');
     press(fixture, 'connect');
-    expect(store.addDockerHost).toHaveBeenCalledWith('edge-vm', 'tcp://10.0.0.5:2376');
+    expect(store.hosts.add).toHaveBeenCalledWith('edge-vm', 'tcp://10.0.0.5:2376');
   });
 
   it('closes the form and resets it once the host is added', async () => {
@@ -323,7 +344,7 @@ describe('ContainersPage deploy', () => {
 
   it('cannot be opened without a connected daemon to deploy onto', () => {
     const offline = storeStub([]);
-    offline.dockerHosts.set([{ ...HOSTS[1] }]);
+    offline.hosts.hosts.set([{ ...HOSTS[1] }]);
     const { fixture } = render(offline);
 
     expect(button(fixture, '+ deploy container').disabled).toBe(true);
@@ -334,7 +355,7 @@ describe('ContainersPage deploy', () => {
 
     await openDeploy(fixture);
 
-    expect(store.imageTags).toHaveBeenCalledWith('dh-local');
+    expect(store.images.tags).toHaveBeenCalledWith('dh-local');
     const hosts = field(fixture, 'docker host').querySelectorAll('option');
     expect(Array.from(hosts).map(o => o.textContent?.trim()))
       .toEqual(['localhost — unix:///var/run/docker.sock']);
@@ -351,7 +372,7 @@ describe('ContainersPage deploy', () => {
 
   it('falls back to the newest tag on a host with no latest', async () => {
     const store = storeStub([]);
-    store.imageTags.mockResolvedValue({ repository: HERMES, tags: ['v2026.8.3', 'v2026.7.20'] });
+    store.images.tags.mockResolvedValue({ repository: HERMES, tags: ['v2026.8.3', 'v2026.7.20'] });
     const { fixture } = render(store);
 
     await openDeploy(fixture);
@@ -362,7 +383,7 @@ describe('ContainersPage deploy', () => {
 
   it('says why the version list is empty rather than showing a bare select', async () => {
     const store = storeStub([]);
-    store.imageTags.mockRejectedValue(new Error('registry unreachable'));
+    store.images.tags.mockRejectedValue(new Error('registry unreachable'));
     const { fixture } = render(store);
 
     await openDeploy(fixture);
@@ -380,15 +401,15 @@ describe('ContainersPage deploy', () => {
     press(fixture, 'deploy');
     await settle(fixture);
 
-    expect(store.deployContainer)
+    expect(store.lifecycle.deploy)
       .toHaveBeenCalledWith('hermes-staging', 'latest', ['ops', 'research-team'], 'dh-local');
-    expect(store.selectContainer).toHaveBeenCalledWith('c-new');
+    expect(store.containers.select).toHaveBeenCalledWith('c-new');
     expect(el(fixture).querySelector('.modal')).toBeNull();
   });
 
   it('keeps the modal open, with the name intact, when the deploy fails', async () => {
     const store = storeStub([]);
-    store.deployContainer.mockResolvedValue('');
+    store.lifecycle.deploy.mockResolvedValue('');
     const { fixture } = render(store);
     await openDeploy(fixture);
     await fill(fixture, 'container name', 'hermes-staging');
@@ -408,16 +429,16 @@ describe('ContainersPage deploy', () => {
     expect(button(fixture, 'deploy').disabled).toBe(true);
     await fill(fixture, 'container name', '   ');
     expect(button(fixture, 'deploy').disabled).toBe(true);
-    expect(store.deployContainer).not.toHaveBeenCalled();
+    expect(store.lifecycle.deploy).not.toHaveBeenCalled();
   });
 
   it('ignores the tags of a host the operator has already switched away from', async () => {
     const store = storeStub([]);
     let landEdge!: (value: unknown) => void;
-    store.imageTags.mockImplementation((hostId: string) => hostId === 'dh-edge'
+    store.images.tags.mockImplementation((hostId: string) => hostId === 'dh-edge'
       ? new Promise(resolve => { landEdge = resolve; })
       : Promise.resolve({ repository: HERMES, tags: ['latest'] }));
-    store.dockerHosts.set([HOSTS[0], { ...HOSTS[1], status: 'connected' }]);
+    store.hosts.hosts.set([HOSTS[0], { ...HOSTS[1], status: 'connected' }]);
     const { fixture } = render(store);
     await openDeploy(fixture);
 
@@ -432,7 +453,7 @@ describe('ContainersPage deploy', () => {
 
   it('leaves the version unset on a host with no images at all', async () => {
     const store = storeStub([]);
-    store.imageTags.mockResolvedValue({ repository: HERMES, tags: [] });
+    store.images.tags.mockResolvedValue({ repository: HERMES, tags: [] });
     const { fixture } = render(store);
 
     await openDeploy(fixture);
@@ -447,23 +468,23 @@ describe('ContainersPage deploy', () => {
     await openDeploy(fixture);
     await fill(fixture, 'container name', 'hermes-staging');
 
-    store.dockerHosts.set([{ ...HOSTS[0], status: 'error' }]);
+    store.hosts.hosts.set([{ ...HOSTS[0], status: 'error' }]);
     press(fixture, 'deploy');
     await settle(fixture);
 
-    expect(store.deployContainer).not.toHaveBeenCalled();
+    expect(store.lifecycle.deploy).not.toHaveBeenCalled();
   });
 
   it('empties the version list when the modal has no host to read tags from', async () => {
     const store = storeStub([]);
-    store.dockerHosts.set([]);
+    store.hosts.hosts.set([]);
     const { fixture } = render(store);
     const page = fixture.componentInstance as unknown as { openDeploy(): void };
 
     page.openDeploy();
     await settle(fixture);
 
-    expect(store.imageTags).not.toHaveBeenCalled();
+    expect(store.images.tags).not.toHaveBeenCalled();
     expect(text(fixture)).toContain('No local Hermes images found on this host.');
   });
 });
@@ -546,13 +567,13 @@ describe('ContainersPage image update', () => {
     press(fixture, 'update to v2026.7.30');
     await settle(fixture);
 
-    expect(store.updateContainer).toHaveBeenCalledWith('hermes-prod', 'v2026.7.30');
+    expect(store.lifecycle.update).toHaveBeenCalledWith('hermes-prod', 'v2026.7.30');
     expect(el(fixture).querySelector('.modal')).toBeNull();
   });
 
   it('keeps the modal open when the recreate failed, so the reason stays on screen', async () => {
     const store = storeStub([container('hermes-prod')], catalog(['v2026.8.3']));
-    store.updateContainer.mockResolvedValue('');
+    store.lifecycle.update.mockResolvedValue('');
     const { fixture } = render(store);
     press(fixture, 'update', '.card');
 
@@ -565,7 +586,7 @@ describe('ContainersPage image update', () => {
   it('locks the card and the modal while the recreate is in flight', async () => {
     const store = storeStub([container('hermes-prod')], catalog(['v2026.8.3']));
     let land!: (value: string) => void;
-    store.updateContainer.mockReturnValue(new Promise<string>(r => { land = r; }));
+    store.lifecycle.update.mockReturnValue(new Promise<string>(r => { land = r; }));
     const { fixture } = render(store);
     press(fixture, 'update', '.card');
 
@@ -587,7 +608,7 @@ describe('ContainersPage image update', () => {
     press(fixture, 'cancel');
 
     expect(el(fixture).querySelector('.modal')).toBeNull();
-    expect(store.updateContainer).not.toHaveBeenCalled();
+    expect(store.lifecycle.update).not.toHaveBeenCalled();
   });
 });
 
@@ -613,13 +634,13 @@ describe('ContainersPage removal', () => {
     press(fixture, 'remove permanently');
     await settle(fixture);
 
-    expect(store.removeContainer).toHaveBeenCalledWith('hermes-prod');
+    expect(store.lifecycle.remove).toHaveBeenCalledWith('hermes-prod');
     expect(el(fixture).querySelector('.modal')).toBeNull();
   });
 
   it('keeps the modal open when the delete failed', async () => {
     const store = storeStub([container('hermes-prod')]);
-    store.removeContainer.mockResolvedValue(false);
+    store.lifecycle.remove.mockResolvedValue(false);
     const { fixture } = render(store);
     press(fixture, 'remove', '.card');
     await fill(fixture, 'type', 'hermes-prod');
@@ -637,6 +658,6 @@ describe('ContainersPage removal', () => {
     press(fixture, 'cancel');
 
     expect(el(fixture).querySelector('.modal')).toBeNull();
-    expect(store.removeContainer).not.toHaveBeenCalled();
+    expect(store.lifecycle.remove).not.toHaveBeenCalled();
   });
 });

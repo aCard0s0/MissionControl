@@ -3,7 +3,10 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentMcpStore } from '../core/store/agent-mcp-store';
+import { AgentStore } from '../core/store/agent-store';
+import { HostStore } from '../core/store/host-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { AgentProfile, McpCatalogServer, McpServer } from '../core/models';
 import { AgentMcpPanel } from './agent-mcp-panel';
 import { buttonWith, el, type } from '../testing/dom';
@@ -23,19 +26,27 @@ const profile = (mcp: McpServer[]): AgentProfile => agent('a-1', { name: 'ops-bo
 
 /** Only what the panel reaches for on the store, so nothing here touches a backend. */
 const storeStub = (agent: AgentProfile, catalog: McpCatalogServer[] = []) => ({
-  mcpServers: signal(catalog),
-  dockerHosts: signal([{ id: 'dh-local', name: 'localhost' }]),
-  hostById: (id: string) => ({ id, name: 'localhost' }),
-  agentById: () => agent,
-  mcpServerById: (id: string) => catalog.find(s => s.id === id) ?? null,
-  addMcp: vi.fn().mockResolvedValue(true),
-  updateMcp: vi.fn().mockResolvedValue(true),
-  setMcpEnabled: vi.fn().mockResolvedValue(true),
-  connectCatalogMcp: vi.fn().mockResolvedValue(true),
-  syncCatalogMcp: vi.fn().mockResolvedValue(true),
-  unlinkCatalogMcp: vi.fn().mockResolvedValue(true),
-  removeMcp: vi.fn().mockResolvedValue(true),
-  testMcp: vi.fn().mockResolvedValue(true),
+  agentMcp: {
+    add: vi.fn().mockResolvedValue(true),
+    update: vi.fn().mockResolvedValue(true),
+    setEnabled: vi.fn().mockResolvedValue(true),
+    connectCatalog: vi.fn().mockResolvedValue(true),
+    syncCatalog: vi.fn().mockResolvedValue(true),
+    unlinkCatalog: vi.fn().mockResolvedValue(true),
+    remove: vi.fn().mockResolvedValue(true),
+    test: vi.fn().mockResolvedValue(true),
+  },
+  agents: {
+    byId: () => agent,
+  },
+  catalog: {
+    servers: signal(catalog),
+    byId: (id: string) => catalog.find(s => s.id === id) ?? null,
+  },
+  hosts: {
+    hosts: signal([{ id: 'dh-local', name: 'localhost' }]),
+    byId: (id: string) => ({ id, name: 'localhost' }),
+  },
 });
 
 @Component({
@@ -50,7 +61,7 @@ const render = (store: ReturnType<typeof storeStub>, agent: AgentProfile) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     // the panel links to /mcp-servers, so RouterLink needs a router present
-    providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
+    providers: [provideRouter([]), { provide: AgentMcpStore, useValue: store.agentMcp }, { provide: AgentStore, useValue: store.agents }, { provide: HostStore, useValue: store.hosts }, { provide: McpCatalogStore, useValue: store.catalog }],
   });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.agent.set(agent);
@@ -85,10 +96,10 @@ describe('AgentMcpPanel roster', () => {
     const fixture = render(store, agent);
 
     buttonWith(fixture, 'disconnect').click();
-    expect(store.setMcpEnabled).toHaveBeenCalledWith('a-1', 'github', false);
+    expect(store.agentMcp.setEnabled).toHaveBeenCalledWith('a-1', 'github', false);
 
     buttonWith(fixture, 'reconnect').click();
-    expect(store.setMcpEnabled).toHaveBeenCalledWith('a-1', 'files', true);
+    expect(store.agentMcp.setEnabled).toHaveBeenCalledWith('a-1', 'files', true);
   });
 
   it('probes every enabled server when the tab opens, and skips disabled ones', async () => {
@@ -97,7 +108,7 @@ describe('AgentMcpPanel roster', () => {
     const fixture = render(store, agent);
     await fixture.whenStable();
 
-    expect(store.testMcp.mock.calls.map(call => call[1])).toEqual(['github']);
+    expect(store.agentMcp.test.mock.calls.map(call => call[1])).toEqual(['github']);
   });
 
   it('asks twice before forgetting a server', () => {
@@ -107,10 +118,10 @@ describe('AgentMcpPanel roster', () => {
 
     buttonWith(fixture, 'forget').click();
     fixture.detectChanges();
-    expect(store.removeMcp).not.toHaveBeenCalled();
+    expect(store.agentMcp.remove).not.toHaveBeenCalled();
 
     buttonWith(fixture, 'confirm forget').click();
-    expect(store.removeMcp).toHaveBeenCalledWith('a-1', 'm-github');
+    expect(store.agentMcp.remove).toHaveBeenCalledWith('a-1', 'm-github');
   });
 
   it('shows sync only while the catalog is ahead of the linked alias', () => {
@@ -123,7 +134,7 @@ describe('AgentMcpPanel roster', () => {
     const fixture = render(store, agent);
 
     buttonWith(fixture, 'sync').click();
-    expect(store.syncCatalogMcp).toHaveBeenCalledWith('a-1', 'browser');
+    expect(store.agentMcp.syncCatalog).toHaveBeenCalledWith('a-1', 'browser');
     expect(el(fixture).textContent).toContain('update available');
   });
 });
@@ -156,16 +167,16 @@ describe('AgentMcpPanel add form', () => {
     const store = storeStub(agent);
     const fixture = render(store, agent);
     await fixture.whenStable();
-    store.testMcp.mockClear();
+    store.agentMcp.test.mockClear();
 
     await type(fixture, '.name-in', ' github ');
     await type(fixture, '.url-in', ' https://mcp.example.test/mcp ');
     submitAdd(fixture).click();
     await fixture.whenStable();
 
-    expect(store.addMcp).toHaveBeenCalledWith(
+    expect(store.agentMcp.add).toHaveBeenCalledWith(
       'a-1', 'github', 'http', { url: 'https://mcp.example.test/mcp' });
-    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'github');
+    expect(store.agentMcp.test).toHaveBeenCalledWith('a-1', 'github');
   });
 
   it('loads an existing server for editing and updates it under its old name', async () => {
@@ -184,7 +195,7 @@ describe('AgentMcpPanel add form', () => {
     submitAdd(fixture).click();
     await fixture.whenStable();
 
-    expect(store.updateMcp).toHaveBeenCalledWith(
+    expect(store.agentMcp.update).toHaveBeenCalledWith(
       'a-1', 'github', 'github-enterprise', 'http',
       { url: 'https://github.example.test/mcp' });
   });
@@ -242,7 +253,7 @@ describe('AgentMcpPanel catalog links', () => {
     el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!.click();
     await fixture.whenStable();
 
-    expect(store.connectCatalogMcp).toHaveBeenCalledWith('a-1', 'mcp-browser', 'browser');
+    expect(store.agentMcp.connectCatalog).toHaveBeenCalledWith('a-1', 'mcp-browser', 'browser');
   });
 
   it('probes the alias it just linked, so the row is not left unchecked', async () => {
@@ -251,20 +262,20 @@ describe('AgentMcpPanel catalog links', () => {
     const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
     const fixture = render(store, agent);
     await fixture.whenStable();
-    store.testMcp.mockClear();
+    store.agentMcp.test.mockClear();
     pickCatalog(fixture, 'mcp-browser');
     await fixture.whenStable();
 
     el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!.click();
     await fixture.whenStable();
 
-    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'browser');
+    expect(store.agentMcp.test).toHaveBeenCalledWith('a-1', 'browser');
   });
 
   it('will not connect without an alias, or twice while one is in flight', async () => {
     const agent = profile([]);
     const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
-    store.connectCatalogMcp.mockReturnValue(new Promise(() => { /* never settles */ }));
+    store.agentMcp.connectCatalog.mockReturnValue(new Promise(() => { /* never settles */ }));
     const fixture = render(store, agent);
     const connect = () => el(fixture).querySelector<HTMLButtonElement>('.catalog-connect .btn')!;
 
@@ -276,13 +287,13 @@ describe('AgentMcpPanel catalog links', () => {
     connect().click();
     await fixture.whenStable();
 
-    expect(store.connectCatalogMcp).toHaveBeenCalledTimes(1);
+    expect(store.agentMcp.connectCatalog).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the form filled in when the connect was refused', async () => {
     const agent = profile([]);
     const store = storeStub(agent, [catalogServer({ runtimeState: 'running' })]);
-    store.connectCatalogMcp.mockResolvedValue(false);
+    store.agentMcp.connectCatalog.mockResolvedValue(false);
     const fixture = render(store, agent);
     pickCatalog(fixture, 'mcp-browser');
     await fixture.whenStable();
@@ -303,13 +314,13 @@ describe('AgentMcpPanel catalog links', () => {
 
     buttonWith(fixture, 'customize').click();
     fixture.detectChanges();
-    expect(store.unlinkCatalogMcp).not.toHaveBeenCalled();
+    expect(store.agentMcp.unlinkCatalog).not.toHaveBeenCalled();
 
     buttonWith(fixture, 'confirm customize').click();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.unlinkCatalogMcp).toHaveBeenCalledWith('a-1', 'browser');
+    expect(store.agentMcp.unlinkCatalog).toHaveBeenCalledWith('a-1', 'browser');
     expect(el(fixture).textContent).toContain('EDIT CUSTOM MCP SERVER');
     expect(el(fixture).querySelector<HTMLInputElement>('.name-in')!.value).toBe('browser');
   });
@@ -318,7 +329,7 @@ describe('AgentMcpPanel catalog links', () => {
     const linked = server('browser', { origin: 'catalog', catalogServerId: 'mcp-browser' });
     const agent = profile([linked]);
     const store = storeStub(agent);
-    store.unlinkCatalogMcp.mockResolvedValue(false);
+    store.agentMcp.unlinkCatalog.mockResolvedValue(false);
     const fixture = render(store, agent);
 
     buttonWith(fixture, 'customize').click();
@@ -339,13 +350,13 @@ describe('AgentMcpPanel catalog links', () => {
     const store = storeStub(agent);
     const fixture = render(store, agent);
     await fixture.whenStable();
-    store.testMcp.mockClear();
+    store.agentMcp.test.mockClear();
 
     buttonWith(fixture, 'sync').click();
     await fixture.whenStable();
 
-    expect(store.testMcp).toHaveBeenCalledTimes(1);
-    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'browser');
+    expect(store.agentMcp.test).toHaveBeenCalledTimes(1);
+    expect(store.agentMcp.test).toHaveBeenCalledWith('a-1', 'browser');
   });
 });
 
@@ -353,7 +364,7 @@ describe('AgentMcpPanel probing', () => {
   it('re-probes a single server on demand, and refuses a second while one runs', async () => {
     const agent = profile([server('github'), server('files')]);
     const store = storeStub(agent);
-    store.testMcp.mockReturnValue(new Promise(() => { /* never settles */ }));
+    store.agentMcp.test.mockReturnValue(new Promise(() => { /* never settles */ }));
     const fixture = render(store, agent);
     await fixture.whenStable();
 
@@ -361,8 +372,8 @@ describe('AgentMcpPanel probing', () => {
     buttonWith(fixture, 'retest').click();
     await fixture.whenStable();
 
-    expect(store.testMcp).toHaveBeenCalledTimes(1);
-    expect(store.testMcp).toHaveBeenCalledWith('a-1', 'github');
+    expect(store.agentMcp.test).toHaveBeenCalledTimes(1);
+    expect(store.agentMcp.test).toHaveBeenCalledWith('a-1', 'github');
   });
 
   it('does not probe a server it just disabled', async () => {
@@ -370,12 +381,12 @@ describe('AgentMcpPanel probing', () => {
     const store = storeStub(agent);
     const fixture = render(store, agent);
     await fixture.whenStable();
-    store.testMcp.mockClear();
+    store.agentMcp.test.mockClear();
 
     buttonWith(fixture, 'disconnect').click();
     await fixture.whenStable();
 
-    expect(store.testMcp).not.toHaveBeenCalled();
+    expect(store.agentMcp.test).not.toHaveBeenCalled();
   });
 
   it('clears the edit form when the server being edited is forgotten', async () => {
@@ -398,7 +409,7 @@ describe('AgentMcpPanel probing', () => {
   it('keeps the confirmation open when the delete was refused', async () => {
     const agent = profile([server('github')]);
     const store = storeStub(agent);
-    store.removeMcp.mockResolvedValue(false);
+    store.agentMcp.remove.mockResolvedValue(false);
     const fixture = render(store, agent);
 
     buttonWith(fixture, 'forget').click();
