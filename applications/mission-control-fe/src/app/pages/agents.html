@@ -1,6 +1,6 @@
 <div class="page-head" data-reveal>
   <div>
-    <div class="crumb mono">{{ store.selectedContainer()?.name ?? '—' }}</div>
+    <div class="crumb mono">{{ containers.selected()?.name ?? '—' }}</div>
     <h2>Agents</h2>
   </div>
   <div class="head-stats mono">
@@ -9,11 +9,11 @@
     <span><mc-num [value]="totals().tokens" suffix="k" /> tokens today</span>
   </div>
   <button class="btn primary"
-          [disabled]="!store.selectedContainer()"
+          [disabled]="!containers.selected()"
           (click)="openCreate()">+ new agent</button>
 </div>
 
-@if (store.containerAgents().length === 0) {
+@if (agents.forSelectedContainer().length === 0) {
   <div class="panel empty" data-reveal>
     <p class="mono dim">No profiles in this container.</p>
     <p class="lock-hint">equivalent CLI: <code>hermes profile create &lt;name&gt;</code></p>
@@ -22,7 +22,7 @@
 }
 
 <div class="grid" data-reveal>
-  @for (a of store.containerAgents(); track a.id) {
+  @for (a of agents.forSelectedContainer(); track a.id) {
     <!-- the shell button is a sibling of the card link, not a child: a <button>
          nested inside an <a> is invalid, and hoisting it keeps the card a real
          link (ctrl/middle-click still opens the agent in a new tab) -->
@@ -61,7 +61,7 @@
   }
 </div>
 
-@if (createOpen() && store.selectedContainer(); as container) {
+@if (createOpen() && containers.selected(); as container) {
   <mc-agent-create-dialog [container]="container"
                           (created)="onCreated($event)"
                           (closed)="createOpen.set(false)" />

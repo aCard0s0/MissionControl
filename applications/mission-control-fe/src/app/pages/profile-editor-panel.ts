@@ -3,7 +3,10 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { HermesStore } from '../core/hermes-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { StoreContext } from '../core/store/store-context';
+import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate, TemplateMcp } from '../core/models';
 import { McpEndpointForm } from '../shared/mcp-endpoint-form';
 import { StatusDot } from '../shared/status-dot';
@@ -42,12 +45,14 @@ export class ProfileEditorPanel {
   readonly deployRequested = output<ProfileTemplate>();
   readonly removeRequested = output<ProfileTemplate>();
 
-  private readonly store = inject(HermesStore);
-  protected readonly catalog = this.store.mcpServers;
+  protected readonly catalog = inject(McpCatalogStore);
+  private readonly ctx = inject(StoreContext);
+  private readonly providers = inject(ProviderStore);
+  private readonly templates = inject(TemplateStore);
   protected readonly saving = signal(false);
 
-  protected readonly providers = computed(() =>
-    providerOptions(this.store.llmProviders(), this.store.modelProviders()));
+  protected readonly providerChoices = computed(() =>
+    providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()));
 
   // add-row scratch fields
   protected newSkill = '';
@@ -69,7 +74,7 @@ export class ProfileEditorPanel {
 
   /** The stored template being edited, or null while a new one is authored. */
   protected stored(): ProfileTemplate | null {
-    return this.store.templateById(this.draft().id);
+    return this.templates.byId(this.draft().id);
   }
 
   protected title(): string {
@@ -79,7 +84,7 @@ export class ProfileEditorPanel {
 
   /** The catalog entry the snapshot picker is pointed at. */
   protected catalogServer(): McpCatalogServer | null {
-    return this.store.mcpServerById(this.mcpCatalogId);
+    return this.catalog.byId(this.mcpCatalogId);
   }
 
   // ── skills ──────────────────────────────────────────────────────────────
@@ -87,7 +92,7 @@ export class ProfileEditorPanel {
     const skill = this.newSkill.trim();
     if (!skill) { this.newSkill = ''; return; }
     if (!skillIdValid(skill)) {
-      this.store.toast(`invalid skill id "${skill}" — use letters, digits, . _ - (no spaces)`);
+      this.ctx.toast(`invalid skill id "${skill}" — use letters, digits, . _ - (no spaces)`);
       return;
     }
     const draft = this.draft();
@@ -120,21 +125,21 @@ export class ProfileEditorPanel {
 
   protected selectCatalogMcp(id: string): void {
     this.mcpCatalogId = id;
-    const server = this.store.mcpServerById(id);
+    const server = this.catalog.byId(id);
     if (server) this.mcpCatalogAlias = server.name;
   }
 
   protected addCatalogMcp(): void {
-    const server = this.store.mcpServerById(this.mcpCatalogId);
+    const server = this.catalog.byId(this.mcpCatalogId);
     const alias = this.mcpCatalogAlias.trim();
     if (!server || !alias) return;
     if (this.draft().mcpServers.some(item => item.name === alias)) {
-      this.store.toast(`an MCP server named "${alias}" is already in this template`);
+      this.ctx.toast(`an MCP server named "${alias}" is already in this template`);
       return;
     }
     const snapshot = catalogTemplateSnapshot(server, alias);
     if (!snapshot) {
-      this.store.toast(`${server.name} does not have a usable connection definition`);
+      this.ctx.toast(`${server.name} does not have a usable connection definition`);
       return;
     }
     this.draft().mcpServers.push(snapshot);
@@ -168,15 +173,15 @@ export class ProfileEditorPanel {
     const draft = this.draft();
     if (!this.canSave() || this.saving()) return;
     this.saving.set(true);
-    const id = await this.store.saveTemplate(
-      profileDraftToInput(draft, this.store.modelProviders()), draft.id ?? undefined);
+    const id = await this.templates.save(
+      profileDraftToInput(draft, this.providers.ollamaProviders()), draft.id ?? undefined);
     this.saving.set(false);
     if (!id) return;
     draft.id = id;
     // The source id is request-only. Reload the backend-materialized shape so a
     // second save in the same open editor cannot re-read a changed catalog record,
     // copying only the public TemplateMcp fields.
-    const saved = this.store.templateById(id);
+    const saved = this.templates.byId(id);
     draft.mcpServers = (saved?.mcpServers ?? draft.mcpServers).map(detachedTemplateMcp);
     this.saved.emit(id);
   }

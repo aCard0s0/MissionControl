@@ -3,7 +3,10 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { HermesStore } from '../core/hermes-store';
+import { AgentMcpStore } from '../core/store/agent-mcp-store';
+import { AgentStore } from '../core/store/agent-store';
+import { HostStore } from '../core/store/host-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { AgentProfile, McpServer } from '../core/models';
 import { McpEndpointForm } from '../shared/mcp-endpoint-form';
 import { StatusDot } from '../shared/status-dot';
@@ -24,7 +27,10 @@ import { StatusDot } from '../shared/status-dot';
 export class AgentMcpPanel {
   readonly agent = input.required<AgentProfile>();
 
-  protected readonly store = inject(HermesStore);
+  protected readonly agentMcp = inject(AgentMcpStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly catalog = inject(McpCatalogStore);
+  protected readonly hosts = inject(HostStore);
 
   /** add / edit form — an http endpoint is the common case here */
   protected readonly form = new McpEndpointForm('http');
@@ -62,12 +68,12 @@ export class AgentMcpPanel {
   }
 
   protected selectedCatalogServer() {
-    return this.store.mcpServerById(this.catalogServerId);
+    return this.catalog.byId(this.catalogServerId);
   }
 
   protected selectCatalogServer(id: string): void {
     this.catalogServerId = id;
-    this.catalogAlias = this.store.mcpServerById(id)?.name ?? '';
+    this.catalogAlias = this.catalog.byId(id)?.name ?? '';
   }
 
   protected catalogConnectLabel(): string {
@@ -83,7 +89,7 @@ export class AgentMcpPanel {
     if (!serverId || !alias || this.catalogConnecting()) return;
     this.catalogConnecting.set(true);
     try {
-      if (await this.store.connectCatalogMcp(this.agentId(), serverId, alias)) {
+      if (await this.agentMcp.connectCatalog(this.agentId(), serverId, alias)) {
         const connected = this.serverNamed(alias);
         if (connected?.enabled) await this.runTest(connected);
         this.catalogServerId = '';
@@ -101,8 +107,8 @@ export class AgentMcpPanel {
 
     const editing = this.editingMcp();
     const savedOk = editing
-      ? await this.store.updateMcp(this.agentId(), editing, name, this.form.transport, opts)
-      : await this.store.addMcp(this.agentId(), name, this.form.transport, opts);
+      ? await this.agentMcp.update(this.agentId(), editing, name, this.form.transport, opts)
+      : await this.agentMcp.add(this.agentId(), name, this.form.transport, opts);
     if (!savedOk) return;
     this.resetMcpForm();
     const saved = this.serverNamed(name);
@@ -120,7 +126,7 @@ export class AgentMcpPanel {
   }
 
   protected async setMcpConnected(m: McpServer, enabled: boolean): Promise<void> {
-    const saved = await this.store.setMcpEnabled(this.agentId(), m.name, enabled);
+    const saved = await this.agentMcp.setEnabled(this.agentId(), m.name, enabled);
     if (!saved || !enabled) return;
     const refreshed = this.serverNamed(m.name);
     if (refreshed) await this.runTest(refreshed);
@@ -128,7 +134,7 @@ export class AgentMcpPanel {
 
   protected async syncMcp(m: McpServer): Promise<void> {
     if (!m.catalogServerId) return;
-    if (await this.store.syncCatalogMcp(this.agentId(), m.name) && m.enabled) {
+    if (await this.agentMcp.syncCatalog(this.agentId(), m.name) && m.enabled) {
       const refreshed = this.serverNamed(m.name);
       if (refreshed) await this.runTest(refreshed);
     }
@@ -136,13 +142,13 @@ export class AgentMcpPanel {
 
   /** Detaches a catalog alias, then loads it into the edit form. */
   protected async customizeMcp(m: McpServer): Promise<void> {
-    if (!(await this.store.unlinkCatalogMcp(this.agentId(), m.name))) return;
+    if (!(await this.agentMcp.unlinkCatalog(this.agentId(), m.name))) return;
     this.customizingMcp.set(null);
     this.editMcp(this.serverNamed(m.name) ?? m);
   }
 
   protected async forgetMcp(m: McpServer): Promise<void> {
-    if (await this.store.removeMcp(this.agentId(), m.id)) {
+    if (await this.agentMcp.remove(this.agentId(), m.id)) {
       this.forgettingMcp.set(null);
       if (this.editingMcp() === m.name) this.resetMcpForm();
     }
@@ -157,7 +163,7 @@ export class AgentMcpPanel {
     if (m.status === 'disabled') return;
     this.mcpTesting.set(m.id);
     try {
-      await this.store.testMcp(this.agentId(), m.name);
+      await this.agentMcp.test(this.agentId(), m.name);
     } finally {
       if (this.mcpTesting() === m.id) this.mcpTesting.set(null);
     }
@@ -179,6 +185,6 @@ export class AgentMcpPanel {
   }
 
   private serverNamed(name: string): McpServer | undefined {
-    return this.store.agentById(this.agentId())?.mcp.find(server => server.name === name);
+    return this.agents.byId(this.agentId())?.mcp.find(server => server.name === name);
   }
 }

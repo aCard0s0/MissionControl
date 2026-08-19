@@ -1,14 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from './hermes-store';
-
-/**
- * Substitutes the backend for a whole constructed store — `api` is the one seam
- * every slice shares, shaped like {@link HermesApi} and carrying only the calls a
- * test reaches. See the same helper in hermes-store.spec.ts.
- */
-const stubBackend = (store: HermesStore, api: unknown): void => {
-  (store as any).ctx.api = api;
-};
+import { StoreSlices, storeSlices, stubBackend } from '../../testing/store';
 
 // The probe, the first load fan-out and the pollers used to run only against a
 // real backend. These drive the real HermesApi against a stubbed fetch, so the
@@ -57,23 +48,31 @@ const PROFILE = {
  * the pollers load them. The describes below are about what happens after the
  * inventory is there, so each starts from this rather than from an empty store.
  */
-const loaded = async (): Promise<HermesStore> => {
-  const store = new HermesStore();
-  stubBackend(store, {
+const loaded = async (): Promise<StoreSlices> => {
+  const store = storeSlices();
+  stubBackend(store.ctx, {
     containers: { list: vi.fn().mockResolvedValue([CONTAINER, STOPPED]) },
     agents: { list: vi.fn().mockResolvedValue([PROFILE, { ...PROFILE, id: 'a-cold', containerId: 'c-stopped' }]) },
     mcp: { list: vi.fn().mockResolvedValue([CATALOG_SERVER]) },
     templates: { list: vi.fn().mockResolvedValue([TEMPLATE]) },
   });
-  await (store as any).containerStore.refresh();
-  await (store as any).agentStore.refresh();
-  await store.refreshMcpServers();
-  await store.refreshTemplates();
+  await store.containers.refresh();
+  await store.agents.refresh();
+  await store.catalog.refresh();
+  await store.templates.refresh();
   return store;
 };
 
 
-describe('HermesStore bootstrap', () => {
+/** The slices as the application boots them: DI builds the graph, and the app
+ *  initializer starts the probe. Nothing else in the store starts the clock. */
+const booted = () => {
+  const store = storeSlices();
+  void store.liveSync.probeBackend();
+  return store;
+};
+
+describe('LiveSync bootstrap', () => {
   /** Answers the endpoints the first live load touches; anything else 404s so a
    *  missing route shows up as a failure rather than as empty state. */
   const backend = (overrides: Record<string, unknown> = {}) => {
@@ -126,25 +125,25 @@ describe('HermesStore bootstrap', () => {
 
   it('starts empty and says it is connecting, before any answer arrives', () => {
     backend();
-    const store = new HermesStore();
+    const store = booted();
 
-    expect(store.backendStatus()).toBe('connecting');
-    expect(store.containers()).toEqual([]);
-    expect(store.agents()).toEqual([]);
-    expect(store.liveNotice()).toBe('connecting to backend…');
+    expect(store.ctx.backendStatus()).toBe('connecting');
+    expect(store.containers.containers()).toEqual([]);
+    expect(store.agents.agents()).toEqual([]);
+    expect(store.liveSync.notice()).toBe('connecting to backend…');
     // the local docker row is a placeholder until the backend reports hosts
-    expect(store.dockerHosts()).toHaveLength(1);
-    expect(store.dockerOverall()).toBe('disconnected');
+    expect(store.hosts.hosts()).toHaveLength(1);
+    expect(store.hosts.overall()).toBe('disconnected');
   });
 
   it('reports an unreachable backend and keeps retrying', async () => {
     const fetchMock = vi.fn(() => Promise.reject(new Error('connection refused')));
     vi.stubGlobal('fetch', fetchMock);
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.backendStatus()).toBe('unreachable');
-    expect(store.liveNotice()).toContain('backend unreachable');
+    expect(store.ctx.backendStatus()).toBe('unreachable');
+    expect(store.liveSync.notice()).toContain('backend unreachable');
     const attempts = fetchMock.mock.calls.length;
 
     await vi.advanceTimersByTimeAsync(10_000);
@@ -156,57 +155,57 @@ describe('HermesStore bootstrap', () => {
       apiBaseUrl: 'http://mc.internal:9999', dockerSocket: 'unix:///x',
     };
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('refused'))));
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.liveNotice()).toContain('http://mc.internal:9999');
+    expect(store.liveSync.notice()).toContain('http://mc.internal:9999');
   });
 
   it('loads every domain once the backend answers, and drops the banner', async () => {
     backend();
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.backendStatus()).toBe('connected');
-    expect(store.liveNotice()).toBeNull();
-    expect(store.dockerHosts()[0]).toMatchObject({ id: 'dh-remote', status: 'connected' });
-    expect(store.dockerOverall()).toBe('connected');
-    expect(store.containers()[0]).toMatchObject({ id: 'c-live', version: 'v2026.8.3', disk: 2 });
-    expect(store.llmProviders()[0]).toMatchObject({ key: 'anthropic' });
-    expect(store.profileTemplates()[0]).toMatchObject({ id: 'pt1', name: 'ops-template' });
-    expect(store.selectedContainerId()).toBe('c-live');
+    expect(store.ctx.backendStatus()).toBe('connected');
+    expect(store.liveSync.notice()).toBeNull();
+    expect(store.hosts.hosts()[0]).toMatchObject({ id: 'dh-remote', status: 'connected' });
+    expect(store.hosts.overall()).toBe('connected');
+    expect(store.containers.containers()[0]).toMatchObject({ id: 'c-live', version: 'v2026.8.3', disk: 2 });
+    expect(store.providers.llmProviders()[0]).toMatchObject({ key: 'anthropic' });
+    expect(store.templates.templates()[0]).toMatchObject({ id: 'pt1', name: 'ops-template' });
+    expect(store.containers.selectedContainerId()).toBe('c-live');
   });
 
   it('adopts the profiles of every container it found', async () => {
     backend();
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.containerAgents()[0]).toMatchObject({
+    expect(store.agents.forSelectedContainer()[0]).toMatchObject({
       id: 'a-live', name: 'atlas', provider: 'anthropic', soul: '# SOUL',
     });
     // absent wire fields become the model's defaults rather than undefined
-    expect(store.agentById('a-live')).toMatchObject({
+    expect(store.agents.byId('a-live')).toMatchObject({
       sessions: [], msgsToday: 0, errorRate: 0,
     });
-    expect(store.agentById('a-live')?.mcp[0]).toMatchObject({
+    expect(store.agents.byId('a-live')?.mcp[0]).toMatchObject({
       name: 'github', enabled: true, origin: 'custom', error: null, checkedAt: null,
     });
   });
 
   it('fills the board and the logs of the container it selected', async () => {
     backend();
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.containerTasks()[0]).toMatchObject({ id: 't1', agentId: '', tags: [] });
-    expect(store.containerLogs()[0]).toMatchObject({ msg: 'ready', agentId: null });
-    expect(store.logsUpdatedAt()).not.toBeNull();
+    expect(store.board.forSelectedContainer()[0]).toMatchObject({ id: 't1', agentId: '', tags: [] });
+    expect(store.logs.selectedLogs()[0]).toMatchObject({ msg: 'ready', agentId: null });
+    expect(store.logs.updatedAt()).not.toBeNull();
   });
 
   it('keeps polling each domain on its own period', async () => {
     const calls = backend();
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
     const containerPolls = calls.filter(u => u === '/api/containers').length;
     const statsPolls = calls.filter(u => u.includes('/stats')).length;
@@ -216,29 +215,29 @@ describe('HermesStore bootstrap', () => {
     expect(calls.filter(u => u === '/api/containers').length).toBeGreaterThan(containerPolls);
     // stats run far more often than the inventory
     expect(calls.filter(u => u.includes('/stats')).length).toBeGreaterThan(statsPolls + 1);
-    expect(store.backendStatus()).toBe('connected');
+    expect(store.ctx.backendStatus()).toBe('connected');
   });
 
   it('survives a backend that answers health and then falls over', async () => {
     const routes = backend();
-    const store = new HermesStore();
+    const store = booted();
     await vi.advanceTimersByTimeAsync(0);
-    const loaded = store.containers();
+    const loaded = store.containers.containers();
     expect(loaded).toHaveLength(1);
 
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('gone'))));
     await vi.advanceTimersByTimeAsync(15_000);
 
     // a failed refresh keeps the last known inventory rather than blanking the UI
-    expect(store.containers()).toEqual(loaded);
-    expect(store.agents()).toHaveLength(1);
+    expect(store.containers.containers()).toEqual(loaded);
+    expect(store.agents.agents()).toHaveLength(1);
     expect(routes.length).toBeGreaterThan(0);
   });
 });
 
 // The pollers and the catalog lifecycle carry the arithmetic and the state
 // machines that a pass-through action does not.
-describe('HermesStore live pollers', () => {
+describe('LiveSync pollers', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
@@ -253,7 +252,7 @@ describe('HermesStore live pollers', () => {
 
   it('derives network rate from the byte counters, not from the counters', async () => {
     const store = await loaded();
-    const target = store.containers().find(c => c.status === 'running')!;
+    const target = store.containers.containers().find(c => c.status === 'running')!;
     // every running container is sampled each tick, so the queue is per container
     const queued = [
       { cpuPercent: 10, ramMb: 400, ramTotalMb: 4096, rxBytes: 0, txBytes: 0, sampledAt: 1_000 },
@@ -262,18 +261,18 @@ describe('HermesStore live pollers', () => {
     const idle = { cpuPercent: 1, ramMb: 1, ramTotalMb: 2, rxBytes: 0, txBytes: 0, sampledAt: 1_000 };
     const stats = vi.fn((_hostId: string, id: string) =>
       Promise.resolve(id === target.id ? queued.shift() ?? idle : idle));
-    stubBackend(store, { containers: { stats } });
-    const pollStats = () => (store as any).containerStore.pollStats();
+    stubBackend(store.ctx, { containers: { stats } });
+    const pollStats = () => store.containers.pollStats();
 
     // the first sample has nothing to compare against, so the rate reads zero
     await pollStats();
-    expect(store.containers().find(c => c.id === target.id)).toMatchObject({
+    expect(store.containers.containers().find(c => c.id === target.id)).toMatchObject({
       cpu: 10, ram: 400, netIn: 0, netOut: 0,
     });
 
     await pollStats();
     // 1,024,000 bytes over one second, in KB/s
-    expect(store.containers().find(c => c.id === target.id)).toMatchObject({
+    expect(store.containers.containers().find(c => c.id === target.id)).toMatchObject({
       cpu: 20, netIn: 1_000, netOut: 500,
     });
   });
@@ -288,50 +287,50 @@ describe('HermesStore live pollers', () => {
       rxBytes: counters[Math.min(tick, 1)], txBytes: counters[Math.min(tick, 1)],
       sampledAt: 1_000 + tick * 1_000,
     }));
-    stubBackend(store, { containers: { stats } });
-    const pollStats = () => (store as any).containerStore.pollStats();
+    stubBackend(store.ctx, { containers: { stats } });
+    const pollStats = () => store.containers.pollStats();
 
     await pollStats();
     tick = 1;
     await pollStats();
 
-    expect(store.containers().every(c => c.netIn >= 0 && c.netOut >= 0)).toBe(true);
+    expect(store.containers.containers().every(c => c.netIn >= 0 && c.netOut >= 0)).toBe(true);
   });
 
   it('does not ask a stopped container for its profiles, and keeps the ones it had', async () => {
     const store = await loaded();
-    const stopped = store.containers().find(c => c.status === 'stopped')!;
-    const kept = store.agents().filter(a => a.containerId === stopped.id);
+    const stopped = store.containers.containers().find(c => c.status === 'stopped')!;
+    const kept = store.agents.agents().filter(a => a.containerId === stopped.id);
     expect(kept.length).toBeGreaterThan(0);
     const list = vi.fn().mockResolvedValue([]);
-    stubBackend(store, { agents: { list } });
+    stubBackend(store.ctx, { agents: { list } });
 
-    await (store as any).agentStore.refresh();
+    await store.agents.refresh();
 
     expect(list.mock.calls.some(call => call[1] === stopped.id)).toBe(false);
-    expect(store.agents().filter(a => a.containerId === stopped.id)).toEqual(kept);
+    expect(store.agents.agents().filter(a => a.containerId === stopped.id)).toEqual(kept);
   });
 
   it('keeps the last known profiles of a container that failed this tick', async () => {
     const store = await loaded();
-    const running = store.containers().find(c => c.status === 'running')!;
-    const kept = store.agents().filter(a => a.containerId === running.id);
-    stubBackend(store, { agents: { list: vi.fn().mockRejectedValue(new Error('daemon busy')) } });
+    const running = store.containers.containers().find(c => c.status === 'running')!;
+    const kept = store.agents.agents().filter(a => a.containerId === running.id);
+    stubBackend(store.ctx, { agents: { list: vi.fn().mockRejectedValue(new Error('daemon busy')) } });
 
-    await (store as any).agentStore.refresh();
+    await store.agents.refresh();
 
-    expect(store.agents().filter(a => a.containerId === running.id)).toEqual(kept);
+    expect(store.agents.agents().filter(a => a.containerId === running.id)).toEqual(kept);
   });
 
   it('leaves an in-flight MCP probe alone while a refresh lands', async () => {
     const store = await loaded();
-    const agent = store.agents().find(a => a.mcp.length)!;
-    const container = store.containers().find(c => c.id === agent.containerId)!;
-    (store as any).agentStore.update(agent.id, (a: any) => ({
+    const agent = store.agents.agents().find(a => a.mcp.length)!;
+    const container = store.containers.containers().find(c => c.id === agent.containerId)!;
+    store.agents.update(agent.id, (a: any) => ({
       ...a, mcp: a.mcp.map((m: any, i: number) => i === 0 ? { ...m, status: 'checking' } : m),
     }));
     const probing = agent.mcp[0].name;
-    stubBackend(store, {
+    stubBackend(store.ctx, {
       agents: {
         list: vi.fn().mockImplementation((_host: string, containerId: string) => Promise.resolve(
           containerId === container.id
@@ -340,15 +339,15 @@ describe('HermesStore live pollers', () => {
       },
     });
 
-    await (store as any).agentStore.refresh();
+    await store.agents.refresh();
 
-    const refreshed = store.agentById(agent.id)!;
+    const refreshed = store.agents.byId(agent.id)!;
     expect(refreshed.mcp.find(m => m.name === probing)?.status).toBe('checking');
     expect(refreshed.mcp.filter(m => m.name !== probing).every(m => m.status === 'unknown')).toBe(true);
   });
 });
 
-describe('HermesStore live MCP catalog lifecycle', () => {
+describe('live MCP catalog lifecycle', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
@@ -363,21 +362,21 @@ describe('HermesStore live MCP catalog lifecycle', () => {
 
   it('shows the operation as in flight, then polls until the backend settles', async () => {
     const store = await loaded();
-    const server = store.mcpServers().find(s => s.kind === 'managed')!;
+    const server = store.catalog.servers().find(s => s.kind === 'managed')!;
     const run = vi.fn().mockResolvedValue({ ...server, operationState: 'pulling' });
     const list = vi.fn().mockResolvedValue([{
       ...server, operationState: 'idle', runtimeState: 'running', desiredState: 'running',
     }]);
-    stubBackend(store, { mcp: { run, list } });
+    stubBackend(store.ctx, { mcp: { run, list } });
 
-    const started = store.startCatalogMcpServer(server.id);
+    const started = store.catalog.start(server.id);
     await vi.advanceTimersByTimeAsync(0);
     // the row reports the pull the backend is doing, not a finished start
-    expect(store.mcpServerById(server.id)?.operationState).toBe('pulling');
+    expect(store.catalog.byId(server.id)?.operationState).toBe('pulling');
 
     await vi.advanceTimersByTimeAsync(1_500);
     expect(await started).toBe(true);
-    expect(store.mcpServerById(server.id)).toMatchObject({
+    expect(store.catalog.byId(server.id)).toMatchObject({
       operationState: 'idle', runtimeState: 'running',
     });
     expect(list).toHaveBeenCalled();
@@ -385,21 +384,21 @@ describe('HermesStore live MCP catalog lifecycle', () => {
 
   it('records why an operation failed, on the row and in a toast', async () => {
     const store = await loaded();
-    const server = store.mcpServers().find(s => s.kind === 'managed')!;
-    stubBackend(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('port 5432 already published')) } });
+    const server = store.catalog.servers().find(s => s.kind === 'managed')!;
+    stubBackend(store.ctx, { mcp: { run: vi.fn().mockRejectedValue(new Error('port 5432 already published')) } });
 
-    expect(await store.startCatalogMcpServer(server.id)).toBe(false);
+    expect(await store.catalog.start(server.id)).toBe(false);
 
-    expect(store.mcpServerById(server.id)).toMatchObject({
+    expect(store.catalog.byId(server.id)).toMatchObject({
       operationState: 'error', operationError: 'port 5432 already published',
     });
-    expect(store.liveError()).toBe('MCP server start failed: port 5432 already published');
+    expect(store.ctx.liveError()).toBe('MCP server start failed: port 5432 already published');
   });
 
   it('answers a check with what the probe found, leaving the operation state alone', async () => {
     const store = await loaded();
-    const server = store.mcpServers().find(s => s.kind === 'managed')!;
-    stubBackend(store, {
+    const server = store.catalog.servers().find(s => s.kind === 'managed')!;
+    stubBackend(store.ctx, {
       mcp: {
         run: vi.fn().mockResolvedValue({
           ...server, checkStatus: 'connected', latencyMs: 18, checkedAt: 99,
@@ -407,19 +406,19 @@ describe('HermesStore live MCP catalog lifecycle', () => {
       },
     });
 
-    expect(await store.checkCatalogMcpServer(server.id)).toBe(true);
-    expect(store.mcpServerById(server.id)).toMatchObject({
+    expect(await store.catalog.check(server.id)).toBe(true);
+    expect(store.catalog.byId(server.id)).toMatchObject({
       checkStatus: 'connected', latencyMs: 18, checkedAt: 99, operationState: 'idle',
     });
   });
 
   it('reports a failed check without claiming the server stopped', async () => {
     const store = await loaded();
-    const server = store.mcpServers().find(s => s.kind === 'managed')!;
-    stubBackend(store, { mcp: { run: vi.fn().mockRejectedValue(new Error('handshake timeout')) } });
+    const server = store.catalog.servers().find(s => s.kind === 'managed')!;
+    stubBackend(store.ctx, { mcp: { run: vi.fn().mockRejectedValue(new Error('handshake timeout')) } });
 
-    expect(await store.checkCatalogMcpServer(server.id)).toBe(false);
-    expect(store.mcpServerById(server.id)).toMatchObject({
+    expect(await store.catalog.check(server.id)).toBe(false);
+    expect(store.catalog.byId(server.id)).toMatchObject({
       checkStatus: 'error', checkError: 'handshake timeout',
       operationState: 'idle', operationError: null,
     });
@@ -427,11 +426,11 @@ describe('HermesStore live MCP catalog lifecycle', () => {
 
   it('refuses to write an Agent config against a server that never came up', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
-    const container = store.containers().find(c => c.id === agent.containerId)!;
-    const server = store.mcpServers().find(s => s.kind === 'managed' && s.hostId === container.hostId)!;
+    const agent = store.agents.agents()[0];
+    const container = store.containers.containers().find(c => c.id === agent.containerId)!;
+    const server = store.catalog.servers().find(s => s.kind === 'managed' && s.hostId === container.hostId)!;
     const connectCatalog = vi.fn();
-    stubBackend(store, {
+    stubBackend(store.ctx, {
       mcp: {
         run: vi.fn().mockResolvedValue({ ...server, operationState: 'starting' }),
         list: vi.fn().mockResolvedValue([{
@@ -442,18 +441,18 @@ describe('HermesStore live MCP catalog lifecycle', () => {
       agents: { mcp: { connectCatalog } },
     });
 
-    const connecting = store.connectCatalogMcp(agent.id, server.id, 'browser');
+    const connecting = store.agentMcp.connectCatalog(agent.id, server.id, 'browser');
     await vi.advanceTimersByTimeAsync(2_000);
 
     expect(await connecting).toBe(false);
     expect(connectCatalog).not.toHaveBeenCalled();
-    expect(store.liveError()).toContain('MCP server start failed: image pull failed');
+    expect(store.ctx.liveError()).toContain('MCP server start failed: image pull failed');
   });
 });
 
 // The registries and the profile-scoped writes share one shape: apply what the
 // backend answered, or toast and leave the last known state alone.
-describe('HermesStore live registries', () => {
+describe('live registries', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
@@ -473,70 +472,70 @@ describe('HermesStore live registries', () => {
       id: 'dh-new', name: 'prod', url: 'tcp://10.0.0.2:2375', kind: 'remote',
       status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 9, note: null,
     }]);
-    stubBackend(store, { hosts: { add, list } });
+    stubBackend(store.ctx, { hosts: { add, list } });
 
-    store.addDockerHost('prod', 'tcp://10.0.0.2:2375');
+    store.hosts.add('prod', 'tcp://10.0.0.2:2375');
     await vi.advanceTimersByTimeAsync(0);
 
     expect(add).toHaveBeenCalledWith('prod', 'tcp://10.0.0.2:2375');
-    expect(store.dockerHosts()).toEqual([expect.objectContaining({ id: 'dh-new' })]);
+    expect(store.hosts.hosts()).toEqual([expect.objectContaining({ id: 'dh-new' })]);
   });
 
   it('reports a refused host and re-reads rather than inventing a state', async () => {
     const store = await loaded();
     const list = vi.fn().mockResolvedValue([]);
-    stubBackend(store, {
+    stubBackend(store.ctx, {
       hosts: { check: vi.fn().mockRejectedValue(new Error('x509: certificate expired')), list },
     });
 
-    store.checkDockerHost('dh-local');
+    store.hosts.check('dh-local');
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.liveError()).toBe('host check failed: x509: certificate expired');
+    expect(store.ctx.liveError()).toBe('host check failed: x509: certificate expired');
     expect(list).toHaveBeenCalled();
   });
 
   it('never removes the local socket, backend or not', async () => {
     const store = await loaded();
     const remove = vi.fn();
-    stubBackend(store, { hosts: { remove } });
+    stubBackend(store.ctx, { hosts: { remove } });
 
-    store.removeDockerHost('dh-local');
+    store.hosts.remove('dh-local');
 
     expect(remove).not.toHaveBeenCalled();
   });
 
   it('keeps the bootstrap provider mirror when the registry cannot be read', async () => {
     const store = await loaded();
-    const mirrored = store.llmProviders();
-    stubBackend(store, { providers: { registry: vi.fn().mockRejectedValue(new Error('offline')) } });
+    const mirrored = store.providers.llmProviders();
+    stubBackend(store.ctx, { providers: { registry: vi.fn().mockRejectedValue(new Error('offline')) } });
 
-    await store.refreshProviderRegistry();
+    await store.providers.refreshRegistry();
 
-    expect(store.llmProviders()).toEqual(mirrored);
+    expect(store.providers.llmProviders()).toEqual(mirrored);
   });
 
   it('ignores an empty registry, which would leave the picker unusable', async () => {
     const store = await loaded();
-    const mirrored = store.llmProviders();
-    stubBackend(store, { providers: { registry: vi.fn().mockResolvedValue([]) } });
+    const mirrored = store.providers.llmProviders();
+    stubBackend(store.ctx, { providers: { registry: vi.fn().mockResolvedValue([]) } });
 
-    await store.refreshProviderRegistry();
+    await store.providers.refreshRegistry();
 
-    expect(store.llmProviders()).toEqual(mirrored);
+    expect(store.providers.llmProviders()).toEqual(mirrored);
   });
 
   it('falls back to the offline model list when a catalog lookup fails', async () => {
     const store = await loaded();
-    stubBackend(store, {
+    stubBackend(store.ctx, {
       providers: {
         modelCatalog: vi.fn().mockRejectedValue(new Error('provider 502')),
         modelCatalogLive: vi.fn().mockRejectedValue(new Error('bad key')),
       },
     });
 
-    const fromConfig = await store.modelCatalog('anthropic');
-    const fromKey = await store.modelCatalogLive('anthropic', 'sk-ant-x');
+    const fromConfig = await store.providers.modelCatalog('anthropic');
+    const fromKey = await store.providers.modelCatalogLive('anthropic', 'sk-ant-x');
 
     expect(fromConfig).toContain('claude-fable-5');
     expect(fromKey).toEqual(fromConfig);
@@ -544,83 +543,83 @@ describe('HermesStore live registries', () => {
 
   it('answers an empty model list rather than throwing at a page', async () => {
     const store = await loaded();
-    stubBackend(store, {
+    stubBackend(store.ctx, {
       providers: {
         models: vi.fn().mockRejectedValue(new Error('ollama down')),
         pullStatus: vi.fn().mockRejectedValue(new Error('ollama down')),
       },
     });
 
-    expect(await store.providerModels('mp-local')).toEqual([]);
-    expect(await store.pullStatus('mp-local')).toEqual([]);
-    expect(store.liveError()).toBe('model list failed: ollama down');
+    expect(await store.providers.models('mp-local')).toEqual([]);
+    expect(await store.providers.pullStatus('mp-local')).toEqual([]);
+    expect(store.ctx.liveError()).toBe('model list failed: ollama down');
   });
 
   it('creates a template, then updates that same one', async () => {
     const store = await loaded();
     const create = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops', createdAt: 1, updatedAt: 1 });
     const update = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops v2', createdAt: 1, updatedAt: 2 });
-    stubBackend(store, { templates: { create, update } });
+    stubBackend(store.ctx, { templates: { create, update } });
     const input = {
       name: 'ops', description: '', provider: 'anthropic', model: 'claude-fable-5',
       baseUrl: '', cwd: '', soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
     };
 
-    expect(await store.saveTemplate(input)).toBe('pt-new');
+    expect(await store.templates.save(input)).toBe('pt-new');
     expect(create).toHaveBeenCalledWith(input);
 
-    expect(await store.saveTemplate({ ...input, name: 'ops v2' }, 'pt-new')).toBe('pt-new');
+    expect(await store.templates.save({ ...input, name: 'ops v2' }, 'pt-new')).toBe('pt-new');
     expect(update).toHaveBeenCalledWith('pt-new', expect.objectContaining({ name: 'ops v2' }));
     // the row is replaced, not duplicated
-    expect(store.profileTemplates().filter(t => t.id === 'pt-new')).toHaveLength(1);
-    expect(store.templateById('pt-new')?.name).toBe('ops v2');
+    expect(store.templates.templates().filter(t => t.id === 'pt-new')).toHaveLength(1);
+    expect(store.templates.byId('pt-new')?.name).toBe('ops v2');
   });
 
   it('reports a failed template save as an empty id, so the editor stays open', async () => {
     const store = await loaded();
-    const before = store.profileTemplates().length;
-    stubBackend(store, { templates: { create: vi.fn().mockRejectedValue(new Error('name taken')) } });
+    const before = store.templates.templates().length;
+    stubBackend(store.ctx, { templates: { create: vi.fn().mockRejectedValue(new Error('name taken')) } });
 
-    expect(await store.saveTemplate({
+    expect(await store.templates.save({
       name: 'ops', description: '', provider: '', model: '', baseUrl: '', cwd: '',
       soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
     })).toBe('');
-    expect(store.liveError()).toBe('save template failed: name taken');
-    expect(store.profileTemplates()).toHaveLength(before);
+    expect(store.ctx.liveError()).toBe('save template failed: name taken');
+    expect(store.templates.templates()).toHaveLength(before);
   });
 
   it('keeps a template the backend refused to delete', async () => {
     const store = await loaded();
-    const target = store.profileTemplates()[0];
-    stubBackend(store, { templates: { remove: vi.fn().mockRejectedValue(new Error('in use')) } });
+    const target = store.templates.templates()[0];
+    stubBackend(store.ctx, { templates: { remove: vi.fn().mockRejectedValue(new Error('in use')) } });
 
-    await store.deleteTemplate(target.id);
+    await store.templates.remove(target.id);
 
-    expect(store.templateById(target.id)).not.toBeNull();
-    expect(store.liveError()).toBe('delete template failed: in use');
+    expect(store.templates.byId(target.id)).not.toBeNull();
+    expect(store.ctx.liveError()).toBe('delete template failed: in use');
   });
 
   it('adopts the profile a template deploy created', async () => {
     const store = await loaded();
-    const template = store.profileTemplates()[0];
-    const container = store.containers()[0];
+    const template = store.templates.templates()[0];
+    const container = store.containers.containers()[0];
     const deploy = vi.fn().mockResolvedValue({
       id: 'a-deployed', containerId: container.id, name: 'from-template', role: 'ops',
       state: 'idle', provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '',
       cwd: '/srv', soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [],
       integrations: [], lastActive: 1,
     });
-    stubBackend(store, { templates: { deploy } });
+    stubBackend(store.ctx, { templates: { deploy } });
 
-    expect(await store.deployTemplate(template.id, container.id, 'from-template')).toBe('a-deployed');
+    expect(await store.templates.deploy(template.id, container.id, 'from-template')).toBe('a-deployed');
     expect(deploy).toHaveBeenCalledWith(template.id, {
       hostId: container.hostId, containerId: container.id, name: 'from-template',
     });
-    expect(store.agentById('a-deployed')).toMatchObject({ name: 'from-template' });
+    expect(store.agents.byId('a-deployed')).toMatchObject({ name: 'from-template' });
   });
 });
 
-describe('HermesStore live profile writes', () => {
+describe('live profile writes', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
@@ -643,73 +642,73 @@ describe('HermesStore live profile writes', () => {
 
   it('applies the profile a config save answered with', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
-    stubBackend(store, {
+    const agent = store.agents.agents()[0];
+    stubBackend(store.ctx, {
       agents: {
         updateConfig: vi.fn().mockResolvedValue(echo(agent, { configYaml: 'model: from-backend' })),
       },
     });
 
-    expect(await store.updateAgentConfig(agent.id, 'model: typed')).toBe(true);
+    expect(await store.agents.updateConfig(agent.id, 'model: typed')).toBe(true);
     // what lands is the backend's version, not the text that was typed
-    expect(store.agentById(agent.id)?.configYaml).toBe('model: from-backend');
+    expect(store.agents.byId(agent.id)?.configYaml).toBe('model: from-backend');
   });
 
   it('reports a rejected config save and keeps the file as it was', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
+    const agent = store.agents.agents()[0];
     const original = agent.configYaml;
-    stubBackend(store, {
+    stubBackend(store.ctx, {
       agents: { updateConfig: vi.fn().mockRejectedValue(new Error('invalid yaml at line 3')) },
     });
 
-    expect(await store.updateAgentConfig(agent.id, 'broken: [')).toBe(false);
-    expect(store.agentById(agent.id)?.configYaml).toBe(original);
-    expect(store.liveError()).toBe('config save failed: invalid yaml at line 3');
+    expect(await store.agents.updateConfig(agent.id, 'broken: [')).toBe(false);
+    expect(store.agents.byId(agent.id)?.configYaml).toBe(original);
+    expect(store.ctx.liveError()).toBe('config save failed: invalid yaml at line 3');
   });
 
   it('applies the skill list a toggle answered with', async () => {
     const store = await loaded();
-    const agent = store.agents().find(a => a.skills.length)!;
+    const agent = store.agents.agents().find(a => a.skills.length)!;
     const skill = agent.skills[0];
     const setEnabled = vi.fn().mockResolvedValue(echo(agent, {
       skills: [{ ...skill, enabled: !skill.enabled }],
     }));
-    stubBackend(store, { agents: { skills: { setEnabled } } });
+    stubBackend(store.ctx, { agents: { skills: { setEnabled } } });
 
-    store.toggleSkill(agent.id, skill.id);
+    store.skills.toggle(agent.id, skill.id);
     await vi.advanceTimersByTimeAsync(0);
 
     expect(setEnabled).toHaveBeenCalledWith(
       expect.objectContaining({ name: agent.name }), skill.name, !skill.enabled);
-    expect(store.agentById(agent.id)?.skills).toEqual([
+    expect(store.agents.byId(agent.id)?.skills).toEqual([
       expect.objectContaining({ name: skill.name, enabled: !skill.enabled }),
     ]);
   });
 
   it('answers null for a failed setup read, and says why', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
-    stubBackend(store, {
+    const agent = store.agents.agents()[0];
+    stubBackend(store.ctx, {
       agents: { setup: vi.fn().mockRejectedValue(new Error('hermes status timed out')) },
     });
 
-    expect(await store.agentSetup(agent.id)).toBeNull();
-    expect(store.liveError()).toBe('setup load failed: hermes status timed out');
+    expect(await store.setup.setup(agent.id)).toBeNull();
+    expect(store.ctx.liveError()).toBe('setup load failed: hermes status timed out');
   });
 
   it('returns the refreshed setup an env write answered with', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
+    const agent = store.agents.agents()[0];
     const answered = {
       envPath: `/opt/data/profiles/${agent.name}/.env`, envExists: true,
       apiKeys: [{ label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', set: true, masked: '…9f2c' }],
       authProviders: [], apiKeyProviders: [], messaging: [],
     };
     const setEnv = vi.fn().mockResolvedValue(answered);
-    stubBackend(store, { agents: { setEnv } });
+    stubBackend(store.ctx, { agents: { setEnv } });
 
-    expect(await store.setAgentEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]))
+    expect(await store.setup.setEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]))
       .toEqual(answered);
     expect(setEnv).toHaveBeenCalledWith(
       expect.objectContaining({ name: agent.name }),
@@ -718,32 +717,32 @@ describe('HermesStore live profile writes', () => {
 
   it('degrades an auth-provider read to an empty list, so the modal still opens', async () => {
     const store = await loaded();
-    const container = store.containers()[0];
-    stubBackend(store, {
+    const container = store.containers.containers()[0];
+    stubBackend(store.ctx, {
       agents: { authProviders: vi.fn().mockRejectedValue(new Error('no default profile')) },
     });
 
-    expect(await store.authProviders(container.id)).toEqual([]);
-    expect(store.liveError()).toBeNull();
+    expect(await store.setup.authProviders(container.id)).toEqual([]);
+    expect(store.ctx.liveError()).toBeNull();
   });
 
   it('drops a removed profile only after the backend confirms it', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
-    stubBackend(store, { agents: { remove: vi.fn().mockRejectedValue(new Error('profile busy')) } });
+    const agent = store.agents.agents()[0];
+    stubBackend(store.ctx, { agents: { remove: vi.fn().mockRejectedValue(new Error('profile busy')) } });
 
-    store.removeAgent(agent.id);
+    store.removal.remove(agent.id);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.agentById(agent.id)).not.toBeNull();
-    expect(store.liveError()).toBe('remove profile failed: profile busy');
+    expect(store.agents.byId(agent.id)).not.toBeNull();
+    expect(store.ctx.liveError()).toBe('remove profile failed: profile busy');
   });
 });
 
 // Reading a profile's setup runs `hermes status` inside the container, which
 // takes seconds. The cache is what keeps a tab switch from paying for it again,
 // so its rules are worth pinning: read once, replace on write, force on refresh.
-describe('HermesStore setup cache', () => {
+describe('live setup cache', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = {
@@ -763,74 +762,74 @@ describe('HermesStore setup cache', () => {
 
   it('reads a profile once and serves the cached copy after that', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
+    const agent = store.agents.agents()[0];
     const setup = vi.fn().mockResolvedValue(answer(agent.name));
-    stubBackend(store, { agents: { setup } });
+    stubBackend(store.ctx, { agents: { setup } });
 
-    expect(store.agentSetupOf(agent.id)).toBeNull();
-    await store.agentSetup(agent.id);
-    await store.agentSetup(agent.id);
+    expect(store.setup.setupOf(agent.id)).toBeNull();
+    await store.setup.setup(agent.id);
+    await store.setup.setup(agent.id);
 
     expect(setup).toHaveBeenCalledTimes(1);
-    expect(store.agentSetupOf(agent.id)).toMatchObject({ envExists: true });
+    expect(store.setup.setupOf(agent.id)).toMatchObject({ envExists: true });
   });
 
   it('re-reads only when the caller forces it', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
+    const agent = store.agents.agents()[0];
     const setup = vi.fn()
       .mockResolvedValueOnce(answer(agent.name, { envExists: false }))
       .mockResolvedValueOnce(answer(agent.name, { envExists: true }));
-    stubBackend(store, { agents: { setup } });
+    stubBackend(store.ctx, { agents: { setup } });
 
-    await store.agentSetup(agent.id);
-    expect(store.agentSetupOf(agent.id)?.envExists).toBe(false);
+    await store.setup.setup(agent.id);
+    expect(store.setup.setupOf(agent.id)?.envExists).toBe(false);
 
-    await store.agentSetup(agent.id, true);
+    await store.setup.setup(agent.id, true);
     expect(setup).toHaveBeenCalledTimes(2);
-    expect(store.agentSetupOf(agent.id)?.envExists).toBe(true);
+    expect(store.setup.setupOf(agent.id)?.envExists).toBe(true);
   });
 
   it('caches each profile separately', async () => {
     const store = await loaded();
-    const [first, second] = store.agents();
-    stubBackend(store, {
+    const [first, second] = store.agents.agents();
+    stubBackend(store.ctx, {
       agents: {
         setup: vi.fn().mockImplementation((ref: { name: string }) =>
           Promise.resolve(answer(ref.name))),
       },
     });
 
-    await store.agentSetup(first.id);
-    await store.agentSetup(second.id);
+    await store.setup.setup(first.id);
+    await store.setup.setup(second.id);
 
-    expect(store.agentSetupOf(first.id)?.envPath).toContain(first.name);
-    expect(store.agentSetupOf(second.id)?.envPath).toContain(second.name);
+    expect(store.setup.setupOf(first.id)?.envPath).toContain(first.name);
+    expect(store.setup.setupOf(second.id)?.envPath).toContain(second.name);
   });
 
   it('collapses two concurrent reads of the same profile into one call', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
+    const agent = store.agents.agents()[0];
     let release!: (value: unknown) => void;
     const pending = new Promise(resolve => { release = resolve; });
     const setup = vi.fn().mockReturnValue(pending.then(() => answer(agent.name)));
-    stubBackend(store, { agents: { setup } });
+    stubBackend(store.ctx, { agents: { setup } });
 
-    const first = store.agentSetup(agent.id);
-    const second = store.agentSetup(agent.id);
-    expect(store.agentSetupLoading(agent.id)).toBe(true);
+    const first = store.setup.setup(agent.id);
+    const second = store.setup.setup(agent.id);
+    expect(store.setup.isSetupLoading(agent.id)).toBe(true);
     release(null);
     await first;
     await second;
 
     expect(setup).toHaveBeenCalledTimes(1);
-    expect(store.agentSetupLoading(agent.id)).toBe(false);
+    expect(store.setup.isSetupLoading(agent.id)).toBe(false);
   });
 
   it('replaces the cached copy with what a write answered', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
-    stubBackend(store, {
+    const agent = store.agents.agents()[0];
+    stubBackend(store.ctx, {
       agents: {
         setup: vi.fn().mockResolvedValue(answer(agent.name, { envExists: false })),
         setEnv: vi.fn().mockResolvedValue(answer(agent.name, {
@@ -841,45 +840,45 @@ describe('HermesStore setup cache', () => {
       },
     });
 
-    await store.agentSetup(agent.id);
-    await store.setAgentEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]);
+    await store.setup.setup(agent.id);
+    await store.setup.setEnv(agent.id, [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-x' }]);
 
-    expect(store.agentSetupOf(agent.id)).toMatchObject({
+    expect(store.setup.setupOf(agent.id)).toMatchObject({
       envExists: true, apiKeys: [expect.objectContaining({ set: true })],
     });
   });
 
   it('keeps the last good copy when a refresh fails', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
+    const agent = store.agents.agents()[0];
     const setup = vi.fn()
       .mockResolvedValueOnce(answer(agent.name))
       .mockRejectedValueOnce(new Error('hermes status timed out'));
-    stubBackend(store, { agents: { setup } });
+    stubBackend(store.ctx, { agents: { setup } });
 
-    await store.agentSetup(agent.id);
-    expect(await store.agentSetup(agent.id, true)).toBeNull();
+    await store.setup.setup(agent.id);
+    expect(await store.setup.setup(agent.id, true)).toBeNull();
 
-    expect(store.agentSetupOf(agent.id)).toMatchObject({ envExists: true });
-    expect(store.liveError()).toBe('setup load failed: hermes status timed out');
+    expect(store.setup.setupOf(agent.id)).toMatchObject({ envExists: true });
+    expect(store.ctx.liveError()).toBe('setup load failed: hermes status timed out');
   });
 
   it('forgets a deleted profile\'s credentials along with the profile', async () => {
     const store = await loaded();
-    const agent = store.agents()[0];
-    stubBackend(store, {
+    const agent = store.agents.agents()[0];
+    stubBackend(store.ctx, {
       agents: {
         setup: vi.fn().mockResolvedValue(answer(agent.name)),
         remove: vi.fn().mockResolvedValue(undefined),
       },
     });
-    await store.agentSetup(agent.id);
-    expect(store.agentSetupOf(agent.id)).not.toBeNull();
+    await store.setup.setup(agent.id);
+    expect(store.setup.setupOf(agent.id)).not.toBeNull();
 
-    store.removeAgent(agent.id);
+    store.removal.remove(agent.id);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.agentSetupOf(agent.id)).toBeNull();
+    expect(store.setup.setupOf(agent.id)).toBeNull();
   });
 });
 

@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 import { RollingNumber } from '../shared/rolling-number';
@@ -33,7 +35,9 @@ export function agentSessionCommand(name: string): string | undefined {
   styleUrl: './agents.scss',
 })
 export class AgentsPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly terminal = inject(TerminalRequestStore);
   private readonly router = inject(Router);
 
   protected readonly ago = ago;
@@ -42,7 +46,7 @@ export class AgentsPage {
   protected readonly agentCommand = agentSessionCommand;
 
   protected readonly totals = computed(() => {
-    const as = this.store.containerAgents();
+    const as = this.agents.forSelectedContainer();
     return {
       msgs: as.reduce((s, a) => s + a.msgsToday, 0),
       tokens: as.reduce((s, a) => s + a.tokensToday, 0),
@@ -62,9 +66,9 @@ export class AgentsPage {
 
   /** Open the terminal panel on a shell already running this agent. */
   protected openShell(a: AgentProfile): void {
-    const c = this.store.containers().find(x => x.id === a.containerId);
+    const c = this.containers.containers().find(x => x.id === a.containerId);
     if (!c) return;
-    this.store.openTerminal({
+    this.terminal.open({
       hostId: c.hostId,
       containerId: c.id,
       label: a.name,
@@ -74,7 +78,7 @@ export class AgentsPage {
   }
 
   protected upIntegrations(agentId: string): string[] {
-    const a = this.store.agentById(agentId);
+    const a = this.agents.byId(agentId);
     return a ? a.integrations.filter(i => i.status === 'up' || i.status === 'degraded').map(i => i.kind) : [];
   }
 }

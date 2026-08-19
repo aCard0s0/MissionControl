@@ -18,9 +18,9 @@
   </nav>
 
   <div class="side-foot">
-    <mc-status [status]="store.fleetHealth()" [label]="'fleet ' + store.fleetHealth()" [live]="true" />
-    <mc-status [status]="store.dockerOverall()" [label]="'docker ' + store.dockerOverall()" />
-    <span>{{ store.containers().length }} containers · {{ store.agents().length }} profiles</span>
+    <mc-status [status]="containers.fleetHealth()" [label]="'fleet ' + containers.fleetHealth()" [live]="true" />
+    <mc-status [status]="hosts.overall()" [label]="'docker ' + hosts.overall()" />
+    <span>{{ containers.containers().length }} containers · {{ agents.agents().length }} profiles</span>
     <span>{{ imageLine() }}</span>
   </div>
 </aside>
@@ -30,7 +30,7 @@
 
   <div class="ctx">
     <button class="ctx-btn" (click)="pickerOpen.set(!pickerOpen())">
-      @if (store.selectedContainer(); as c) {
+      @if (containers.selected(); as c) {
         <mc-status [status]="c.status" label=" " [live]="c.status === 'running' || c.status === 'unhealthy'" />
         <span>{{ c.name }}</span>
         <span class="hash">{{ c.shortId }}</span>
@@ -43,8 +43,8 @@
     @if (pickerOpen()) {
       <div class="scrim-click" (click)="pickerOpen.set(false)"></div>
       <div class="ctx-pop">
-        @for (c of store.containers(); track c.id) {
-          <button class="ctx-row" [class.sel]="c.id === store.selectedContainerId()" (click)="pick(c.id)">
+        @for (c of containers.containers(); track c.id) {
+          <button class="ctx-row" [class.sel]="c.id === containers.selectedContainerId()" (click)="pick(c.id)">
             <mc-status [status]="c.status" label=" " />
             <span>{{ c.name }}</span>
             <span class="hash faint">{{ c.shortId }}</span>
@@ -72,10 +72,10 @@
 </header>
 
 <main>
-  @if (store.liveNotice(); as notice) {
+  @if (liveSync.notice(); as notice) {
     <div class="live-notice mono">{{ notice }}</div>
   }
-  @if (store.liveError(); as err) {
+  @if (ctx.liveError(); as err) {
     <div class="live-notice crit mono">{{ err }}</div>
   }
   <router-outlet />

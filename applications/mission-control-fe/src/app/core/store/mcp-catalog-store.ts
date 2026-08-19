@@ -1,4 +1,4 @@
-import { WritableSignal, signal } from '@angular/core';
+import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { errorMessage } from '../errors';
 import { McpServerOperation } from '../hermes-api';
 import { duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
@@ -22,6 +22,7 @@ const IN_FLIGHT_STATE = { start: 'starting', stop: 'stopping', apply: 'applying'
  * the managed Compose services Mission Control runs itself. Also owns the
  * volumes a delete deliberately leaves behind.
  */
+@Injectable({ providedIn: 'root' })
 export class McpCatalogStore {
   readonly servers: WritableSignal<McpCatalogServer[]>;
   readonly loading = signal(false);
@@ -29,7 +30,9 @@ export class McpCatalogStore {
 
   private readonly operationPolls = new Set<string>();
 
-  constructor(private readonly ctx: StoreContext) {
+  private readonly ctx = inject(StoreContext);
+
+  constructor() {
     this.servers = signal([]);
   }
 

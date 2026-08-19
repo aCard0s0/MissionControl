@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSkillStore } from '../core/store/agent-skill-store';
 import { AgentProfile, SkillContent, SkillRef } from '../core/models';
 
 /** How long the "saved ✓" chip stays up after a write lands. */
@@ -21,7 +21,7 @@ const SAVED_CHIP_MS = 1800;
 export class AgentSkillsPanel {
   readonly agent = input.required<AgentProfile>();
 
-  protected readonly store = inject(HermesStore);
+  protected readonly skills = inject(AgentSkillStore);
 
   // add form
   protected skillName = '';
@@ -45,7 +45,7 @@ export class AgentSkillsPanel {
   protected addSkill(): void {
     const name = this.skillName.trim();
     if (!name) return;
-    this.store.addSkill(this.agent().id, {
+    this.skills.add(this.agent().id, {
       name, source: this.skillSource, version: '0.1.0',
       description: this.skillSource === 'hub' ? 'Installed from Skills Hub' : 'Local user skill',
       enabled: true,
@@ -61,7 +61,7 @@ export class AgentSkillsPanel {
     this.skillBody.set('');
     this.skillSaved.set(false);
     this.skillLoading.set(true);
-    const content = await this.store.getSkillContent(this.agent().id, s);
+    const content = await this.skills.content(this.agent().id, s);
     // ignore the response if the user collapsed or switched skills mid-load
     if (this.expandedSkill() !== s.id) { this.skillLoading.set(false); return; }
     this.skillContent.set(content);
@@ -72,7 +72,7 @@ export class AgentSkillsPanel {
   protected async saveSkill(s: SkillRef): Promise<void> {
     if (!this.skillDirty() || this.skillSaving()) return;
     this.skillSaving.set(true);
-    const ok = await this.store.saveSkillContent(this.agent().id, s, this.skillBody());
+    const ok = await this.skills.saveContent(this.agent().id, s, this.skillBody());
     this.skillSaving.set(false);
     if (!ok) return;
     this.skillContent.update(c => c ? { ...c, body: this.skillBody() } : c);

@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { ApiModelProvider, ApiPullState } from '../hermes-api';
 import { ModelProvider, OllamaModel } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
@@ -10,6 +10,7 @@ import { StoreContext } from './store-context';
  * - `ollamaProviders` — self-hosted ollama endpoints whose models Mission
  *   Control can list, pull and delete.
  */
+@Injectable({ providedIn: 'root' })
 export class ProviderStore {
   /** LLM provider registry for the create-agent / template pickers. Seeded with
    *  the bootstrap mirror, refreshed from the backend in live mode. */
@@ -17,7 +18,7 @@ export class ProviderStore {
 
   readonly ollamaProviders = signal<ModelProvider[]>([]);
 
-  constructor(private readonly ctx: StoreContext) {}
+  private readonly ctx = inject(StoreContext);
 
   /** Loads the LLM provider registry; keeps the bootstrap mirror on failure. */
   async refreshRegistry(): Promise<void> {

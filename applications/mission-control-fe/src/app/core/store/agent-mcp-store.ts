@@ -1,3 +1,4 @@
+import { inject, Injectable } from '@angular/core';
 import { errorMessage } from '../errors';
 import { McpServer } from '../models';
 import { McpEndpointOptions } from '../../shared/mcp-endpoint-form';
@@ -10,12 +11,11 @@ import { StoreContext } from './store-context';
  * edited directly on the profile, and aliases linked to a catalog entry — which
  * is why connect/sync/unlink exist alongside plain add/update.
  */
+@Injectable({ providedIn: 'root' })
 export class AgentMcpStore {
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly agents: AgentStore,
-    private readonly catalog: McpCatalogStore,
-  ) {}
+  private readonly ctx = inject(StoreContext);
+  private readonly agents = inject(AgentStore);
+  private readonly catalog = inject(McpCatalogStore);
 
   async add(
     agentId: string, name: string, transport: McpServer['transport'], opts?: McpEndpointOptions,

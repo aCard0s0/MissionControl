@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { ApiAgentSetup, ApiSetupAuthProvider } from '../hermes-api';
 import { ChatMessage, SessionInfo } from '../models';
 import { AgentStore } from './agent-store';
@@ -16,6 +16,7 @@ import { StoreContext } from './store-context';
  * again. Every write answers with the refreshed setup and replaces the entry, and
  * the Setup tab's refresh button forces a re-read.
  */
+@Injectable({ providedIn: 'root' })
 export class AgentSetupStore {
   /** Last known setup per agent id — the Setup tab renders straight off this. */
   readonly setups = signal<Record<string, ApiAgentSetup>>({});
@@ -23,11 +24,9 @@ export class AgentSetupStore {
   /** Agent ids with a setup read in flight, so two views cannot both fetch. */
   readonly setupLoading = signal<ReadonlySet<string>>(new Set());
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-    private readonly agents: AgentStore,
-  ) {}
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+  private readonly agents = inject(AgentStore);
 
   /** The cached setup for a profile, or null if it has never been read. */
   setupOf(agentId: string): ApiAgentSetup | null {

@@ -1,4 +1,4 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ApiCronJob, ApiCronJobRequest } from '../hermes-api';
 import { CronJob } from '../models';
 import { AgentStore } from './agent-store';
@@ -16,6 +16,7 @@ import { StoreContext } from './store-context';
  * Nothing here computes a schedule or an id: hermes parses the expression, mints the id
  * and decides the next run, and each call answers with the schedule it now holds.
  */
+@Injectable({ providedIn: 'root' })
 export class JobStore {
   readonly jobs: WritableSignal<CronJob[]> = signal([]);
 
@@ -31,14 +32,14 @@ export class JobStore {
 
   private refreshInFlight = false;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-    private readonly agents: AgentStore,
-  ) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+  private readonly agents = inject(AgentStore);
+
+  constructor() {
     // the schedule on screen belongs to the selected container's profiles, so a
     // switch re-reads rather than waiting out the poll
-    containers.onSelect(() => void this.refresh());
+    this.containers.onSelect(() => void this.refresh());
   }
 
   /** One read per profile in the selected container, unioned. */

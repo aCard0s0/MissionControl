@@ -2,7 +2,11 @@ import {
   ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal,
   untracked, viewChild,
 } from '@angular/core';
-import { HermesStore, TerminalRequest } from '../core/hermes-store';
+import { ContainerStore } from '../core/store/container-store';
+import { HostStore } from '../core/store/host-store';
+import { StoreContext } from '../core/store/store-context';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
+import { TerminalRequest } from '../core/store/terminal-request-store';
 import { HermesContainer } from '../core/models';
 import { PanelHeight } from './panel-height';
 import { StatusDot } from './status-dot';
@@ -37,8 +41,11 @@ const MAX_TABS = 12;
   styleUrl: './terminal-panel.scss',
 })
 export class TerminalPanel {
-  protected readonly store = inject(HermesStore);
-  private readonly apiBase = this.store.config.apiBaseUrl || location.origin;
+  protected readonly containers = inject(ContainerStore);
+  protected readonly ctx = inject(StoreContext);
+  protected readonly hosts = inject(HostStore);
+  protected readonly terminal = inject(TerminalRequestStore);
+  private readonly apiBase = this.ctx.config.apiBaseUrl || location.origin;
 
   protected readonly open = signal(false);
   protected readonly height = new PanelHeight('mc-terminal-height');
@@ -60,7 +67,7 @@ export class TerminalPanel {
     // other pages can summon the panel (e.g. "open terminal" on setup hints,
     // or the agent list's shell shortcut)
     effect(() => {
-      const req = this.store.terminalRequest();
+      const req = this.terminal.request();
       if (!req || req.seq === this.lastSeq) return;
       this.lastSeq = req.seq;
       untracked(() => this.handleRequest(req));
@@ -95,7 +102,7 @@ export class TerminalPanel {
     // again — drop its socket so the backend exec is released (don't wait on the
     // server idle reaper). The tab + buffer stay; ↻ revives it if it returns.
     effect(() => {
-      const ids = new Set(this.store.containers().map(c => c.id));
+      const ids = new Set(this.containers.containers().map(c => c.id));
       for (const s of this.sessions()) {
         const cid = s.target().containerId;
         const st = s.status();
@@ -164,7 +171,7 @@ export class TerminalPanel {
   }
 
   protected addTab(): void {
-    const c = this.store.selectedContainer();
+    const c = this.containers.selected();
     const s = this.newSession(c
       ? { hostId: c.hostId, containerId: c.id, label: c.name }
       : { hostId: '', containerId: '', label: '(choose)' });
@@ -174,7 +181,7 @@ export class TerminalPanel {
   /** Append a tab for `target` and focus it, or toast and bail at the cap. */
   private newSession(target: TermTarget): TerminalSession | null {
     if (this.sessions().length >= MAX_TABS) {
-      this.store.toast(`terminal tab limit (${MAX_TABS}) reached — close a tab first`);
+      this.ctx.toast(`terminal tab limit (${MAX_TABS}) reached — close a tab first`);
       return null;
     }
     const s = new TerminalSession(target, this.apiBase);
@@ -222,13 +229,13 @@ export class TerminalPanel {
   protected liveLabel(s: TerminalSession): string {
     const t = s.target();
     if (t.agentKey) return t.label;
-    return this.store.containers().find(c => c.id === t.containerId)?.name ?? t.label;
+    return this.containers.containers().find(c => c.id === t.containerId)?.name ?? t.label;
   }
 
   /** True when the tab's container no longer exists in the inventory. */
   protected isStale(s: TerminalSession): boolean {
     const id = s.target().containerId;
-    return !!id && !this.store.containers().some(c => c.id === id);
+    return !!id && !this.containers.containers().some(c => c.id === id);
   }
 
   // ── height ──────────────────────────────────────────────────────────────

@@ -2,7 +2,10 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { TemplateStore } from '../core/store/template-store';
 import { ApiModelProvider, ApiSetupAuthProvider } from '../core/hermes-api';
 import { HermesContainer, ModelProvider, ProfileTemplate } from '../core/models';
 import { AgentCreateDialog } from './agent-create-dialog';
@@ -35,16 +38,22 @@ const storeStub = (opts: {
 } = {}) => {
   const templates = opts.templates ?? [];
   return {
-    llmProviders: signal(llm),
-    modelProviders: signal(ollama),
-    profileTemplates: signal(templates),
-    containerAgents: signal([]),
-    templateById: (id: string) => templates.find(t => t.id === id) ?? null,
-    authProviders: vi.fn().mockResolvedValue(opts.auth ?? []),
-    modelCatalog: vi.fn().mockResolvedValue(opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5']),
-    modelCatalogLive: vi.fn().mockResolvedValue(['live-model']),
-    providerModels: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
-    createAgent: vi.fn().mockResolvedValue('a-new'),
+    providers: {
+      llmProviders: signal(llm),
+      ollamaProviders: signal(ollama),
+      modelCatalog: vi.fn().mockResolvedValue(opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5']),
+      modelCatalogLive: vi.fn().mockResolvedValue(['live-model']),
+      models: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
+    },
+    templates: {
+      templates: signal(templates),
+      byId: (id: string) => templates.find(t => t.id === id) ?? null,
+    },
+    agents: {
+      forSelectedContainer: signal([]),
+      create: vi.fn().mockResolvedValue('a-new'),
+    },
+    setup: { authProviders: vi.fn().mockResolvedValue(opts.auth ?? []) },
   };
 };
 
@@ -62,7 +71,10 @@ class Host {
 
 const render = async (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents },
+      { provide: AgentSetupStore, useValue: store.setup },
+      { provide: ProviderStore, useValue: store.providers },
+      { provide: TemplateStore, useValue: store.templates }] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   await fixture.whenStable();
@@ -88,8 +100,8 @@ describe('AgentCreateDialog opening', () => {
   it('loads the default provider\'s catalog and this container\'s auth status', async () => {
     const { fixture, store } = await render(storeStub());
 
-    expect(store.modelCatalog).toHaveBeenCalledWith('nous');
-    expect(store.authProviders).toHaveBeenCalledWith('c-1');
+    expect(store.providers.modelCatalog).toHaveBeenCalledWith('nous');
+    expect(store.setup.authProviders).toHaveBeenCalledWith('c-1');
     expect(el(fixture).textContent).toContain('NEW AGENT PROFILE — hermes-prod');
     expect(field(fixture, 'model').querySelector<HTMLInputElement>('.input')!.value)
       .toBe('claude-opus-5');
@@ -130,7 +142,7 @@ describe('AgentCreateDialog provider choice', () => {
 
     await choose(fixture, 'provider', 'ollama: workstation');
 
-    expect(store.providerModels).toHaveBeenCalledWith('mp-1');
+    expect(store.providers.models).toHaveBeenCalledWith('mp-1');
     expect(field(fixture, 'model').querySelector<HTMLInputElement>('.input')!.value)
       .toBe('gemma3:4b');
   });
@@ -140,7 +152,7 @@ describe('AgentCreateDialog provider choice', () => {
 
     await choose(fixture, 'provider', 'custom');
 
-    expect(store.modelCatalog).not.toHaveBeenCalledWith('custom');
+    expect(store.providers.modelCatalog).not.toHaveBeenCalledWith('custom');
     expect(el(fixture).querySelectorAll('#agent-model-list option').length).toBe(0);
   });
 
@@ -153,7 +165,7 @@ describe('AgentCreateDialog provider choice', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.modelCatalogLive).toHaveBeenCalledWith('anthropic', 'sk-test');
+    expect(store.providers.modelCatalogLive).toHaveBeenCalledWith('anthropic', 'sk-test');
   });
 });
 
@@ -211,7 +223,7 @@ describe('AgentCreateDialog auxiliary override', () => {
 
     await submit(fixture);
 
-    expect(store.createAgent.mock.calls[0][8]).toEqual({ model: 'claude-sonnet-5' });
+    expect(store.agents.create.mock.calls[0][8]).toEqual({ model: 'claude-sonnet-5' });
   });
 
   it('sends its own provider, endpoint and key when the override switches provider', async () => {
@@ -224,7 +236,7 @@ describe('AgentCreateDialog auxiliary override', () => {
 
     await submit(fixture);
 
-    expect(store.createAgent.mock.calls[0][8]).toEqual({
+    expect(store.agents.create.mock.calls[0][8]).toEqual({
       provider: 'anthropic', model: 'claude-sonnet-5', baseUrl: undefined, apiKey: 'sk-aux',
     });
   });
@@ -247,7 +259,7 @@ describe('AgentCreateDialog auxiliary override', () => {
 
     await submit(fixture);
 
-    expect(store.createAgent.mock.calls[0][8]).toBeUndefined();
+    expect(store.agents.create.mock.calls[0][8]).toBeUndefined();
   });
 });
 
@@ -258,7 +270,7 @@ describe('AgentCreateDialog create', () => {
     await fill(fixture, 'profile name', '  Ops Bot  ');
     await submit(fixture);
 
-    expect(store.createAgent).toHaveBeenCalledWith(
+    expect(store.agents.create).toHaveBeenCalledWith(
       'c-1', 'ops-bot', 'nous', 'claude-opus-5', '', undefined, undefined, undefined, undefined);
     expect(host.createdId).toBe('a-new');
     expect(host.closes).toBe(0);
@@ -271,9 +283,9 @@ describe('AgentCreateDialog create', () => {
 
     await submit(fixture);
 
-    expect(store.createAgent.mock.calls[0].slice(2, 5))
+    expect(store.agents.create.mock.calls[0].slice(2, 5))
       .toEqual(['ollama', 'gemma3:4b', '']);
-    expect(store.createAgent.mock.calls[0][6]).toBe('http://10.0.0.5:11434/v1');
+    expect(store.agents.create.mock.calls[0][6]).toBe('http://10.0.0.5:11434/v1');
   });
 
   it('refuses to create with no name, and refuses a needed key that is blank', async () => {
@@ -289,7 +301,7 @@ describe('AgentCreateDialog create', () => {
 
   it('closes without a profile when the backend refuses the create', async () => {
     const store = storeStub();
-    store.createAgent.mockResolvedValue('');
+    store.agents.create.mockResolvedValue('');
     const { fixture, host } = await render(store);
 
     await fill(fixture, 'profile name', 'ops-bot');
@@ -305,7 +317,7 @@ describe('AgentCreateDialog create', () => {
     el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.ghost')!.click();
 
     expect(host.closes).toBe(1);
-    expect(store.createAgent).not.toHaveBeenCalled();
+    expect(store.agents.create).not.toHaveBeenCalled();
   });
 });
 
@@ -331,7 +343,7 @@ describe('AgentCreateDialog templates', () => {
     await fill(fixture, 'profile name', 'ops-bot');
     await submit(fixture);
 
-    const [, , provider, model] = store.createAgent.mock.calls[0];
+    const [, , provider, model] = store.agents.create.mock.calls[0];
     expect(provider).toBe('nous');
     expect(model).toBe('Hermes-4-405B');
   });
@@ -344,7 +356,7 @@ describe('AgentCreateDialog templates', () => {
     await fill(fixture, 'profile name', 'ops-bot');
     await submit(fixture);
 
-    expect(store.createAgent).toHaveBeenCalledWith(
+    expect(store.agents.create).toHaveBeenCalledWith(
       'c-1', 'ops-bot', expect.anything(), 'claude-opus-5', expect.anything(),
       undefined, undefined, 't-1', undefined);
   });
@@ -357,7 +369,7 @@ describe('AgentCreateDialog templates', () => {
     await fill(fixture, 'profile name', 'ops-bot');
     await submit(fixture);
 
-    expect(store.createAgent.mock.calls[0][7]).toBe('t-1');
+    expect(store.agents.create.mock.calls[0][7]).toBe('t-1');
   });
 });
 
@@ -384,7 +396,7 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
 
     await submit(fixture);
 
-    expect(store.createAgent.mock.calls[0][8]).toEqual({
+    expect(store.agents.create.mock.calls[0][8]).toEqual({
       provider: 'ollama', model: 'gemma3:4b',
       // the OpenAI-compatible endpoint, which is what hermes talks to
       baseUrl: 'http://10.0.0.5:11434/v1', apiKey: undefined,
@@ -397,7 +409,7 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
 
     await choose(fixture, 'auxiliary provider', OLLAMA);
 
-    expect(store.providerModels).toHaveBeenCalledWith('mp-1');
+    expect(store.providers.models).toHaveBeenCalledWith('mp-1');
   });
 
   it('refuses to create against an instance that has since disappeared', async () => {
@@ -408,9 +420,9 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
     await choose(fixture, 'auxiliary provider', OLLAMA);
     await fill(fixture, 'auxiliary model', 'gemma3:4b');
 
-    store.modelProviders.set([]);
+    store.providers.ollamaProviders.set([]);
     await submit(fixture);
 
-    expect(store.createAgent).not.toHaveBeenCalled();
+    expect(store.agents.create).not.toHaveBeenCalled();
   });
 });

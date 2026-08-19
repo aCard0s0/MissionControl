@@ -1,3 +1,5 @@
+import { InjectionToken } from '@angular/core';
+
 // Runtime configuration, injected via public/config.js (overridable per
 // deployment — the Docker entrypoint rewrites it from environment variables
 // without rebuilding the app).
@@ -27,3 +29,10 @@ export function runtimeConfig(): McRuntimeConfig {
   }
   return { ...DEFAULTS, ...overrides };
 }
+
+/** The config as a token, so the store can be injected while a test still
+ *  constructs it with a config of its own. Read once, at first injection. */
+export const MC_CONFIG = new InjectionToken<McRuntimeConfig>('mc.runtimeConfig', {
+  providedIn: 'root',
+  factory: runtimeConfig,
+});

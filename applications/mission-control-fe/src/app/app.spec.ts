@@ -4,7 +4,12 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
-import { HermesStore } from './core/hermes-store';
+import { AgentStore } from './core/store/agent-store';
+import { ContainerStore } from './core/store/container-store';
+import { HostStore } from './core/store/host-store';
+import { LiveSync } from './core/store/live-sync';
+import { StoreContext } from './core/store/store-context';
+import { TerminalRequestStore } from './core/store/terminal-request-store';
 import { HermesContainer } from './core/models';
 import { button, el, press, settle, text } from './testing/dom';
 
@@ -17,24 +22,36 @@ const container = (id: string, patch: Partial<HermesContainer> = {}): HermesCont
 
 /** Only what the shell and the terminal panel it hosts reach for. */
 const storeStub = (containers: HermesContainer[]) => ({
-  config: { apiBaseUrl: '', dockerSocket: '' },
-  containers: signal(containers),
-  selectedContainerId: signal(containers[0]?.id ?? ''),
-  selectedContainer: signal(containers[0] ?? null),
-  agents: signal([{ id: 'a-1' }]),
-  fleetHealth: signal('running'),
-  dockerOverall: signal('connected'),
-  liveNotice: signal<string | null>(null),
-  liveError: signal<string | null>(null),
-  terminalRequest: signal(null),
-  selectContainer: vi.fn(),
-  toast: vi.fn(),
+  agents: {
+    agents: signal([{ id: 'a-1' }]),
+  },
+  containers: {
+    containers: signal(containers),
+    selectedContainerId: signal(containers[0]?.id ?? ''),
+    selected: signal(containers[0] ?? null),
+    fleetHealth: signal('running'),
+    select: vi.fn(),
+  },
+  ctx: {
+    config: { apiBaseUrl: '', dockerSocket: '' },
+    liveError: signal<string | null>(null),
+    toast: vi.fn(),
+  },
+  hosts: {
+    overall: signal('connected'),
+  },
+  liveSync: {
+    notice: signal<string | null>(null),
+  },
+  terminal: {
+    request: signal(null),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
+    providers: [provideRouter([]), { provide: AgentStore, useValue: store.agents }, { provide: ContainerStore, useValue: store.containers }, { provide: HostStore, useValue: store.hosts }, { provide: LiveSync, useValue: store.liveSync }, { provide: StoreContext, useValue: store.ctx }, { provide: TerminalRequestStore, useValue: store.terminal }],
   });
   const fixture = TestBed.createComponent(App);
   fixture.detectChanges();
@@ -112,7 +129,7 @@ describe('App shell', () => {
     el(fixture).querySelectorAll<HTMLButtonElement>('.ctx-row')[1].click();
     fixture.detectChanges();
 
-    expect(store.selectContainer).toHaveBeenCalledWith('hermes-lab');
+    expect(store.containers.select).toHaveBeenCalledWith('hermes-lab');
     expect(el(fixture).querySelector('.ctx-pop')).toBeNull();
   });
 
@@ -121,8 +138,8 @@ describe('App shell', () => {
     const { fixture } = render(store);
     expect(el(fixture).querySelector('.live-notice')).toBeNull();
 
-    store.liveNotice.set('reconnecting to the backend');
-    store.liveError.set('deploy failed: name already in use');
+    store.liveSync.notice.set('reconnecting to the backend');
+    store.ctx.liveError.set('deploy failed: name already in use');
     fixture.detectChanges();
 
     expect(text(fixture)).toContain('reconnecting to the backend');

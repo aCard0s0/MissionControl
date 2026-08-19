@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiAgentSetup } from '../hermes-api';
-import { AgentSetupStore } from './agent-setup-store';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const setup = (patch: Partial<ApiAgentSetup> = {}): ApiAgentSetup => ({
@@ -13,7 +12,7 @@ const setup = (patch: Partial<ApiAgentSetup> = {}): ApiAgentSetup => ({
 const loaded = async (agentsApi: Record<string, unknown>) => {
   const slices = await loadedAgentSlices({ agents: agentsApi },
     { profiles: [apiProfile('atlas')] });
-  return { ...slices, store: new AgentSetupStore(slices.ctx, slices.containers, slices.agents) };
+  return { ...slices, store: slices.setup };
 };
 
 describe('AgentSetupStore credentials', () => {

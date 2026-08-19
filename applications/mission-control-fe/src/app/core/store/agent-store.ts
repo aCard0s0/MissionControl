@@ -1,4 +1,4 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { AgentRef, ApiAgentProfile, ApiAuxiliaryModel } from '../hermes-api';
 import { AgentProfile, Integration, LogEntry } from '../models';
 import { ContainerStore } from './container-store';
@@ -17,6 +17,7 @@ interface ResolvedAgent {
  * are separate slices that address profiles through {@link AgentStore.resolve}
  * and write back through {@link AgentStore.mutate}.
  */
+@Injectable({ providedIn: 'root' })
 export class AgentStore {
   readonly agents: WritableSignal<AgentProfile[]>;
 
@@ -25,10 +26,10 @@ export class AgentStore {
 
   private refreshInFlight = false;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-  ) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+
+  constructor() {
     this.agents = signal([]);
   }
 
@@ -142,19 +143,19 @@ export class AgentStore {
     return agent.id;
   }
 
-  /** Removes the profile and everything keyed to it. */
-  remove(id: string, onRemoved: (agentId: string) => void): void {
+  /** Removes the profile itself. What else was keyed to it is {@link AgentRemoval}'s
+   *  to forget — this slice does not know the stores that hold it. */
+  async remove(id: string): Promise<boolean> {
     const resolved = this.resolve(id);
-    if (!resolved) {
-      this.ctx.gone('profile');
-      return;
+    if (!resolved) return this.ctx.gone('profile');
+    try {
+      await this.ctx.api.agents.remove(resolved.ref);
+      this.agents.update(as => as.filter(a => a.id !== id));
+      return true;
+    } catch (e) {
+      this.ctx.toastFailure('remove profile', e);
+      return false;
     }
-    this.ctx.api.agents.remove(resolved.ref)
-      .then(() => {
-        this.agents.update(as => as.filter(a => a.id !== id));
-        onRemoved(id);
-      })
-      .catch(e => this.ctx.toastFailure('remove profile', e));
   }
 
   async updateSoul(id: string, soul: string): Promise<boolean> {

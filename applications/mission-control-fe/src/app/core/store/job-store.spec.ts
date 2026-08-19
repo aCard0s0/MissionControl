@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiCronJob } from '../hermes-api';
-import { JobStore } from './job-store';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
@@ -14,7 +13,7 @@ const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
 const loaded = async (cron: Record<string, unknown>, profiles = ['atlas', 'scribe']) => {
   const slices = await loadedAgentSlices(
     { agents: { cron } }, { profiles: profiles.map(name => apiProfile(name)) });
-  return { ...slices, jobs: new JobStore(slices.ctx, slices.containers, slices.agents) };
+  return slices;
 };
 
 const answer = (jobs: ApiCronJob[], schedulerRunning = true) => ({ jobs, schedulerRunning });

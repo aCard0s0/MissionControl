@@ -2,7 +2,9 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { JobStore } from '../core/store/job-store';
 import { CronJob } from '../core/models';
 import { CalendarPage } from './calendar';
 import { TestFixture, el, field, fill, press, settle } from '../testing/dom';
@@ -18,21 +20,27 @@ const job = (id: string, nextRun: number, patch: Partial<CronJob> = {}): CronJob
   cronJob(id, { nextRun, ...patch });
 
 const storeStub = (jobs: CronJob[] = []) => ({
-  containerJobs: signal(jobs),
-  schedulerRunning: signal(true),
-  containerAgents: signal(agents),
-  selectedContainer: signal({ id: 'c-1', name: 'hermes-prod' }),
-  agentById: (id: string) => agents.find(a => a.id === id) ?? null,
-  toggleJob: vi.fn().mockResolvedValue(true),
-  updateJob: vi.fn().mockResolvedValue(true),
-  createJob: vi.fn().mockResolvedValue(true),
-  runJobNow: vi.fn().mockResolvedValue(true),
-  removeJob: vi.fn().mockResolvedValue(true),
+  agents: {
+    forSelectedContainer: signal(agents),
+    byId: (id: string) => agents.find(a => a.id === id) ?? null,
+  },
+  containers: {
+    selected: signal({ id: 'c-1', name: 'hermes-prod' }),
+  },
+  jobs: {
+    forSelectedContainer: signal(jobs),
+    schedulerRunning: signal(true),
+    toggle: vi.fn().mockResolvedValue(true),
+    update: vi.fn().mockResolvedValue(true),
+    create: vi.fn().mockResolvedValue(true),
+    runNow: vi.fn().mockResolvedValue(true),
+    remove: vi.fn().mockResolvedValue(true),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents }, { provide: ContainerStore, useValue: store.containers }, { provide: JobStore, useValue: store.jobs }] });
   const fixture = TestBed.createComponent(CalendarPage);
   fixture.detectChanges();
   return { fixture, store };
@@ -152,7 +160,7 @@ describe('CalendarPage job form', () => {
     press(fixture, 'create', '.form-actions');
     await settle(fixture);
 
-    expect(store.createJob).toHaveBeenCalledWith(
+    expect(store.jobs.create).toHaveBeenCalledWith(
       'c-1', 'a-1', 'nightly digest', '0 9 * * *', '', 'local');
   });
 
@@ -164,7 +172,7 @@ describe('CalendarPage job form', () => {
     await fill(fixture, 'schedule', 'whenever i feel like it');
     press(fixture, 'create', '.form-actions');
 
-    expect(store.createJob).not.toHaveBeenCalled();
+    expect(store.jobs.create).not.toHaveBeenCalled();
   });
 
   it('loads an existing job for editing and updates it in place', async () => {
@@ -179,20 +187,20 @@ describe('CalendarPage job form', () => {
     press(fixture, 'save', '.form-actions');
     await settle(fixture);
 
-    expect(store.updateJob).toHaveBeenCalledWith('j-1', {
+    expect(store.jobs.update).toHaveBeenCalledWith('j-1', {
       name: 'renamed', schedule: '0 9 * * *', prompt: 'do the thing', deliverTo: 'slack',
     });
-    expect(store.createJob).not.toHaveBeenCalled();
+    expect(store.jobs.create).not.toHaveBeenCalled();
   });
 
   it('sends pause and delete straight to the store', () => {
     const { fixture, store } = render(storeStub([job('j-1', at('2026-04-15T09:00:00Z'))]));
 
     press(fixture, 'pause', '.job');
-    expect(store.toggleJob).toHaveBeenCalledWith('j-1');
+    expect(store.jobs.toggle).toHaveBeenCalledWith('j-1');
 
     press(fixture, 'delete', '.job');
-    expect(store.removeJob).toHaveBeenCalledWith('j-1');
+    expect(store.jobs.remove).toHaveBeenCalledWith('j-1');
   });
 
   it('closes the form without writing anything', async () => {
@@ -203,6 +211,6 @@ describe('CalendarPage job form', () => {
     press(fixture, 'cancel', '.form-actions');
 
     expect(el(fixture).querySelector('.form')).toBeNull();
-    expect(store.createJob).not.toHaveBeenCalled();
+    expect(store.jobs.create).not.toHaveBeenCalled();
   });
 });

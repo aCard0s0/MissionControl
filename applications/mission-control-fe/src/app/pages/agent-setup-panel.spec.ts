@@ -2,7 +2,8 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentSetupPanel } from './agent-setup-panel';
 import { buttonWith, el } from '../testing/dom';
 import { agent } from '../testing/models';
@@ -24,17 +25,17 @@ const setupFor = (name: string, patch: object = {}) => ({
 const storeStub = () => {
   const cache = signal<Record<string, ReturnType<typeof setupFor>>>({});
   const loading = signal<ReadonlySet<string>>(new Set());
-  const stub = {
+  const setup = {
     reads: [] as Array<{ id: string; force: boolean }>,
-    agentSetupOf: (id: string) => cache()[id] ?? null,
-    agentSetupLoading: (id: string) => loading().has(id),
-    agentSetup: vi.fn((id: string, force = false) => {
-      stub.reads.push({ id, force });
+    setupOf: (id: string) => cache()[id] ?? null,
+    isSetupLoading: (id: string) => loading().has(id),
+    setup: vi.fn((id: string, force = false) => {
+      setup.reads.push({ id, force });
       if (cache()[id] && !force) return Promise.resolve(cache()[id]);
       cache.update(all => ({ ...all, [id]: setupFor(id) }));
       return Promise.resolve(cache()[id]);
     }),
-    setAgentEnv: vi.fn((id: string, entries: Array<{ key: string; value: string | null }>) => {
+    setEnv: vi.fn((id: string, entries: Array<{ key: string; value: string | null }>) => {
       cache.update(all => ({
         ...all,
         [id]: setupFor(id, {
@@ -46,15 +47,12 @@ const storeStub = () => {
       }));
       return Promise.resolve(cache()[id]);
     }),
-    initAgentEnv: vi.fn((id: string) => {
+    initEnv: vi.fn((id: string) => {
       cache.update(all => ({ ...all, [id]: setupFor(id, { envExists: true }) }));
       return Promise.resolve(cache()[id]);
     }),
-    openTerminal: vi.fn(),
-    cache,
-    loading,
   };
-  return stub;
+  return { setup, terminal: { open: vi.fn() }, cache, loading };
 };
 
 @Component({
@@ -67,7 +65,8 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: AgentSetupStore, useValue: store.setup },
+      { provide: TerminalRequestStore, useValue: store.terminal }] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   return fixture;
@@ -82,7 +81,7 @@ describe('AgentSetupPanel', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.reads).toEqual([{ id: 'a-atlas', force: false }]);
+    expect(store.setup.reads).toEqual([{ id: 'a-atlas', force: false }]);
     expect(el(fixture).textContent).toContain('/opt/data/profiles/a-atlas/.env');
     expect(el(fixture).textContent).toContain('ANTHROPIC_API_KEY');
     expect(el(fixture).textContent).toContain('Nous Portal');
@@ -96,7 +95,7 @@ describe('AgentSetupPanel', () => {
     buttonWith(fixture, 'refresh').click();
     await fixture.whenStable();
 
-    expect(store.reads).toEqual([
+    expect(store.setup.reads).toEqual([
       { id: 'a-atlas', force: false },
       { id: 'a-atlas', force: true },
     ]);
@@ -112,7 +111,7 @@ describe('AgentSetupPanel', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.reads.map(r => r.id)).toEqual(['a-atlas', 'a-scribe']);
+    expect(store.setup.reads.map(r => r.id)).toEqual(['a-atlas', 'a-scribe']);
     expect(el(fixture).textContent).toContain('/opt/data/profiles/a-scribe/.env');
   });
 
@@ -132,7 +131,7 @@ describe('AgentSetupPanel', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.setAgentEnv).toHaveBeenCalledWith(
+    expect(store.setup.setEnv).toHaveBeenCalledWith(
       'a-atlas', [{ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-typed' }]);
     expect(el(fixture).querySelector<HTMLInputElement>('.key-in')!.value).toBe('');
     expect(el(fixture).textContent).toContain('…here');
@@ -146,7 +145,7 @@ describe('AgentSetupPanel', () => {
 
     expect(buttonWith(fixture, 'set').disabled).toBe(true);
     buttonWith(fixture, 'set').click();
-    expect(store.setAgentEnv).not.toHaveBeenCalled();
+    expect(store.setup.setEnv).not.toHaveBeenCalled();
   });
 
   it('clears a key that is already set, without typing anything', async () => {
@@ -160,7 +159,7 @@ describe('AgentSetupPanel', () => {
 
     buttonWith(fixture, 'clear').click();
 
-    expect(store.setAgentEnv).toHaveBeenCalledWith(
+    expect(store.setup.setEnv).toHaveBeenCalledWith(
       'a-atlas', [{ key: 'ANTHROPIC_API_KEY', value: null }]);
   });
 
@@ -175,7 +174,7 @@ describe('AgentSetupPanel', () => {
     buttonWith(fixture, 'create .env template').click();
     await fixture.whenStable();
 
-    expect(store.initAgentEnv).toHaveBeenCalledWith('a-atlas');
+    expect(store.setup.initEnv).toHaveBeenCalledWith('a-atlas');
   });
 
   it('expands one messaging platform at a time', async () => {
@@ -197,7 +196,7 @@ describe('AgentSetupPanel', () => {
   it('says the read is running rather than claiming the setup is empty', () => {
     const store = storeStub();
     store.loading.set(new Set(['a-atlas']));
-    store.agentSetup = vi.fn(() => new Promise(() => {}));
+    store.setup.setup = vi.fn(() => new Promise(() => {}));
     const fixture = render(store);
 
     expect(el(fixture).textContent).toContain('running hermes status…');

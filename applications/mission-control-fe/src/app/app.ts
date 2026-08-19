@@ -2,7 +2,11 @@ import {
   ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal,
 } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { HermesStore } from './core/hermes-store';
+import { AgentStore } from './core/store/agent-store';
+import { ContainerStore } from './core/store/container-store';
+import { HostStore } from './core/store/host-store';
+import { LiveSync } from './core/store/live-sync';
+import { StoreContext } from './core/store/store-context';
 import { StatusDot } from './shared/status-dot';
 import { TerminalPanel } from './shared/terminal-panel';
 import { uptime } from './core/format';
@@ -27,7 +31,11 @@ const NAV = [
   styleUrl: './app.scss',
 })
 export class App {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly ctx = inject(StoreContext);
+  protected readonly hosts = inject(HostStore);
+  protected readonly liveSync = inject(LiveSync);
   protected readonly nav = NAV;
   protected readonly uptime = uptime;
 
@@ -43,7 +51,7 @@ export class App {
 
   /** What the fleet actually runs — never a literal, which goes stale on the first deploy. */
   protected readonly imageLine = computed(() => {
-    const versions = new Set(this.store.containers().map(c => c.version));
+    const versions = new Set(this.containers.containers().map(c => c.version));
     if (!versions.size) return 'hermes-agent · no containers';
     return versions.size === 1
       ? `hermes-agent ${[...versions][0]}`
@@ -82,7 +90,7 @@ export class App {
   }
 
   protected pick(id: string): void {
-    this.store.selectContainer(id);
+    this.containers.select(id);
     this.pickerOpen.set(false);
     this.sideOpen.set(false);
   }

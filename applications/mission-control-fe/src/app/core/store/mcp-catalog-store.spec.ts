@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpCatalogServer } from '../models';
-import { McpCatalogStore } from './mcp-catalog-store';
 import { catalogServer } from '../../testing/models';
-import { testContext } from '../../testing/store';
+import { testSlices } from '../../testing/store';
 
 const store = (mcp: Record<string, unknown>) => {
-  const ctx = testContext({ mcp });
-  return { ctx, catalog: new McpCatalogStore(ctx) };
+  const { ctx, catalog } = testSlices({ mcp });
+  return { ctx, catalog };
 };
 
 /** Loaded with `servers`, with the rest of the MCP client stubbed per test. */

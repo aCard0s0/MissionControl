@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiWebhookSubscription } from '../hermes-api';
-import { WebhookStore } from './webhook-store';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const route = (name: string, patch: Partial<ApiWebhookSubscription> = {}): ApiWebhookSubscription => ({
@@ -25,8 +24,7 @@ const loaded = async (webhooks: Record<string, unknown>, profiles = ['atlas', 's
     { profiles: profiles.map(name => apiProfile(name)) });
   return {
     ...slices,
-    store: new WebhookStore(slices.ctx, slices.agents,
-      () => { /* selection wiring not under test */ }),
+    store: slices.webhooks,
   };
 };
 

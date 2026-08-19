@@ -1,6 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { JobStore } from '../core/store/job-store';
+import { LogStore } from '../core/store/log-store';
 import { AgentProfile, LogEntry } from '../core/models';
 import { Sparkline } from '../shared/sparkline';
 import { Gauge } from '../shared/gauge';
@@ -17,7 +20,10 @@ import { ago, clock, mb, until, uptime } from '../core/format';
   styleUrl: './overview.scss',
 })
 export class OverviewPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly jobs = inject(JobStore);
+  protected readonly logs = inject(LogStore);
 
   protected readonly uptime = uptime;
   protected readonly ago = ago;
@@ -25,10 +31,10 @@ export class OverviewPage {
   protected readonly clock = clock;
   protected readonly mb = mb;
 
-  protected readonly c = this.store.selectedContainer;
+  protected readonly c = this.containers.selected;
 
   protected readonly agentCounts = computed(() => {
-    const as = this.store.containerAgents();
+    const as = this.agents.forSelectedContainer();
     return {
       active: as.filter(a => a.state === 'active').length,
       idle: as.filter(a => a.state === 'idle').length,
@@ -38,7 +44,7 @@ export class OverviewPage {
 
   /** aggregate skill + MCP-tool counts across the container's agents */
   protected readonly skillToolCounts = computed(() => {
-    const as = this.store.containerAgents();
+    const as = this.agents.forSelectedContainer();
     return {
       skills: as.reduce((n, a) => n + a.skills.length, 0),
       tools: as.reduce((n, a) => n + a.mcp.reduce(
@@ -60,7 +66,7 @@ export class OverviewPage {
   /** quick level filter for the log tail */
   protected readonly logLevel = signal<'all' | 'error' | 'warn'>('all');
 
-  protected readonly tailWindow = computed(() => this.store.containerLogs().slice(0, 40));
+  protected readonly tailWindow = computed(() => this.logs.selectedLogs().slice(0, 40));
   protected readonly recentLogs = computed(() => {
     const level = this.logLevel();
     return this.tailWindow()
@@ -74,13 +80,13 @@ export class OverviewPage {
   }
 
   protected readonly jobStats = computed(() => {
-    const js = this.store.containerJobs();
+    const js = this.jobs.forSelectedContainer();
     const next = js.filter(j => j.enabled).sort((a, b) => a.nextRun - b.nextRun)[0] ?? null;
     return { total: js.length, enabled: js.filter(j => j.enabled).length, failed: js.filter(j => j.lastStatus === 'fail').length, next };
   });
 
   protected readonly mcpStats = computed(() => {
-    const servers = this.store.containerAgents().flatMap(a => a.mcp);
+    const servers = this.agents.forSelectedContainer().flatMap(a => a.mcp);
     return {
       connected: servers.filter(m => m.status === 'connected').length,
       errored: servers.filter(m => m.status === 'error').length,
@@ -90,7 +96,7 @@ export class OverviewPage {
 
   protected readonly comms = computed(() => {
     const map = new Map<string, { kind: string; status: string }>();
-    for (const a of this.store.containerAgents()) {
+    for (const a of this.agents.forSelectedContainer()) {
       for (const i of a.integrations) {
         const prev = map.get(i.kind);
         // worst status wins the chip

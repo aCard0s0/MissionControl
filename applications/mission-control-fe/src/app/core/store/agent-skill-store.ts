@@ -1,13 +1,13 @@
+import { inject, Injectable } from '@angular/core';
 import { SkillContent, SkillRef } from '../models';
 import { AgentStore } from './agent-store';
 import { StoreContext } from './store-context';
 
 /** The skills installed in one profile, and their SKILL.md bodies. */
+@Injectable({ providedIn: 'root' })
 export class AgentSkillStore {
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly agents: AgentStore,
-  ) {}
+  private readonly ctx = inject(StoreContext);
+  private readonly agents = inject(AgentStore);
 
   toggle(agentId: string, skillId: string): void {
     const agent = this.agents.byId(agentId);

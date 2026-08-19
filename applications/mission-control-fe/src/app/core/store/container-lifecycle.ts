@@ -1,3 +1,4 @@
+import { inject, Injectable } from '@angular/core';
 import { ContainerStatus } from '../models';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';
@@ -8,12 +9,11 @@ import { StoreContext } from './store-context';
  * backend's to make; what lands here afterwards is a re-read of the inventory,
  * because the daemon decides what actually exists.
  */
+@Injectable({ providedIn: 'root' })
 export class ContainerLifecycle {
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-    private readonly images: ImageCatalogStore,
-  ) {}
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+  private readonly images = inject(ImageCatalogStore);
 
   /** Deploys a container and resolves only after refreshed inventory contains it. */
   async deploy(name: string, version: string, profileNames: string[], hostId = 'dh-local'): Promise<string> {

@@ -1,8 +1,26 @@
+import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
+import { MC_CONFIG, McRuntimeConfig, runtimeConfig } from '../core/app-config';
 import { ApiAgentProfile, ApiContainer } from '../core/hermes-api';
+import { AgentMcpStore } from '../core/store/agent-mcp-store';
+import { AgentRemoval } from '../core/store/agent-removal';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { AgentSkillStore } from '../core/store/agent-skill-store';
 import { AgentStore } from '../core/store/agent-store';
+import { BoardStore } from '../core/store/board-store';
+import { ContainerLifecycle } from '../core/store/container-lifecycle';
 import { ContainerStore } from '../core/store/container-store';
+import { HostStore } from '../core/store/host-store';
+import { ImageCatalogStore } from '../core/store/image-catalog-store';
+import { JobStore } from '../core/store/job-store';
+import { LiveSync } from '../core/store/live-sync';
+import { LogStore } from '../core/store/log-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { ProviderStore } from '../core/store/provider-store';
 import { StoreContext } from '../core/store/store-context';
+import { TemplateStore } from '../core/store/template-store';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
+import { WebhookStore } from '../core/store/webhook-store';
 
 /**
  * Fixtures for the store slices. Loading is {@link LiveSync}'s job, so a slice
@@ -11,20 +29,27 @@ import { StoreContext } from '../core/store/store-context';
  * Test-only: excluded from the app build (tsconfig.app.json) and from coverage.
  */
 
-/**
- * A {@link StoreContext} whose backend is a stub. `api` is the one seam every
- * slice shares, so substituting it here answers the whole store at once; the
- * stub only carries the calls a test actually reaches.
- */
-export const testContext = (api: unknown = {}): StoreContext => {
-  const ctx = new StoreContext({ apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' });
-  (ctx as unknown as { api: unknown }).api = api;
-  return ctx;
+/** Same-origin and a local socket, which is what a spec gets unless it sets
+ *  `window.__MC_CONFIG__` to say otherwise. */
+const TEST_CONFIG: McRuntimeConfig = {
+  apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
 };
 
-/** Replaces the backend of an already-built context. */
+const specConfig = (): McRuntimeConfig =>
+  typeof window !== 'undefined' && window.__MC_CONFIG__ ? runtimeConfig() : TEST_CONFIG;
+
+/** Replaces the backend of a built context. `api` is the one seam every slice
+ *  shares, so substituting it answers the whole store at once; a stub only
+ *  carries the calls a test actually reaches. */
 export const stubBackend = (ctx: StoreContext, api: unknown): void => {
   (ctx as unknown as { api: unknown }).api = api;
+};
+
+/** The slices, with `api` already stubbed — how a slice spec starts. */
+export const testSlices = (api: unknown = {}): StoreSlices => {
+  const slices = storeSlices();
+  stubBackend(slices.ctx, api);
+  return slices;
 };
 
 /** One container as the backend reports it. */
@@ -45,12 +70,6 @@ export const apiProfile = (name: string, patch: Partial<ApiAgentProfile> = {}): 
 /** The api stub shape a slice fixture accepts: the resource clients it reaches. */
 type ApiStub = Record<string, Record<string, unknown> | undefined>;
 
-export interface AgentSlices {
-  ctx: StoreContext;
-  containers: ContainerStore;
-  agents: AgentStore;
-}
-
 /**
  * Context plus the container and agent slices every profile-scoped store depends
  * on, already loaded and with the first container selected. `api` fills in the
@@ -60,20 +79,56 @@ export interface AgentSlices {
 export const loadedAgentSlices = async (
   api: ApiStub = {},
   { containers = [apiContainer()], profiles = [apiProfile('atlas')] } = {},
-): Promise<AgentSlices> => {
-  const ctx = testContext();
-  const containerStore = new ContainerStore(ctx);
-  const agentStore = new AgentStore(ctx, containerStore);
-  stubBackend(ctx, {
+): Promise<StoreSlices> => {
+  const slices = testSlices({
     ...api,
     containers: { list: vi.fn().mockResolvedValue(containers), ...api['containers'] },
     agents: { list: vi.fn().mockResolvedValue(profiles), ...api['agents'] },
   });
-  await containerStore.refresh();
-  await agentStore.refresh();
-  if (containers.length) containerStore.select(containers[0].id);
-  return { ctx, containers: containerStore, agents: agentStore };
+  await slices.containers.refresh();
+  await slices.agents.refresh();
+  if (containers.length) slices.containers.select(containers[0].id);
+  return slices;
 };
+
+/**
+ * Every slice, built by the application's own DI graph rather than by hand — so
+ * a spec that reaches across slices exercises the same wiring the app boots
+ * with, and a missing provider or a construction cycle fails here too.
+ *
+ * The module is reset first: the slices are root-provided singletons, and a
+ * spec that starts from an empty store must not inherit the previous one's.
+ */
+export const storeSlices = () => {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({ providers: [{ provide: MC_CONFIG, useValue: specConfig() }] });
+  // built on first use, not up front: a slice that subscribes to container
+  // selection must not exist before a fixture has finished loading one, or it
+  // would answer the poll that loading triggers instead of the test's own call
+  return {
+    get ctx() { return TestBed.inject(StoreContext); },
+    get hosts() { return TestBed.inject(HostStore); },
+    get containers() { return TestBed.inject(ContainerStore); },
+    get lifecycle() { return TestBed.inject(ContainerLifecycle); },
+    get logs() { return TestBed.inject(LogStore); },
+    get images() { return TestBed.inject(ImageCatalogStore); },
+    get agents() { return TestBed.inject(AgentStore); },
+    get removal() { return TestBed.inject(AgentRemoval); },
+    get skills() { return TestBed.inject(AgentSkillStore); },
+    get agentMcp() { return TestBed.inject(AgentMcpStore); },
+    get catalog() { return TestBed.inject(McpCatalogStore); },
+    get providers() { return TestBed.inject(ProviderStore); },
+    get setup() { return TestBed.inject(AgentSetupStore); },
+    get templates() { return TestBed.inject(TemplateStore); },
+    get jobs() { return TestBed.inject(JobStore); },
+    get board() { return TestBed.inject(BoardStore); },
+    get webhooks() { return TestBed.inject(WebhookStore); },
+    get terminal() { return TestBed.inject(TerminalRequestStore); },
+    get liveSync() { return TestBed.inject(LiveSync); },
+  };
+};
+
+export type StoreSlices = ReturnType<typeof storeSlices>;
 
 /** Lets a promise chain nothing awaits run to completion, under real or fake
  *  timers — a plain `setTimeout` would never fire while timers are faked. */

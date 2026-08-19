@@ -1,5 +1,5 @@
-import { signal } from '@angular/core';
-import { McRuntimeConfig } from '../app-config';
+import { Injectable, inject, signal } from '@angular/core';
+import { MC_CONFIG, McRuntimeConfig } from '../app-config';
 import { errorMessage } from '../errors';
 import { HermesApi } from '../hermes-api';
 
@@ -7,10 +7,11 @@ export type BackendStatus = 'connecting' | 'connected' | 'unreachable';
 
 /**
  * What every slice of the store shares: the runtime config, the backend client
- * and the toast channel. One instance is built by {@link HermesStore} and handed
- * to each slice, so `api` stays a single swappable seam — which is also how a
- * test substitutes the backend for the whole store at once.
+ * and the toast channel. Root-provided, so every slice injecting it gets the
+ * same one and `api` stays a single swappable seam — which is also how a test
+ * substitutes the backend for the whole store at once.
  */
+@Injectable({ providedIn: 'root' })
 export class StoreContext {
   api: HermesApi;
 
@@ -20,8 +21,10 @@ export class StoreContext {
   /** Transient error toast for a failed action. */
   readonly liveError = signal<string | null>(null);
 
-  constructor(readonly config: McRuntimeConfig) {
-    this.api = new HermesApi(config.apiBaseUrl);
+  readonly config: McRuntimeConfig = inject(MC_CONFIG);
+
+  constructor() {
+    this.api = new HermesApi(this.config.apiBaseUrl);
   }
 
   toast(message: string): void {

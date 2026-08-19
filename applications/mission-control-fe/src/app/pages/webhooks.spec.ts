@@ -2,7 +2,9 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { WebhookStore } from '../core/store/webhook-store';
 import { WebhookListener, WebhookRoute } from '../core/models';
 import { WebhooksPage } from './webhooks';
 import { el, fill, press, settle, text } from '../testing/dom';
@@ -20,23 +22,29 @@ const listener = (agentId: string, enabled = true): WebhookListener =>
 
 /** Only what the page reaches for on the store. */
 const storeStub = (routes: WebhookRoute[], listeners: WebhookListener[]) => ({
-  containerWebhooks: signal(routes),
-  webhookListeners: signal(listeners),
-  containerAgents: signal(agents),
-  selectedContainer: signal({ id: 'c-1', name: 'hermes-prod' }),
-  agentById: (id: string) => agents.find(a => a.id === id) ?? null,
-  webhookListenerOf: (id: string) => listeners.find(l => l.agentId === id) ?? null,
-  refreshWebhooks: vi.fn().mockResolvedValue(undefined),
-  setWebhookListener: vi.fn().mockResolvedValue(true),
-  addWebhook: vi.fn().mockResolvedValue(true),
-  removeWebhook: vi.fn().mockResolvedValue(true),
-  webhookSecret: vi.fn().mockResolvedValue('the-real-secret'),
-  testWebhook: vi.fn().mockResolvedValue('delivered 200'),
+  agents: {
+    forSelectedContainer: signal(agents),
+    byId: (id: string) => agents.find(a => a.id === id) ?? null,
+  },
+  containers: {
+    selected: signal({ id: 'c-1', name: 'hermes-prod' }),
+  },
+  webhooks: {
+    forSelectedContainer: signal(routes),
+    containerListeners: signal(listeners),
+    listenerOf: (id: string) => listeners.find(l => l.agentId === id) ?? null,
+    refresh: vi.fn().mockResolvedValue(undefined),
+    setListenerEnabled: vi.fn().mockResolvedValue(true),
+    subscribe: vi.fn().mockResolvedValue(true),
+    remove: vi.fn().mockResolvedValue(true),
+    secretOf: vi.fn().mockResolvedValue('the-real-secret'),
+    test: vi.fn().mockResolvedValue('delivered 200'),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents }, { provide: ContainerStore, useValue: store.containers }, { provide: WebhookStore, useValue: store.webhooks }] });
   const fixture = TestBed.createComponent(WebhooksPage);
   fixture.detectChanges();
   return { fixture, store };
@@ -53,7 +61,7 @@ describe('WebhooksPage', () => {
   it('reads the routes when it opens', () => {
     const { store } = render(storeStub([], []));
 
-    expect(store.refreshWebhooks).toHaveBeenCalled();
+    expect(store.webhooks.refresh).toHaveBeenCalled();
   });
 
   it('shows each route with the endpoint a provider would post to', () => {
@@ -80,7 +88,7 @@ describe('WebhooksPage', () => {
     press(fixture, 'reveal', '.hook');
     await settle(fixture);
 
-    expect(store.webhookSecret).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(store.webhooks.secretOf).toHaveBeenCalledWith('a-1', 'grafana');
     expect(el(fixture).textContent).toContain('the-real-secret');
 
     press(fixture, 'hide', '.hook');
@@ -94,7 +102,7 @@ describe('WebhooksPage', () => {
     expect(el(fixture).textContent).toContain('has no webhook listener');
     press(fixture, 'enable listener', '.listener-off');
 
-    expect(store.setWebhookListener).toHaveBeenCalledWith('a-1', true);
+    expect(store.webhooks.setListenerEnabled).toHaveBeenCalledWith('a-1', true);
   });
 
   it('warns that nothing outside the docker network can reach a route yet', () => {
@@ -126,7 +134,7 @@ describe('WebhooksPage', () => {
     press(fixture, 'create', '.form-actions');
     await settle(fixture);
 
-    expect(store.addWebhook).toHaveBeenCalledWith('a-1', {
+    expect(store.webhooks.subscribe).toHaveBeenCalledWith('a-1', {
       name: 'grafana', prompt: 'Alert fired', description: undefined,
       events: ['alert.firing', 'alert.resolved'], deliver: undefined,
     });
@@ -140,12 +148,12 @@ describe('WebhooksPage', () => {
     const create = el(fixture).querySelector<HTMLButtonElement>('.form-actions .btn.primary')!;
     expect(create.disabled).toBe(true);
     create.click();
-    expect(store.addWebhook).not.toHaveBeenCalled();
+    expect(store.webhooks.subscribe).not.toHaveBeenCalled();
   });
 
   it('keeps the form open when the write is refused', async () => {
     const store = storeStub([], [listener('a-1')]);
-    store.addWebhook.mockResolvedValue(false);
+    store.webhooks.subscribe.mockResolvedValue(false);
     const { fixture } = render(store);
     press(fixture, '+ add webhook');
     await fill(fixture, 'route name', 'grafana');
@@ -162,7 +170,7 @@ describe('WebhooksPage', () => {
     press(fixture, 'test', '.hook');
     await settle(fixture);
 
-    expect(store.testWebhook).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(store.webhooks.test).toHaveBeenCalledWith('a-1', 'grafana');
     expect(el(fixture).querySelector('.test-output')?.textContent).toContain('delivered 200');
   });
 
@@ -174,12 +182,12 @@ describe('WebhooksPage', () => {
     await settle(fixture);
 
     expect(confirmed).toHaveBeenCalled();
-    expect(store.removeWebhook).not.toHaveBeenCalled();
+    expect(store.webhooks.remove).not.toHaveBeenCalled();
 
     confirmed.mockReturnValue(true);
     press(fixture, 'remove', '.hook');
     await settle(fixture);
-    expect(store.removeWebhook).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(store.webhooks.remove).toHaveBeenCalledWith('a-1', 'grafana');
     confirmed.mockRestore();
   });
 
@@ -191,7 +199,7 @@ describe('WebhooksPage', () => {
 
   it('offers nothing to add when the container has no agents', () => {
     const store = storeStub([], []);
-    store.containerAgents.set([]);
+    store.agents.forSelectedContainer.set([]);
     const { fixture } = render(store);
 
     expect(el(fixture).querySelector<HTMLButtonElement>('.page-head .btn')!.disabled).toBe(true);
@@ -213,13 +221,13 @@ describe('WebhooksPage route details', () => {
     press(fixture, 'reveal');
     await settle(fixture);
 
-    expect(store.webhookSecret).toHaveBeenCalledWith('a-1', 'grafana');
+    expect(store.webhooks.secretOf).toHaveBeenCalledWith('a-1', 'grafana');
     expect(el(fixture).querySelector('code.secret')?.textContent).toBe('the-real-secret');
   });
 
   it('keeps the mask when the secret could not be read', async () => {
     const store = storeStub([route('grafana', 'a-1')], [listener('a-1')]);
-    store.webhookSecret.mockResolvedValue(null);
+    store.webhooks.secretOf.mockResolvedValue(null);
     const { fixture } = render(store);
 
     press(fixture, 'reveal');
@@ -240,7 +248,7 @@ describe('WebhooksPage route details', () => {
 
   it('says so rather than showing a blank pane when a test printed nothing', async () => {
     const store = storeStub([route('grafana', 'a-1')], [listener('a-1')]);
-    store.testWebhook.mockResolvedValue('   ');
+    store.webhooks.test.mockResolvedValue('   ');
     const { fixture } = render(store);
 
     press(fixture, 'test');
@@ -251,7 +259,7 @@ describe('WebhooksPage route details', () => {
 
   it('shows nothing at all when the test itself could not be made', async () => {
     const store = storeStub([route('grafana', 'a-1')], [listener('a-1')]);
-    store.testWebhook.mockResolvedValue(null);
+    store.webhooks.test.mockResolvedValue(null);
     const { fixture } = render(store);
 
     press(fixture, 'test');

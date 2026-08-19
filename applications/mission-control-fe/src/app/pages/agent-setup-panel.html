@@ -6,7 +6,7 @@
     <button class="btn sm ghost" [disabled]="setupLoading()" (click)="refresh()">refresh</button>
   </div>
   <div class="panel-b env-strip">
-    @if (setup(); as s) {
+    @if (profileSetup(); as s) {
       <mc-status [status]="s.envExists ? 'up' : 'warn'" [label]="s.envExists ? '.env' : '.env missing'" />
       <span class="mono faint path">{{ s.envPath }}</span>
       <span class="spacer"></span>
@@ -21,7 +21,7 @@
   </div>
 </div>
 
-@if (setup(); as s) {
+@if (profileSetup(); as s) {
   <div class="grid cols-2">
     <div class="panel" data-reveal>
       <div class="panel-h">API KEYS</div>
@@ -55,7 +55,7 @@
             <span class="spacer"></span>
             @if (p.hint) {
               <span class="chip info mono">run: {{ p.hint }}</span>
-              <button class="btn sm ghost" (click)="store.openTerminal()">open terminal</button>
+              <button class="btn sm ghost" (click)="terminal.open()">open terminal</button>
             }
           </div>
         }

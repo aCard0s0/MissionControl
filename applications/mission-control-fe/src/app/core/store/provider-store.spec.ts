@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ModelProvider } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
-import { ProviderStore } from './provider-store';
-import { flush, testContext } from '../../testing/store';
+import { flush, testSlices } from '../../testing/store';
 
 const provider = (id: string, patch: Partial<ModelProvider> = {}): ModelProvider => ({
   id, name: id, url: `http://${id}:11434`, kind: 'ollama', status: 'connected',
@@ -10,8 +9,8 @@ const provider = (id: string, patch: Partial<ModelProvider> = {}): ModelProvider
 });
 
 const store = (providers: Record<string, unknown>) => {
-  const ctx = testContext({ providers });
-  return { ctx, store: new ProviderStore(ctx) };
+  const { ctx, providers: store } = testSlices({ providers });
+  return { ctx, store };
 };
 
 describe('ProviderStore LLM registry', () => {

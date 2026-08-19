@@ -93,7 +93,7 @@
         <div class="panel-b">
           @for (j of agentJobs(); track j.id) {
             <div class="job-row">
-              <button class="toggle mono" [class.on]="j.enabled" (click)="store.toggleJob(j.id)">{{ j.enabled ? 'ON' : 'OFF' }}</button>
+              <button class="toggle mono" [class.on]="j.enabled" (click)="jobs.toggle(j.id)">{{ j.enabled ? 'ON' : 'OFF' }}</button>
               <div class="job-id">
                 <span class="mono name">{{ j.name }}</span>
                 <span class="mono faint">{{ j.schedule }} → {{ j.deliverTo }}</span>

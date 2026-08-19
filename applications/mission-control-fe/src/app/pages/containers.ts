@@ -1,7 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerLifecycle } from '../core/store/container-lifecycle';
+import { ContainerStore } from '../core/store/container-store';
+import { HostStore } from '../core/store/host-store';
+import { ImageCatalogStore } from '../core/store/image-catalog-store';
+import { StoreContext } from '../core/store/store-context';
 import { StatusDot } from '../shared/status-dot';
 import { Sparkline } from '../shared/sparkline';
 import { Reveal } from '../shared/reveal';
@@ -92,7 +97,12 @@ export function containerUpdate(
   styleUrl: './containers.scss',
 })
 export class ContainersPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly containers = inject(ContainerStore);
+  protected readonly ctx = inject(StoreContext);
+  protected readonly hosts = inject(HostStore);
+  protected readonly images = inject(ImageCatalogStore);
+  protected readonly lifecycle = inject(ContainerLifecycle);
   private readonly router = inject(Router);
 
   protected readonly uptime = uptime;
@@ -121,13 +131,13 @@ export class ContainersPage {
   protected updateVersion = '';
 
   protected readonly connectedHosts = computed(() =>
-    this.store.dockerHosts().filter(h => h.status === 'connected'));
+    this.hosts.hosts().filter(h => h.status === 'connected'));
 
   /** containerId → the newest release it could move to. */
   protected readonly updates = computed(() => {
-    const catalogs = this.store.imageCatalog();
+    const catalogs = this.images.catalog();
     const map = new Map<string, ImageTag>();
-    for (const c of this.store.containers()) {
+    for (const c of this.containers.containers()) {
       const target = containerUpdate(c, catalogs[c.hostId]);
       if (target) map.set(c.id, target);
     }
@@ -136,7 +146,7 @@ export class ContainersPage {
 
   constructor() {
     // fresh on navigate; the store's TTL collapses this with its own poll
-    void this.store.refreshImageCatalogs();
+    void this.images.refreshAll();
   }
 
   protected isUpdating(id: string): boolean {
@@ -152,7 +162,7 @@ export class ContainersPage {
   }
 
   protected beginUpdate(c: HermesContainer): void {
-    const targets = newerImageTags(c, this.store.imageCatalog()[c.hostId]);
+    const targets = newerImageTags(c, this.images.catalog()[c.hostId]);
     if (!targets.length || this.updatingBusy()) return;
     this.updateTargets.set(targets);
     this.updateVersion = targets[0].tag;
@@ -171,7 +181,7 @@ export class ContainersPage {
     if (!c || !this.updateVersion || this.updatingBusy()) return;
     this.updatingBusy.set(true);
     try {
-      if (await this.store.updateContainer(c.id, this.updateVersion)) {
+      if (await this.lifecycle.update(c.id, this.updateVersion)) {
         this.updating.set(null);
         this.updateTargets.set([]);
         this.updateVersion = '';
@@ -198,28 +208,28 @@ export class ContainersPage {
   }
 
   protected profileCount(id: string): number {
-    return this.store.agents().filter(a => a.containerId === id).length;
+    return this.agents.agents().filter(a => a.containerId === id).length;
   }
 
   protected open(id: string): void {
-    this.store.selectContainer(id);
+    this.containers.select(id);
     this.router.navigate(['/overview']);
   }
 
   protected async deploy(): Promise<void> {
     const name = this.deployName.trim();
-    const host = this.store.hostById(this.deployHost);
+    const host = this.hosts.byId(this.deployHost);
     if (!name || !host || host.status !== 'connected' || !this.deployVersion || this.deployBusy()) return;
     const profiles = normalizeSeedProfiles(this.deployProfiles);
     this.deployBusy.set(true);
-    const id = await this.store.deployContainer(name, this.deployVersion, profiles, this.deployHost);
+    const id = await this.lifecycle.deploy(name, this.deployVersion, profiles, this.deployHost);
     this.deployBusy.set(false);
     if (id) {
       this.deployOpen.set(false);
       this.deployName = '';
       this.deployProfiles = '';
       this.deployTags.set([]);
-      this.store.selectContainer(id);
+      this.containers.select(id);
       this.router.navigate(['/overview']);
     }
   }
@@ -228,7 +238,7 @@ export class ContainersPage {
     const c = this.removing();
     if (!c || this.confirmText !== c.name || this.removingBusy()) return;
     this.removingBusy.set(true);
-    const removed = await this.store.removeContainer(c.id);
+    const removed = await this.lifecycle.remove(c.id);
     this.removingBusy.set(false);
     if (removed) {
       this.removing.set(null);
@@ -240,7 +250,7 @@ export class ContainersPage {
     const name = this.hostName.trim();
     const url = this.hostUrl.trim();
     if (!name || !ContainersPage.TCP_URL.test(url)) return;
-    this.store.addDockerHost(name, url);
+    this.hosts.add(name, url);
     this.addingHost.set(false);
     this.hostName = '';
     this.hostUrl = 'tcp://';
@@ -255,7 +265,7 @@ export class ContainersPage {
     this.tagsLoading.set(true);
     this.tagsError.set(null);
     try {
-      const { tags } = await this.store.imageTags(hostId);
+      const { tags } = await this.images.tags(hostId);
       if (hostId !== this.deployHost) return;   // host changed mid-flight — stale response
       this.deployTags.set(tags);
       if (!tags.includes(this.deployVersion)) {
@@ -273,6 +283,6 @@ export class ContainersPage {
 
   /** The docker host's display name, or '?' when it is no longer in the list. */
   protected hostLabel(id: string): string {
-    return this.store.hostById(id)?.name ?? '?';
+    return this.hosts.byId(id)?.name ?? '?';
   }
 }

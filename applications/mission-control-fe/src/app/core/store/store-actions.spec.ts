@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from './hermes-store';
+import { storeSlices, stubBackend } from '../../testing/store';
 
-/**
- * Substitutes the backend for a whole constructed store: `api` lives on the
- * shared StoreContext, so one call switches every slice at once. It is shaped
- * like {@link HermesApi}, with only the calls a test reaches.
- */
-const stubBackend = (store: HermesStore, api: unknown): void => {
-  (store as any).ctx.api = api;
-};
+// What an operator action leaves behind, across the slices it touches: a write
+// that only lands once the backend agrees, a removal that takes its jobs and
+// tasks with it, an update that moves the selection onto a new container id.
+// The slices are built by the app's own DI graph and reached directly, because
+// loading them is LiveSync's job and these are about what happens next.
 
 const CONTAINER = {
   id: 'c-1', shortId: 'aa11bb2', name: 'hermes-prod', hostId: 'dh-local', status: 'running',
@@ -30,18 +27,18 @@ const PROFILE = {
  * job, and these tests are about what happens after the data is there.
  */
 const loaded = async (api: { containers?: any; agents?: any } = {}) => {
-  const store = new HermesStore();
-  stubBackend(store, {
+  const store = storeSlices();
+  stubBackend(store.ctx, {
     ...api,
     containers: { list: vi.fn().mockResolvedValue([CONTAINER]), ...api.containers },
     agents: { list: vi.fn().mockResolvedValue([PROFILE]), ...api.agents },
   });
-  await (store as any).containerStore.refresh();
-  await (store as any).agentStore.refresh();
+  await store.containers.refresh();
+  await store.agents.refresh();
   return store;
 };
 
-describe('HermesStore mutation results', () => {
+describe('store actions: profile writes', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = { apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' };
@@ -55,16 +52,16 @@ describe('HermesStore mutation results', () => {
   it('updates SOUL only after a successful save', async () => {
     const store = await loaded({ agents: { updateSoul: vi.fn().mockResolvedValue(undefined) } });
 
-    expect(await store.updateSoul('a-1', 'new soul')).toBe(true);
-    expect(store.agentById('a-1')?.soul).toBe('new soul');
+    expect(await store.agents.updateSoul('a-1', 'new soul')).toBe(true);
+    expect(store.agents.byId('a-1')?.soul).toBe('new soul');
   });
 
   it('returns false and retains data when a save fails', async () => {
     const store = await loaded({ agents: { updateSoul: vi.fn().mockRejectedValue(new Error('offline')) } });
 
-    expect(await store.updateSoul('a-1', 'must not land')).toBe(false);
-    expect(store.agentById('a-1')?.soul).toBe('# SOUL');
-    expect(store.liveError()).toBe('SOUL.md save failed: offline');
+    expect(await store.agents.updateSoul('a-1', 'must not land')).toBe(false);
+    expect(store.agents.byId('a-1')?.soul).toBe('# SOUL');
+    expect(store.ctx.liveError()).toBe('SOUL.md save failed: offline');
   });
 
   it('reports failed container deletion without optimistically dropping inventory', async () => {
@@ -75,8 +72,8 @@ describe('HermesStore mutation results', () => {
       },
     });
 
-    expect(await store.removeContainer('c-1')).toBe(false);
-    expect(store.containers().some(c => c.id === 'c-1')).toBe(true);
+    expect(await store.lifecycle.remove('c-1')).toBe(false);
+    expect(store.containers.containers().some(c => c.id === 'c-1')).toBe(true);
   });
 
   it('fetches logs immediately on selection and prevents overlapping polls', async () => {
@@ -85,17 +82,17 @@ describe('HermesStore mutation results', () => {
     const logs = vi.fn().mockReturnValue(pending);
     const store = await loaded({ containers: { list: vi.fn().mockResolvedValue([CONTAINER]), logs } });
 
-    store.selectContainer('c-1');
-    store.refreshLogs();
+    store.containers.select('c-1');
+    store.logs.refresh();
 
     expect(logs).toHaveBeenCalledTimes(1);
-    expect(store.logsLoading()).toBe(true);
+    expect(store.logs.loading()).toBe(true);
     resolveLogs([{ ts: 123, level: 'warn', source: 'container', msg: 'warning' }]);
     await pending;
     await Promise.resolve();
-    expect(store.containerLogs()[0]?.msg).toBe('warning');
-    expect(store.logsLoading()).toBe(false);
-    expect(store.logsUpdatedAt()).not.toBeNull();
+    expect(store.logs.selectedLogs()[0]?.msg).toBe('warning');
+    expect(store.logs.loading()).toBe(false);
+    expect(store.logs.updatedAt()).not.toBeNull();
   });
 
   it('clears the log view when the operator switches containers', async () => {
@@ -105,15 +102,15 @@ describe('HermesStore mutation results', () => {
         logs: vi.fn().mockResolvedValue([{ ts: 1, level: 'info', source: 'container', msg: 'first' }]),
       },
     });
-    store.selectContainer('c-1');
+    store.containers.select('c-1');
     await Promise.resolve();
     await Promise.resolve();
 
-    store.selectContainer('c-2');
+    store.containers.select('c-2');
 
     // the previous container's tail must not read as this one's
-    expect(store.logsUpdatedAt()).toBeNull();
-    expect(store.logsError()).toBeNull();
+    expect(store.logs.updatedAt()).toBeNull();
+    expect(store.logs.error()).toBeNull();
   });
 
   it('keeps MCP failures after a real probe result', async () => {
@@ -129,8 +126,8 @@ describe('HermesStore mutation results', () => {
       },
     });
 
-    expect(await store.testMcp('a-1', 'github')).toBe(false);
-    expect(store.agentById('a-1')?.mcp[0]).toMatchObject({
+    expect(await store.agentMcp.test('a-1', 'github')).toBe(false);
+    expect(store.agents.byId('a-1')?.mcp[0]).toMatchObject({
       status: 'error', error: 'Connection failed', checkedAt: 456,
     });
   });
@@ -144,7 +141,7 @@ describe('HermesStore mutation results', () => {
       agents: { list: vi.fn().mockResolvedValue([PROFILE]), logs: agentLogs },
     });
 
-    const lines = await store.agentLogTail('a-1', 25);
+    const lines = await store.agents.logTail('a-1', 25);
 
     expect(agentLogs).toHaveBeenCalledWith(
       { hostId: 'dh-local', containerId: 'c-1', name: 'atlas' }, 25);
@@ -153,31 +150,31 @@ describe('HermesStore mutation results', () => {
   });
 
   it('opens the terminal with no target, as the setup hints have always done', () => {
-    const store = new HermesStore();
+    const store = storeSlices();
 
-    expect(store.terminalRequest()).toBeNull();
-    store.openTerminal();
-    expect(store.terminalRequest()).toEqual({ seq: 1 });
+    expect(store.terminal.request()).toBeNull();
+    store.terminal.open();
+    expect(store.terminal.request()).toEqual({ seq: 1 });
   });
 
   it('carries an agent target through to the panel, with a fresh seq each click', () => {
-    const store = new HermesStore();
+    const store = storeSlices();
     const target = {
       hostId: 'dh-local', containerId: 'c-prod', label: 'ops-bot',
       agentKey: 'c-prod--ops-bot', command: 'hermes -p ops-bot',
     };
 
-    store.openTerminal(target);
-    expect(store.terminalRequest()).toEqual({ ...target, seq: 1 });
+    store.terminal.open(target);
+    expect(store.terminal.request()).toEqual({ ...target, seq: 1 });
 
     // a repeat click on the same agent must still read as a new request, or the
     // panel's seq guard would swallow it and never focus the tab
-    store.openTerminal(target);
-    expect(store.terminalRequest()).toEqual({ ...target, seq: 2 });
+    store.terminal.open(target);
+    expect(store.terminal.request()).toEqual({ ...target, seq: 2 });
   });
 });
 
-describe('HermesStore container updates', () => {
+describe('store actions: container updates', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.__MC_CONFIG__ = { apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock' };
@@ -200,12 +197,12 @@ describe('HermesStore container updates', () => {
         imageTags: vi.fn().mockResolvedValue({ repository: CONTAINER.image, tags: [] }),
       },
     });
-    store.selectContainer('c-1');
+    store.containers.select('c-1');
 
-    expect(await store.updateContainer('c-1', 'v2026.9.1')).toBe('c-updated');
+    expect(await store.lifecycle.update('c-1', 'v2026.9.1')).toBe('c-updated');
     expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'v2026.9.1');
-    expect(store.selectedContainerId()).toBe('c-updated');
-    expect(store.selectedContainer()?.version).toBe('v2026.9.1');
+    expect(store.containers.selectedContainerId()).toBe('c-updated');
+    expect(store.containers.selected()?.version).toBe('v2026.9.1');
   });
 
   it('reports a failed update and keeps the container it could not replace', async () => {
@@ -215,12 +212,12 @@ describe('HermesStore container updates', () => {
         update: vi.fn().mockRejectedValue(new Error('image pull timed out')),
       },
     });
-    store.selectContainer('c-1');
+    store.containers.select('c-1');
 
-    expect(await store.updateContainer('c-1', 'v2026.9.1')).toBe('');
-    expect(store.containers().some(c => c.id === 'c-1')).toBe(true);
-    expect(store.selectedContainerId()).toBe('c-1');
-    expect(store.liveError()).toBe('update failed: image pull timed out');
+    expect(await store.lifecycle.update('c-1', 'v2026.9.1')).toBe('');
+    expect(store.containers.containers().some(c => c.id === 'c-1')).toBe(true);
+    expect(store.containers.selectedContainerId()).toBe('c-1');
+    expect(store.ctx.liveError()).toBe('update failed: image pull timed out');
   });
 
   it('refuses to update a container onto the tag it already runs', async () => {
@@ -229,9 +226,9 @@ describe('HermesStore container updates', () => {
       containers: { list: vi.fn().mockResolvedValue([CONTAINER]), update },
     });
 
-    expect(await store.updateContainer('c-1', 'v2026.8.3')).toBe('');
+    expect(await store.lifecycle.update('c-1', 'v2026.8.3')).toBe('');
     expect(update).not.toHaveBeenCalled();
-    expect(store.containers().some(c => c.id === 'c-1')).toBe(true);
+    expect(store.containers.containers().some(c => c.id === 'c-1')).toBe(true);
   });
 
   it('caches the image catalog per host and refetches only when forced', async () => {
@@ -245,14 +242,14 @@ describe('HermesStore container updates', () => {
       containers: { list: vi.fn().mockResolvedValue([CONTAINER]), imageTags },
     });
 
-    await store.refreshImageCatalog('dh-local');
-    await store.refreshImageCatalog('dh-local');
+    await store.images.refresh('dh-local');
+    await store.images.refresh('dh-local');
     expect(imageTags).toHaveBeenCalledTimes(1);
-    expect(store.imageCatalog()['dh-local'].tags).toEqual([
+    expect(store.images.catalog()['dh-local'].tags).toEqual([
       { tag: 'v2026.8.3', pulled: false }, { tag: 'v2026.7.20', pulled: true },
     ]);
 
-    await store.refreshImageCatalog('dh-local', true);
+    await store.images.refresh('dh-local', true);
     expect(imageTags).toHaveBeenCalledTimes(2);
   });
 
@@ -266,7 +263,7 @@ describe('HermesStore container updates', () => {
       },
     });
 
-    await store.refreshImageCatalog('dh-local');
-    expect(store.imageCatalog()['dh-local'].tags).toEqual([{ tag: 'v2026.7.20', pulled: true }]);
+    await store.images.refresh('dh-local');
+    expect(store.images.catalog()['dh-local'].tags).toEqual([{ tag: 'v2026.7.20', pulled: true }]);
   });
 });

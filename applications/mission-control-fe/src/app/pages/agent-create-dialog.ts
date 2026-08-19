@@ -2,7 +2,10 @@ import {
   ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { TemplateStore } from '../core/store/template-store';
 import { ApiAuxiliaryModel, ApiSetupAuthProvider } from '../core/hermes-api';
 import { HermesContainer, ModelProvider } from '../core/models';
 import { ModelPicker } from '../shared/model-picker';
@@ -34,14 +37,14 @@ export class AgentCreateDialog {
   readonly created = output<string>();
   readonly closed = output<void>();
 
-  private readonly store = inject(HermesStore);
-
-  protected readonly templates = this.store.profileTemplates;
-  protected readonly agents = this.store.containerAgents;
+  protected readonly agents = inject(AgentStore);
+  protected readonly templates = inject(TemplateStore);
+  private readonly providers = inject(ProviderStore);
+  private readonly setup = inject(AgentSetupStore);
 
   /** The LLM registry plus one entry per registered ollama instance. */
-  protected readonly providers = computed(() =>
-    providerOptions(this.store.llmProviders(), this.store.modelProviders()));
+  protected readonly providerChoices = computed(() =>
+    providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()));
 
   protected name = '';
   protected provider = 'nous';
@@ -75,7 +78,7 @@ export class AgentCreateDialog {
   }
 
   private async loadAuthProviders(containerId: string): Promise<void> {
-    this.authProviders.set(await this.store.authProviders(containerId));
+    this.authProviders.set(await this.setup.authProviders(containerId));
   }
 
   protected onProvider(option: string): void {
@@ -87,10 +90,10 @@ export class AgentCreateDialog {
   /** Prefill provider and model from the chosen template (keys come with it). */
   protected onTemplate(id: string): void {
     this.fromTemplate = id;
-    const template = this.store.templateById(id);
+    const template = this.templates.byId(id);
     if (!template) return;
     const option = providerOptionFor(
-      template.provider, template.baseUrl, this.providers(), this.store.modelProviders());
+      template.provider, template.baseUrl, this.providerChoices(), this.providers.ollamaProviders());
     if (option) {
       this.provider = option;
       // hand the template's model in as the preferred selection, so the catalog
@@ -108,7 +111,7 @@ export class AgentCreateDialog {
     const key = this.apiKey.trim();
     if (!this.apiKeyRequired() || !key || !this.hasCatalog(this.provider)) return;
     void this.main.load(
-      this.store.modelCatalogLive(this.provider, key), { keepOnError: true });
+      this.providers.modelCatalogLive(this.provider, key), { keepOnError: true });
   }
 
   /** Turning the override on starts it from the main provider, so the common case
@@ -137,7 +140,7 @@ export class AgentCreateDialog {
     // a template can carry the provider key — but only skip the prompt when it
     // holds a usable one for THIS provider's env var
     if (this.fromTemplate) {
-      return !templateProvidesKey(this.store.templateById(this.fromTemplate), info);
+      return !templateProvidesKey(this.templates.byId(this.fromTemplate), info);
     }
     return true;
   }
@@ -162,12 +165,12 @@ export class AgentCreateDialog {
     if (!name || !this.main.model) return;
     if (this.apiKeyRequired() && !this.apiKey.trim()) return;
     if (this.auxIncomplete()) return;
-    const primary = resolveProviderOption(this.provider, this.store.modelProviders());
+    const primary = resolveProviderOption(this.provider, this.providers.ollamaProviders());
     if (!primary) return;
     const auxiliary = this.auxiliaryOverride();
     if (this.auxOverride && !auxiliary) return;   // named an ollama instance that vanished
 
-    const id = await this.store.createAgent(
+    const id = await this.agents.create(
       this.container().id, name, primary.provider, this.main.model,
       this.apiKey.trim(),
       this.cloneFrom || undefined,
@@ -187,7 +190,7 @@ export class AgentCreateDialog {
   private auxiliaryOverride(): ApiAuxiliaryModel | undefined {
     if (!this.auxOverride || !this.aux.model.trim()) return undefined;
     if (this.auxProvider === this.provider) return { model: this.aux.model.trim() };
-    const resolved = resolveProviderOption(this.auxProvider, this.store.modelProviders());
+    const resolved = resolveProviderOption(this.auxProvider, this.providers.ollamaProviders());
     if (!resolved) return undefined;
     return {
       provider: resolved.provider,
@@ -199,7 +202,7 @@ export class AgentCreateDialog {
 
   /** Registry entry for a provider option (null for an ollama instance). */
   private providerInfo(option: string) {
-    return this.store.llmProviders().find(p => p.key === option) ?? null;
+    return this.providers.llmProviders().find(p => p.key === option) ?? null;
   }
 
   /** Whether Mission Control can list models for this provider: ollama instances
@@ -210,7 +213,7 @@ export class AgentCreateDialog {
   }
 
   private ollamaInstance(option: string): ModelProvider | null {
-    return this.store.modelProviders().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
+    return this.providers.ollamaProviders().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
   }
 
   /** Where a picker's suggestions come from: an ollama instance's installed
@@ -219,10 +222,10 @@ export class AgentCreateDialog {
     if (option.startsWith(OLLAMA_PREFIX)) {
       const instance = this.ollamaInstance(option);
       return instance
-        ? this.store.providerModels(instance.id).then(list => list.map(m => m.name))
+        ? this.providers.models(instance.id).then(list => list.map(m => m.name))
         : Promise.resolve([]);
     }
     if (!this.hasCatalog(option)) return Promise.resolve([]);
-    return this.store.modelCatalog(option);
+    return this.providers.modelCatalog(option);
   }
 }

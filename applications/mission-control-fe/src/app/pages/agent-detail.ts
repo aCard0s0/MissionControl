@@ -5,7 +5,12 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs';
-import { HermesStore } from '../core/hermes-store';
+import { AgentRemoval } from '../core/store/agent-removal';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { AgentStore } from '../core/store/agent-store';
+import { JobStore } from '../core/store/job-store';
+import { StoreContext } from '../core/store/store-context';
+import { TemplateStore } from '../core/store/template-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { AgentMcpPanel } from './agent-mcp-panel';
@@ -36,7 +41,12 @@ interface SessionView {
   styleUrl: './agent-detail.scss',
 })
 export class AgentDetailPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly agents = inject(AgentStore);
+  protected readonly ctx = inject(StoreContext);
+  protected readonly jobs = inject(JobStore);
+  protected readonly removal = inject(AgentRemoval);
+  protected readonly setup = inject(AgentSetupStore);
+  protected readonly templates = inject(TemplateStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -46,7 +56,7 @@ export class AgentDetailPage {
 
   private readonly id = toSignal(this.route.paramMap.pipe(map(p => p.get('id'))), { initialValue: null });
 
-  protected readonly agent = computed(() => this.store.agentById(this.id()));
+  protected readonly agent = computed(() => this.agents.byId(this.id()));
 
   protected readonly tab = signal<Tab>('overview');
   protected readonly tabs: Tab[] = ['overview', 'setup', 'skills', 'mcp', 'jobs', 'activity', 'files', 'sessions'];
@@ -66,7 +76,7 @@ export class AgentDetailPage {
     this.agent()?.skills.filter(s => s.enabled).length ?? 0);
 
   protected readonly agentJobs = computed(() =>
-    this.store.containerJobs().filter(j => j.agentId === this.id()));
+    this.jobs.forSelectedContainer().filter(j => j.agentId === this.id()));
 
   protected readonly agentLogEntries = signal<LogEntry[]>([]);
   protected readonly agentLogsLoading = signal(false);
@@ -148,7 +158,7 @@ export class AgentDetailPage {
     this.agentLogsLoading.set(true);
     this.agentLogsError.set(null);
     try {
-      const lines = await this.store.agentLogTail(a.id, 100);
+      const lines = await this.agents.logTail(a.id, 100);
       if (this.agent()?.id === a.id && this.tab() === 'activity') {
         this.agentLogEntries.set(lines);
         this.agentLogsUpdatedAt.set(Date.now());
@@ -168,7 +178,7 @@ export class AgentDetailPage {
     if (!a || this.sessionsLoading()) return;
     this.sessionsLoading.set(true);
     try {
-      const list = await this.store.agentSessions(a.id).catch(() => null);
+      const list = await this.setup.sessions(a.id).catch(() => null);
       if (this.agent()?.id === a.id) this.sessions.set(list ?? []);
     } finally {
       this.sessionsLoading.set(false);
@@ -179,7 +189,7 @@ export class AgentDetailPage {
     const a = this.agent();
     if (!a) return;
     this.viewingSession.set({ session: s, messages: [], loading: true });
-    this.store.agentSessionMessages(a.id, s.id)
+    this.setup.sessionMessages(a.id, s.id)
       .then(messages => {
         // ignore stale responses: the modal closed, the session was swapped, or
         // the agent changed (session ids are per-profile, so ids can collide)
@@ -188,7 +198,7 @@ export class AgentDetailPage {
         }
       })
       .catch(e => {
-        this.store.toast(`session load failed: ${errorMessage(e)}`);
+        this.ctx.toast(`session load failed: ${errorMessage(e)}`);
         this.viewingSession.set(null);
       });
   }
@@ -197,8 +207,8 @@ export class AgentDetailPage {
     const a = this.agent();
     if (!a) return;
     let messages = this.viewingSession()?.session.id === s.id ? this.viewingSession()?.messages : null;
-    if (!messages) messages = await this.store.agentSessionMessages(a.id, s.id).catch(() => null);
-    if (messages == null) { this.store.toast('session download failed'); return; }
+    if (!messages) messages = await this.setup.sessionMessages(a.id, s.id).catch(() => null);
+    if (messages == null) { this.ctx.toast('session download failed'); return; }
     const blob = new Blob([JSON.stringify(messages, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -212,19 +222,19 @@ export class AgentDetailPage {
     const a = this.agent();
     if (!a) return;
     if (!confirm(`Delete session “${s.title}”? This cannot be undone.`)) return;
-    this.store.deleteAgentSession(a.id, s.id)
+    this.setup.deleteSession(a.id, s.id)
       .then(() => {
         this.sessions.update(list => (list ?? []).filter(x => x.id !== s.id));
         if (this.viewingSession()?.session.id === s.id) this.viewingSession.set(null);
       })
-      .catch(e => this.store.toast(`session delete failed: ${errorMessage(e)}`));
+      .catch(e => this.ctx.toast(`session delete failed: ${errorMessage(e)}`));
   }
 
   protected async saveSoul(): Promise<void> {
     const a = this.agent();
     if (!a || !this.soulDirty() || this.soulSaving()) return;
     this.soulSaving.set(true);
-    const saved = await this.store.updateSoul(a.id, this.soulDraft());
+    const saved = await this.agents.updateSoul(a.id, this.soulDraft());
     this.soulSaving.set(false);
     if (!saved || this.agent()?.id !== a.id) return;
     this.soulSaved.set(true);
@@ -235,7 +245,7 @@ export class AgentDetailPage {
     const a = this.agent();
     if (!a || !this.configDirty() || this.configSaving()) return;
     this.configSaving.set(true);
-    const saved = await this.store.updateAgentConfig(a.id, this.configDraft());
+    const saved = await this.agents.updateConfig(a.id, this.configDraft());
     this.configSaving.set(false);
     if (!saved || this.agent()?.id !== a.id) return;
     this.configSaved.set(true);
@@ -246,14 +256,16 @@ export class AgentDetailPage {
     const a = this.agent();
     if (!a) return;
     this.pinging.set(true);
-    this.store.pingIntegrations(a.id);
+    this.agents.pingIntegrations(a.id);
     setTimeout(() => this.pinging.set(false), 1100);
   }
 
   protected confirmRemove(): void {
     const a = this.agent();
     if (!a || this.confirmText !== a.name) return;
-    this.store.removeAgent(a.id);
+    // the roster is where the operator belongs either way: a refusal toasts
+    // there, and waiting here would leave them on a page about to be empty
+    void this.removal.remove(a.id);
     this.router.navigate(['/agents']);
   }
 
@@ -268,11 +280,11 @@ export class AgentDetailPage {
     if (!a || this.capturingBusy()) return;
     this.capturingBusy.set(true);
     const name = this.captureName.trim() || `${a.name}-template`;
-    const id = await this.store.captureTemplate(a.id, name);
+    const id = await this.templates.capture(a.id, name);
     this.capturingBusy.set(false);
     if (id) {
       this.capturing.set(false);
-      this.store.toast(`saved template "${name}"`);
+      this.ctx.toast(`saved template "${name}"`);
       this.router.navigate(['/profiles']);
     }
   }

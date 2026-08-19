@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiAgentProfile } from '../hermes-api';
-import { AgentStore } from './agent-store';
-import { ContainerStore } from './container-store';
-import { apiContainer, apiProfile, flush, testContext } from '../../testing/store';
+import { apiContainer, apiProfile, flush, testSlices } from '../../testing/store';
 
 const mcp = (name: string, status: string) => ({
   id: `m-${name}`, name, transport: 'http', status, tools: 2, latencyMs: 10,
@@ -10,14 +8,12 @@ const mcp = (name: string, status: string) => ({
 
 /** Containers plus the `/api/agents` client, with nothing loaded yet. */
 const built = async (agentsApi: Record<string, unknown>, containers = [apiContainer()]) => {
-  const ctx = testContext();
-  const containerStore = new ContainerStore(ctx);
-  (ctx as unknown as { api: unknown }).api = {
+  const slices = testSlices({
     containers: { list: vi.fn().mockResolvedValue(containers) },
     agents: agentsApi,
-  };
-  await containerStore.refresh();
-  return { ctx, containers: containerStore, agents: new AgentStore(ctx, containerStore) };
+  });
+  await slices.containers.refresh();
+  return slices;
 };
 
 describe('AgentStore refresh', () => {
@@ -186,17 +182,13 @@ describe('AgentStore create', () => {
 });
 
 describe('AgentStore remove', () => {
-  it('drops the profile and everything keyed to it, only after the backend agrees', async () => {
+  it('drops the profile once the backend agrees', async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const { agents } = await built({ list: vi.fn().mockResolvedValue([apiProfile('atlas')]), remove });
     await agents.refresh();
-    const onRemoved = vi.fn();
 
-    agents.remove('a-atlas', onRemoved);
-    await flush();
-
+    expect(await agents.remove('a-atlas')).toBe(true);
     expect(agents.byId('a-atlas')).toBeNull();
-    expect(onRemoved).toHaveBeenCalledWith('a-atlas');
   });
 
   it('keeps the profile when the delete failed', async () => {
@@ -205,23 +197,19 @@ describe('AgentStore remove', () => {
       remove: vi.fn().mockRejectedValue(new Error('profile busy')),
     });
     await agents.refresh();
-    const onRemoved = vi.fn();
 
-    agents.remove('a-atlas', onRemoved);
-    await flush();
-
+    expect(await agents.remove('a-atlas')).toBe(false);
     expect(agents.byId('a-atlas')).not.toBeNull();
-    expect(onRemoved).not.toHaveBeenCalled();
     expect(ctx.liveError()).toBe('remove profile failed: profile busy');
   });
 
-  it('ignores a profile it cannot address', async () => {
+  it('says so for a profile it cannot address', async () => {
     const remove = vi.fn();
-    const { agents } = await built({ list: vi.fn().mockResolvedValue([]), remove });
+    const { agents, ctx } = await built({ list: vi.fn().mockResolvedValue([]), remove });
 
-    agents.remove('a-ghost', vi.fn());
-
+    expect(await agents.remove('a-ghost')).toBe(false);
     expect(remove).not.toHaveBeenCalled();
+    expect(ctx.liveError()).toBe('profile is no longer available');
   });
 });
 

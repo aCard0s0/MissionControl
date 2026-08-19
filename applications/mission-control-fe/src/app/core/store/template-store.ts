@@ -1,4 +1,4 @@
-import { WritableSignal, signal } from '@angular/core';
+import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ProfileTemplate, ProfileTemplateInput } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
@@ -6,14 +6,15 @@ import { StoreContext } from './store-context';
 import { toProfileTemplate } from './wire-mappers';
 
 /** Reusable agent blueprints — global, not scoped to a container. */
+@Injectable({ providedIn: 'root' })
 export class TemplateStore {
   readonly templates: WritableSignal<ProfileTemplate[]>;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-    private readonly agents: AgentStore,
-  ) {
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+  private readonly agents = inject(AgentStore);
+
+  constructor() {
     this.templates = signal([]);
   }
 

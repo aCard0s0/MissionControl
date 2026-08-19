@@ -3,7 +3,9 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentStore } from '../core/store/agent-store';
+import { BoardStore } from '../core/store/board-store';
+import { ContainerStore } from '../core/store/container-store';
 import { BoardColumn, BoardTask } from '../core/models';
 import { BoardPage } from './board';
 import { el } from '../testing/dom';
@@ -14,15 +16,21 @@ const task = (id: string, column: BoardColumn, patch: Partial<BoardTask> = {}): 
 } as BoardTask);
 
 const storeStub = (tasks: BoardTask[]) => ({
-  containerTasks: signal(tasks),
-  selectedContainer: signal({ id: 'c-1', name: 'hermes-prod' }),
-  agentById: (id: string) => (id === 'a-1' ? { id, name: 'atlas' } : null),
-  moveTask: vi.fn(),
+  agents: {
+    byId: (id: string) => (id === 'a-1' ? { id, name: 'atlas' } : null),
+  },
+  board: {
+    forSelectedContainer: signal(tasks),
+    move: vi.fn(),
+  },
+  containers: {
+    selected: signal({ id: 'c-1', name: 'hermes-prod' }),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents }, { provide: BoardStore, useValue: store.board }, { provide: ContainerStore, useValue: store.containers }] });
   const fixture = TestBed.createComponent(BoardPage);
   fixture.detectChanges();
   return { fixture, store };
@@ -73,7 +81,7 @@ describe('BoardPage', () => {
 
     drop(fixture, moved, 'running');
 
-    expect(store.moveTask).toHaveBeenCalledWith('t-1', 'running');
+    expect(store.board.move).toHaveBeenCalledWith('t-1', 'running');
   });
 
   it('leaves a task dropped back into its own column alone', () => {
@@ -82,6 +90,6 @@ describe('BoardPage', () => {
 
     drop(fixture, moved, 'queued');
 
-    expect(store.moveTask).not.toHaveBeenCalled();
+    expect(store.board.move).not.toHaveBeenCalled();
   });
 });

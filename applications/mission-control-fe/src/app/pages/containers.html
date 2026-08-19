@@ -16,7 +16,7 @@
     <button class="btn sm ghost" (click)="addingHost.set(!addingHost())">{{ addingHost() ? 'cancel' : '+ remote host' }}</button>
   </div>
   <div class="panel-b">
-    @for (h of store.dockerHosts(); track h.id) {
+    @for (h of hosts.hosts(); track h.id) {
       <div class="host-row mono">
         <mc-status [status]="h.status" [live]="h.status === 'connected'" />
         <span class="hname">{{ h.name }}</span>
@@ -25,11 +25,11 @@
         @if (h.latencyMs !== null) { <span class="faint">{{ h.latencyMs }}ms</span> }
         @if (h.note) { <span class="hnote faint">— {{ h.note }}</span> }
         <span class="spacer"></span>
-        <button class="btn sm ghost" [disabled]="h.status === 'connecting'" (click)="store.checkDockerHost(h.id)">
+        <button class="btn sm ghost" [disabled]="h.status === 'connecting'" (click)="hosts.check(h.id)">
           {{ h.status === 'connecting' ? 'checking…' : 'check' }}
         </button>
         @if (h.kind === 'remote') {
-          <button class="btn sm danger ghost" (click)="store.removeDockerHost(h.id)">remove</button>
+          <button class="btn sm danger ghost" (click)="hosts.remove(h.id)">remove</button>
         }
       </div>
     }
@@ -45,8 +45,8 @@
 </div>
 
 <div class="grid" data-reveal>
-  @for (c of store.containers(); track c.id) {
-    <div class="panel card" [class.sel]="c.id === store.selectedContainerId()"
+  @for (c of containers.containers(); track c.id) {
+    <div class="panel card" [class.sel]="c.id === containers.selectedContainerId()"
          role="button" tabindex="0" (click)="open(c.id)"
          (keydown.enter)="open(c.id)" (keydown.space)="open(c.id); $event.preventDefault()">
       <div class="panel-h">
@@ -78,10 +78,10 @@
           <button class="btn sm primary" (click)="open(c.id)">select</button>
           @if (c.status === 'stopped') {
             <button class="btn sm" [disabled]="isUpdating(c.id)"
-                    (click)="store.setContainerStatus(c.id, 'running'); $event.stopPropagation()">start</button>
+                    (click)="lifecycle.setStatus(c.id, 'running'); $event.stopPropagation()">start</button>
           } @else {
             <button class="btn sm" [disabled]="isUpdating(c.id)"
-                    (click)="store.setContainerStatus(c.id, 'stopped'); $event.stopPropagation()">stop</button>
+                    (click)="lifecycle.setStatus(c.id, 'stopped'); $event.stopPropagation()">stop</button>
           }
           @if (updates().get(c.id); as target) {
             <button class="btn sm upd" [disabled]="isUpdating(c.id)" [title]="updateHint(c, target)"
@@ -98,9 +98,9 @@
   }
 </div>
 
-@if (!store.containers().length) {
+@if (!containers.containers().length) {
   <div class="panel empty" data-reveal>
-    @if (store.backendStatus() !== 'connected') {
+    @if (ctx.backendStatus() !== 'connected') {
       <p class="mono dim">No containers — waiting for the Mission Control backend.</p>
       <p class="lock-hint">the banner above shows the connection state; discovery starts as soon as it connects</p>
     } @else {

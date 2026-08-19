@@ -2,7 +2,7 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSkillStore } from '../core/store/agent-skill-store';
 import { AgentProfile, SkillContent, SkillRef } from '../core/models';
 import { AgentSkillsPanel } from './agent-skills-panel';
 import { buttonWith, el } from '../testing/dom';
@@ -10,11 +10,13 @@ import { agent, skill } from '../testing/models';
 
 /** Only what the panel actually reaches for on the store. */
 const storeStub = (content: SkillContent | null = null) => ({
-  toggleSkill: vi.fn(),
-  removeSkill: vi.fn(),
-  addSkill: vi.fn(),
-  getSkillContent: vi.fn().mockResolvedValue(content),
-  saveSkillContent: vi.fn().mockResolvedValue(true),
+  skills: {
+    toggle: vi.fn(),
+    remove: vi.fn(),
+    add: vi.fn(),
+    content: vi.fn().mockResolvedValue(content),
+    saveContent: vi.fn().mockResolvedValue(true),
+  },
 });
 
 @Component({
@@ -27,7 +29,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>, agent?: AgentProfile) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: AgentSkillStore, useValue: store.skills }] });
   const fixture = TestBed.createComponent(Host);
   if (agent) fixture.componentInstance.agent.set(agent);
   fixture.detectChanges();
@@ -50,7 +52,7 @@ describe('AgentSkillsPanel', () => {
     const fixture = render(store);
     buttonWith(fixture, 'ON').click();
 
-    expect(store.toggleSkill).toHaveBeenCalledWith('a-1', 's-daily-briefing');
+    expect(store.skills.toggle).toHaveBeenCalledWith('a-1', 's-daily-briefing');
   });
 
   it('refuses to install a skill with no name, and clears the field once it does', async () => {
@@ -65,7 +67,7 @@ describe('AgentSkillsPanel', () => {
     fixture.detectChanges();
 
     buttonWith(fixture, 'add skill').click();
-    expect(store.addSkill).toHaveBeenCalledWith('a-1', expect.objectContaining({
+    expect(store.skills.add).toHaveBeenCalledWith('a-1', expect.objectContaining({
       name: 'pdf-tools', source: 'hub', enabled: true,
     }));
     await fixture.whenStable();       // ngModel writes the cleared value on a microtask
@@ -84,7 +86,7 @@ describe('AgentSkillsPanel', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.getSkillContent).toHaveBeenCalledWith('a-1', expect.objectContaining({ name: 'daily-briefing' }));
+    expect(store.skills.content).toHaveBeenCalledWith('a-1', expect.objectContaining({ name: 'daily-briefing' }));
     expect(el(fixture).querySelector<HTMLTextAreaElement>('textarea')!.value)
       .toBe('# daily-briefing\n');
     expect(el(fixture).textContent).toContain('skills/daily-briefing/SKILL.md');
@@ -122,7 +124,7 @@ describe('AgentSkillsPanel', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(store.saveSkillContent).toHaveBeenCalledWith(
+    expect(store.skills.saveContent).toHaveBeenCalledWith(
       'a-1', expect.objectContaining({ name: 'daily-briefing' }), 'edited');
     expect(el(fixture).textContent).toContain('saved ✓');
   });

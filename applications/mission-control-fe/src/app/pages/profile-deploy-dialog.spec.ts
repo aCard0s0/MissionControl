@@ -2,7 +2,9 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { ContainerStore } from '../core/store/container-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { TemplateStore } from '../core/store/template-store';
 import { ApiModelProvider } from '../core/hermes-api';
 import { HermesContainer, ProfileTemplate } from '../core/models';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
@@ -17,10 +19,16 @@ const llm: ApiModelProvider[] = [
 
 /** Only what the dialog reaches for on the store, so nothing here touches a backend. */
 const storeStub = (selected = '') => ({
-  containers: signal([container('c-1', 'hermes-prod'), container('c-2', 'hermes-lab')]),
-  selectedContainerId: signal(selected),
-  llmProviders: signal(llm),
-  deployTemplate: vi.fn().mockResolvedValue('a-new'),
+  containers: {
+    containers: signal([container('c-1', 'hermes-prod'), container('c-2', 'hermes-lab')]),
+    selectedContainerId: signal(selected),
+  },
+  providers: {
+    llmProviders: signal(llm),
+  },
+  templates: {
+    deploy: vi.fn().mockResolvedValue('a-new'),
+  },
 });
 
 @Component({
@@ -37,7 +45,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>, t = template()) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: ContainerStore, useValue: store.containers }, { provide: ProviderStore, useValue: store.providers }, { provide: TemplateStore, useValue: store.templates }] });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.template.set(t);
   fixture.detectChanges();
@@ -74,7 +82,7 @@ describe('ProfileDeployDialog', () => {
 
   it('says so when there is nowhere to deploy to, and refuses the deploy', async () => {
     const store = storeStub();
-    store.containers.set([]);
+    store.containers.containers.set([]);
     const { fixture } = render(store);
     await settle(fixture);
 
@@ -89,13 +97,13 @@ describe('ProfileDeployDialog', () => {
     submit(fixture).click();
     await settle(fixture);
 
-    expect(store.deployTemplate).toHaveBeenCalledWith('t-1', 'c-1', 'ops-sre');
+    expect(store.templates.deploy).toHaveBeenCalledWith('t-1', 'c-1', 'ops-sre');
     expect(host.deployedId).toBe('a-new');
   });
 
   it('stays open when the deploy is refused', async () => {
     const store = storeStub('c-1');
-    store.deployTemplate.mockResolvedValue('');
+    store.templates.deploy.mockResolvedValue('');
     const { fixture, host } = render(store);
     await settle(fixture);
 
@@ -108,7 +116,7 @@ describe('ProfileDeployDialog', () => {
 
   it('will not send a second deploy while the first is in flight', async () => {
     const store = storeStub('c-1');
-    store.deployTemplate.mockReturnValue(new Promise(() => { /* never settles */ }));
+    store.templates.deploy.mockReturnValue(new Promise(() => { /* never settles */ }));
     const { fixture } = render(store);
     await settle(fixture);
 
@@ -117,7 +125,7 @@ describe('ProfileDeployDialog', () => {
     expect(submit(fixture).textContent?.trim()).toBe('deploying…');
     submit(fixture).click();
 
-    expect(store.deployTemplate).toHaveBeenCalledTimes(1);
+    expect(store.templates.deploy).toHaveBeenCalledTimes(1);
   });
 
   it('warns before deploying a blueprint that carries no usable key', async () => {
@@ -131,7 +139,7 @@ describe('ProfileDeployDialog', () => {
     await settle(fixture);
 
     expect(confirmed.mock.calls[0][0]).toContain('ANTHROPIC_API_KEY');
-    expect(store.deployTemplate).not.toHaveBeenCalled();
+    expect(store.templates.deploy).not.toHaveBeenCalled();
   });
 
   it('deploys anyway once the operator accepts the missing key', async () => {
@@ -142,7 +150,7 @@ describe('ProfileDeployDialog', () => {
     submit(fixture).click();
     await settle(fixture);
 
-    expect(store.deployTemplate).toHaveBeenCalled();
+    expect(store.templates.deploy).toHaveBeenCalled();
   });
 
   it('asks nothing when the blueprint already carries the key', async () => {
@@ -156,7 +164,7 @@ describe('ProfileDeployDialog', () => {
     await settle(fixture);
 
     expect(confirmed).not.toHaveBeenCalled();
-    expect(store.deployTemplate).toHaveBeenCalled();
+    expect(store.templates.deploy).toHaveBeenCalled();
   });
 
   it('asks nothing for a provider that needs no key at all', async () => {
@@ -177,6 +185,6 @@ describe('ProfileDeployDialog', () => {
     el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.ghost')!.click();
 
     expect(host.closes).toBe(1);
-    expect(store.deployTemplate).not.toHaveBeenCalled();
+    expect(store.templates.deploy).not.toHaveBeenCalled();
   });
 });

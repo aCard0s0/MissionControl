@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { ApiImageTags } from '../hermes-api';
 import { ImageCatalog } from '../models';
 import { ContainerStore } from './container-store';
@@ -14,16 +14,15 @@ const CATALOG_TTL = 300_000;
  * Merged registry + local image tags per docker host, behind a TTL cache.
  * Advisory data: a failed refresh keeps the last catalog and never toasts.
  */
+@Injectable({ providedIn: 'root' })
 export class ImageCatalogStore {
   readonly catalog = signal<Record<string, ImageCatalog>>({});
 
   private readonly inFlight = new Set<string>();
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly containers: ContainerStore,
-    private readonly hosts: HostStore,
-  ) {}
+  private readonly ctx = inject(StoreContext);
+  private readonly containers = inject(ContainerStore);
+  private readonly hosts = inject(HostStore);
 
   /** Raw tag list for the deploy picker, which shows remote tags too. */
   tags(hostId: string): Promise<ApiImageTags> {

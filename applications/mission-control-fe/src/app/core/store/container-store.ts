@@ -1,4 +1,4 @@
-import { WritableSignal, computed, signal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ContainerStatus, HermesContainer } from '../models';
 import { StoreContext } from './store-context';
 
@@ -10,6 +10,7 @@ const pushSample = (history: number[], value: number): number[] => [...history.s
  * reads through. Selection lives here (not in a page) because the "never mix
  * containers" rule is a store-level guarantee.
  */
+@Injectable({ providedIn: 'root' })
 export class ContainerStore {
   readonly containers: WritableSignal<HermesContainer[]>;
   readonly selectedContainerId: WritableSignal<string>;
@@ -29,7 +30,9 @@ export class ContainerStore {
   private readonly netMeta = new Map<string, { rx: number; tx: number; at: number }>();
   private statsInFlight = false;
 
-  constructor(private readonly ctx: StoreContext) {
+  private readonly ctx = inject(StoreContext);
+
+  constructor() {
     this.containers = signal([]);
     this.selectedContainerId = signal('');
   }

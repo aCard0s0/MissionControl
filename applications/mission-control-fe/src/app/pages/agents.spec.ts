@@ -3,7 +3,12 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { AgentStore } from '../core/store/agent-store';
+import { ContainerStore } from '../core/store/container-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { TemplateStore } from '../core/store/template-store';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile, HermesContainer } from '../core/models';
 import { AgentsPage, agentSessionCommand } from './agents';
 import { el, press, settle } from '../testing/dom';
@@ -33,27 +38,40 @@ const container: HermesContainer = buildContainer('c-1', { name: 'hermes-prod' }
 
 /** Only what the roster and its create dialog reach for on the store. */
 const storeStub = (agents: AgentProfile[]) => ({
-  containerAgents: signal(agents),
-  containers: signal([container]),
-  selectedContainer: signal(container),
-  agentById: (id: string) => agents.find(a => a.id === id) ?? null,
-  openTerminal: vi.fn(),
+  agents: {
+    forSelectedContainer: signal(agents),
+    byId: (id: string) => agents.find(a => a.id === id) ?? null,
+    create: vi.fn().mockResolvedValue('a-new'),
+  },
+  containers: {
+    containers: signal([container]),
+    selected: signal(container),
+  },
+  terminal: { open: vi.fn() },
   // the create dialog, rendered as a child
-  profileTemplates: signal([]),
-  llmProviders: signal([]),
-  modelProviders: signal([]),
-  templateById: () => null,
-  authProviders: vi.fn().mockResolvedValue([]),
-  modelCatalog: vi.fn().mockResolvedValue([]),
-  modelCatalogLive: vi.fn().mockResolvedValue([]),
-  providerModels: vi.fn().mockResolvedValue([]),
-  createAgent: vi.fn().mockResolvedValue('a-new'),
+  templates: { templates: signal([]), byId: () => null },
+  providers: {
+    llmProviders: signal([]),
+    ollamaProviders: signal([]),
+    modelCatalog: vi.fn().mockResolvedValue([]),
+    modelCatalogLive: vi.fn().mockResolvedValue([]),
+    models: vi.fn().mockResolvedValue([]),
+  },
+  setup: { authProviders: vi.fn().mockResolvedValue([]) },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: HermesStore, useValue: store }],
+    providers: [
+      provideRouter([]),
+      { provide: AgentStore, useValue: store.agents },
+      { provide: AgentSetupStore, useValue: store.setup },
+      { provide: ContainerStore, useValue: store.containers },
+      { provide: ProviderStore, useValue: store.providers },
+      { provide: TemplateStore, useValue: store.templates },
+      { provide: TerminalRequestStore, useValue: store.terminal },
+    ],
   });
   const fixture = TestBed.createComponent(AgentsPage);
   fixture.detectChanges();
@@ -93,7 +111,7 @@ describe('AgentsPage roster', () => {
 
     el(fixture).querySelector<HTMLButtonElement>('.shell-btn')!.click();
 
-    expect(store.openTerminal).toHaveBeenCalledWith({
+    expect(store.terminal.open).toHaveBeenCalledWith({
       hostId: 'dh-local', containerId: 'c-1', label: 'atlas',
       agentKey: 'atlas', command: 'hermes -p atlas',
     });
@@ -136,7 +154,7 @@ describe('AgentsPage roster', () => {
 
   it('offers nothing to create when no container is selected', () => {
     const store = storeStub([]);
-    store.selectedContainer.set(null as never);
+    store.containers.selected.set(null as never);
     const { fixture } = render(store);
 
     expect(el(fixture).querySelector<HTMLButtonElement>('.page-head .btn')!.disabled).toBe(true);

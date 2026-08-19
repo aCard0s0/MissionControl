@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { HermesStore } from '../core/hermes-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { TemplateStore } from '../core/store/template-store';
 import { ProfileTemplate } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
@@ -26,7 +27,8 @@ import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-edito
   styleUrl: './agent-profiles.scss',
 })
 export class AgentProfilesPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly providers = inject(ProviderStore);
+  protected readonly templates = inject(TemplateStore);
   private readonly router = inject(Router);
   protected readonly ago = ago;
 
@@ -46,8 +48,8 @@ export class AgentProfilesPage {
     // a template stores ollama flat; the dropdown lists one option per instance
     const option = providerOptionFor(
       t.provider, t.baseUrl,
-      providerOptions(this.store.llmProviders(), this.store.modelProviders()),
-      this.store.modelProviders());
+      providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()),
+      this.providers.ollamaProviders());
     this.draft.set(profileDraftFrom(t, option ?? (t.provider || 'nous')));
     this.open.set(true);
   }
@@ -65,7 +67,7 @@ export class AgentProfilesPage {
 
   protected async remove(t: ProfileTemplate): Promise<void> {
     if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
-    await this.store.deleteTemplate(t.id);
+    await this.templates.remove(t.id);
     if (this.draft().id === t.id) this.closeEditor();
   }
 

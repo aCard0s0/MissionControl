@@ -3,7 +3,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { ContainerStore } from '../core/store/container-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { ProviderStore } from '../core/store/provider-store';
+import { StoreContext } from '../core/store/store-context';
+import { TemplateStore } from '../core/store/template-store';
 import { ApiModelProvider } from '../core/hermes-api';
 import { ProfileTemplate } from '../core/models';
 import { AgentProfilesPage } from './agent-profiles';
@@ -34,18 +38,28 @@ const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
 
 /** Only what the page, the editor pane and the deploy dialog reach for. */
 const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
-  profileTemplates: signal(templates),
-  templateById: (id: string | null) => templates.find(t => t.id === id) ?? null,
-  saveTemplate: vi.fn().mockResolvedValue('pt-new'),
-  deleteTemplate: vi.fn().mockResolvedValue(undefined),
-  deployTemplate: vi.fn().mockResolvedValue('a-new'),
-  mcpServers: signal([]),
-  mcpServerById: () => null,
-  llmProviders: signal(llm),
-  modelProviders: signal([]),
-  containers: signal([{ id: 'c-1', name: 'hermes-prod', status: 'running', hostId: 'dh-local' }]),
-  selectedContainerId: signal('c-1'),
-  toast: vi.fn(),
+  catalog: {
+    servers: signal([]),
+    byId: () => null,
+  },
+  containers: {
+    containers: signal([{ id: 'c-1', name: 'hermes-prod', status: 'running', hostId: 'dh-local' }]),
+    selectedContainerId: signal('c-1'),
+  },
+  ctx: {
+    toast: vi.fn(),
+  },
+  providers: {
+    llmProviders: signal(llm),
+    ollamaProviders: signal([]),
+  },
+  templates: {
+    templates: signal(templates),
+    byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
+    save: vi.fn().mockResolvedValue('pt-new'),
+    remove: vi.fn().mockResolvedValue(undefined),
+    deploy: vi.fn().mockResolvedValue('a-new'),
+  },
 });
 
 const render = (store = storeStub()) => {
@@ -53,7 +67,7 @@ const render = (store = storeStub()) => {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: HermesStore, useValue: store },
+      { provide: ContainerStore, useValue: store.containers }, { provide: McpCatalogStore, useValue: store.catalog }, { provide: ProviderStore, useValue: store.providers }, { provide: StoreContext, useValue: store.ctx }, { provide: TemplateStore, useValue: store.templates },
     ],
   });
   // the real router, with navigation recorded — RouterLink in these templates
@@ -262,7 +276,7 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
     press(fixture, 'delete', '.editor-actions');
     await settle(fixture);
 
-    expect(fixture.store.deleteTemplate).not.toHaveBeenCalled();
+    expect(fixture.store.templates.remove).not.toHaveBeenCalled();
     expect(el(fixture).querySelector('.editor')).not.toBeNull();
   });
 
@@ -275,7 +289,7 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
     press(fixture, 'delete', '.editor-actions');
     await settle(fixture);
 
-    expect(fixture.store.deleteTemplate).toHaveBeenCalledWith('pt-ops');
+    expect(fixture.store.templates.remove).toHaveBeenCalledWith('pt-ops');
     expect(el(fixture).querySelector('.editor')).toBeNull();
   });
 
@@ -290,7 +304,7 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
     press(fixture, 'deploy agent', '.modal');
     await settle(fixture);
 
-    expect(fixture.store.deployTemplate).toHaveBeenCalledWith('pt-ops', 'c-1', 'sre-1');
+    expect(fixture.store.templates.deploy).toHaveBeenCalledWith('pt-ops', 'c-1', 'sre-1');
     expect(fixture.navigate).toHaveBeenCalledWith(['/agents', 'a-new']);
     expect(el(fixture).querySelector('mc-profile-deploy-dialog')).toBeNull();
   });

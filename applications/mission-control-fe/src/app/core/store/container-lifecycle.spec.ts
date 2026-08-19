@@ -1,22 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ContainerLifecycle } from './container-lifecycle';
-import { ContainerStore } from './container-store';
-import { HostStore } from './host-store';
-import { ImageCatalogStore } from './image-catalog-store';
-import { apiContainer, testContext } from '../../testing/store';
+import { apiContainer, testSlices } from '../../testing/store';
 
 /** The three slices a lifecycle action touches, sharing one stubbed backend. */
 const loaded = async (containersApi: Record<string, unknown>, images: Record<string, unknown> = {}) => {
-  const ctx = testContext();
-  const containers = new ContainerStore(ctx);
-  const hosts = new HostStore(ctx);
-  const imageStore = new ImageCatalogStore(ctx, containers, hosts);
-  (ctx as unknown as { api: unknown }).api = {
+  const slices = testSlices({
     containers: { list: vi.fn().mockResolvedValue([apiContainer()]), ...containersApi, ...images },
-  };
-  await containers.refresh();
-  containers.select('c-1');
-  return { ctx, containers, images: imageStore, lifecycle: new ContainerLifecycle(ctx, containers, imageStore) };
+  });
+  await slices.containers.refresh();
+  slices.containers.select('c-1');
+  return slices;
 };
 
 describe('ContainerLifecycle deploy', () => {

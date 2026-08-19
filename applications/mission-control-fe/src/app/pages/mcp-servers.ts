@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HermesStore } from '../core/hermes-store';
+import { HostStore } from '../core/store/host-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { clock } from '../core/format';
 import { mcpDisplayEndpoint, mcpOperationActive } from '../core/mcp/catalog-rules';
 import { McpCatalogKind, McpCatalogServer, McpRetainedResource } from '../core/models';
@@ -25,7 +26,8 @@ import { McpServerLogs } from './mcp-server-logs';
   styleUrl: './mcp-servers.scss',
 })
 export class McpServersPage {
-  protected readonly store = inject(HermesStore);
+  protected readonly catalog = inject(McpCatalogStore);
+  protected readonly hosts = inject(HostStore);
   protected readonly operationActive = mcpOperationActive;
   protected readonly displayEndpoint = mcpDisplayEndpoint;
   protected readonly clock = clock;
@@ -47,17 +49,17 @@ export class McpServersPage {
   protected readonly purgeBusy = signal(false);
 
   protected readonly serverGroups = computed(() =>
-    mcpServerGroups(this.store.mcpServers(), this.store.dockerHosts()));
+    mcpServerGroups(this.catalog.servers(), this.hosts.hosts()));
 
   constructor() {
-    void this.store.refreshMcpServers();
-    void this.store.refreshRetainedMcpResources();
+    void this.catalog.refresh();
+    void this.catalog.refreshRetainedResources();
   }
 
   // ── editor ──────────────────────────────────────────────────────────────
   protected openCreate(kind: McpCatalogKind = 'managed'): void {
-    const preferredHost = this.store.dockerHosts().find(host => host.status === 'connected')
-      ?? this.store.dockerHosts()[0];
+    const preferredHost = this.hosts.hosts().find(host => host.status === 'connected')
+      ?? this.hosts.hosts()[0];
     this.draft = newMcpDraft(kind, preferredHost?.id ?? '');
   }
 
@@ -76,10 +78,10 @@ export class McpServersPage {
     if (this.isBusy(server) || (operation === 'check' && server.checkStatus === 'checking')) return;
     this.actionBusy.update(ids => new Set(ids).add(server.id));
     try {
-      if (operation === 'start') await this.store.startCatalogMcpServer(server.id);
-      else if (operation === 'stop') await this.store.stopCatalogMcpServer(server.id);
-      else if (operation === 'apply') await this.store.applyCatalogMcpServer(server.id);
-      else await this.store.checkCatalogMcpServer(server.id);
+      if (operation === 'start') await this.catalog.start(server.id);
+      else if (operation === 'stop') await this.catalog.stop(server.id);
+      else if (operation === 'apply') await this.catalog.apply(server.id);
+      else await this.catalog.check(server.id);
     } finally {
       this.actionBusy.update(ids => {
         const next = new Set(ids);
@@ -99,7 +101,7 @@ export class McpServersPage {
     const server = this.removing();
     if (!server || this.removeConfirm !== server.name || this.removeBusy()) return;
     this.removeBusy.set(true);
-    const removed = await this.store.deleteCatalogMcpServer(server.id);
+    const removed = await this.catalog.remove(server.id);
     this.removeBusy.set(false);
     if (removed) {
       this.removing.set(null);
@@ -119,7 +121,7 @@ export class McpServersPage {
     const resource = this.purging();
     if (!resource || this.purgeConfirm !== resource.name || this.purgeBusy()) return;
     this.purgeBusy.set(true);
-    const purged = await this.store.purgeRetainedMcpResource(resource.id);
+    const purged = await this.catalog.purgeRetainedResource(resource.id);
     this.purgeBusy.set(false);
     if (purged) {
       this.purging.set(null);

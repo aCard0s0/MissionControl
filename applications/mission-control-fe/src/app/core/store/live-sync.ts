@@ -1,4 +1,4 @@
-import { computed } from '@angular/core';
+import { Injectable, computed, inject } from '@angular/core';
 import { AgentStore } from './agent-store';
 import { BoardStore } from './board-store';
 import { ContainerStore } from './container-store';
@@ -33,6 +33,7 @@ const RETRY_MS = 10_000;
  * The store's clock: probes the backend, loads everything once it answers, and
  * then keeps each domain fresh on its own period.
  */
+@Injectable({ providedIn: 'root' })
 export class LiveSync {
   /** Banner text shown app-wide while there is no working backend. */
   readonly notice = computed(() => {
@@ -48,20 +49,18 @@ export class LiveSync {
 
   private started = false;
 
-  constructor(
-    private readonly ctx: StoreContext,
-    private readonly hosts: HostStore,
-    private readonly containers: ContainerStore,
-    private readonly agents: AgentStore,
-    private readonly logs: LogStore,
-    private readonly board: BoardStore,
-    private readonly templates: TemplateStore,
-    private readonly mcp: McpCatalogStore,
-    private readonly providers: ProviderStore,
-    private readonly images: ImageCatalogStore,
-    private readonly jobs: JobStore,
-    private readonly webhooks: WebhookStore,
-  ) {}
+  private readonly ctx = inject(StoreContext);
+  private readonly hosts = inject(HostStore);
+  private readonly containers = inject(ContainerStore);
+  private readonly agents = inject(AgentStore);
+  private readonly logs = inject(LogStore);
+  private readonly board = inject(BoardStore);
+  private readonly templates = inject(TemplateStore);
+  private readonly mcp = inject(McpCatalogStore);
+  private readonly providers = inject(ProviderStore);
+  private readonly images = inject(ImageCatalogStore);
+  private readonly jobs = inject(JobStore);
+  private readonly webhooks = inject(WebhookStore);
 
   async probeBackend(): Promise<void> {
     try {

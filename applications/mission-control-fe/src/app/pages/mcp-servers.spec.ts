@@ -2,7 +2,8 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HermesStore } from '../core/hermes-store';
+import { HostStore } from '../core/store/host-store';
+import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { DockerHost, McpCatalogServer, McpRetainedResource } from '../core/models';
 import { McpServersPage } from './mcp-servers';
 import { button, el, press, settle, text, type } from '../testing/dom';
@@ -20,25 +21,29 @@ const volume: McpRetainedResource = {
 
 /** Only what the page and the two modals reach for, so nothing here touches a backend. */
 const storeStub = (servers: McpCatalogServer[], retained: McpRetainedResource[] = []) => ({
-  mcpServers: signal(servers),
-  mcpServersLoading: signal(false),
-  retainedMcpResources: signal(retained),
-  dockerHosts: signal(hosts),
-  refreshMcpServers: vi.fn().mockResolvedValue(undefined),
-  refreshRetainedMcpResources: vi.fn().mockResolvedValue(undefined),
-  startCatalogMcpServer: vi.fn().mockResolvedValue(true),
-  stopCatalogMcpServer: vi.fn().mockResolvedValue(true),
-  applyCatalogMcpServer: vi.fn().mockResolvedValue(true),
-  checkCatalogMcpServer: vi.fn().mockResolvedValue(true),
-  deleteCatalogMcpServer: vi.fn().mockResolvedValue(true),
-  purgeRetainedMcpResource: vi.fn().mockResolvedValue(true),
-  saveCatalogMcpServer: vi.fn().mockResolvedValue('mcp-new'),
-  mcpServerLogTail: vi.fn().mockResolvedValue([]),
+  catalog: {
+    servers: signal(servers),
+    loading: signal(false),
+    retainedResources: signal(retained),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    refreshRetainedResources: vi.fn().mockResolvedValue(undefined),
+    start: vi.fn().mockResolvedValue(true),
+    stop: vi.fn().mockResolvedValue(true),
+    apply: vi.fn().mockResolvedValue(true),
+    check: vi.fn().mockResolvedValue(true),
+    remove: vi.fn().mockResolvedValue(true),
+    purgeRetainedResource: vi.fn().mockResolvedValue(true),
+    save: vi.fn().mockResolvedValue('mcp-new'),
+    logTail: vi.fn().mockResolvedValue([]),
+  },
+  hosts: {
+    hosts: signal(hosts),
+  },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HermesStore, useValue: store }] });
+  TestBed.configureTestingModule({ providers: [{ provide: HostStore, useValue: store.hosts }, { provide: McpCatalogStore, useValue: store.catalog }] });
   const fixture = TestBed.createComponent(McpServersPage);
   fixture.detectChanges();
   return { fixture, store };
@@ -55,8 +60,8 @@ describe('McpServersPage roster', () => {
   it('reads the catalog and what a delete left behind when it opens', () => {
     const { store } = render(storeStub([server('browser')], [volume]));
 
-    expect(store.refreshMcpServers).toHaveBeenCalled();
-    expect(store.refreshRetainedMcpResources).toHaveBeenCalled();
+    expect(store.catalog.refresh).toHaveBeenCalled();
+    expect(store.catalog.refreshRetainedResources).toHaveBeenCalled();
   });
 
   it('groups the catalog by host and shows each server address', () => {
@@ -85,7 +90,7 @@ describe('McpServersPage roster', () => {
     const { fixture, store } = render(storeStub([server('browser', { runtimeState: 'running' })]));
 
     press(fixture, 'stop', '.server-actions');
-    expect(store.stopCatalogMcpServer).toHaveBeenCalledWith('browser');
+    expect(store.catalog.stop).toHaveBeenCalledWith('browser');
   });
 
   it('keeps the lifecycle controls busy while the backend is mid-operation', () => {
@@ -157,7 +162,7 @@ describe('McpServersPage log handoff', () => {
     await settle(fixture);
 
     expect(el(fixture).querySelector('mc-mcp-server-logs')).not.toBeNull();
-    expect(store.mcpServerLogTail).toHaveBeenCalledWith('browser', 150);
+    expect(store.catalog.logTail).toHaveBeenCalledWith('browser', 150);
 
     press(fixture, 'close', '.log-modal');
     expect(el(fixture).querySelector('mc-mcp-server-logs')).toBeNull();
@@ -187,7 +192,7 @@ describe('McpServersPage destructive confirmations', () => {
     confirm().click();
     await settle(fixture);
 
-    expect(store.deleteCatalogMcpServer).toHaveBeenCalledWith('browser');
+    expect(store.catalog.remove).toHaveBeenCalledWith('browser');
     expect(el(fixture).querySelector('.crit-h')).toBeNull();
   });
 
@@ -217,7 +222,7 @@ describe('McpServersPage destructive confirmations', () => {
     confirm().click();
     await settle(fixture);
 
-    expect(store.purgeRetainedMcpResource).toHaveBeenCalledWith('vol-1');
+    expect(store.catalog.purgeRetainedResource).toHaveBeenCalledWith('vol-1');
   });
 });
 
@@ -238,7 +243,7 @@ describe('McpServersPage lifecycle verbs', () => {
     press(fixture, 'apply & restart', '.server-actions');
     await settle(fixture);
 
-    expect(store.applyCatalogMcpServer).toHaveBeenCalledWith('browser');
+    expect(store.catalog.apply).toHaveBeenCalledWith('browser');
   });
 
   it('probes a server on demand', async () => {
@@ -247,19 +252,19 @@ describe('McpServersPage lifecycle verbs', () => {
     press(fixture, 'check', '.server-actions');
     await settle(fixture);
 
-    expect(store.checkCatalogMcpServer).toHaveBeenCalledWith('browser');
+    expect(store.catalog.check).toHaveBeenCalledWith('browser');
   });
 
   it('will not start the same server twice while the first start is in flight', async () => {
     const store = storeStub([server('browser')]);
-    store.startCatalogMcpServer.mockReturnValue(new Promise(() => { /* never settles */ }));
+    store.catalog.start.mockReturnValue(new Promise(() => { /* never settles */ }));
     const { fixture } = render(store);
 
     press(fixture, 'start', '.server-actions');
     await settle(fixture);
     expect(button(fixture, 'start', '.server-actions').disabled).toBe(true);
 
-    expect(store.startCatalogMcpServer).toHaveBeenCalledTimes(1);
+    expect(store.catalog.start).toHaveBeenCalledTimes(1);
   });
 
   it('locks the probe button while one is already running', () => {
@@ -278,6 +283,6 @@ describe('McpServersPage lifecycle verbs', () => {
     press(fixture, 'check', '.server-actions');
     await settle(fixture);
 
-    expect(store.checkCatalogMcpServer).toHaveBeenCalledWith('remote');
+    expect(store.catalog.check).toHaveBeenCalledWith('remote');
   });
 });
