@@ -7,6 +7,7 @@ import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhookPlatformDto;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.secrets.Secrets;
 import java.time.Instant;
@@ -73,9 +74,9 @@ public class HermesWebhooks {
     this.inventory = inventory;
   }
 
-  public WebhooksDto list(String url, String containerId, String profileName) {
+  public WebhooksDto list(DockerHostRef host, String containerId, String profileName) {
     return new WebhooksDto(
-        read(url, containerId, profileName), platform(url, containerId, profileName));
+        read(host, containerId, profileName), platform(host, containerId, profileName));
   }
 
   /**
@@ -88,21 +89,21 @@ public class HermesWebhooks {
    * operator turned on and that never binds.
    */
   public WebhooksDto setPlatformEnabled(
-      String url, String containerId, String profileName, EnableWebhookPlatformRequest request) {
+      DockerHostRef host, String containerId, String profileName, EnableWebhookPlatformRequest request) {
     ProfilePaths.profileDir(profileName);   // before a URL-sourced name reaches a read below
-    String host = null;
+    String bindHost = null;
     Integer port = null;
     if (request.enabled()) {
-      host = notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
-      port = resolvePort(url, containerId, profileName, request.port());
+      bindHost = notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
+      port = resolvePort(host, containerId, profileName, request.port());
     }
-    setConfig(url, containerId, profileName, PLATFORM_KEY + ".enabled",
+    setConfig(host, containerId, profileName, PLATFORM_KEY + ".enabled",
         String.valueOf(request.enabled()));
     if (request.enabled()) {
-      setConfig(url, containerId, profileName, PLATFORM_KEY + ".extra.host", host);
-      setConfig(url, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
+      setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.host", bindHost);
+      setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
     }
-    return list(url, containerId, profileName);
+    return list(host, containerId, profileName);
   }
 
   /**
@@ -120,9 +121,9 @@ public class HermesWebhooks {
    * from {@value #DEFAULT_PORT} to the first free port instead, because there is no choice
    * to respect.
    */
-  private int resolvePort(String url, String containerId, String profileName, Integer requested) {
+  private int resolvePort(DockerHostRef host, String containerId, String profileName, Integer requested) {
     if (requested != null) requirePort(requested);
-    Map<Integer, String> taken = portsHeldByOtherProfiles(url, containerId, profileName);
+    Map<Integer, String> taken = portsHeldByOtherProfiles(host, containerId, profileName);
     if (requested != null) {
       String holder = taken.get(requested);
       if (holder != null) {
@@ -146,11 +147,11 @@ public class HermesWebhooks {
    * CLI rather than through here has no {@code extra.port} at all.
    */
   private Map<Integer, String> portsHeldByOtherProfiles(
-      String url, String containerId, String profileName) {
+      DockerHostRef host, String containerId, String profileName) {
     Map<Integer, String> taken = new LinkedHashMap<>();
-    for (String other : inventory.names(url, containerId)) {
+    for (String other : inventory.names(host, containerId)) {
       if (other.equals(profileName)) continue;
-      WebhookPlatformDto platform = platform(url, containerId, other);
+      WebhookPlatformDto platform = platform(host, containerId, other);
       if (!platform.enabled()) continue;
       taken.putIfAbsent(platform.port() == null ? DEFAULT_PORT : platform.port(), other);
     }
@@ -158,7 +159,7 @@ public class HermesWebhooks {
   }
 
   public WebhooksDto subscribe(
-      String url, String containerId, String profileName, SubscribeWebhookRequest request) {
+      DockerHostRef host, String containerId, String profileName, SubscribeWebhookRequest request) {
     List<String> command = new ArrayList<>(
         List.of("webhook", "subscribe", requireRoute(request.name())));
     addOption(command, "--prompt", request.prompt());
@@ -169,18 +170,18 @@ public class HermesWebhooks {
     addOption(command, "--deliver-chat-id", request.deliverChatId());
     if (request.deliverOnly()) command.add("--deliver-only");
     // no --secret: hermes generates one, so a secret never travels through the dashboard
-    run(url, containerId, profileName, command);
-    return list(url, containerId, profileName);
+    run(host, containerId, profileName, command);
+    return list(host, containerId, profileName);
   }
 
-  public WebhooksDto remove(String url, String containerId, String profileName, String route) {
-    run(url, containerId, profileName, List.of("webhook", "remove", requireRoute(route)));
-    return list(url, containerId, profileName);
+  public WebhooksDto remove(DockerHostRef host, String containerId, String profileName, String route) {
+    run(host, containerId, profileName, List.of("webhook", "remove", requireRoute(route)));
+    return list(host, containerId, profileName);
   }
 
   /** Fires hermes' own test POST at the route, so an operator can prove it is wired. */
-  public String test(String url, String containerId, String profileName, String route) {
-    return run(url, containerId, profileName, List.of("webhook", "test", requireRoute(route)));
+  public String test(DockerHostRef host, String containerId, String profileName, String route) {
+    return run(host, containerId, profileName, List.of("webhook", "test", requireRoute(route)));
   }
 
   /**
@@ -188,18 +189,18 @@ public class HermesWebhooks {
    * The provider that will sign requests needs it, and hermes has no command that prints it,
    * so it comes from the file.
    */
-  public String secret(String url, String containerId, String profileName, String route) {
+  public String secret(DockerHostRef host, String containerId, String profileName, String route) {
     requireRoute(route);
-    JsonNode node = subscriptions(url, containerId, profileName).path(route);
+    JsonNode node = subscriptions(host, containerId, profileName).path(route);
     if (node.isMissingNode()) throw new IllegalArgumentException("no such webhook route");
     return node.path("secret").asText("");
   }
 
   // ── reading ────────────────────────────────────────────────────────────────
 
-  private List<WebhookSubscriptionDto> read(String url, String containerId, String profileName) {
-    JsonNode root = subscriptions(url, containerId, profileName);
-    WebhookPlatformDto platform = platform(url, containerId, profileName);
+  private List<WebhookSubscriptionDto> read(DockerHostRef host, String containerId, String profileName) {
+    JsonNode root = subscriptions(host, containerId, profileName);
+    WebhookPlatformDto platform = platform(host, containerId, profileName);
     List<WebhookSubscriptionDto> out = new ArrayList<>();
     Iterator<Map.Entry<String, JsonNode>> entries = root.fields();
     while (entries.hasNext()) {
@@ -211,9 +212,9 @@ public class HermesWebhooks {
   }
 
   /** Hermes keys the file by route name, so this is an object rather than an array. */
-  private JsonNode subscriptions(String url, String containerId, String profileName) {
+  private JsonNode subscriptions(DockerHostRef host, String containerId, String profileName) {
     String json = files.readFile(
-        url, containerId, ProfilePaths.webhookSubscriptionsFile(profileName));
+        host, containerId, ProfilePaths.webhookSubscriptionsFile(profileName));
     if (json == null || json.isBlank()) return objectMapper.createObjectNode();
     try {
       JsonNode root = objectMapper.readTree(json);
@@ -253,9 +254,9 @@ public class HermesWebhooks {
     return "http://<agent-host>:" + port + "/webhooks/" + route;
   }
 
-  private WebhookPlatformDto platform(String url, String containerId, String profileName) {
+  private WebhookPlatformDto platform(DockerHostRef host, String containerId, String profileName) {
     Map<?, ?> config =
-        YamlValues.parseMap(files.readFile(url, containerId, ProfilePaths.configFile(profileName)));
+        YamlValues.parseMap(files.readFile(host, containerId, ProfilePaths.configFile(profileName)));
     Map<?, ?> webhook = childMap(childMap(config, "platforms"), "webhook");
     Map<?, ?> extra = childMap(webhook, "extra");
     Object enabled = webhook.get("enabled");
@@ -272,17 +273,17 @@ public class HermesWebhooks {
   // ── writing ────────────────────────────────────────────────────────────────
 
   private String run(
-      String url, String containerId, String profileName, List<String> hermesArgs) {
+      DockerHostRef host, String containerId, String profileName, List<String> hermesArgs) {
     List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName));
     command.addAll(hermesArgs);
-    return files.exec(url, containerId, command, true).stdout();
+    return files.exec(host, containerId, command, true).stdout();
   }
 
   private void setConfig(
-      String url, String containerId, String profileName, String key, String value) {
+      DockerHostRef host, String containerId, String profileName, String key, String value) {
     List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName));
     command.addAll(List.of("config", "set", key, value));
-    files.exec(url, containerId, command, true);
+    files.exec(host, containerId, command, true);
   }
 
   /** One level down a parsed config, or an empty map when the key is absent or not a map. */

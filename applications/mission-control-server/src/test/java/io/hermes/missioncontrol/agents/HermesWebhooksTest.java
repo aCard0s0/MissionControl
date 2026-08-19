@@ -11,6 +11,7 @@ import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -34,7 +35,7 @@ import org.junit.jupiter.api.Test;
  */
 class HermesWebhooksTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
   private static final String CONTAINER = "c1";
 
   private static final String ENABLED_CONFIG = """
@@ -60,7 +61,7 @@ class HermesWebhooksTest {
     }
 
     @Override
-    String readFile(String url, String containerId, String path) {
+    String readFile(DockerHostRef host, String containerId, String path) {
       commands.add(List.of("readFile", path));
       if (!path.endsWith("config.yaml")) return subscriptions;
       String profile = path.startsWith(PROFILES_PREFIX)
@@ -70,7 +71,7 @@ class HermesWebhooksTest {
     }
 
     @Override
-    ExecResult exec(String url, String containerId, List<String> command, boolean check) {
+    ExecResult exec(DockerHostRef host, String containerId, List<String> command, boolean check) {
       commands.add(command);
       // the profile inventory's own two reads: is the hermes home there, and what is beside it
       if (command.size() > 2 && command.get(2).startsWith("ls -1")) {
@@ -100,7 +101,7 @@ class HermesWebhooksTest {
   private WebhooksDto listed() throws IOException {
     exec.subscriptions = fixture();
     exec.config = ENABLED_CONFIG;
-    return webhooks.list(URL, CONTAINER, "default");
+    return webhooks.list(HOST, CONTAINER, "default");
   }
 
   // ── the secret must not travel with a listing ──────────────────────────────
@@ -118,7 +119,7 @@ class HermesWebhooksTest {
   void theSecretIsReadableOnItsOwn_becauseTheProviderSigningRequestsNeedsIt() throws IOException {
     exec.subscriptions = fixture();
 
-    String secret = webhooks.secret(URL, CONTAINER, "default", "grafana");
+    String secret = webhooks.secret(HOST, CONTAINER, "default", "grafana");
 
     // the capture script replaces the real secret with a placeholder of the same shape — 43
     // base64url characters — so what is pinned is that this reads the field verbatim and
@@ -132,7 +133,7 @@ class HermesWebhooksTest {
     exec.subscriptions = fixture();
 
     assertThrows(IllegalArgumentException.class,
-        () -> webhooks.secret(URL, CONTAINER, "default", "nope"));
+        () -> webhooks.secret(HOST, CONTAINER, "default", "nope"));
   }
 
   // ── reading what hermes stored ─────────────────────────────────────────────
@@ -181,21 +182,21 @@ class HermesWebhooksTest {
   @Test
   void anEmptyOrUnreadableFileReadsAsNoRoutes() {
     exec.subscriptions = "";
-    assertTrue(webhooks.list(URL, CONTAINER, "default").subscriptions().isEmpty());
+    assertTrue(webhooks.list(HOST, CONTAINER, "default").subscriptions().isEmpty());
 
     exec.subscriptions = "{\"grafana\": {";
-    assertTrue(webhooks.list(URL, CONTAINER, "default").subscriptions().isEmpty());
+    assertTrue(webhooks.list(HOST, CONTAINER, "default").subscriptions().isEmpty());
 
     // hermes writes an object; an array would mean a shape this cannot read
     exec.subscriptions = "[]";
-    assertTrue(webhooks.list(URL, CONTAINER, "default").subscriptions().isEmpty());
+    assertTrue(webhooks.list(HOST, CONTAINER, "default").subscriptions().isEmpty());
   }
 
   @Test
   void readsTheProfilesOwnSubscriptionFile() throws IOException {
     exec.subscriptions = fixture();
 
-    webhooks.list(URL, CONTAINER, "ops");
+    webhooks.list(HOST, CONTAINER, "ops");
 
     assertTrue(exec.commands.contains(
         List.of("readFile", "/opt/data/profiles/ops/webhook_subscriptions.json")));
@@ -207,7 +208,7 @@ class HermesWebhooksTest {
   void reportsTheListenerAsOffUntilTheProfileEnablesIt() {
     exec.config = "platforms: {}\n";
 
-    assertFalse(webhooks.list(URL, CONTAINER, "default").platform().enabled());
+    assertFalse(webhooks.list(HOST, CONTAINER, "default").platform().enabled());
   }
 
   @Test
@@ -228,7 +229,7 @@ class HermesWebhooksTest {
 
   @Test
   void enablingTheListenerSetsItsBindAddressAndPort() {
-    webhooks.setPlatformEnabled(URL, CONTAINER, "default",
+    webhooks.setPlatformEnabled(HOST, CONTAINER, "default",
         new EnableWebhookPlatformRequest(true, "127.0.0.1", 9000));
 
     assertEquals(List.of(
@@ -240,7 +241,7 @@ class HermesWebhooksTest {
 
   @Test
   void enablingWithoutABindAddressUsesHermesOwnDefaults() {
-    webhooks.setPlatformEnabled(URL, CONTAINER, "default",
+    webhooks.setPlatformEnabled(HOST, CONTAINER, "default",
         new EnableWebhookPlatformRequest(true, null, null));
 
     assertTrue(exec.hermesCommands().contains(
@@ -253,7 +254,7 @@ class HermesWebhooksTest {
   void disablingTheListenerLeavesItsAddressAlone() {
     // the secrets an operator already handed to a provider stay valid, so turning the
     // listener off and on again must not rewrite the endpoint
-    webhooks.setPlatformEnabled(URL, CONTAINER, "default",
+    webhooks.setPlatformEnabled(HOST, CONTAINER, "default",
         new EnableWebhookPlatformRequest(false, null, null));
 
     assertEquals(List.of(List.of("hermes", "config", "set", "platforms.webhook.enabled", "false")),
@@ -264,7 +265,7 @@ class HermesWebhooksTest {
   void aPortOutsideTheLegalRangeIsRefusedBeforeTheListenerIsSwitchedOn() {
     for (int port : List.of(0, 65_536, -1)) {
       assertThrows(IllegalArgumentException.class, () -> webhooks.setPlatformEnabled(
-          URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, port)));
+          HOST, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, port)));
     }
 
     // writing `enabled: true` first would leave a listener an operator turned on and that
@@ -288,7 +289,7 @@ class HermesWebhooksTest {
     containerWhere("ops", ENABLED_CONFIG);
 
     ResourceConflictException refused = assertThrows(ResourceConflictException.class,
-        () -> webhooks.setPlatformEnabled(URL, CONTAINER, "default",
+        () -> webhooks.setPlatformEnabled(HOST, CONTAINER, "default",
             new EnableWebhookPlatformRequest(true, null, 8644)));
 
     assertTrue(refused.getMessage().contains("ops"), refused.getMessage());
@@ -301,7 +302,7 @@ class HermesWebhooksTest {
     containerWhere("ops", ENABLED_CONFIG);
 
     webhooks.setPlatformEnabled(
-        URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
+        HOST, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
 
     assertTrue(exec.hermesCommands().contains(
         List.of("hermes", "config", "set", "platforms.webhook.extra.port", "8645")));
@@ -314,7 +315,7 @@ class HermesWebhooksTest {
     containerWhere("ops", "platforms:\n  webhook:\n    enabled: true\n");
 
     webhooks.setPlatformEnabled(
-        URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
+        HOST, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
 
     assertTrue(exec.hermesCommands().contains(
         List.of("hermes", "config", "set", "platforms.webhook.extra.port", "8645")));
@@ -325,7 +326,7 @@ class HermesWebhooksTest {
     containerWhere("ops", ENABLED_CONFIG.replace("enabled: true", "enabled: false"));
 
     webhooks.setPlatformEnabled(
-        URL, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
+        HOST, CONTAINER, "default", new EnableWebhookPlatformRequest(true, null, null));
 
     assertTrue(exec.hermesCommands().contains(
         List.of("hermes", "config", "set", "platforms.webhook.extra.port", "8644")));
@@ -338,7 +339,7 @@ class HermesWebhooksTest {
     exec.configs.put("ops", ENABLED_CONFIG);
 
     webhooks.setPlatformEnabled(
-        URL, CONTAINER, "ops", new EnableWebhookPlatformRequest(true, "127.0.0.1", 8644));
+        HOST, CONTAINER, "ops", new EnableWebhookPlatformRequest(true, "127.0.0.1", 8644));
 
     assertTrue(exec.hermesCommands().contains(
         List.of("hermes", "-p", "ops", "config", "set", "platforms.webhook.extra.port", "8644")));
@@ -348,7 +349,7 @@ class HermesWebhooksTest {
 
   @Test
   void subscribingPassesEveryFieldTheFormCollected() {
-    webhooks.subscribe(URL, CONTAINER, "default", new SubscribeWebhookRequest(
+    webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
         "grafana", "Alert {alert.name}", "Grafana alerting",
         List.of("alert.firing", "alert.resolved"), List.of("web-research"),
         "telegram", "12345", true));
@@ -362,7 +363,7 @@ class HermesWebhooksTest {
 
   @Test
   void neverSendsASecretOfItsOwn() {
-    webhooks.subscribe(URL, CONTAINER, "default", new SubscribeWebhookRequest(
+    webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
         "grafana", null, null, null, null, null, null, false));
 
     // hermes generates it, so a secret never travels through the dashboard to get here
@@ -373,7 +374,7 @@ class HermesWebhooksTest {
 
   @Test
   void blankAndEmptyListFieldsAreLeftOffTheCommandLine() {
-    webhooks.subscribe(URL, CONTAINER, "default", new SubscribeWebhookRequest(
+    webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
         "grafana", "  ", "", List.of("", " "), List.of(), " ", null, false));
 
     assertEquals(List.of("hermes", "webhook", "subscribe", "grafana"),
@@ -382,13 +383,13 @@ class HermesWebhooksTest {
 
   @Test
   void removingAndTestingAddressTheRouteByName() {
-    webhooks.remove(URL, CONTAINER, "default", "grafana");
+    webhooks.remove(HOST, CONTAINER, "default", "grafana");
     assertEquals(List.of("hermes", "webhook", "remove", "grafana"),
         exec.hermesCommands().getFirst());
 
     Exec other = new Exec();
     HermesWebhooks fresh = new HermesWebhooks(other, new ObjectMapper(), new ProfileInventory(other));
-    assertEquals("delivered", fresh.test(URL, CONTAINER, "default", "grafana"));
+    assertEquals("delivered", fresh.test(HOST, CONTAINER, "default", "grafana"));
     assertEquals(List.of("hermes", "webhook", "test", "grafana"),
         other.hermesCommands().getFirst());
   }
@@ -398,15 +399,15 @@ class HermesWebhooksTest {
     // route names become URL segments and argv elements
     for (String hostile : List.of("--help", "a b", "a;rm -rf /", "", "a/b", "a".repeat(65))) {
       assertThrows(IllegalArgumentException.class,
-          () -> webhooks.remove(URL, CONTAINER, "default", hostile), hostile);
+          () -> webhooks.remove(HOST, CONTAINER, "default", hostile), hostile);
       assertThrows(IllegalArgumentException.class,
-          () -> webhooks.subscribe(URL, CONTAINER, "default", new SubscribeWebhookRequest(
+          () -> webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
               hostile, null, null, null, null, null, null, false)), hostile);
     }
   }
 
   @Test
   void aProfileNameThatCouldEscapeTheProfilesDirIsRefused() {
-    assertThrows(IllegalArgumentException.class, () -> webhooks.list(URL, CONTAINER, "../../etc"));
+    assertThrows(IllegalArgumentException.class, () -> webhooks.list(HOST, CONTAINER, "../../etc"));
   }
 }

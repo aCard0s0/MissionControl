@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.LogLineDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.util.ArrayList;
@@ -41,11 +42,11 @@ class McpLogReader {
       serviceNames.add(ComposeStackRenderer.supportKey(row.serviceKey(), support.name()));
     }
     List<LogLineDto> result = new ArrayList<>();
-    String url = hosts.urlOf(row.hostId());
+    DockerHostRef host = hosts.ref(row.hostId());
     for (String serviceName : serviceNames) {
       String containerId = compose.serviceContainerId(row.hostId(), serviceName);
       if (containerId == null) continue;
-      for (LogLineDto line : docker.logs(url, containerId, Math.min(Math.max(tail, 1), 500))) {
+      for (LogLineDto line : docker.logs(host, containerId, Math.min(Math.max(tail, 1), 500))) {
         result.add(new LogLineDto(line.ts(), line.level(), serviceName, line.msg()));
       }
     }

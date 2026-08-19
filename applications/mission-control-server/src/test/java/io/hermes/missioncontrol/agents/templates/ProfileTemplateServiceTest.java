@@ -16,6 +16,7 @@ import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.secrets.SecretCipher;
@@ -31,6 +32,8 @@ import org.mockito.Mockito;
 
 /** CRUD-edge behaviour: rename-collision guard and the no-secret-leak DTO mapping. */
 class ProfileTemplateServiceTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private final ProfileTemplateRepository repository = Mockito.mock(ProfileTemplateRepository.class);
   // a real cipher (dev key) — encryption/decryption is exercised end to end
@@ -100,13 +103,13 @@ class ProfileTemplateServiceTest {
     CreateAgentRequest create = new CreateAgentRequest(
         "dh-local", "cid", "ops", "anthropic", "model", null, null, null, "pt-1", null);
     doThrow(new RuntimeException("soul write failed"))
-        .when(profiles).updateSoul("unix:///sock", "cid", "ops", "soul");
+        .when(profiles).updateSoul(HOST, "cid", "ops", "soul");
 
     assertThrows(RuntimeException.class,
-        () -> ownedService.createFromTemplate("pt-1", "unix:///sock", create));
+        () -> ownedService.createFromTemplate("pt-1", HOST, create));
 
-    verify(profiles).createProfileBare("unix:///sock", create);
-    verify(profiles).delete("unix:///sock", "cid", "ops");
+    verify(profiles).createProfileBare(HOST, create);
+    verify(profiles).delete(HOST, "cid", "ops");
   }
 
   @Test
@@ -193,17 +196,17 @@ class ProfileTemplateServiceTest {
     ProfileTemplateService runtimeService =
         new ProfileTemplateService(repository, cipher, profiles, setup);
 
-    runtimeService.applyExisting("pt-1", "unix:///sock", "cid", "ops");
+    runtimeService.applyExisting("pt-1", HOST, "cid", "ops");
 
     ArgumentCaptor<AddMcpServerRequest> requests =
         ArgumentCaptor.forClass(AddMcpServerRequest.class);
     verify(profiles, Mockito.times(2))
-        .addMcpServer(Mockito.eq("unix:///sock"), Mockito.eq("cid"), Mockito.eq("ops"), requests.capture());
+        .addMcpServer(Mockito.eq(HOST), Mockito.eq("cid"), Mockito.eq("ops"), requests.capture());
     assertEquals(Map.of("Authorization", "Bearer runtime-token"),
         requests.getAllValues().getFirst().headers());
     assertEquals(Map.of("npm_config_token", "stdio-token"),
         requests.getAllValues().get(1).environment());
-    verify(setup, never()).putEnv(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyList());
+    verify(setup, never()).putEnv(Mockito.any(), Mockito.anyString(), Mockito.anyString(), Mockito.anyList());
   }
 
   @Test
@@ -226,7 +229,7 @@ class ProfileTemplateServiceTest {
     assertThrows(NoSuchElementException.class, () -> service.get("pt-nope"));
     assertThrows(NoSuchElementException.class, () -> service.update("pt-nope", request("ops", List.of())));
     assertThrows(NoSuchElementException.class,
-        () -> service.deploy("pt-nope", "unix:///sock", "c1", "scout"));
+        () -> service.deploy("pt-nope", HOST, "c1", "scout"));
   }
 
   @Test

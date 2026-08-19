@@ -5,6 +5,7 @@ import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
@@ -50,70 +51,72 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
   }
 
   public AgentProfileDto connect(
-      String hostId, String containerId, String profile, ConnectCatalogMcpRequest request) {
+      DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
     String alias = alias(request.alias());
     var source = registry.require(request.serverId());
-    String hostUrl = hosts.urlOf(hostId);
-    AgentProfileDto current = profiles.get(hostUrl, containerId, profile);
+    AgentProfileDto current = profiles.get(host, containerId, profile);
     if (current.mcp().stream().anyMatch(server -> alias.equals(server.name()))) {
       throw new ResourceConflictException("an MCP server named '" + alias + "' already exists on this Agent");
     }
     if ("managed".equals(source.kind()) && !"running".equals(source.runtimeState())) {
       throw new ResourceConflictException("managed MCP server is not running: " + source.name());
     }
-    AddMcpServerRequest definition = materialize(hostId, containerId, source, alias, true);
-    AgentProfileDto updated = profiles.addMcpServer(hostUrl, containerId, profile, definition);
+    AddMcpServerRequest definition = materialize(host, containerId, source, alias, true);
+    AgentProfileDto updated = profiles.addMcpServer(host, containerId, profile, definition);
     long now = System.currentTimeMillis();
     links.upsert(new AgentMcpLink(
-        hostId, containerId, profile, alias, source.id(), source.revision(), now, now));
-    return enrich(hostId, updated);
+        host.id(), containerId, profile, alias, source.id(), source.revision(), now, now));
+    return enrich(host, updated);
   }
 
-  public AgentProfileDto sync(String hostId, String containerId, String profile, String serverAlias) {
+  public AgentProfileDto sync(
+      DockerHostRef host, String containerId, String profile, String serverAlias) {
     String alias = alias(serverAlias);
-    AgentMcpLink link = links.find(hostId, containerId, profile, alias)
+    AgentMcpLink link = links.find(host.id(), containerId, profile, alias)
         .orElseThrow(() -> new NoSuchElementException("MCP entry is not linked to the catalog: " + alias));
     var source = registry.require(link.serverId());
-    String hostUrl = hosts.urlOf(hostId);
-    AgentProfileDto current = profiles.get(hostUrl, containerId, profile);
+    AgentProfileDto current = profiles.get(host, containerId, profile);
     AgentMcpServerDto existing = current.mcp().stream()
         .filter(server -> alias.equals(server.name()))
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException("unknown MCP server on Agent: " + alias));
     AddMcpServerRequest definition = materialize(
-        hostId, containerId, source, alias, existing.enabled());
+        host, containerId, source, alias, existing.enabled());
     AgentProfileDto updated = profiles.updateMcpServer(
-        hostUrl, containerId, profile, alias, definition);
+        host, containerId, profile, alias, definition);
     links.upsert(new AgentMcpLink(
-        hostId, containerId, profile, alias, source.id(), source.revision(),
+        host.id(), containerId, profile, alias, source.id(), source.revision(),
         link.createdAt(), System.currentTimeMillis()));
-    return enrich(hostId, updated);
+    return enrich(host, updated);
   }
 
-  public AgentProfileDto unlink(String hostId, String containerId, String profile, String serverAlias) {
+  public AgentProfileDto unlink(
+      DockerHostRef host, String containerId, String profile, String serverAlias) {
     String alias = alias(serverAlias);
-    if (links.find(hostId, containerId, profile, alias).isEmpty()) {
+    if (links.find(host.id(), containerId, profile, alias).isEmpty()) {
       throw new NoSuchElementException("MCP entry is not linked to the catalog: " + alias);
     }
-    links.delete(hostId, containerId, profile, alias);
-    return enrich(hostId, profiles.get(hosts.urlOf(hostId), containerId, profile));
+    links.delete(host.id(), containerId, profile, alias);
+    return enrich(host, profiles.get(host, containerId, profile));
   }
 
-  public void assertCustom(String hostId, String containerId, String profile, String serverAlias) {
-    if (links.find(hostId, containerId, profile, alias(serverAlias)).isPresent()) {
+  public void assertCustom(
+      DockerHostRef host, String containerId, String profile, String serverAlias) {
+    if (links.find(host.id(), containerId, profile, alias(serverAlias)).isPresent()) {
       throw new ResourceConflictException(
           "catalog-linked MCP entries must be customized before direct editing");
     }
   }
 
-  public void forgetLink(String hostId, String containerId, String profile, String serverAlias) {
-    links.delete(hostId, containerId, profile, alias(serverAlias));
+  public void forgetLink(
+      DockerHostRef host, String containerId, String profile, String serverAlias) {
+    links.delete(host.id(), containerId, profile, alias(serverAlias));
   }
 
-  public void deleteAgentLinks(String hostId, String containerId, String profile) {
+  public void deleteAgentLinks(DockerHostRef host, String containerId, String profile) {
     // one statement rather than one per alias: a failure partway through the old loop
     // left the profile holding some of its links and not others
-    links.deleteByAgent(hostId, containerId, profile);
+    links.deleteByAgent(host.id(), containerId, profile);
   }
 
   @Override
@@ -132,7 +135,8 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
       AgentProfileDto updated;
       try {
         updated = profiles.setMcpServerEnabled(
-            hosts.urlOf(link.hostId()), link.containerId(), link.profile(), link.alias(), false);
+            hosts.requireConnected(link.hostId()), link.containerId(), link.profile(),
+            link.alias(), false);
       } catch (NoSuchElementException staleLink) {
         // The profile/entry may have been removed outside Mission Control. No
         // live connection remains to disable, so discard only the stale link.
@@ -147,9 +151,9 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     }
   }
 
-  public AgentProfileDto enrich(String hostId, AgentProfileDto profile) {
+  public AgentProfileDto enrich(DockerHostRef host, AgentProfileDto profile) {
     Map<String, AgentMcpLink> byAlias = new HashMap<>();
-    for (AgentMcpLink link : links.list(hostId, profile.containerId(), profile.name())) {
+    for (AgentMcpLink link : links.list(host.id(), profile.containerId(), profile.name())) {
       byAlias.put(link.alias(), link);
     }
     List<AgentMcpServerDto> servers = new ArrayList<>();
@@ -163,7 +167,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
         long currentRevision = registry.require(link.serverId()).revision();
         servers.add(server.linkedTo(link.serverId(), link.syncedRevision(), currentRevision));
       } catch (NoSuchElementException deletedCatalogEntry) {
-        links.delete(hostId, profile.containerId(), profile.name(), server.name());
+        links.delete(host.id(), profile.containerId(), profile.name(), server.name());
         servers.add(server);
       }
     }
@@ -171,12 +175,12 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
   }
 
   private AddMcpServerRequest materialize(
-      String agentHostId,
+      DockerHostRef agentHost,
       String containerId,
       McpServerDto source,
       String alias,
       boolean enabled) {
-    String url = null;
+    String endpoint = null;
     String command = null;
     String args = null;
     Map<String, String> headers = Map.of();
@@ -190,22 +194,22 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
       args = joinArgs(source.args());
       environment = registry.materializedEnvironment(source.id());
     } else {
-      if ("managed".equals(source.kind()) && agentHostId.equals(source.hostId())) {
-        docker.connectNetwork(hosts.urlOf(agentHostId), containerId, MCP_NETWORK);
-        url = registry.sameHostConnectionUrl(source.id());
+      if ("managed".equals(source.kind()) && agentHost.id().equals(source.hostId())) {
+        docker.connectNetwork(agentHost, containerId, MCP_NETWORK);
+        endpoint = registry.sameHostConnectionUrl(source.id());
       } else if ("managed".equals(source.kind())) {
-        url = source.crossHostUrl();
-        if (url == null || url.isBlank()) {
+        endpoint = source.crossHostUrl();
+        if (endpoint == null || endpoint.isBlank()) {
           throw new IllegalArgumentException(
               "managed MCP server needs a cross-host URL for this Agent: " + source.name());
         }
       } else {
-        url = source.url();
+        endpoint = source.url();
       }
       headers = registry.materializedHeaders(source.id());
     }
     return new AddMcpServerRequest(
-        alias, source.transport(), url, command, args, enabled, headers, environment);
+        alias, source.transport(), endpoint, command, args, enabled, headers, environment);
   }
 
   private static String joinArgs(List<String> values) {

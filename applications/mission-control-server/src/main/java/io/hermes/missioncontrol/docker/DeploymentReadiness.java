@@ -24,7 +24,7 @@ public class DeploymentReadiness {
     this.dockerExec = dockerExec;
   }
 
-  void validate(String url, DockerClient client, String containerId, List<String> seedProfiles) {
+  void validate(DockerHostRef host, DockerClient client, String containerId, List<String> seedProfiles) {
     requireRunning(client, containerId,
         "Hermes container exited before readiness checks completed");
 
@@ -66,7 +66,7 @@ public class DeploymentReadiness {
     command.addAll(profiles);
     try {
       dockerExec.runAsUser(
-          url, containerId, "hermes", command, "Hermes deployment readiness",
+          host, containerId, "hermes", command, "Hermes deployment readiness",
           true, false, Duration.ofSeconds(45));
     } catch (UpstreamUnavailableException already) {
       throw already;

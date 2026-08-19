@@ -46,8 +46,8 @@ public class ContainerInventory {
     return new DaemonInfo("Docker " + version.getVersion(), version.getApiVersion(), latencyMs);
   }
 
-  public List<ContainerDto> listContainers(String url, String hostId, boolean includeAll) {
-    DockerClient client = clients.forUrl(url);
+  public List<ContainerDto> listContainers(DockerHostRef host, boolean includeAll) {
+    DockerClient client = clients.forUrl(host.url());
     List<Container> containers = client.listContainersCmd()
         .withShowAll(true)
         .withShowSize(true)
@@ -56,7 +56,7 @@ public class ContainerInventory {
     List<ContainerDto> result = new ArrayList<>();
     for (Container c : containers) {
       if (!includeAll && !isFleetMember(c)) continue;
-      result.add(toDto(client, c, hostId));
+      result.add(toDto(client, c, host.id()));
     }
     return result;
   }

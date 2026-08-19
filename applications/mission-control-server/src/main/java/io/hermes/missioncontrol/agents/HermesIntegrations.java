@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -35,9 +36,9 @@ class HermesIntegrations {
     this.objectMapper = objectMapper;
   }
 
-  List<IntegrationDto> list(String url, String containerId, String profileName) {
+  List<IntegrationDto> list(DockerHostRef host, String containerId, String profileName) {
     String json = files.readFile(
-        url, containerId, ProfilePaths.profileDir(profileName) + "/gateway_state.json");
+        host, containerId, ProfilePaths.profileDir(profileName) + "/gateway_state.json");
     if (json == null || json.isBlank()) return List.of();
     try {
       Map<?, ?> root = objectMapper.readValue(json, Map.class);

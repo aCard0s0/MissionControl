@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.SessionDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,7 +29,8 @@ class AgentSessionsController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return profiles.listSessions(endpoints.url(hostId), containerId, name);
+    DockerHostRef host = endpoints.host(hostId);
+    return profiles.listSessions(host, containerId, name);
   }
 
   @GetMapping(value = "/{sessionId}", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -37,8 +39,9 @@ class AgentSessionsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String sessionId) {
+    DockerHostRef host = endpoints.host(hostId);
     // already a JSON array string emitted by the in-container query
-    return profiles.readSessionMessages(endpoints.url(hostId), containerId, name, sessionId);
+    return profiles.readSessionMessages(host, containerId, name, sessionId);
   }
 
   @DeleteMapping("/{sessionId}")
@@ -47,6 +50,7 @@ class AgentSessionsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String sessionId) {
-    profiles.deleteSession(endpoints.url(hostId), containerId, name, sessionId);
+    DockerHostRef host = endpoints.host(hostId);
+    profiles.deleteSession(host, containerId, name, sessionId);
   }
 }

@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -26,8 +27,8 @@ class HermesContainerFiles {
     this.dockerExec = dockerExec;
   }
 
-  ExecResult exec(String url, String containerId, List<String> command) {
-    return exec(url, containerId, command, true);
+  ExecResult exec(DockerHostRef host, String containerId, List<String> command) {
+    return exec(host, containerId, command, true);
   }
 
   /**
@@ -35,16 +36,16 @@ class HermesContainerFiles {
    * code of {@link DockerExecService#EXIT_STATUS_UNAVAILABLE} means the daemon never
    * reported one, so "did the command succeed" has no answer.
    */
-  ExecResult exec(String url, String containerId, List<String> command, boolean check) {
+  ExecResult exec(DockerHostRef host, String containerId, List<String> command, boolean check) {
     return dockerExec.runAsUser(
-        url, containerId, "hermes", command, "Hermes command", check, false, EXEC_TIMEOUT);
+        host, containerId, "hermes", command, "Hermes command", check, false, EXEC_TIMEOUT);
   }
 
   /** As {@link #exec}, but argv is kept out of Docker execution errors and logs. */
   ExecResult execSensitive(
-      String url, String containerId, List<String> command, String operation) {
+      DockerHostRef host, String containerId, List<String> command, String operation) {
     return dockerExec.runAsUser(
-        url, containerId, "hermes", command, operation, true, true, EXEC_TIMEOUT);
+        host, containerId, "hermes", command, operation, true, true, EXEC_TIMEOUT);
   }
 
   /**
@@ -55,18 +56,18 @@ class HermesContainerFiles {
    * change here. The write paths are guarded by {@link #requireProfileDir} instead, which
    * is what stopped a mistyped name from creating a profile.
    */
-  String readFile(String url, String containerId, String path) {
+  String readFile(DockerHostRef host, String containerId, String path) {
     ExecResult result =
-        exec(url, containerId, List.of("sh", "-lc", "cat \"$1\" 2>/dev/null || true", "_", path));
+        exec(host, containerId, List.of("sh", "-lc", "cat \"$1\" 2>/dev/null || true", "_", path));
     return result.stdout();
   }
 
-  void writeFile(String url, String containerId, String path, String content) {
+  void writeFile(DockerHostRef host, String containerId, String path, String content) {
     String script = String.join(" ",
         "path=\"$1\"; content=\"$2\";",
         "mkdir -p \"$(dirname \"$path\")\";",
         "printf '%s' \"$content\" > \"$path\";");
-    exec(url, containerId, List.of("sh", "-lc", script, "_", path, content));
+    exec(host, containerId, List.of("sh", "-lc", script, "_", path, content));
   }
 
   /**
@@ -74,7 +75,7 @@ class HermesContainerFiles {
    * readers can observe either the old definition or the new one, never the
    * delete half of a rename or a partially-written YAML document.
    */
-  void writeFileAtomically(String url, String containerId, String path, String content) {
+  void writeFileAtomically(DockerHostRef host, String containerId, String path, String content) {
     String script = String.join(" ",
         "path=\"$1\"; content=\"$2\";",
         "mkdir -p \"$(dirname \"$path\")\";",
@@ -86,21 +87,21 @@ class HermesContainerFiles {
     // The complete YAML may carry authentication headers, so do not include
     // argv in Docker execution errors/logs.
     execSensitive(
-        url, containerId, List.of("sh", "-lc", script, "_", path, content),
+        host, containerId, List.of("sh", "-lc", script, "_", path, content),
         "write MCP configuration");
   }
 
-  void removeTree(String url, String containerId, String path) {
-    exec(url, containerId, List.of("sh", "-lc", "rm -rf \"$1\"", "_", path));
+  void removeTree(DockerHostRef host, String containerId, String path) {
+    exec(host, containerId, List.of("sh", "-lc", "rm -rf \"$1\"", "_", path));
   }
 
-  boolean dirExists(String url, String containerId, String path) {
-    return exec(url, containerId, List.of("sh", "-lc", "test -d \"$1\"", "_", path), false)
+  boolean dirExists(DockerHostRef host, String containerId, String path) {
+    return exec(host, containerId, List.of("sh", "-lc", "test -d \"$1\"", "_", path), false)
         .exitCode() == 0;
   }
 
-  boolean fileExists(String url, String containerId, String path) {
-    return exec(url, containerId, List.of("sh", "-lc", "test -f \"$1\"", "_", path), false)
+  boolean fileExists(DockerHostRef host, String containerId, String path) {
+    return exec(host, containerId, List.of("sh", "-lc", "test -f \"$1\"", "_", path), false)
         .exitCode() == 0;
   }
 
@@ -112,9 +113,9 @@ class HermesContainerFiles {
    * the directory, and the phantom profile then appears in the agents list — indistinguishable
    * from a real one, and holding only whatever the typo'd request wrote.
    */
-  String requireProfileDir(String url, String containerId, String name) {
+  String requireProfileDir(DockerHostRef host, String containerId, String name) {
     String dir = ProfilePaths.profileDir(name);
-    if (!dirExists(url, containerId, dir)) {
+    if (!dirExists(host, containerId, dir)) {
       throw new NoSuchElementException("unknown agent profile: " + name);
     }
     return dir;

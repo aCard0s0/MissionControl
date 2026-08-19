@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
@@ -64,7 +65,7 @@ class McpComposeLifecycleTest {
     compose = mock(ComposeStackManager.class);
     docker = mock(DockerGateway.class);
     hosts = mock(HostService.class);
-    when(hosts.urlOf(HOST)).thenReturn("unix:///sock");
+    when(hosts.ref(HOST)).thenReturn(new DockerHostRef(HOST, "unix:///sock"));
     lifecycle = new McpComposeLifecycle(repository, retained, hosts, docker, compose,
         new ComposeStackRenderer(), configs, Executors.newSingleThreadExecutor());
   }
@@ -258,7 +259,7 @@ class McpComposeLifecycleTest {
   void theRuntimeStateIsRefreshedFromWhatTheDaemonActuallyReports() {
     String id = insertIdleManaged("Files");
     when(compose.serviceContainerId(HOST, SERVICE)).thenReturn("cid");
-    when(docker.listContainers("unix:///sock", HOST, true))
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("cid", "running")));
 
     assertEquals("running", lifecycle.refreshRuntime(row(id)).runtimeState());
@@ -269,7 +270,7 @@ class McpComposeLifecycleTest {
   void anUnhealthyContainerIsRecordedAsAnErrorBecauseThatIsWhatItIsForAnMcpServer() {
     String id = insertIdleManaged("Files");
     when(compose.serviceContainerId(HOST, SERVICE)).thenReturn("cid");
-    when(docker.listContainers("unix:///sock", HOST, true))
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("cid", "unhealthy")));
 
     assertEquals("error", lifecycle.refreshRuntime(row(id)).runtimeState());
@@ -279,7 +280,7 @@ class McpComposeLifecycleTest {
   void aContainerTheDaemonNoLongerListsIsUnknownAndNoContainerAtAllIsMissing() {
     String id = insertIdleManaged("Files");
     when(compose.serviceContainerId(HOST, SERVICE)).thenReturn("cid");
-    when(docker.listContainers("unix:///sock", HOST, true))
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("someone-else", "running")));
     assertEquals("unknown", lifecycle.refreshRuntime(row(id)).runtimeState());
 

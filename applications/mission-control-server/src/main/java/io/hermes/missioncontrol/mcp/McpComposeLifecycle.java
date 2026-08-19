@@ -170,7 +170,7 @@ class McpComposeLifecycle {
       String containerId = compose.serviceContainerId(row.hostId(), row.serviceKey());
       String runtime = "missing";
       if (containerId != null) {
-        runtime = docker.listContainers(hosts.urlOf(row.hostId()), row.hostId(), true).stream()
+        runtime = docker.listContainers(hosts.ref(row.hostId()), true).stream()
             .filter(container -> container.id().equals(containerId))
             .map(ContainerDto::status)
             .findFirst().orElse("unknown");

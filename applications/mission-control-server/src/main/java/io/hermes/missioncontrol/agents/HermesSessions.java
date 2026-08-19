@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,9 +37,9 @@ class HermesSessions {
     this.objectMapper = objectMapper;
   }
 
-  List<SessionDto> list(String url, String containerId, String profileName) {
+  List<SessionDto> list(DockerHostRef host, String containerId, String profileName) {
     String db = ProfilePaths.stateDb(profileName);
-    if (!files.fileExists(url, containerId, db)) return List.of();
+    if (!files.fileExists(host, containerId, db)) return List.of();
     String py = """
         import sqlite3, json, sys
         db = sys.argv[1]
@@ -52,15 +53,15 @@ class HermesSessions {
         except Exception:
             print('[]')
         """;
-    ExecResult r = files.exec(url, containerId, List.of("python3", "-c", py, db), false);
+    ExecResult r = files.exec(host, containerId, List.of("python3", "-c", py, db), false);
     return parseSessionRows(r.stdout());
   }
 
   /** Returns the chat history (messages) for a session as a JSON array string. */
-  String readMessages(String url, String containerId, String profileName, String sessionId) {
+  String readMessages(DockerHostRef host, String containerId, String profileName, String sessionId) {
     requireSessionId(sessionId);
     String db = ProfilePaths.stateDb(profileName);
-    if (!files.fileExists(url, containerId, db)) return "[]";
+    if (!files.fileExists(host, containerId, db)) return "[]";
     // A genuinely empty session yields '[]' (exit 0). Real availability errors
     // (locked, corrupt) still raise -> non-zero exit -> exec(check=true) throws ->
     // the caller surfaces them. But a schema mismatch (an older/newer hermes whose
@@ -88,15 +89,15 @@ class HermesSessions {
                 'ts': int((r['timestamp'] or 0) * 1000)} for r in rows]
         print(json.dumps(out))
         """;
-    ExecResult r = files.exec(url, containerId, List.of("python3", "-c", py, db, sessionId));
+    ExecResult r = files.exec(host, containerId, List.of("python3", "-c", py, db, sessionId));
     String out = r.stdout().trim();
     return out.isEmpty() ? "[]" : out;
   }
 
-  void delete(String url, String containerId, String profileName, String sessionId) {
+  void delete(DockerHostRef host, String containerId, String profileName, String sessionId) {
     requireSessionId(sessionId);
     String db = ProfilePaths.stateDb(profileName);
-    if (!files.fileExists(url, containerId, db)) {
+    if (!files.fileExists(host, containerId, db)) {
       throw new IllegalArgumentException("no session store for this profile");
     }
     String py = """
@@ -108,7 +109,7 @@ class HermesSessions {
         con.execute('DELETE FROM sessions WHERE id=?', (sid,))
         con.commit(); con.close()
         """;
-    files.exec(url, containerId, List.of("python3", "-c", py, db, sessionId));   // check=true surfaces errors
+    files.exec(host, containerId, List.of("python3", "-c", py, db, sessionId));   // check=true surfaces errors
   }
 
   private static void requireSessionId(String sessionId) {

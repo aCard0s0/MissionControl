@@ -92,7 +92,7 @@ class ComposeStackManager {
       if (!ComposeStackRenderer.PROJECT.equals(owner)) {
         throw new IllegalArgumentException("refusing to purge a volume not labeled as Mission Control MCP-owned");
       }
-      run(List.of("docker", "--host", hosts.urlOf(hostId), "volume", "rm", volumeName),
+      run(List.of("docker", "--host", hosts.ref(hostId).url(), "volume", "rm", volumeName),
           Map.of(), Duration.ofMinutes(2));
     } finally {
       lock.unlock();
@@ -127,7 +127,7 @@ class ComposeStackManager {
 
   private List<String> composeBase(String hostId, Path composeFile) {
     return new ArrayList<>(List.of(
-        "docker", "--host", hosts.urlOf(hostId), "compose",
+        "docker", "--host", hosts.ref(hostId).url(), "compose",
         "--project-name", ComposeStackRenderer.PROJECT,
         "--file", composeFile.toString()));
   }
@@ -146,7 +146,7 @@ class ComposeStackManager {
 
   private void verifyComposeServiceOwnership(String hostId, String service) {
     String ids = run(List.of(
-        "docker", "--host", hosts.urlOf(hostId), "ps", "--all",
+        "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
         "--filter", "label=com.docker.compose.project=" + ComposeStackRenderer.PROJECT,
         "--filter", "label=com.docker.compose.service=" + service,
         "--format", "{{.ID}}"), Map.of(), Duration.ofSeconds(20));
@@ -163,7 +163,7 @@ class ComposeStackManager {
     // containers expose their labels under .Config.Labels; networks and volumes at the top level
     String labels = "container".equals(type) ? ".Config.Labels" : ".Labels";
     List<String> command = List.of(
-        "docker", "--host", hosts.urlOf(hostId), type, "inspect",
+        "docker", "--host", hosts.ref(hostId).url(), type, "inspect",
         "--format", "{{ index " + labels + " \"io.hermes.mission-control.owner\" }}", name);
     try {
       return run(command, Map.of(), Duration.ofSeconds(20)).trim();

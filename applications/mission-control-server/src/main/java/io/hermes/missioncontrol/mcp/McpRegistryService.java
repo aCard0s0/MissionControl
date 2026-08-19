@@ -335,6 +335,6 @@ public class McpRegistryService {
 
   /** A managed record must name a host this dashboard knows; resolving the URL proves it. */
   private void hostsForManaged(Validated value) {
-    if ("managed".equals(value.kind())) hosts.urlOf(value.hostId());
+    if ("managed".equals(value.kind())) hosts.ref(value.hostId());
   }
 }

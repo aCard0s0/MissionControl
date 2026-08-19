@@ -23,16 +23,16 @@ public class ContainerLifecycle {
     this.clients = clients;
   }
 
-  public void start(String url, String containerId) {
-    clients.forUrl(url).startContainerCmd(containerId).exec();
+  public void start(DockerHostRef host, String containerId) {
+    clients.forUrl(host.url()).startContainerCmd(containerId).exec();
   }
 
-  public void stop(String url, String containerId) {
-    clients.forUrl(url).stopContainerCmd(containerId).withTimeout(10).exec();
+  public void stop(DockerHostRef host, String containerId) {
+    clients.forUrl(host.url()).stopContainerCmd(containerId).withTimeout(10).exec();
   }
 
-  public void remove(String url, String containerId) {
-    DockerClient client = clients.forUrl(url);
+  public void remove(DockerHostRef host, String containerId) {
+    DockerClient client = clients.forUrl(host.url());
     var inspected = client.inspectContainerCmd(containerId).exec();
     Map<String, String> labels = inspected.getConfig() == null || inspected.getConfig().getLabels() == null
         ? Map.of() : inspected.getConfig().getLabels();

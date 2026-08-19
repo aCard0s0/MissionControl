@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -25,7 +26,7 @@ import java.util.Map;
  */
 final class FakeContainer {
 
-  static final String URL = "unix:///var/run/docker.sock";
+  static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
   static final String CONTAINER = "c1";
 
   private final Map<String, String> files = new LinkedHashMap<>();
@@ -35,7 +36,7 @@ final class FakeContainer {
   private final DockerExecService dockerExec = mock(DockerExecService.class);
 
   FakeContainer() {
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(),
         anyBoolean(), anyBoolean(), any(Duration.class)))
         .thenAnswer(invocation -> answer(invocation.getArgument(3)));
   }

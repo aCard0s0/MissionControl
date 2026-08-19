@@ -6,6 +6,7 @@ import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.StoredSecret;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,17 +40,17 @@ class TemplateApplier {
 
   /** Creates the profile from the template's own model settings, then applies it. All or
    *  nothing: a failure anywhere drops the profile this call created. */
-  AgentProfileDto deployNew(ProfileTemplate template, String url, String containerId, String name) {
+  AgentProfileDto deployNew(ProfileTemplate template, DockerHostRef host, String containerId, String name) {
     CreateAgentRequest request = new CreateAgentRequest(
         null, containerId, name,
         blankTo(template.provider(), "nous"),
         blankTo(template.model(), "Hermes-4-405B"),
         null, null, blankToNull(template.baseUrl()), null, null);
-    profiles.create(url, request);
+    profiles.create(host, request);
     try {
-      return apply(template, url, containerId, name);
+      return apply(template, host, containerId, name);
     } catch (RuntimeException failure) {
-      rollback(url, containerId, name, failure);
+      rollback(host, containerId, name, failure);
       throw failure;
     }
   }
@@ -57,14 +58,14 @@ class TemplateApplier {
   /** Applies the template onto a profile the caller already owns. The profile is left in
    *  place on failure — dropping someone else's agent is not this code's call. */
   AgentProfileDto layerOnto(
-      ProfileTemplate template, String url, String containerId, String name) {
-    return apply(template, url, containerId, name);
+      ProfileTemplate template, DockerHostRef host, String containerId, String name) {
+    return apply(template, host, containerId, name);
   }
 
   /** Best-effort cleanup of a profile the caller created and could not finish configuring. */
-  void rollback(String url, String containerId, String name, RuntimeException failure) {
+  void rollback(DockerHostRef host, String containerId, String name, RuntimeException failure) {
     try {
-      profiles.delete(url, containerId, name);
+      profiles.delete(host, containerId, name);
     } catch (RuntimeException cleanup) {
       failure.addSuppressed(cleanup);
       log.warn("rollback of partially-applied profile '{}' failed: {}", name, cleanup.getMessage());
@@ -72,27 +73,27 @@ class TemplateApplier {
   }
 
   private AgentProfileDto apply(
-      ProfileTemplate template, String url, String containerId, String name) {
+      ProfileTemplate template, DockerHostRef host, String containerId, String name) {
     if (!template.soul().isBlank()) {
-      profiles.updateSoul(url, containerId, name, template.soul());
+      profiles.updateSoul(host, containerId, name, template.soul());
     }
     if (!template.memory().isBlank()) {
-      profiles.updateMemory(url, containerId, name, template.memory());
+      profiles.updateMemory(host, containerId, name, template.memory());
     }
     for (String skill : template.skills()) {
       if (skill != null && !skill.isBlank()) {
-        profiles.installSkill(url, containerId, name, skill.trim());
+        profiles.installSkill(host, containerId, name, skill.trim());
       }
     }
     for (McpServerSpec server : template.mcpServers()) {
       if (server == null || server.name() == null || server.name().isBlank()) continue;
-      profiles.addMcpServer(url, containerId, name, mcpRequest(server));
+      profiles.addMcpServer(host, containerId, name, mcpRequest(server));
     }
     List<EnvEntry> env = environment(template);
     if (!env.isEmpty()) {
-      setup.putEnv(url, containerId, name, env);
+      setup.putEnv(host, containerId, name, env);
     }
-    return profiles.get(url, containerId, name);
+    return profiles.get(host, containerId, name);
   }
 
   /** A snapshot's stdio environment applies only to a stdio server — sending it with an

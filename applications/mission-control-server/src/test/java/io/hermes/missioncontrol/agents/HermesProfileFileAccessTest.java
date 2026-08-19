@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -31,7 +32,7 @@ import org.mockito.ArgumentCaptor;
  */
 class HermesProfileFileAccessTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
   private static final String CONTAINER = "c1";
 
   private DockerExecService dockerExec;
@@ -49,14 +50,14 @@ class HermesProfileFileAccessTest {
 
   /** Every exec succeeds; {@code test -d} therefore reports the directory as present. */
   private void theProfileExists() {
-    when(dockerExec.runAsUser(anyString(), anyString(), any(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), any(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, "", ""));
   }
 
   /** {@code test -d} reports a missing directory as a non-zero exit. */
   private void theProfileDoesNotExist() {
-    when(dockerExec.runAsUser(anyString(), anyString(), any(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), any(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(1, "", ""));
   }
@@ -74,12 +75,12 @@ class HermesProfileFileAccessTest {
     // a mistyped name in PUT /api/agents/{host}/{container}/{name}/soul used to mint
     // /opt/data/profiles/<typo>/ and the phantom profile then showed up in list()
     assertThrows(NoSuchElementException.class,
-        () -> profiles.updateSoul(URL, CONTAINER, "tpyo", "you are a helpful agent"));
+        () -> profiles.updateSoul(HOST, CONTAINER, "tpyo", "you are a helpful agent"));
 
     // the existence probe runs, but nothing carrying the content does — asserted on argv
     // because the probe and the write share the same operation label
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(anyString(), anyString(), any(),
+    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(any(), anyString(), any(),
         argv.capture(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
     assertTrue(
         argv.getAllValues().stream().flatMap(List::stream)
@@ -92,20 +93,20 @@ class HermesProfileFileAccessTest {
     theProfileDoesNotExist();
 
     assertThrows(NoSuchElementException.class,
-        () -> profiles.updateMemory(URL, CONTAINER, "tpyo", "remembered"));
+        () -> profiles.updateMemory(HOST, CONTAINER, "tpyo", "remembered"));
     assertThrows(NoSuchElementException.class,
-        () -> profiles.updateConfig(URL, CONTAINER, "tpyo", "model:\n  provider: anthropic\n"));
+        () -> profiles.updateConfig(HOST, CONTAINER, "tpyo", "model:\n  provider: anthropic\n"));
   }
 
   @Test
   void addingAnMcpServerToAProfileThatDoesNotExistIsRefused() {
     theProfileDoesNotExist();
 
-    assertThrows(NoSuchElementException.class, () -> profiles.addMcpServer(URL, CONTAINER, "tpyo",
+    assertThrows(NoSuchElementException.class, () -> profiles.addMcpServer(HOST, CONTAINER, "tpyo",
         new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null)));
 
     // the atomic-write path mkdir -p's too, so it needed the same guard
-    verify(dockerExec, never()).runAsUser(anyString(), anyString(), any(), any(),
+    verify(dockerExec, never()).runAsUser(any(), anyString(), any(), any(),
         eq("write MCP configuration"), anyBoolean(), anyBoolean(), any(Duration.class));
   }
 
@@ -114,9 +115,9 @@ class HermesProfileFileAccessTest {
     theProfileDoesNotExist();
 
     assertThrows(NoSuchElementException.class,
-        () -> envFile.write(URL, CONTAINER, "tpyo", "OPENAI_API_KEY", "sk-x"));
+        () -> envFile.write(HOST, CONTAINER, "tpyo", "OPENAI_API_KEY", "sk-x"));
 
-    verify(dockerExec, never()).runAsUser(anyString(), anyString(), any(), any(),
+    verify(dockerExec, never()).runAsUser(any(), anyString(), any(), any(),
         eq("write profile environment"), anyBoolean(), anyBoolean(), any(Duration.class));
   }
 
@@ -140,10 +141,10 @@ class HermesProfileFileAccessTest {
   void readFileAndWriteFilePassThePathAsAPositionalArgument() {
     theProfileExists();
 
-    files.readFile(URL, CONTAINER, "/opt/data/profiles/scout/SOUL.md");
+    files.readFile(HOST, CONTAINER, "/opt/data/profiles/scout/SOUL.md");
 
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec).runAsUser(anyString(), anyString(), any(), argv.capture(), anyString(),
+    verify(dockerExec).runAsUser(any(), anyString(), any(), argv.capture(), anyString(),
         anyBoolean(), anyBoolean(), any(Duration.class));
 
     List<String> command = argv.getValue();
@@ -157,11 +158,11 @@ class HermesProfileFileAccessTest {
   void writingAConfigUsesAnAtomicRenameWithATrapCleanup() {
     theProfileExists();
     // the config read-back returns an empty document, which the editor treats as a new one
-    profiles.addMcpServer(URL, CONTAINER, "scout",
+    profiles.addMcpServer(HOST, CONTAINER, "scout",
         new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null));
 
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec).runAsUser(anyString(), anyString(), any(), argv.capture(),
+    verify(dockerExec).runAsUser(any(), anyString(), any(), argv.capture(),
         eq("write MCP configuration"), anyBoolean(), anyBoolean(), any(Duration.class));
 
     String script = argv.getValue().get(2);
@@ -174,12 +175,12 @@ class HermesProfileFileAccessTest {
   void aFullConfigWriteIsSensitiveBecauseItMayCarryAuthenticationHeaders() {
     theProfileExists();
 
-    profiles.addMcpServer(URL, CONTAINER, "scout",
+    profiles.addMcpServer(HOST, CONTAINER, "scout",
         new AddMcpServerRequest("files", "http", "https://files.internal/mcp", null, null, null,
             java.util.Map.of("Authorization", "Bearer secret-token")));
 
     // sensitive=true keeps the argv — and therefore the header — out of any error or log
-    verify(dockerExec).runAsUser(anyString(), anyString(), any(), any(),
+    verify(dockerExec).runAsUser(any(), anyString(), any(), any(),
         eq("write MCP configuration"), eq(true), eq(true), any(Duration.class));
   }
 }

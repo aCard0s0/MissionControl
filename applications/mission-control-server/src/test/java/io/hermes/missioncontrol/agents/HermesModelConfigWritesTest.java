@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
 import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +30,7 @@ import org.junit.jupiter.api.Test;
  */
 class HermesModelConfigWritesTest {
 
-  private static final String URL = "unix:///sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///sock");
   private static final String CONTAINER = "c1";
   private static final String PROFILE = "scout";
 
@@ -47,18 +49,18 @@ class HermesModelConfigWritesTest {
 
   @Test
   void aProvidersKeyIsWrittenUnderTheVariableThatProviderReads() {
-    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "anthropic", "sk-ant-real");
+    modelConfig.writeApiKey(HOST, CONTAINER, PROFILE, "anthropic", "sk-ant-real");
 
-    verify(env).write(URL, CONTAINER, PROFILE, "ANTHROPIC_API_KEY", "sk-ant-real");
+    verify(env).write(HOST, CONTAINER, PROFILE, "ANTHROPIC_API_KEY", "sk-ant-real");
   }
 
   @Test
   void aProviderThatTakesNoKeyNeverGetsOneWritten() {
     // nous authenticates with an account token held at the container level, not a profile key
-    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "nous", "sk-ant-real");
+    modelConfig.writeApiKey(HOST, CONTAINER, PROFILE, "nous", "sk-ant-real");
     // and a provider the registry does not know has no variable to write to
-    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "who-knows", "sk-ant-real");
-    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, null, "sk-ant-real");
+    modelConfig.writeApiKey(HOST, CONTAINER, PROFILE, "who-knows", "sk-ant-real");
+    modelConfig.writeApiKey(HOST, CONTAINER, PROFILE, null, "sk-ant-real");
 
     verifyNoInteractions(env);
   }
@@ -66,8 +68,8 @@ class HermesModelConfigWritesTest {
   @Test
   void anAbsentKeyIsNotWrittenAsAnEmptyVariable() {
     // an empty ANTHROPIC_API_KEY is worse than none: the agent starts and fails its first call
-    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "anthropic", null);
-    modelConfig.writeApiKey(URL, CONTAINER, PROFILE, "anthropic", "   ");
+    modelConfig.writeApiKey(HOST, CONTAINER, PROFILE, "anthropic", null);
+    modelConfig.writeApiKey(HOST, CONTAINER, PROFILE, "anthropic", "   ");
 
     verifyNoInteractions(env);
   }
@@ -78,10 +80,10 @@ class HermesModelConfigWritesTest {
   void anOverrideThatIntroducesItsOwnProviderGetsItsOwnKeyWritten() {
     ModelTarget auxiliary = new ModelTarget("openai", "gpt-5.2-mini", null);
 
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary,
         new AuxiliaryModelSpec("openai", "gpt-5.2-mini", null, "sk-openai-real"));
 
-    verify(env).write(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-openai-real");
+    verify(env).write(HOST, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-openai-real");
   }
 
   @Test
@@ -89,9 +91,9 @@ class HermesModelConfigWritesTest {
     // the main key already covers it, and a blank field in the create form would clobber it
     ModelTarget auxiliary = new ModelTarget("anthropic", "claude-haiku-4-5", null);
 
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary,
         new AuxiliaryModelSpec(null, "claude-haiku-4-5", null, "sk-ant-real"));
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary,
         new AuxiliaryModelSpec("   ", "claude-haiku-4-5", null, "sk-ant-real"));
 
     verifyNoInteractions(env);
@@ -101,10 +103,10 @@ class HermesModelConfigWritesTest {
   void anOverrideWithNoKeyOrNoSpecAtAllWritesNothing() {
     ModelTarget auxiliary = new ModelTarget("openai", "gpt-5.2-mini", null);
 
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary, null);
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary, null);
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary,
         new AuxiliaryModelSpec("openai", "gpt-5.2-mini", null, null));
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary,
         new AuxiliaryModelSpec("openai", "gpt-5.2-mini", null, "  "));
 
     verifyNoInteractions(env);
@@ -114,7 +116,7 @@ class HermesModelConfigWritesTest {
   void anOverrideOnAKeylessProviderWritesNothingEither() {
     ModelTarget auxiliary = new ModelTarget("nous", "Hermes-4-70B", null);
 
-    modelConfig.writeAuxiliaryApiKey(URL, CONTAINER, PROFILE, auxiliary,
+    modelConfig.writeAuxiliaryApiKey(HOST, CONTAINER, PROFILE, auxiliary,
         new AuxiliaryModelSpec("nous", "Hermes-4-70B", null, "token"));
 
     verifyNoInteractions(env);
@@ -126,10 +128,10 @@ class HermesModelConfigWritesTest {
   void aProfileWhoseConfigNamesNoModelIsRefusedSoTheCallerCanRollItBack() {
     // hermes profile create never seeds config.yaml; if the config writes silently no-op the
     // agent's auxiliary chain has nothing to resolve to and its gateway logs say so at runtime
-    when(files.readFile(anyString(), anyString(), anyString())).thenReturn("terminal:\n  cwd: /work\n");
+    when(files.readFile(any(), anyString(), anyString())).thenReturn("terminal:\n  cwd: /work\n");
 
     IllegalStateException failure = assertThrows(IllegalStateException.class,
-        () -> modelConfig.assertConfigured(URL, CONTAINER, PROFILE));
+        () -> modelConfig.assertConfigured(HOST, CONTAINER, PROFILE));
 
     assertEquals(true, failure.getMessage().contains("has no model in"));
     assertEquals(true, failure.getMessage().contains("compression, summarization, memory flush"));
@@ -137,13 +139,13 @@ class HermesModelConfigWritesTest {
 
   @Test
   void aProfileWithAModelPassesTheCheck() {
-    when(files.readFile(anyString(), anyString(), anyString()))
+    when(files.readFile(any(), anyString(), anyString()))
         .thenReturn("model:\n  provider: anthropic\n  default: claude-opus-5\n");
 
-    modelConfig.assertConfigured(URL, CONTAINER, PROFILE);
+    modelConfig.assertConfigured(HOST, CONTAINER, PROFILE);
 
-    verify(files).readFile(URL, CONTAINER, "/opt/data/profiles/scout/config.yaml");
-    verify(env, never()).write(anyString(), anyString(), anyString(), anyString(), anyString());
+    verify(files).readFile(HOST, CONTAINER, "/opt/data/profiles/scout/config.yaml");
+    verify(env, never()).write(any(), anyString(), anyString(), anyString(), anyString());
   }
 
   // ── reading a config back ───────────────────────────────────────────────

@@ -45,8 +45,8 @@ public class HermesDeployer {
   }
 
   public String deploy(
-      String url, String hostId, String name, String version, List<String> profiles) {
-    DockerClient client = clients.forUrl(url);
+      DockerHostRef host, String name, String version, List<String> profiles) {
+    DockerClient client = clients.forUrl(host.url());
     String tag = ImageStore.tagOf(version);
     String image = images.reference(tag);
     String volumeName = "mc-hermes-" + name;
@@ -75,9 +75,9 @@ public class HermesDeployer {
       // One-shot containers run the image's normal init hooks before their main
       // command. This seeds the default profile and creates named profiles while
       // the long-running gateway is still stopped, avoiding restart/exec races.
-      runOneShot(url, client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
+      runOneShot(host, client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
       for (String profile : seedProfiles) {
-        runOneShot(url, client, image, dataHostConfig,
+        runOneShot(host, client, image, dataHostConfig,
             List.of("profile", "create", profile, "--no-alias"),
             "create seed profile " + profile);
       }
@@ -90,12 +90,12 @@ public class HermesDeployer {
       try {
         created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
       } catch (NotFoundException missingImage) {
-        images.pull(url, images.hermesRepository(), tag);
+        images.pull(host, images.hermesRepository(), tag);
         created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
       }
       containerId = created.getId();
       client.startContainerCmd(containerId).exec();
-      readiness.validate(url, client, containerId, seedProfiles);
+      readiness.validate(host, client, containerId, seedProfiles);
       return containerId;
     } catch (RuntimeException failure) {
       rollback(client, containerId, volumeCreated ? volumeName : null, failure);
@@ -125,7 +125,7 @@ public class HermesDeployer {
   }
 
   void runOneShot(
-      String url, DockerClient client, String image, HostConfig hostConfig,
+      DockerHostRef host, DockerClient client, String image, HostConfig hostConfig,
       List<String> command, String operation) {
     String helperId = null;
     RuntimeException failure = null;
@@ -135,14 +135,14 @@ public class HermesDeployer {
         helper = createHelper(client, image, hostConfig, command);
       } catch (NotFoundException missingImage) {
         String[] parts = ImageRef.splitImage(image);
-        images.pull(url, parts[0], parts[1]);
+        images.pull(host, parts[0], parts[1]);
         helper = createHelper(client, image, hostConfig, command);
       }
       helperId = helper.getId();
       client.startContainerCmd(helperId).exec();
       // /wait emits nothing until the container exits, so it must not run on a client
       // carrying a socket timeout — the 90s budget below is the real bound
-      var callback = clients.streamingForUrl(url).waitContainerCmd(helperId).start();
+      var callback = clients.streamingForUrl(host.url()).waitContainerCmd(helperId).start();
       try {
         Integer exitCode = callback.awaitStatusCode(90, TimeUnit.SECONDS);
         if (exitCode == null) throw new UpstreamUnavailableException(operation + " timed out");

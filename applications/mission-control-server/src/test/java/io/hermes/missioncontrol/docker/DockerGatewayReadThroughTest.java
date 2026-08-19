@@ -25,6 +25,7 @@ import com.github.dockerjava.api.model.Statistics;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Version;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -40,6 +41,8 @@ import org.mockito.ArgumentCaptor;
  * compare against.
  */
 class DockerGatewayReadThroughTest {
+
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
 
   private static final long MIB = 1_048_576L;
   private static final long GIB = 1024 * MIB;
@@ -94,7 +97,7 @@ class DockerGatewayReadThroughTest {
         memorySample(700 * MIB, 2 * GIB)));
     long before = System.currentTimeMillis();
 
-    StatsDto dto = gateway.stats("unix:///sock", "cid");
+    StatsDto dto = gateway.stats(HOST, "cid");
 
     assertEquals(50.0, dto.cpuPercent(), 1e-9);
     assertEquals(700.0, dto.ramMb(), 0.001);
@@ -110,7 +113,7 @@ class DockerGatewayReadThroughTest {
     stubStatsStream("cid");
 
     UpstreamUnavailableException outage = assertThrows(UpstreamUnavailableException.class,
-        () -> gateway.stats("unix:///sock", "cid"));
+        () -> gateway.stats(HOST, "cid"));
 
     assertTrue(outage.getMessage().contains("cid"),
         "the outage must name the container it polled, was: " + outage.getMessage());
@@ -126,7 +129,7 @@ class DockerGatewayReadThroughTest {
         frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z INFO gateway ready\n"),
         frame(StreamType.STDOUT, "2026-08-14T10:00:01.000000000Z ERROR registry unreachable\n"));
 
-    List<LogLineDto> lines = gateway.logs("unix:///sock", "cid", 100);
+    List<LogLineDto> lines = gateway.logs(HOST, "cid", 100);
 
     assertEquals(2, lines.size());
     assertEquals(List.of("INFO gateway ready", "ERROR registry unreachable"),
@@ -140,9 +143,9 @@ class DockerGatewayReadThroughTest {
   void theRequestedTailIsClampedToTheDocumentedRange() {
     LogContainerCmd logs = stubLogStream("cid");
 
-    gateway.logs("unix:///sock", "cid", 0);
-    gateway.logs("unix:///sock", "cid", 100);
-    gateway.logs("unix:///sock", "cid", 9999);
+    gateway.logs(HOST, "cid", 0);
+    gateway.logs(HOST, "cid", 100);
+    gateway.logs(HOST, "cid", 9999);
 
     ArgumentCaptor<Integer> tail = ArgumentCaptor.forClass(Integer.class);
     verify(logs, times(3)).withTail(tail.capture());
@@ -155,7 +158,7 @@ class DockerGatewayReadThroughTest {
   void theReturnedLogListIsImmutableSoALateFrameCannotMutateIt() {
     stubLogStream("cid", frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z INFO gateway ready\n"));
 
-    List<LogLineDto> lines = gateway.logs("unix:///sock", "cid", 100);
+    List<LogLineDto> lines = gateway.logs(HOST, "cid", 100);
 
     // close() does not join the reader thread, so it can still append after the 8s wait
     // expires. Handing back the live ArrayList would let it mutate mid-serialization.
@@ -175,8 +178,8 @@ class DockerGatewayReadThroughTest {
     when(client.startContainerCmd("cid")).thenReturn(start);
     when(client.stopContainerCmd("cid")).thenReturn(stop);
 
-    gateway.start("unix:///sock", "cid");
-    gateway.stop("unix:///sock", "cid");
+    gateway.start(HOST, "cid");
+    gateway.stop(HOST, "cid");
 
     verify(start).exec();
     // an Agent gets 10s to flush its work and shut down cleanly before SIGKILL

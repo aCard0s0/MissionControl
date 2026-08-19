@@ -18,6 +18,7 @@ import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.RemoveVolumeCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ContainerConfig;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +34,7 @@ import org.mockito.InOrder;
  */
 class ContainerLifecycleTest {
 
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
@@ -51,7 +53,7 @@ class ContainerLifecycleTest {
     stubLabels("cid", Map.of("mc.dataVolume", "mc-hermes-demo"));
     RemoveContainerCmd removeContainer = stubRemoveContainer("cid");
 
-    subject.remove("unix:///sock", "cid");
+    subject.remove(HOST, "cid");
 
     verify(client, never()).removeVolumeCmd(anyString());
     // the container itself is still removed, and forcibly, so a running agent does not
@@ -67,7 +69,7 @@ class ContainerLifecycleTest {
     stubLabels("cid", Map.of("mc.managed", "true", "mc.dataVolume", "postgres-data"));
     RemoveContainerCmd removeContainer = stubRemoveContainer("cid");
 
-    subject.remove("unix:///sock", "cid");
+    subject.remove(HOST, "cid");
 
     verify(client, never()).removeVolumeCmd(anyString());
     verify(removeContainer).exec();
@@ -84,7 +86,7 @@ class ContainerLifecycleTest {
     when(config.getLabels()).thenReturn(null);
     RemoveContainerCmd removeContainer = stubRemoveContainer("cid");
 
-    subject.remove("unix:///sock", "cid");
+    subject.remove(HOST, "cid");
 
     verify(removeContainer).exec();
     verify(client, never()).inspectVolumeCmd(anyString());
@@ -101,7 +103,7 @@ class ContainerLifecycleTest {
     // is the actual state, so the request must succeed
     when(removeVolume.exec()).thenThrow(new NotFoundException("no such volume"));
 
-    assertDoesNotThrow(() -> subject.remove("unix:///sock", "cid"));
+    assertDoesNotThrow(() -> subject.remove(HOST, "cid"));
 
     // the removal must still have been attempted — silently skipping it would leak the
     // volume on every real delete and pass this test anyway
@@ -119,7 +121,7 @@ class ContainerLifecycleTest {
     when(removeVolume.exec()).thenThrow(daemonFailure);
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.remove("unix:///sock", "cid"));
+        () -> subject.remove(HOST, "cid"));
 
     // the operator is left with an orphaned volume and has to clean it up by hand, so
     // the message has to say which one
@@ -136,7 +138,7 @@ class ContainerLifecycleTest {
     RemoveVolumeCmd removeVolume = mock(RemoveVolumeCmd.class);
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
-    subject.remove("unix:///sock", "cid");
+    subject.remove(HOST, "cid");
 
     // the daemon refuses to remove a volume that is still attached, so the reverse order
     // leaves the volume behind on every delete of a live agent

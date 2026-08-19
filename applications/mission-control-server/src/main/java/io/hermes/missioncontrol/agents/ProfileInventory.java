@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.agents;
 
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -28,12 +29,12 @@ class ProfileInventory {
    * concatenated into container paths, and {@code ls} answers with whatever is in the
    * directory.
    */
-  List<String> names(String url, String containerId) {
+  List<String> names(DockerHostRef host, String containerId) {
     List<String> names = new ArrayList<>();
-    if (files.dirExists(url, containerId, ProfilePaths.HERMES_HOME)) {
+    if (files.dirExists(host, containerId, ProfilePaths.HERMES_HOME)) {
       names.add("default");
     }
-    var ls = files.exec(url, containerId, List.of(
+    var ls = files.exec(host, containerId, List.of(
         "sh", "-lc", "ls -1 " + ProfilePaths.PROFILES_DIR + " 2>/dev/null || true"));
     for (String name : HermesContainerFiles.lines(ls.stdout())) {
       if ("default".equals(name)) continue;

@@ -4,7 +4,6 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.URL;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.enrichmentIsTransparent;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
@@ -58,14 +57,14 @@ class AgentSkillsControllerTest {
   void enablingASkillWritesTheFlagFromTheBodyAndAnswersWithTheEnrichedProfile() throws Exception {
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.setSkillEnabled(URL, CONTAINER, PROFILE, "refactor", false))
+    when(profiles.setSkillEnabled(HOST, CONTAINER, PROFILE, "refactor", false))
         .thenReturn(profile(PROFILE));
 
     mvc.perform(put(SKILL).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value(PROFILE));
 
-    verify(profiles).setSkillEnabled(URL, CONTAINER, PROFILE, "refactor", false);
+    verify(profiles).setSkillEnabled(HOST, CONTAINER, PROFILE, "refactor", false);
     verify(mcpCatalog).enrich(HOST, profile(PROFILE));
   }
 
@@ -84,25 +83,25 @@ class AgentSkillsControllerTest {
   void installingAndUninstallingASkillDelegate() throws Exception {
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.installSkill(URL, CONTAINER, PROFILE, "refactor")).thenReturn(profile(PROFILE));
-    when(profiles.uninstallSkill(URL, CONTAINER, PROFILE, "refactor")).thenReturn(profile(PROFILE));
+    when(profiles.installSkill(HOST, CONTAINER, PROFILE, "refactor")).thenReturn(profile(PROFILE));
+    when(profiles.uninstallSkill(HOST, CONTAINER, PROFILE, "refactor")).thenReturn(profile(PROFILE));
 
     mvc.perform(post(BASE + "/skills")
             .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"refactor\"}"))
         .andExpect(status().isOk());
     mvc.perform(delete(SKILL)).andExpect(status().isOk());
 
-    verify(profiles).installSkill(URL, CONTAINER, PROFILE, "refactor");
-    verify(profiles).uninstallSkill(URL, CONTAINER, PROFILE, "refactor");
+    verify(profiles).installSkill(HOST, CONTAINER, PROFILE, "refactor");
+    verify(profiles).uninstallSkill(HOST, CONTAINER, PROFILE, "refactor");
   }
 
   @Test
   void readingAndWritingSkillContentDelegate() throws Exception {
     hostIsConnected(hosts);
     enrichmentIsTransparent(mcpCatalog);
-    when(profiles.readSkillContent(URL, CONTAINER, PROFILE, "refactor"))
+    when(profiles.readSkillContent(HOST, CONTAINER, PROFILE, "refactor"))
         .thenReturn(new SkillContentDto("refactor", "/skills/refactor/SKILL.md", "# refactor", List.of()));
-    when(profiles.updateSkillContent(URL, CONTAINER, PROFILE, "refactor", "# rewritten"))
+    when(profiles.updateSkillContent(HOST, CONTAINER, PROFILE, "refactor", "# rewritten"))
         .thenReturn(profile(PROFILE));
 
     mvc.perform(get(SKILL + "/content"))
@@ -112,7 +111,7 @@ class AgentSkillsControllerTest {
             .contentType(MediaType.APPLICATION_JSON).content("{\"body\":\"# rewritten\"}"))
         .andExpect(status().isOk());
 
-    verify(profiles).updateSkillContent(URL, CONTAINER, PROFILE, "refactor", "# rewritten");
+    verify(profiles).updateSkillContent(HOST, CONTAINER, PROFILE, "refactor", "# rewritten");
   }
 
   @Test

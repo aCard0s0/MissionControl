@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import static io.hermes.missioncontrol.agents.FakeContainer.CONTAINER;
-import static io.hermes.missioncontrol.agents.FakeContainer.URL;
+import static io.hermes.missioncontrol.agents.FakeContainer.HOST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -41,7 +41,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md",
             SKILLS + "/pdf/SKILL.md\n" + SKILLS + "/office/docx/SKILL.md\n");
 
-    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", Map.of());
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", Map.of());
 
     assertEquals(List.of("pdf", "docx"), listed.stream().map(SkillDto::name).toList());
     assertEquals("1.2", listed.getFirst().version());
@@ -54,7 +54,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/pdf-tools/SKILL.md", frontmatter("pdf", "1.0", "Reads PDFs"))
         .onCommand("-name SKILL.md", SKILLS + "/pdf-tools/SKILL.md\n");
 
-    assertEquals("pdf", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().name());
+    assertEquals("pdf", skills(container).list(HOST, CONTAINER, "ops", Map.of()).getFirst().name());
   }
 
   @Test
@@ -63,7 +63,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/scratch/SKILL.md", "no frontmatter here\n")
         .onCommand("-name SKILL.md", SKILLS + "/scratch/SKILL.md\n");
 
-    SkillDto listed = skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst();
+    SkillDto listed = skills(container).list(HOST, CONTAINER, "ops", Map.of()).getFirst();
     assertEquals("scratch", listed.name());
     assertEquals("", listed.version());
   }
@@ -74,7 +74,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/broken/SKILL.md", "")
         .onCommand("-name SKILL.md", SKILLS + "/broken/SKILL.md\n");
 
-    assertEquals(List.of(), skills(container).list(URL, CONTAINER, "ops", Map.of()));
+    assertEquals(List.of(), skills(container).list(HOST, CONTAINER, "ops", Map.of()));
   }
 
   @Test
@@ -88,7 +88,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md",
             SKILLS + "/pdf/SKILL.md\n" + SKILLS + "/homegrown/SKILL.md\n");
 
-    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", Map.of());
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", Map.of());
 
     assertEquals("bundled", listed.getFirst().source());
     assertEquals("user", listed.get(1).source());
@@ -103,7 +103,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
 
     assertEquals("vendor",
-        skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().source());
+        skills(container).list(HOST, CONTAINER, "ops", Map.of()).getFirst().source());
   }
 
   @Test
@@ -122,7 +122,7 @@ class HermesSkillsTest {
             slack: [xlsx]
         """);
 
-    Map<String, Boolean> enabled = skills(container).list(URL, CONTAINER, "ops", config).stream()
+    Map<String, Boolean> enabled = skills(container).list(HOST, CONTAINER, "ops", config).stream()
         .collect(java.util.stream.Collectors.toMap(SkillDto::name, SkillDto::enabled));
 
     assertFalse(enabled.get("pdf"), "a globally disabled skill is off");
@@ -139,7 +139,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md", SKILLS + "/pdf-tools/SKILL.md\n")
         .onCommand("-maxdepth 3 -type f", "SKILL.md\nreferences/spec.md\n");
 
-    SkillContentDto content = skills(container).readContent(URL, CONTAINER, "ops", "pdf");
+    SkillContentDto content = skills(container).readContent(HOST, CONTAINER, "ops", "pdf");
 
     assertEquals(SKILLS + "/pdf-tools", content.path());
     assertTrue(content.body().contains("name: pdf"));
@@ -153,7 +153,7 @@ class HermesSkillsTest {
         .dir(SKILLS + "/pdf")
         .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""));
 
-    skills(container).readContent(URL, CONTAINER, "ops", "pdf");
+    skills(container).readContent(HOST, CONTAINER, "ops", "pdf");
 
     assertTrue(container.executed().stream()
             .noneMatch(argv -> argv.stream().anyMatch(a -> a.contains("-name SKILL.md"))),
@@ -166,11 +166,11 @@ class HermesSkillsTest {
     HermesSkills skills = skills(container);
 
     assertThrows(IllegalArgumentException.class,
-        () -> skills.readContent(URL, CONTAINER, "ops", "absent"));
+        () -> skills.readContent(HOST, CONTAINER, "ops", "absent"));
     assertThrows(IllegalArgumentException.class,
-        () -> skills.uninstall(URL, CONTAINER, "ops", "absent"));
+        () -> skills.uninstall(HOST, CONTAINER, "ops", "absent"));
     assertThrows(IllegalArgumentException.class,
-        () -> skills.updateContent(URL, CONTAINER, "ops", "absent", "body"));
+        () -> skills.updateContent(HOST, CONTAINER, "ops", "absent", "body"));
   }
 
   @Test
@@ -182,7 +182,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/pdf-tools/SKILL.md", frontmatter("pdf", "1.0", ""))
         .onCommand("-name SKILL.md", SKILLS + "/pdf-tools/SKILL.md\n");
 
-    skills(container).uninstall(URL, CONTAINER, "ops", "pdf");
+    skills(container).uninstall(HOST, CONTAINER, "ops", "pdf");
 
     List<String> removal = container.executed().stream()
         .filter(argv -> argv.size() > 2 && argv.get(2).contains("rm -rf"))
@@ -200,11 +200,11 @@ class HermesSkillsTest {
     HermesSkills skills = skills(new FakeContainer());
     for (String name : new String[] {"../../etc", "a/b", "", null, ".hidden"}) {
       assertThrows(IllegalArgumentException.class,
-          () -> skills.readContent(URL, CONTAINER, "ops", name), "name=" + name);
+          () -> skills.readContent(HOST, CONTAINER, "ops", name), "name=" + name);
       assertThrows(IllegalArgumentException.class,
-          () -> skills.install(URL, CONTAINER, "ops", name), "name=" + name);
+          () -> skills.install(HOST, CONTAINER, "ops", name), "name=" + name);
       assertThrows(IllegalArgumentException.class,
-          () -> skills.uninstall(URL, CONTAINER, "ops", name), "name=" + name);
+          () -> skills.uninstall(HOST, CONTAINER, "ops", name), "name=" + name);
     }
   }
 
@@ -212,7 +212,7 @@ class HermesSkillsTest {
   void installPassesTheSkillIdToHermesRatherThanBuildingAPath() {
     FakeContainer container = new FakeContainer();
 
-    skills(container).install(URL, CONTAINER, "ops", "pdf");
+    skills(container).install(HOST, CONTAINER, "ops", "pdf");
 
     assertEquals(List.of("hermes", "-p", "ops", "skills", "install", "pdf", "--force"),
         container.executed().getFirst());
@@ -225,7 +225,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""));
 
     assertThrows(IllegalArgumentException.class,
-        () -> skills(container).updateContent(URL, CONTAINER, "ops", "pdf", null));
+        () -> skills(container).updateContent(HOST, CONTAINER, "ops", "pdf", null));
   }
 
   // ── enable / disable ───────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ class HermesSkillsTest {
         .file("/opt/data/profiles/ops/config.yaml", "model: nous/Hermes-4-405B\n");
     HermesSkills skills = skills(container);
 
-    skills.setEnabled(URL, CONTAINER, "ops", "pdf", false);
+    skills.setEnabled(HOST, CONTAINER, "ops", "pdf", false);
     String disabled = writtenConfig(container);
     assertEquals(List.of("pdf"), cliDisabled(disabled));
     // an unmodelled sibling key survives the rewrite
@@ -246,7 +246,7 @@ class HermesSkillsTest {
     FakeContainer reenabling = new FakeContainer()
         .dir("/opt/data/profiles/ops")
         .file("/opt/data/profiles/ops/config.yaml", disabled);
-    skills(reenabling).setEnabled(URL, CONTAINER, "ops", "pdf", true);
+    skills(reenabling).setEnabled(HOST, CONTAINER, "ops", "pdf", true);
     assertEquals(List.of(), cliDisabled(writtenConfig(reenabling)));
   }
 
@@ -257,7 +257,7 @@ class HermesSkillsTest {
         .file("/opt/data/profiles/ops/config.yaml",
             "skills:\n  platform_disabled:\n    cli: [pdf]\n");
 
-    skills(container).setEnabled(URL, CONTAINER, "ops", "pdf", false);
+    skills(container).setEnabled(HOST, CONTAINER, "ops", "pdf", false);
 
     assertEquals(List.of("pdf"), cliDisabled(writtenConfig(container)));
   }
@@ -268,7 +268,7 @@ class HermesSkillsTest {
     FakeContainer container = new FakeContainer();
 
     assertThrows(java.util.NoSuchElementException.class,
-        () -> skills(container).setEnabled(URL, CONTAINER, "tpyo", "pdf", false));
+        () -> skills(container).setEnabled(HOST, CONTAINER, "tpyo", "pdf", false));
   }
 
   @Test
@@ -278,7 +278,7 @@ class HermesSkillsTest {
         .file("/opt/data/profiles/ops/config.yaml", "model: x\n");
 
     assertThrows(IllegalArgumentException.class,
-        () -> skills(container).setEnabled(URL, CONTAINER, "ops", "  ", false));
+        () -> skills(container).setEnabled(HOST, CONTAINER, "ops", "  ", false));
   }
 
   // ── fixtures ───────────────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md", SKILLS + "/plain/SKILL.md\n"
             + SKILLS + "/unterminated/SKILL.md\n" + SKILLS + "/empty-meta/SKILL.md\n");
 
-    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", Map.of());
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", Map.of());
 
     assertEquals(List.of("plain", "unterminated", "empty-meta"),
         listed.stream().map(SkillDto::name).toList());
@@ -332,7 +332,7 @@ class HermesSkillsTest {
             "---\nname: pdf\nversion: 1.0\ndescription: d\nsource: curator\n---\nbody\n")
         .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
 
-    assertEquals("curator", skills(container).list(URL, CONTAINER, "ops", Map.of())
+    assertEquals("curator", skills(container).list(HOST, CONTAINER, "ops", Map.of())
         .getFirst().source());
   }
 
@@ -347,7 +347,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n"
             + SKILLS + "/docx/SKILL.md\n" + SKILLS + "/local/SKILL.md\n");
 
-    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", Map.of());
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", Map.of());
 
     assertEquals("bundled", listed.get(0).source());
     assertEquals("bundled", listed.get(1).source());
@@ -362,7 +362,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md", SKILLS + "/blank/SKILL.md\n" + SKILLS + "/real/SKILL.md\n");
 
     assertEquals(List.of("real"),
-        skills(container).list(URL, CONTAINER, "ops", Map.of()).stream().map(SkillDto::name).toList());
+        skills(container).list(HOST, CONTAINER, "ops", Map.of()).stream().map(SkillDto::name).toList());
   }
 
   // ── which skills count as disabled ───────────────────────────────────────
@@ -375,9 +375,9 @@ class HermesSkillsTest {
 
     // no config at all, a config whose skills key is a scalar, and one with an unrelated shape
     for (Map<?, ?> config : List.of(Map.of(), Map.of("skills", "all"), Map.of("skills", List.of("pdf")))) {
-      assertTrue(skills(container).list(URL, CONTAINER, "ops", config).getFirst().enabled());
+      assertTrue(skills(container).list(HOST, CONTAINER, "ops", config).getFirst().enabled());
     }
-    assertTrue(skills(container).list(URL, CONTAINER, "ops", null).getFirst().enabled());
+    assertTrue(skills(container).list(HOST, CONTAINER, "ops", null).getFirst().enabled());
   }
 
   @Test
@@ -394,7 +394,7 @@ class HermesSkillsTest {
             web: [something-else]
         """);
 
-    List<SkillDto> listed = skills(container).list(URL, CONTAINER, "ops", config);
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", config);
 
     assertFalse(listed.get(0).enabled(), "disabled globally");
     assertFalse(listed.get(1).enabled(), "disabled for this platform");
@@ -408,10 +408,10 @@ class HermesSkillsTest {
 
     // platform_disabled as a scalar, and cli as a scalar rather than a list
     assertTrue(skills(container)
-        .list(URL, CONTAINER, "ops", yaml("skills:\n  platform_disabled: none\n"))
+        .list(HOST, CONTAINER, "ops", yaml("skills:\n  platform_disabled: none\n"))
         .getFirst().enabled());
     assertTrue(skills(container)
-        .list(URL, CONTAINER, "ops", yaml("skills:\n  platform_disabled:\n    cli: pdf\n"))
+        .list(HOST, CONTAINER, "ops", yaml("skills:\n  platform_disabled:\n    cli: pdf\n"))
         .getFirst().enabled());
   }
 
@@ -423,10 +423,10 @@ class HermesSkillsTest {
 
     for (String name : List.of("", "   ")) {
       assertEquals("missing skill name", assertThrows(IllegalArgumentException.class,
-          () -> skills(container).setEnabled(URL, CONTAINER, "ops", name, false)).getMessage());
+          () -> skills(container).setEnabled(HOST, CONTAINER, "ops", name, false)).getMessage());
     }
     assertEquals("missing skill name", assertThrows(IllegalArgumentException.class,
-        () -> skills(container).setEnabled(URL, CONTAINER, "ops", null, false)).getMessage());
+        () -> skills(container).setEnabled(HOST, CONTAINER, "ops", null, false)).getMessage());
     assertTrue(container.executed().isEmpty());
   }
 
@@ -435,9 +435,9 @@ class HermesSkillsTest {
     FakeContainer container = new FakeContainer();
 
     assertEquals("invalid skill name", assertThrows(IllegalArgumentException.class,
-        () -> skills(container).updateContent(URL, CONTAINER, "ops", "../escape", "body")).getMessage());
+        () -> skills(container).updateContent(HOST, CONTAINER, "ops", "../escape", "body")).getMessage());
     assertEquals("missing skill body", assertThrows(IllegalArgumentException.class,
-        () -> skills(container).updateContent(URL, CONTAINER, "ops", "pdf", null)).getMessage());
+        () -> skills(container).updateContent(HOST, CONTAINER, "ops", "pdf", null)).getMessage());
     assertTrue(container.executed().isEmpty());
   }
 
@@ -450,7 +450,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md",
             SKILLS + "/pdf-tools/SKILL.md\n" + SKILLS + "/office/xlsx/SKILL.md\n");
 
-    SkillContentDto content = skills(container).readContent(URL, CONTAINER, "ops", "pdf");
+    SkillContentDto content = skills(container).readContent(HOST, CONTAINER, "ops", "pdf");
 
     assertTrue(content.path().endsWith("/pdf-tools"), content.path());
   }
@@ -461,7 +461,7 @@ class HermesSkillsTest {
         .dir(SKILLS + "/pdf")
         .file(SKILLS + "/pdf/SKILL.md", frontmatter("something-else", "1.0", ""));
 
-    SkillContentDto content = skills(container).readContent(URL, CONTAINER, "ops", "pdf");
+    SkillContentDto content = skills(container).readContent(HOST, CONTAINER, "ops", "pdf");
 
     assertTrue(content.path().endsWith("/pdf"));
     assertTrue(container.executed().stream().noneMatch(argv -> argv.contains("-name")),
@@ -475,7 +475,7 @@ class HermesSkillsTest {
         .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
 
     assertThrows(RuntimeException.class,
-        () -> skills(container).readContent(URL, CONTAINER, "ops", "nowhere"));
+        () -> skills(container).readContent(HOST, CONTAINER, "ops", "nowhere"));
   }
 
   @Test
@@ -486,7 +486,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/real/SKILL.md", frontmatter("wanted", "1.0", ""))
         .onCommand("-name SKILL.md", SKILLS + "/empty/SKILL.md\n" + SKILLS + "/real/SKILL.md\n");
 
-    assertTrue(skills(container).readContent(URL, CONTAINER, "ops", "wanted").path().endsWith("/real"));
+    assertTrue(skills(container).readContent(HOST, CONTAINER, "ops", "wanted").path().endsWith("/real"));
   }
 
   @Test
@@ -495,7 +495,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/local/SKILL.md", frontmatter("local", "1.0", ""))
         .onCommand("-name SKILL.md", SKILLS + "/local/SKILL.md\n");
 
-    assertEquals("user", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().source());
+    assertEquals("user", skills(container).list(HOST, CONTAINER, "ops", Map.of()).getFirst().source());
   }
 
   @Test
@@ -504,7 +504,7 @@ class HermesSkillsTest {
         .file(SKILLS + "/pdf/SKILL.md", "---\nname: '  '\nversion: 1.0\n---\nbody\n")
         .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
 
-    assertEquals("pdf", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().name());
+    assertEquals("pdf", skills(container).list(HOST, CONTAINER, "ops", Map.of()).getFirst().name());
   }
 
   @Test
@@ -514,14 +514,14 @@ class HermesSkillsTest {
         .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
         .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n");
 
-    assertEquals("user", skills(container).list(URL, CONTAINER, "ops", Map.of()).getFirst().source());
+    assertEquals("user", skills(container).list(HOST, CONTAINER, "ops", Map.of()).getFirst().source());
   }
 
   @Test
   void aSkillsTreeWithNothingInItListsNothing() {
     FakeContainer container = new FakeContainer().onCommand("-name SKILL.md", "");
 
-    assertTrue(skills(container).list(URL, CONTAINER, "ops", Map.of()).isEmpty());
+    assertTrue(skills(container).list(HOST, CONTAINER, "ops", Map.of()).isEmpty());
   }
 
   @Test
@@ -530,7 +530,7 @@ class HermesSkillsTest {
         .dir(SKILLS + "/pdf")
         .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""));
 
-    skills(container).updateContent(URL, CONTAINER, "ops", "pdf", "# rewritten\n");
+    skills(container).updateContent(HOST, CONTAINER, "ops", "pdf", "# rewritten\n");
 
     assertTrue(container.executed().stream().anyMatch(argv ->
         argv.stream().anyMatch(arg -> arg != null && arg.endsWith(SKILLS + "/pdf/SKILL.md"))),

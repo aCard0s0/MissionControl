@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +30,7 @@ import org.mockito.ArgumentCaptor;
  */
 class HermesEnvWriteTest {
 
-  private static final String URL = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-test", "unix:///var/run/docker.sock");
   private static final String CONTAINER = "c1";
   private static final String PROFILE = "scout";
   private static final String ENV_PATH = "/opt/data/profiles/scout/.env";
@@ -44,7 +45,7 @@ class HermesEnvWriteTest {
     envFile = AgentsWiring.envFile(dockerExec);
     setup = new HermesSetup(AgentsWiring.files(dockerExec), envFile);
     // every exec succeeds; the reporting read-back after a write returns an empty .env
-    when(dockerExec.runAsUser(anyString(), anyString(), any(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), any(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenReturn(new DockerExecService.ExecResult(0, "", ""));
   }
@@ -60,7 +61,7 @@ class HermesEnvWriteTest {
     // "a\nEVIL=1" would append a second .env line. removeEnvVar deletes by matching
     // "^KEY=", so the injected line is unreachable and permanent.
     IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class, () ->
-        setup.putEnv(URL, CONTAINER, PROFILE,
+        setup.putEnv(HOST, CONTAINER, PROFILE,
             List.of(new EnvEntry("OPENAI_API_KEY", "sk-real\nANTHROPIC_API_KEY=sk-attacker"))));
 
     assertTrue(rejected.getMessage().contains("OPENAI_API_KEY"));
@@ -69,9 +70,9 @@ class HermesEnvWriteTest {
 
   @Test
   void anEnvValueContainingACarriageReturnOrNulIsRejected() {
-    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(URL, CONTAINER, PROFILE,
+    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(HOST, CONTAINER, PROFILE,
         List.of(new EnvEntry("OPENAI_API_KEY", "sk-real\rEVIL=1"))));
-    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(URL, CONTAINER, PROFILE,
+    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(HOST, CONTAINER, PROFILE,
         List.of(new EnvEntry("OPENAI_API_KEY", "sk-real\0truncated"))));
 
     verifyNoInteractions(dockerExec);
@@ -81,7 +82,7 @@ class HermesEnvWriteTest {
   void anInvalidKeyAnywhereInTheBatchBlocksEveryWrite() {
     // the bad entry is second: validation is a full pass over the batch before any write,
     // so a partially applied batch is not possible
-    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(URL, CONTAINER, PROFILE,
+    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(HOST, CONTAINER, PROFILE,
         List.of(new EnvEntry("OPENAI_API_KEY", "sk-fine"), new EnvEntry("lowercase", "x"))));
 
     verifyNoInteractions(dockerExec);
@@ -89,7 +90,7 @@ class HermesEnvWriteTest {
 
   @Test
   void aBadValueAnywhereInTheBatchAlsoBlocksEveryWrite() {
-    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(URL, CONTAINER, PROFILE,
+    assertThrows(IllegalArgumentException.class, () -> setup.putEnv(HOST, CONTAINER, PROFILE,
         List.of(new EnvEntry("OPENAI_API_KEY", "sk-fine"), new EnvEntry("XAI_API_KEY", "a\nb"))));
 
     verifyNoInteractions(dockerExec);
@@ -97,10 +98,10 @@ class HermesEnvWriteTest {
 
   @Test
   void theKeyAndValueAreAlwaysPositionalArgumentsAndNeverInterpolatedIntoTheScript() {
-    envFile.write(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
+    envFile.write(HOST, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
 
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec).runAsUser(anyString(), anyString(), any(), argv.capture(),
+    verify(dockerExec).runAsUser(any(), anyString(), any(), argv.capture(),
         org.mockito.ArgumentMatchers.eq("write profile environment"),
         anyBoolean(), anyBoolean(), any(Duration.class));
 
@@ -118,10 +119,10 @@ class HermesEnvWriteTest {
 
   @Test
   void writingAnEnvVarUsesTheSensitiveExecSoTheValueNeverReachesALog() {
-    envFile.write(URL, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
+    envFile.write(HOST, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
 
     // sensitive=true keeps argv and command output out of the failure message and the log
-    verify(dockerExec).runAsUser(eqUrl(), eqContainer(), any(), any(),
+    verify(dockerExec).runAsUser(eqHost(), eqContainer(), any(), any(),
         org.mockito.ArgumentMatchers.eq("write profile environment"),
         org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.eq(true),
         any(Duration.class));
@@ -129,10 +130,10 @@ class HermesEnvWriteTest {
 
   @Test
   void aBlankValueRemovesTheVariableRatherThanWritingAnEmptyOne() {
-    setup.putEnv(URL, CONTAINER, PROFILE, List.of(new EnvEntry("OPENAI_API_KEY", "   ")));
+    setup.putEnv(HOST, CONTAINER, PROFILE, List.of(new EnvEntry("OPENAI_API_KEY", "   ")));
 
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(anyString(), anyString(), any(),
+    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(any(), anyString(), any(),
         argv.capture(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
 
     // the removal script takes only the path and the key — a write would carry a value too
@@ -143,16 +144,16 @@ class HermesEnvWriteTest {
 
   @Test
   void aNullEntryListIsAcceptedAndWritesNothing() {
-    setup.putEnv(URL, CONTAINER, PROFILE, null);
+    setup.putEnv(HOST, CONTAINER, PROFILE, null);
 
     // only the read-back that builds the response, no writes
-    verify(dockerExec, org.mockito.Mockito.never()).runAsUser(anyString(), anyString(), any(), any(),
+    verify(dockerExec, org.mockito.Mockito.never()).runAsUser(any(), anyString(), any(), any(),
         org.mockito.ArgumentMatchers.eq("write profile environment"), anyBoolean(), anyBoolean(),
         any(Duration.class));
   }
 
-  private static String eqUrl() {
-    return org.mockito.ArgumentMatchers.eq(URL);
+  private static DockerHostRef eqHost() {
+    return org.mockito.ArgumentMatchers.eq(HOST);
   }
 
   private static String eqContainer() {
@@ -210,7 +211,7 @@ class HermesEnvWriteTest {
   @Test
   void aNullEntryInTheBatchBlocksEveryWrite() {
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> setup.putEnv(URL, CONTAINER, PROFILE,
+        () -> setup.putEnv(HOST, CONTAINER, PROFILE,
             java.util.Arrays.asList(new EnvEntry("GOOD_KEY", "value"), null)));
 
     assertEquals("invalid env key: null", failure.getMessage());
@@ -220,7 +221,7 @@ class HermesEnvWriteTest {
   @Test
   void anEntryWithNoKeyAtAllBlocksEveryWrite() {
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> setup.putEnv(URL, CONTAINER, PROFILE, List.of(new EnvEntry(null, "value"))));
+        () -> setup.putEnv(HOST, CONTAINER, PROFILE, List.of(new EnvEntry(null, "value"))));
 
     assertEquals("invalid env key: null", failure.getMessage());
     verifyNoInteractions(dockerExec);
@@ -232,10 +233,10 @@ class HermesEnvWriteTest {
   void anExistingEnvIsNeverOverwrittenByTheTemplate() {
     // every exec in this harness succeeds, so the .env reads as present — and seeding it again
     // would delete every key the operator had configured
-    envFile.seedIfMissing(URL, CONTAINER, PROFILE);
+    envFile.seedIfMissing(HOST, CONTAINER, PROFILE);
 
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(anyString(), anyString(), any(),
+    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(any(), anyString(), any(),
         argv.capture(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
     assertTrue(argv.getAllValues().stream().noneMatch(command -> command.contains("printf")));
   }
@@ -243,7 +244,7 @@ class HermesEnvWriteTest {
   @Test
   void anAbsentEnvIsSeededWithTheCommentedTemplate() {
     // 'test -f' fails, so the file is not there yet
-    when(dockerExec.runAsUser(anyString(), anyString(), any(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), any(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class)))
         .thenAnswer(invocation -> {
           List<String> command = invocation.getArgument(3);
@@ -251,10 +252,10 @@ class HermesEnvWriteTest {
           return new DockerExecService.ExecResult(probing ? 1 : 0, "", "");
         });
 
-    envFile.seedIfMissing(URL, CONTAINER, PROFILE);
+    envFile.seedIfMissing(HOST, CONTAINER, PROFILE);
 
     ArgumentCaptor<List<String>> argv = captureArgv();
-    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(anyString(), anyString(), any(),
+    verify(dockerExec, org.mockito.Mockito.atLeastOnce()).runAsUser(any(), anyString(), any(),
         argv.capture(), anyString(), anyBoolean(), anyBoolean(), any(Duration.class));
     List<String> write = argv.getAllValues().stream()
         .filter(command -> command.stream().anyMatch(arg -> arg != null && arg.contains("printf")))

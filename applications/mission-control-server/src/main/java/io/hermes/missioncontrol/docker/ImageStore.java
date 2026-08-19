@@ -67,10 +67,10 @@ public class ImageStore {
   }
 
   /** Tags of the configured Hermes image already present in this host's image store. */
-  public Set<String> localImageTags(String url) {
+  public Set<String> localImageTags(DockerHostRef host) {
     String targetRepo = normalizedHermesRepository();
     if (targetRepo.isBlank()) return Set.of();
-    DockerClient client = clients.forUrl(url);
+    DockerClient client = clients.forUrl(host.url());
     Set<String> tags = new HashSet<>();
     // no withShowAll: that only adds intermediate and dangling layers, which carry a null or
     // <none> repo tag and are discarded immediately below
@@ -99,8 +99,8 @@ public class ImageStore {
   }
 
   /** Pulls a tag over the streaming client, whose socket carries no read timeout. */
-  void pull(String url, String repository, String tag) {
-    pull(clients.streamingForUrl(url), repository, tag);
+  void pull(DockerHostRef host, String repository, String tag) {
+    pull(clients.streamingForUrl(host.url()), repository, tag);
   }
 
   static void pull(DockerClient client, String repository, String tag) {

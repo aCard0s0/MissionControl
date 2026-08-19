@@ -4,6 +4,7 @@ import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DaemonInfo;
 import io.hermes.missioncontrol.docker.DockerClients;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
 import java.util.List;
@@ -59,16 +60,38 @@ public class HostService {
   }
 
   /**
-   * Probes the host and returns it only if the daemon answered. Callers that are about to
-   * talk to a container need this rather than {@link #check}, so that a dead daemon is
-   * reported as such instead of surfacing later as an obscure Docker error.
+   * The host, only if its daemon answered. Every endpoint that is about to talk to a
+   * container resolves through here rather than {@link #ref}, so that a dead daemon is
+   * reported as a 503 instead of surfacing later as an obscure Docker error.
+   *
+   * <p>Reads the {@link #PROBE_TTL_MS} probe cache rather than forcing a ping, which
+   * {@link #check} still does. Forcing here would put a daemon round trip in front of
+   * every request on the polling path — {@code /stats} refreshes every 3s and
+   * {@code /logs} every 5s — and a reachability check from moments ago is the same
+   * evidence this class already serves to {@link #list}. The one thing a stale
+   * {@code connected} verdict costs is that the failure is reported by whatever the
+   * request then attempts, which for an exec is {@code DockerExecService} translating the
+   * transport error into the same 503 — never a 500.
    */
-  public DockerHostDto requireConnected(String id) {
-    DockerHostDto host = check(id);
-    if (!"connected".equals(host.status())) {
+  public DockerHostRef requireConnected(String id) {
+    HostRow row = require(id);
+    if (!"connected".equals(probe(row, false).status())) {
       throw new UpstreamUnavailableException("docker host not connected");
     }
-    return host;
+    return new DockerHostRef(row.id(), row.url());
+  }
+
+  /**
+   * The host without probing it — for work that is not answering a request and so has no
+   * caller to report a 503 to: the MCP compose lifecycle running on its own executor, a
+   * log tail for a record whose host is resolved per row, an existence check.
+   *
+   * <p>Still fails on an unknown id. Anything serving an HTTP request wants
+   * {@link #requireConnected} instead.
+   */
+  public DockerHostRef ref(String hostId) {
+    HostRow row = require(hostId);
+    return new DockerHostRef(row.id(), row.url());
   }
 
   public DockerHostDto add(String name, String url) {
@@ -92,10 +115,6 @@ public class HostService {
     probeCache.remove(id);
     // the url is read from the row above, because it is no longer resolvable from the id
     clients.release(row.url());
-  }
-
-  public String urlOf(String hostId) {
-    return require(hostId).url();
   }
 
   public boolean isLocalDaemonConnected() {

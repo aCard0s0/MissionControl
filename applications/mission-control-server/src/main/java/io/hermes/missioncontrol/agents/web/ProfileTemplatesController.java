@@ -6,7 +6,7 @@ import io.hermes.missioncontrol.agents.templates.DeployFromTemplateRequest;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.agents.templates.UpsertProfileTemplateRequest;
-import io.hermes.missioncontrol.hosts.DockerHostDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -60,18 +60,16 @@ public class ProfileTemplatesController {
 
   @PostMapping("/capture")
   public ProfileTemplateDto capture(@Valid @RequestBody CaptureFromAgentRequest request) {
-    DockerHostDto host = connected(request.hostId());
-    return service.captureFromAgent(host.url(), request.containerId(), request.name(), request.templateName());
+    DockerHostRef host = hosts.requireConnected(request.hostId());
+    return service.captureFromAgent(
+        host, request.containerId(), request.name(), request.templateName());
   }
 
   @PostMapping("/{id}/deploy")
   public AgentProfileDto deploy(
       @PathVariable String id, @Valid @RequestBody DeployFromTemplateRequest request) {
-    DockerHostDto host = connected(request.hostId());
-    return service.deploy(id, host.url(), request.containerId(), request.name());
+    DockerHostRef host = hosts.requireConnected(request.hostId());
+    return service.deploy(id, host, request.containerId(), request.name());
   }
 
-  private DockerHostDto connected(String hostId) {
-    return hosts.requireConnected(hostId);
-  }
 }

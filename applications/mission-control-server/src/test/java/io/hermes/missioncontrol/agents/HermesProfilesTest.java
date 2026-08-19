@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.github.dockerjava.api.exception.ConflictException;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -26,9 +27,9 @@ class HermesProfilesTest {
   @Test
   void stoppedContainerHasNoReadableProfileInventory() {
     DockerExecService dockerExec = mock(DockerExecService.class);
-    when(dockerExec.runAsUser(anyString(), anyString(), anyString(), any(), anyString(), anyBoolean(),
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(),
         anyBoolean(), any(Duration.class))).thenThrow(new ConflictException("container is not running"));
 
-    assertEquals(List.of(), AgentsWiring.profiles(dockerExec).list("unix:///sock", "stopped"));
+    assertEquals(List.of(), AgentsWiring.profiles(dockerExec).list(new DockerHostRef("dh-local", "unix:///sock"), "stopped"));
   }
 }

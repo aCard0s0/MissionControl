@@ -20,9 +20,9 @@ public class ImageCatalogService {
     this.registry = registry;
   }
 
-  public ImageTagsDto tags(String url, boolean includeRemote) {
+  public ImageTagsDto tags(DockerHostRef host, boolean includeRemote) {
     String repository = docker.hermesImageRepository();
-    Set<String> local = docker.localImageTags(url);
+    Set<String> local = docker.localImageTags(host);
     RegistryTagService.RemoteTags remote = includeRemote
         ? registry.tags(repository)
         : new RegistryTagService.RemoteTags(List.of(), RegistryTagService.DISABLED, null, null);

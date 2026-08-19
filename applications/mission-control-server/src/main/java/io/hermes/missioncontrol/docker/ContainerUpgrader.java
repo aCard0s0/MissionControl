@@ -50,8 +50,8 @@ public class ContainerUpgrader {
    * Upgrading recreates the container against an existing data volume, so a
    * mismatch here would attach someone else's container to Hermes' data.
    */
-  public ManagedContainerSpec inspectManaged(String url, String containerId) {
-    return inspectManaged(clients.forUrl(url), containerId);
+  public ManagedContainerSpec inspectManaged(DockerHostRef host, String containerId) {
+    return inspectManaged(clients.forUrl(host.url()), containerId);
   }
 
   private ManagedContainerSpec inspectManaged(DockerClient client, String containerId) {
@@ -129,8 +129,8 @@ public class ContainerUpgrader {
    * dropped once the replacement passes its readiness checks. That keeps a real
    * rollback target: the original container object, its id, and its logs.
    */
-  public UpgradeResult upgrade(String url, String containerId, String version) {
-    DockerClient client = clients.forUrl(url);
+  public UpgradeResult upgrade(DockerHostRef host, String containerId, String version) {
+    DockerClient client = clients.forUrl(host.url());
     ManagedContainerSpec spec = inspectManaged(client, containerId);
 
     String tag = ImageStore.tagOf(version);
@@ -141,7 +141,7 @@ public class ContainerUpgrader {
     // registry then costs nothing, instead of leaving the Agent stopped.
     String targetImageId = ImageStore.imageIdOf(client, image);
     if (targetImageId == null) {
-      images.pull(url, repository, tag);
+      images.pull(host, repository, tag);
       targetImageId = ImageStore.imageIdOf(client, image);
     }
     if (tag.equals(spec.tag()) && targetImageId != null && targetImageId.equals(spec.imageId())) {
@@ -163,7 +163,7 @@ public class ContainerUpgrader {
       newContainerId = createReplacement(client, spec, image);
 
       for (var network : spec.extraNetworks().entrySet()) {
-        networks.connect(url, newContainerId, network.getKey(), network.getValue());
+        networks.connect(host, newContainerId, network.getKey(), network.getValue());
       }
 
       if (!spec.wasRunning()) {
@@ -173,7 +173,7 @@ public class ContainerUpgrader {
         client.startContainerCmd(newContainerId).exec();
         // no seed profiles: they already exist in the reattached volume, and the
         // mc.profiles label is a stale record of the original deploy
-        readiness.validate(url, client, newContainerId, List.of());
+        readiness.validate(host, client, newContainerId, List.of());
         result = new UpgradeResult(spec.id(), newContainerId, spec.tag(), tag, true);
       }
     } catch (RuntimeException failure) {

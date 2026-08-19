@@ -4,6 +4,7 @@ import io.hermes.missioncontrol.agents.HermesCron;
 import io.hermes.missioncontrol.agents.api.CreateCronJobRequest;
 import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.UpdateCronJobRequest;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -35,7 +36,8 @@ class AgentCronController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return cron.list(endpoints.url(hostId), containerId, name);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.list(host, containerId, name);
   }
 
   @PostMapping
@@ -44,7 +46,8 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody CreateCronJobRequest request) {
-    return cron.create(endpoints.url(hostId), containerId, name, request);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.create(host, containerId, name, request);
   }
 
   @PatchMapping("/{jobId}")
@@ -54,7 +57,8 @@ class AgentCronController {
       @PathVariable String name,
       @PathVariable String jobId,
       @RequestBody UpdateCronJobRequest request) {
-    return cron.update(endpoints.url(hostId), containerId, name, jobId, request);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.update(host, containerId, name, jobId, request);
   }
 
   @PostMapping("/{jobId}/pause")
@@ -63,7 +67,8 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.setEnabled(endpoints.url(hostId), containerId, name, jobId, false);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.setEnabled(host, containerId, name, jobId, false);
   }
 
   @PostMapping("/{jobId}/resume")
@@ -72,7 +77,8 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.setEnabled(endpoints.url(hostId), containerId, name, jobId, true);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.setEnabled(host, containerId, name, jobId, true);
   }
 
   /** Asks for the job on the next scheduler tick, rather than waiting for its schedule. */
@@ -82,7 +88,8 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.runNow(endpoints.url(hostId), containerId, name, jobId);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.runNow(host, containerId, name, jobId);
   }
 
   @DeleteMapping("/{jobId}")
@@ -91,6 +98,7 @@ class AgentCronController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.remove(endpoints.url(hostId), containerId, name, jobId);
+    DockerHostRef host = endpoints.host(hostId);
+    return cron.remove(host, containerId, name, jobId);
   }
 }

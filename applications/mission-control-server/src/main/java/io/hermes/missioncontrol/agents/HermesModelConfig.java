@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -70,23 +71,23 @@ class HermesModelConfig {
    *  rebuild model from scratch with only the keys the chosen provider needs.
    *  (`hermes config set` mutates one key and preserves the rest of the map, so a
    *  full reset is the only way to guarantee no leak.) */
-  void write(String url, String containerId, String name,
+  void write(DockerHostRef host, String containerId, String name,
       String provider, String model, String baseUrl, ModelTarget auxiliary) {
     for (String[] kv : modelConfigEntries(provider, model, baseUrl)) {
-      setConfig(url, containerId, name, kv[0], kv[1]);
+      setConfig(host, containerId, name, kv[0], kv[1]);
     }
     for (String[] kv : auxiliaryConfigEntries(
         auxiliary.provider(), auxiliary.model(), auxiliary.baseUrl())) {
-      setConfig(url, containerId, name, kv[0], kv[1]);
+      setConfig(host, containerId, name, kv[0], kv[1]);
     }
   }
 
   /** Writes the profile's own API key, when the chosen provider takes one and the
    *  request carried a non-blank value. */
-  void writeApiKey(String url, String containerId, String name, String provider, String apiKey) {
+  void writeApiKey(DockerHostRef host, String containerId, String name, String provider, String apiKey) {
     String envKey = apiKeyVar(provider);
     if (envKey == null || apiKey == null || apiKey.isBlank()) return;
-    env.write(url, containerId, name, envKey, apiKey);
+    env.write(host, containerId, name, envKey, apiKey);
   }
 
   /** Writes the override provider's API key into the profile's .env. Only runs when
@@ -94,11 +95,11 @@ class HermesModelConfig {
    *  already covered by the main key, and re-writing it would let a blank field in
    *  the create form clobber a working one. */
   void writeAuxiliaryApiKey(
-      String url, String containerId, String name, ModelTarget auxiliary, AuxiliaryModelSpec spec) {
+      DockerHostRef host, String containerId, String name, ModelTarget auxiliary, AuxiliaryModelSpec spec) {
     if (spec == null || isBlank(spec.apiKey()) || isBlank(spec.provider())) return;
     String envKey = apiKeyVar(auxiliary.provider());
     if (envKey == null) return;
-    env.write(url, containerId, name, envKey, spec.apiKey());
+    env.write(host, containerId, name, envKey, spec.apiKey());
   }
 
   /** Fails the create when the profile ended up without a usable model.
@@ -111,9 +112,9 @@ class HermesModelConfig {
    *  "no provider available ... compression, summarization, and memory flush will not
    *  work". Throwing here lets the caller's rollback drop the half-built profile
    *  instead of handing back an agent that degrades on first long session. */
-  void assertConfigured(String url, String containerId, String name) {
+  void assertConfigured(DockerHostRef host, String containerId, String name) {
     String configPath = ProfilePaths.configFile(name);
-    ConfigInfo info = parseConfig(YamlValues.parseMap(files.readFile(url, containerId, configPath)));
+    ConfigInfo info = parseConfig(YamlValues.parseMap(files.readFile(host, containerId, configPath)));
     if (info.model().isBlank()) {
       throw new IllegalStateException(
           "profile '" + name + "' has no model in " + configPath
@@ -122,8 +123,8 @@ class HermesModelConfig {
     }
   }
 
-  private void setConfig(String url, String containerId, String name, String key, String value) {
-    files.exec(url, containerId, List.of("hermes", "-p", name, "config", "set", key, value));
+  private void setConfig(DockerHostRef host, String containerId, String name, String key, String value) {
+    files.exec(host, containerId, List.of("hermes", "-p", name, "config", "set", key, value));
   }
 
   // ── pure write planners ────────────────────────────────────────────────────

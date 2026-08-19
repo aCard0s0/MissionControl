@@ -23,6 +23,7 @@ import com.github.dockerjava.api.command.ResizeExecCmd;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
 import io.hermes.missioncontrol.docker.DockerClients;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.io.IOException;
 import java.io.InputStream;
@@ -55,7 +56,7 @@ import org.springframework.web.socket.WebSocketSession;
  */
 class TerminalSocketHandlerTest {
 
-  private static final String URL = "unix:///sock";
+  private static final String HOST = "unix:///sock";
   private static final String EXEC_ID = "exec-1";
 
   private DockerClients clients;
@@ -80,8 +81,8 @@ class TerminalSocketHandlerTest {
     resize = mock(ResizeExecCmd.class, Answers.RETURNS_SELF);
     ExecCreateCmdResponse created = mock(ExecCreateCmdResponse.class);
 
-    when(hosts.urlOf("dh-local")).thenReturn(URL);
-    when(clients.streamingForUrl(URL)).thenReturn(client);
+    when(hosts.requireConnected("dh-local")).thenReturn(new DockerHostRef("dh-local", HOST));
+    when(clients.streamingForUrl(HOST)).thenReturn(client);
     when(client.execCreateCmd(anyString())).thenReturn(create);
     when(create.exec()).thenReturn(created);
     when(created.getId()).thenReturn(EXEC_ID);
@@ -119,7 +120,7 @@ class TerminalSocketHandlerTest {
 
   @Test
   void anUnknownHostIsRefusedRatherThanPropagatingTheLookupFailure() throws Exception {
-    when(hosts.urlOf("dh-gone")).thenThrow(new NoSuchElementException("no such docker host"));
+    when(hosts.requireConnected("dh-gone")).thenThrow(new NoSuchElementException("no such docker host"));
     TerminalSocketHandler handler = handler(props(5, 5));
     WebSocketSession session = session("a", "10.0.0.1", "hostId=dh-gone&containerId=cid");
 

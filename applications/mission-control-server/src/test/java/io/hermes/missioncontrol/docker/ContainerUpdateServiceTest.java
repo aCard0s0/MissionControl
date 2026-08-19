@@ -3,12 +3,14 @@ package io.hermes.missioncontrol.docker;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.board.BoardRepository;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
@@ -21,8 +23,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 
 class ContainerUpdateServiceTest {
 
-  private static final String URL = "unix:///sock";
-  private static final String HOST = "dh-local";
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
   private static final String OLD_ID = "old-container-id";
   private static final String NEW_ID = "new-container-id";
 
@@ -52,7 +53,7 @@ class ContainerUpdateServiceTest {
   }
 
   private void stubUpgrade() {
-    when(docker.upgrade(anyString(), anyString(), anyString()))
+    when(docker.upgrade(any(), anyString(), anyString()))
         .thenReturn(new UpgradeResult(OLD_ID, NEW_ID, "v2026.7.1", "v2026.8.3", true));
   }
 
@@ -78,33 +79,33 @@ class ContainerUpdateServiceTest {
   void movesBoardTasksAndMcpLinksOntoTheReplacementContainer() {
     stubUpgrade();
     seedBoardTask(OLD_ID);
-    seedLink(HOST, OLD_ID);
+    seedLink(HOST.id(), OLD_ID);
 
-    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(1, board.findByContainer(NEW_ID).size());
     assertTrue(board.findByContainer(OLD_ID).isEmpty());
-    assertEquals(1, links.list(HOST, NEW_ID, "default").size());
-    assertTrue(links.list(HOST, OLD_ID, "default").isEmpty());
+    assertEquals(1, links.list(HOST.id(), NEW_ID, "default").size());
+    assertTrue(links.list(HOST.id(), OLD_ID, "default").isEmpty());
   }
 
   @Test
   void leavesLinksOnOtherHostsAlone() {
     stubUpgrade();
-    seedLink(HOST, OLD_ID);
+    seedLink(HOST.id(), OLD_ID);
     // a different daemon can legitimately hold a link row with the same container id
     links.upsert(new AgentMcpLink("dh-remote", OLD_ID, "default", "files", "srv-1", 1, 1, 1));
 
-    service.update(URL, HOST, OLD_ID, "v2026.8.3");
+    service.update(HOST, OLD_ID, "v2026.8.3");
 
     assertEquals(1, links.list("dh-remote", OLD_ID, "default").size());
-    assertTrue(links.list(HOST, OLD_ID, "default").isEmpty());
+    assertTrue(links.list(HOST.id(), OLD_ID, "default").isEmpty());
   }
 
   @Test
   void anUpdateWithNothingToRemapStillSucceeds() {
     stubUpgrade();
-    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
   }
 
   @Test
@@ -117,16 +118,16 @@ class ContainerUpdateServiceTest {
 
     // the container is already running the new image; refusing to report that
     // would trade a working Agent for a bookkeeping detail
-    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
   }
 
   @Test
   void aFailedUpgradePropagatesAndRemapsNothing() {
-    when(docker.upgrade(anyString(), anyString(), anyString()))
+    when(docker.upgrade(any(), anyString(), anyString()))
         .thenThrow(new IllegalArgumentException("not a Mission Control-managed container"));
     seedBoardTask(OLD_ID);
 
-    assertThrows(IllegalArgumentException.class, () -> service.update(URL, HOST, OLD_ID, "v2026.8.3"));
+    assertThrows(IllegalArgumentException.class, () -> service.update(HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(1, board.findByContainer(OLD_ID).size());
   }
@@ -135,7 +136,7 @@ class ContainerUpdateServiceTest {
   void aRemapThatFailsOnceIsRetriedAndSucceeds() {
     stubUpgrade();
     seedBoardTask(OLD_ID);
-    seedLink(HOST, OLD_ID);
+    seedLink(HOST.id(), OLD_ID);
     // sqlite is single-writer, so a concurrent writer holding the lock is the realistic
     // failure this retry exists for — it is gone a moment later
     FailingListener locked = new FailingListener(1);
@@ -143,35 +144,35 @@ class ContainerUpdateServiceTest {
     // below can only have moved on the retry
     service = new ContainerUpdateService(docker, List.of(locked, board, links), transactions);
 
-    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(2, locked.attempts());
     assertEquals(1, board.findByContainer(NEW_ID).size());
     assertTrue(board.findByContainer(OLD_ID).isEmpty());
-    assertEquals(1, links.list(HOST, NEW_ID, "default").size());
-    assertTrue(links.list(HOST, OLD_ID, "default").isEmpty());
+    assertEquals(1, links.list(HOST.id(), NEW_ID, "default").size());
+    assertTrue(links.list(HOST.id(), OLD_ID, "default").isEmpty());
   }
 
   @Test
   void aRemapThatKeepsFailingStillReturnsAHealthyUpdate() {
     stubUpgrade();
     seedBoardTask(OLD_ID);
-    seedLink(HOST, OLD_ID);
+    seedLink(HOST.id(), OLD_ID);
     FailingListener locked = new FailingListener(Integer.MAX_VALUE);
     // last in the list, so both stores have already written when it fails
     service = new ContainerUpdateService(docker, List.of(board, links, locked), transactions);
 
     // undoing a working upgrade to preserve a bookkeeping row would trade a live Agent
     // for a link, so the caller still learns where its container went
-    assertEquals(NEW_ID, service.update(URL, HOST, OLD_ID, "v2026.8.3"));
+    assertEquals(NEW_ID, service.update(HOST, OLD_ID, "v2026.8.3"));
 
     assertEquals(2, locked.attempts());
     // every table moves in one transaction: an abandoned remap leaves the whole Agent on
     // the old id rather than splitting its tasks and links across two container ids
     assertEquals(1, board.findByContainer(OLD_ID).size());
-    assertEquals(1, links.list(HOST, OLD_ID, "default").size());
+    assertEquals(1, links.list(HOST.id(), OLD_ID, "default").size());
     assertTrue(board.findByContainer(NEW_ID).isEmpty());
-    assertTrue(links.list(HOST, NEW_ID, "default").isEmpty());
+    assertTrue(links.list(HOST.id(), NEW_ID, "default").isEmpty());
   }
 
   /** Refuses its first {@code failures} attempts the way a locked sqlite write would. */

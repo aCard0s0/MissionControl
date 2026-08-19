@@ -4,6 +4,7 @@ import io.hermes.missioncontrol.agents.HermesWebhooks;
 import io.hermes.missioncontrol.agents.api.EnableWebhookPlatformRequest;
 import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.Map;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,7 +37,8 @@ class AgentWebhooksController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return webhooks.list(endpoints.url(hostId), containerId, name);
+    DockerHostRef host = endpoints.host(hostId);
+    return webhooks.list(host, containerId, name);
   }
 
   /** Turns the profile's webhook listener on or off. */
@@ -46,7 +48,8 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody EnableWebhookPlatformRequest request) {
-    return webhooks.setPlatformEnabled(endpoints.url(hostId), containerId, name, request);
+    DockerHostRef host = endpoints.host(hostId);
+    return webhooks.setPlatformEnabled(host, containerId, name, request);
   }
 
   @PostMapping
@@ -55,7 +58,8 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody SubscribeWebhookRequest request) {
-    return webhooks.subscribe(endpoints.url(hostId), containerId, name, request);
+    DockerHostRef host = endpoints.host(hostId);
+    return webhooks.subscribe(host, containerId, name, request);
   }
 
   /**
@@ -68,7 +72,8 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return Map.of("secret", webhooks.secret(endpoints.url(hostId), containerId, name, route));
+    DockerHostRef host = endpoints.host(hostId);
+    return Map.of("secret", webhooks.secret(host, containerId, name, route));
   }
 
   /** Fires hermes' own test POST at the route. */
@@ -78,7 +83,8 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return Map.of("output", webhooks.test(endpoints.url(hostId), containerId, name, route));
+    DockerHostRef host = endpoints.host(hostId);
+    return Map.of("output", webhooks.test(host, containerId, name, route));
   }
 
   @DeleteMapping("/{route}")
@@ -87,6 +93,7 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return webhooks.remove(endpoints.url(hostId), containerId, name, route);
+    DockerHostRef host = endpoints.host(hostId);
+    return webhooks.remove(host, containerId, name, route);
   }
 }

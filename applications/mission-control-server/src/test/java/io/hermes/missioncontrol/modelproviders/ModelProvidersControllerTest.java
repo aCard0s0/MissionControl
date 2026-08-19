@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.modelproviders;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -47,7 +48,7 @@ class ModelProvidersControllerTest {
 
   @Test
   void addTrimsTheNameAndUrlBeforeReachingTheService() throws Exception {
-    when(providers.add(anyString(), anyString())).thenReturn(provider());
+    when(providers.add(any(), anyString())).thenReturn(provider());
 
     mvc.perform(post("/api/model-providers")
             .contentType(MediaType.APPLICATION_JSON)

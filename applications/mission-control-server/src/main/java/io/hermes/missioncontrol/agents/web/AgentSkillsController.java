@@ -6,6 +6,7 @@ import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.SetSkillEnabledRequest;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.agents.api.UpdateSkillContentRequest;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,8 +37,9 @@ class AgentSkillsController {
       @PathVariable String name,
       @PathVariable String skillName,
       @RequestBody SetSkillEnabledRequest request) {
-    return endpoints.linked(hostId, profiles.setSkillEnabled(
-        endpoints.url(hostId), containerId, name, skillName, request.enabled()));
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.setSkillEnabled(
+        host, containerId, name, skillName, request.enabled()));
   }
 
   @PostMapping
@@ -46,8 +48,9 @@ class AgentSkillsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody AddSkillRequest request) {
-    return endpoints.linked(hostId, profiles.installSkill(
-        endpoints.url(hostId), containerId, name, request.name()));
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.installSkill(
+        host, containerId, name, request.name()));
   }
 
   @DeleteMapping("/{skillName}")
@@ -56,8 +59,9 @@ class AgentSkillsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName) {
-    return endpoints.linked(hostId, profiles.uninstallSkill(
-        endpoints.url(hostId), containerId, name, skillName));
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.uninstallSkill(
+        host, containerId, name, skillName));
   }
 
   @GetMapping("/{skillName}/content")
@@ -66,7 +70,8 @@ class AgentSkillsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName) {
-    return profiles.readSkillContent(endpoints.url(hostId), containerId, name, skillName);
+    DockerHostRef host = endpoints.host(hostId);
+    return profiles.readSkillContent(host, containerId, name, skillName);
   }
 
   @PutMapping("/{skillName}/content")
@@ -76,7 +81,8 @@ class AgentSkillsController {
       @PathVariable String name,
       @PathVariable String skillName,
       @RequestBody UpdateSkillContentRequest request) {
-    return endpoints.linked(hostId, profiles.updateSkillContent(
-        endpoints.url(hostId), containerId, name, skillName, request.body()));
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.updateSkillContent(
+        host, containerId, name, skillName, request.body()));
   }
 }
