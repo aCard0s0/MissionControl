@@ -50,6 +50,7 @@ class McpManagedLifecycleTest {
   private McpServerRepository repository;
   private ComposeStackManager compose;
   private HostService hosts;
+  private McpWiring.Graph graph;
   private McpRegistryService service;
 
   @BeforeEach
@@ -60,15 +61,16 @@ class McpManagedLifecycleTest {
     hosts = mock(HostService.class);
     when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
 
-    service = McpWiring.registry(repository,
+    graph = McpWiring.graph(repository,
         new RetainedResourceRepository(database.jdbc()),
         new AgentMcpLinkRepository(database.jdbc()),
         hosts, mock(DockerGateway.class), compose, LIVE_MODE, new DirectExecutorService());
+    service = graph.service();
   }
 
   @AfterEach
   void tearDown() throws Exception {
-    service.close();
+    graph.close();
     database.close();
   }
 

@@ -28,11 +28,33 @@ final class McpWiring {
   }
 
   /**
+   * The beans a whole-flow test drives, holding the ones it has to reach directly.
+   *
+   * <p>{@link #close()} exists because the executor outlives the test otherwise: in production
+   * Spring calls {@code @PreDestroy} on the lifecycle, and a test has no container to do it.
+   *
+   * @param service   the catalog's rules
+   * @param startup   the boot sequence — seeding, repair, reconciling every record
+   * @param seeder    the default entries themselves, for the tests that assert on their shape
+   * @param lifecycle the Compose operations, and the executor they run on
+   */
+  record Graph(
+      McpRegistryService service,
+      McpStartupReconciler startup,
+      McpCatalogSeeder seeder,
+      McpComposeLifecycle lifecycle) {
+
+    void close() {
+      lifecycle.shutdown();
+    }
+  }
+
+  /**
    * The whole graph, with the executor the caller wants to observe operations through. A
    * same-thread or queued executor makes desired state, {@code operation_state},
    * {@code applied_revision} and a recorded failure assertable, which an async task does not.
    */
-  static McpRegistryService registry(
+  static Graph graph(
       McpServerRepository repository,
       RetainedResourceRepository retained,
       AgentMcpLinkRepository links,
@@ -42,18 +64,22 @@ final class McpWiring {
       AppProperties props,
       ExecutorService operations) {
     McpConfigStore configs = new McpConfigStore(new SecretsAtRest(cipher()), new ObjectMapper());
-    return new McpRegistryService(
-        repository,
-        retained,
-        links,
-        hosts,
-        configs,
-        new McpServerDtoMapper(configs),
-        new McpComposeLifecycle(repository, retained, hosts, docker, compose,
-            new ComposeStackRenderer(), configs, operations),
-        new McpHealthProbe(repository, configs, hosts, docker),
-        new McpCatalogSeeder(repository, configs),
-        new McpLogReader(hosts, docker, compose, configs),
-        props);
+    McpComposeLifecycle lifecycle = new McpComposeLifecycle(repository, retained, hosts, docker,
+        compose, new ComposeStackRenderer(), configs, operations);
+    McpCatalogSeeder seeder = new McpCatalogSeeder(repository, configs);
+    return new Graph(
+        new McpRegistryService(
+            repository,
+            retained,
+            links,
+            hosts,
+            configs,
+            new McpServerDtoMapper(configs),
+            lifecycle,
+            new McpHealthProbe(repository, configs, hosts, docker),
+            new McpLogReader(hosts, docker, compose, configs)),
+        new McpStartupReconciler(repository, seeder, lifecycle, props),
+        seeder,
+        lifecycle);
   }
 }

@@ -5,6 +5,7 @@ import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.ComposeStackRenderer.Deployment;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
+import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -59,8 +60,28 @@ class McpComposeLifecycle {
     this.operations = operations;
   }
 
+  /**
+   * Stops accepting Compose operations and abandons any in flight.
+   *
+   * <p>{@code shutdownNow} rather than a graceful drain: a dashboard going down should not wait
+   * on an image pull. Declared here rather than driven from {@link McpRegistryService}, which
+   * had no other reason to know this executor exists.
+   */
+  @PreDestroy
   void shutdown() {
     operations.shutdownNow();
+  }
+
+  /**
+   * Brings one record to whatever its recorded desired state now says.
+   *
+   * <p>Here rather than with the callers that ask for it — an explicit apply, and the startup
+   * pass — because the branch is between two of this class's own operations, and it reads the
+   * desired state through the same row lookup they do.
+   */
+  void reconcile(String id) {
+    if ("running".equals(requireRow(id).desiredState())) runStart(id, true);
+    else provisionStopped(id);
   }
 
   /** Queues an operation, so a caller returns as soon as the desired state is recorded.

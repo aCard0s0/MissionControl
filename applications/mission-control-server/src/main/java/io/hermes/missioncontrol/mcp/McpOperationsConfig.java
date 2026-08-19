@@ -17,10 +17,10 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>Virtual threads because a compose operation is almost entirely waiting on the daemon.
  *
- * <p>{@code destroyMethod = ""} on purpose: {@link McpRegistryService} already shuts this down
- * through the lifecycle on {@code @PreDestroy}, and it uses {@code shutdownNow} rather than the
- * graceful {@code shutdown} Spring would infer, because a dashboard going down should not wait
- * on an image pull.
+ * <p>{@code destroyMethod = ""} on purpose: {@link McpComposeLifecycle} already shuts this down
+ * on its own {@code @PreDestroy}, and it uses {@code shutdownNow} rather than the graceful
+ * {@code shutdown} Spring would infer, because a dashboard going down should not wait on an
+ * image pull.
  */
 @Configuration
 class McpOperationsConfig {
