@@ -52,6 +52,8 @@ mc:
     session-max-lifetime: ${MC_TERMINAL_SESSION_MAX_LIFETIME:8h}
     heartbeat-interval: ${MC_TERMINAL_HEARTBEAT_INTERVAL:30s}
     pong-timeout: ${MC_TERMINAL_PONG_TIMEOUT:90s}
+    # container user the web shell runs as; empty keeps the image default
+    user: ${MC_TERMINAL_USER:hermes}
   # curated model catalog fallbacks, used when no live provider fetch is possible
   models:
     # Nous Portal is an OAuth account (hermes portal) — no key in the dashboard,

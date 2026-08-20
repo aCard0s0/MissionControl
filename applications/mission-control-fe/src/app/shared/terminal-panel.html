@@ -16,6 +16,8 @@
     <button class="act" (click)="reconnect(); $event.stopPropagation()" title="restart session">↻</button>
     <button class="act" (click)="clear(); $event.stopPropagation()" title="clear">⌫</button>
   }
+  <button class="act" [class.on]="cheatOpen()" (click)="toggleCheat(); $event.stopPropagation()"
+          title="hermes commands">cmds</button>
 </div>
 
 @if (open()) {
@@ -44,6 +46,13 @@
       </div>
     }
     <button class="add" (click)="addTab(); $event.stopPropagation()" title="new shell">+</button>
+  </div>
+}
+
+@if (open() && cheatOpen()) {
+  <div class="cheat">
+    <mc-hermes-commands [dark]="true" [canInsert]="true" [profile]="activeProfile()"
+                        (insert)="insertCommand($event)" />
   </div>
 }
 

@@ -4,23 +4,12 @@ import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile } from '../core/models';
+import { agentSessionCommand } from '../core/hermes-commands';
 import { StatusDot } from '../shared/status-dot';
 import { RollingNumber } from '../shared/rolling-number';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
 import { AgentCreateDialog } from './agent-create-dialog';
-
-/**
- * The CLI invocation that drops you into a session with `name`. Hermes takes
- * `-p` only for named profiles — `default` lives at /opt/data and is invoked
- * bare (the same special-case the backend applies in HermesProfiles).
- * Returns undefined for a name that could carry shell metacharacters, which
- * downgrades the shortcut to a plain shell rather than typing it blind.
- */
-export function agentSessionCommand(name: string): string | undefined {
-  if (!/^[A-Za-z0-9._-]+$/.test(name)) return undefined;
-  return name === 'default' ? 'hermes' : `hermes -p ${name}`;
-}
 
 /**
  * The profile roster for the selected container: today's totals, one card each,

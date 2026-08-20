@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
+import com.github.dockerjava.api.command.ExecCreateCmd;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.model.Frame;
 import io.hermes.missioncontrol.docker.DockerClients;
@@ -174,15 +175,18 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
       // an attached TTY is silent whenever nobody is typing; a socket timeout on this client
       // would close an idle session long before TerminalProperties' own idle reaper does
       DockerClient client = clients.streamingForUrl(url);
-      ExecCreateCmdResponse exec = client.execCreateCmd(containerId)
+      ExecCreateCmd create = client.execCreateCmd(containerId)
           .withAttachStdin(true)
           .withAttachStdout(true)
           .withAttachStderr(true)
           .withTty(true)
           // plain sh, not a login shell — `sh -l` sources /etc/profile which
           // resets PATH and loses the image's /opt/hermes/bin entry
-          .withCmd("sh", "-c", SHELL)
-          .exec();
+          .withCmd("sh", "-c", SHELL);
+      // the same user every profile-scoped exec runs as (mc.terminal.user, `hermes` by
+      // default): a root shell writing into /opt/data leaves files the agent cannot read
+      if (props.user() != null && !props.user().isBlank()) create.withUser(props.user());
+      ExecCreateCmdResponse exec = create.exec();
 
       PipedOutputStream stdin = new PipedOutputStream();
       PipedInputStream stdinSource = new PipedInputStream(stdin, 16 * 1024);

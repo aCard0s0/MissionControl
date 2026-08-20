@@ -1,0 +1,110 @@
+// Every colour goes through a local token so the one component can sit on a page (default,
+// theme-following) and inside the terminal panel (.dark, pinned to the --term-* palette in
+// both themes) without a second copy of the layout.
+:host {
+  --hc-bg: var(--panel);
+  --hc-line: var(--line);
+  --hc-line-2: var(--line-2);
+  --hc-text: var(--text);
+  --hc-dim: var(--dim);
+  --hc-faint: var(--faint);
+  --hc-acc: var(--acc);
+  --hc-acc-soft: var(--acc-soft);
+  --hc-warn: var(--amber);
+
+  display: block;
+  min-width: 0;
+}
+
+:host(.dark) {
+  --hc-bg: var(--term-bg);
+  --hc-line: var(--term-line);
+  --hc-line-2: var(--term-line);
+  --hc-text: var(--term-text);
+  --hc-dim: var(--term-dim);
+  --hc-faint: var(--term-faint);
+  --hc-acc: var(--term-acc);
+  --hc-acc-soft: rgba(63, 240, 143, 0.12);
+  --hc-warn: #e0a94a;
+}
+
+.find {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 10px;
+  background: var(--hc-bg);
+
+  .input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border-color: var(--hc-line-2);
+    color: var(--hc-text);
+    &:focus { border-color: var(--hc-acc); }
+    &::placeholder { color: var(--hc-faint); }
+  }
+  .count { flex: none; color: var(--hc-faint); font-size: 10.5px; }
+  .scope {
+    flex: none;
+    padding: 2px 8px;
+    border: 1px solid var(--hc-acc);
+    border-radius: 999px;
+    background: var(--hc-acc-soft);
+    color: var(--hc-acc);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .ref { flex: none; color: var(--hc-dim); font-size: 10.5px; text-decoration: none;
+    &:hover { color: var(--hc-acc); } }
+}
+
+.group {
+  padding-top: 10px;
+  h3 {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--hc-faint);
+  }
+  .blurb { margin: 4px 0 8px; color: var(--hc-dim); font-size: 11.5px; line-height: 1.5; }
+}
+
+.cmd {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--hc-line);
+  &:hover { background: var(--hc-acc-soft); }
+
+  .line { flex: none; color: var(--hc-acc); font-size: 11.5px; }
+  .summary { min-width: 0; color: var(--hc-text); font-size: 11.5px; }
+  .flags { color: var(--hc-faint); font-size: 10.5px; }
+  .warn { color: var(--hc-warn); font-size: 10.5px; }
+
+  // actions stay put rather than appearing on hover: on a touch screen there is no hover,
+  // and this list is as useful on a tablet propped next to a rack as on a laptop
+  .acts { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+  .act {
+    background: none;
+    border: 1px solid var(--hc-line-2);
+    border-radius: 3px;
+    color: var(--hc-dim);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.6;
+    padding: 1px 7px;
+    text-decoration: none;
+    &:hover { color: var(--hc-acc); border-color: var(--hc-acc); }
+  }
+}
+
+.none { padding: 16px 8px; color: var(--hc-faint); font-size: 11.5px; }

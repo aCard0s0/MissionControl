@@ -12,7 +12,7 @@
     @for (item of nav; track item.path; let i = $index) {
       <a [routerLink]="item.path" routerLinkActive="active"
          [routerLinkActiveOptions]="{ exact: item.exact }" (click)="closeSide()">
-        <span class="idx">0{{ i + 1 }}</span>{{ item.label }}
+        <span class="idx">{{ navIndex(i) }}</span>{{ item.label }}
       </a>
     }
   </nav>

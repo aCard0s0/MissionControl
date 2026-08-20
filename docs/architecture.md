@@ -187,6 +187,15 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   registers the shell, so anything sent on `open` would be dropped). Clicking the same agent
   again focuses the tab it already made; re-pointing that tab at another container clears the
   command, so `hermes -p <profile>` never runs where the profile does not exist.
+- **Exec user.** The shell runs as `mc.terminal.user` (`MC_TERMINAL_USER`, default `hermes`) —
+  the same user every profile-scoped exec uses, because a root shell writing into `/opt/data`
+  leaves files the agent itself can no longer read. An image without that account sets the
+  variable empty, which keeps the image default.
+- **Command drawer.** The `cmds` button opens the hermes CLI reference inside the panel
+  ([docs/hermes-cli.md](hermes-cli.md) is the same catalog, and a spec keeps the two in step).
+  Its lines carry the active tab's profile, and **insert** types one at the prompt *without* a
+  newline — the operator still presses Enter. The same list is a full page at `/reference`,
+  which sends its lines through the existing terminal request channel.
 
 ## Environment variables (combined image)
 
@@ -200,6 +209,7 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
 | `MC_MCP_STACK_DIR` | `/data/mcp-stacks` in the image | generated non-secret per-host Compose files |
 | `MC_API_BASE_URL` | `` (same origin) | only for split FE/BE deployments |
 | `MC_PORT` | `8080` | server port |
+| `MC_TERMINAL_USER` | `hermes` | container user the web terminal's shell runs as; empty keeps the image default |
 | `MC_SECRET_KEY` | required | AES key for encrypted template secrets; `./mc` creates and reuses it automatically |
 | `MC_SECRET_KEY_PREVIOUS` | empty | prior key accepted temporarily during rotation |
 

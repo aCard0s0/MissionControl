@@ -1,0 +1,43 @@
+<div class="find mono">
+  <input class="input" type="search" placeholder="search commands, flags, descriptions"
+         aria-label="search hermes commands"
+         [value]="query()" (input)="onSearch($any($event.target).value)" />
+  <span class="count">{{ matches() }}/{{ total }}</span>
+  @if (profile(); as p) {
+    <span class="scope" title="lines are scoped to this profile">-p {{ p }}</span>
+  }
+  <a class="ref" [href]="docs" target="_blank" rel="noopener">full reference ↗</a>
+</div>
+
+@for (group of groups(); track group.title) {
+  <section class="group">
+    <h3 class="mono">{{ group.title }}</h3>
+    <p class="blurb">{{ group.blurb }}</p>
+
+    @for (c of group.commands; track c.cmd) {
+      <div class="cmd" [class.install]="c.install">
+        <code class="line mono">{{ line(c) }}</code>
+        <span class="summary">{{ c.summary }}</span>
+        @if (c.flags) {
+          <span class="flags mono">{{ c.flags }}</span>
+        }
+        @if (c.install) {
+          <span class="warn mono">{{ installWarning }}</span>
+        }
+        <span class="acts">
+          <button class="act" (click)="copy(c)" [title]="'copy ' + line(c)">
+            {{ copied() === c.cmd ? 'copied' : 'copy' }}
+          </button>
+          @if (canInsert()) {
+            <button class="act" (click)="onInsert(c)"
+                    title="put this line at the prompt — you press Enter">insert</button>
+          }
+          <a class="act" [href]="docsUrl(c)" target="_blank" rel="noopener"
+             [title]="'documentation for hermes ' + c.cmd">docs ↗</a>
+        </span>
+      </div>
+    }
+  </section>
+} @empty {
+  <p class="none mono">no command matches “{{ query() }}”.</p>
+}

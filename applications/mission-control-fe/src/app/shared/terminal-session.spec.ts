@@ -154,6 +154,81 @@ describe('TerminalSession startup command', () => {
   });
 });
 
+describe('TerminalSession.type — a line put at the prompt, not run', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.last = null;
+    vi.stubGlobal('WebSocket', FakeSocket);
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('sends no newline, so the operator is the one who runs it', () => {
+    const s = new TerminalSession(target(), 'http://mc.test');
+    s.connect();
+    const ws = FakeSocket.last!;
+    ws.onopen!();
+
+    s.type('hermes -p ops-bot cron list');
+
+    expect(ws.sent).toEqual(['hermes -p ops-bot cron list']);
+  });
+
+  it('holds the line for a shell that is still coming up', () => {
+    // the drawer can insert into a tab the panel created a tick ago; the backend drops stdin
+    // until the exec is registered, so an eager send would vanish
+    const s = new TerminalSession(target(), 'http://mc.test');
+    s.type('hermes status');
+    s.connect();
+    const ws = FakeSocket.last!;
+
+    ws.onopen!();
+    expect(ws.sent).toEqual([]);
+
+    ws.emit('$ ');
+    expect(ws.sent).toEqual(['hermes status']);
+  });
+
+  it('is not discarded by the connect of a tab that has no startup command of its own', () => {
+    const s = new TerminalSession(target(), 'http://mc.test');
+    s.type('hermes doctor');
+    s.connect();          // arms nothing — must not clear what is already queued
+    const ws = FakeSocket.last!;
+
+    ws.onopen!();
+    ws.emit('$ ');
+
+    expect(ws.sent).toEqual(['hermes doctor']);
+  });
+
+  it('loses to the startup command of an agent tab, which has to run first', () => {
+    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    s.type('hermes doctor');
+    s.connect();
+    const ws = FakeSocket.last!;
+
+    ws.onopen!();
+    ws.emit('$ ');
+
+    expect(ws.sent).toEqual(['hermes -p ops-bot\n']);
+  });
+
+  it('sends nothing for an empty line', () => {
+    const s = new TerminalSession(target(), 'http://mc.test');
+    s.connect();
+    const ws = FakeSocket.last!;
+    ws.onopen!();
+
+    s.type('');
+
+    expect(ws.sent).toEqual([]);
+  });
+});
+
 describe('TerminalSession identity and wiring', () => {
   beforeEach(() => {
     vi.useFakeTimers();

@@ -76,11 +76,20 @@ describe('App shell', () => {
     const { fixture } = render(storeStub([container('hermes-prod')]));
 
     const links = Array.from(el(fixture).querySelectorAll('nav a'))
-      .map(a => (a.textContent ?? '').replace(/^0\d/, '').trim());
+      .map(a => (a.textContent ?? '').replace(/^\d\d/, '').trim());
     expect(links).toEqual([
-      'Containers', 'Overview', 'Agents', 'Profiles', 'Models',
-      'MCP Servers', 'Ops Board', 'Calendar', 'Webhooks',
+      'Containers', 'Overview', 'Agents', 'Blueprints', 'Models',
+      'MCP Servers', 'Ops Board', 'Calendar', 'Webhooks', 'CLI Reference',
     ]);
+  });
+
+  it('numbers the tenth destination 10, not 010', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    const indices = Array.from(el(fixture).querySelectorAll('nav a .idx'))
+      .map(span => (span.textContent ?? '').trim());
+    expect(indices.at(0)).toBe('01');
+    expect(indices.at(-1)).toBe('10');
   });
 
   it('shows the fleet counts and the clock in UTC', () => {
