@@ -15,7 +15,7 @@ import { button, el, press, settle, text } from './testing/dom';
 
 const container = (id: string, patch: Partial<HermesContainer> = {}): HermesContainer => ({
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
-  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', startedAt: 1,
+  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', imageDigest: null, startedAt: 1,
   cpu: 12, ram: 512, ramTotal: 4096, disk: 1, diskTotal: 0, netIn: 0, netOut: 0,
   cpuHist: [], ramHist: [], netHist: [], ...patch,
 });

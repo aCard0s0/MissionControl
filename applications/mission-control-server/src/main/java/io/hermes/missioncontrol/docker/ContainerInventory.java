@@ -6,6 +6,7 @@ import com.github.dockerjava.api.model.Version;
 import io.hermes.missioncontrol.config.AppProperties;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -75,10 +76,13 @@ public class ContainerInventory {
 
     List<ContainerDto> result = new ArrayList<>();
     Set<String> present = new HashSet<>();
+    // containers on a host overwhelmingly share a handful of images, so the digest lookup
+    // is resolved once per image rather than once per container
+    Map<String, String> digests = new HashMap<>();
     for (Container c : containers) {
       present.add(exclusionKey(host.id(), primaryName(c)));
       if (!includeAll && !isFleetMember(host.id(), c)) continue;
-      result.add(toDto(client, c, host.id()));
+      result.add(toDto(client, c, host.id(), digests));
     }
     // every call lists the whole daemon (withShowAll), so anything this host reported before
     // and does not report now is gone; other hosts' entries are left alone
@@ -141,7 +145,8 @@ public class ContainerInventory {
         || name.toLowerCase(Locale.ROOT).contains(filter);
   }
 
-  private ContainerDto toDto(DockerClient client, Container c, String hostId) {
+  private ContainerDto toDto(
+      DockerClient client, Container c, String hostId, Map<String, String> digestCache) {
     String name = primaryName(c);
     String[] imageParts = ImageRef.splitImage(c.getImage());
     if (isImageIdReference(c.getImage())) {
@@ -168,7 +173,37 @@ public class ContainerInventory {
 
     return new ContainerDto(
         c.getId(), c.getId().substring(0, Math.min(7, c.getId().length())), name, hostId,
-        status, imageParts[0], imageParts[1], startedAt, sizeGb, profiles);
+        status, imageParts[0], imageParts[1], imageDigest(client, c, digestCache),
+        startedAt, sizeGb, profiles);
+  }
+
+  /**
+   * The registry manifest digest of the image a container runs, from its {@code RepoDigests}.
+   *
+   * <p>Best effort by design: an image built locally and never pushed has no repo digest, and
+   * an unreachable daemon is already reported by everything else on this path. Both answer
+   * null, which the dashboard reads as "cannot tell" rather than "up to date" — the one thing
+   * this must never do is manufacture a false update prompt.
+   */
+  private static String imageDigest(
+      DockerClient client, Container c, Map<String, String> cache) {
+    String imageId = c.getImageId();
+    if (imageId == null || imageId.isBlank()) return null;
+    String digest = cache.computeIfAbsent(imageId, id -> {
+      try {
+        List<String> repoDigests = client.inspectImageCmd(id).exec().getRepoDigests();
+        if (repoDigests == null) return "";
+        // entries read repository@sha256:… — the digest is what compares against a registry
+        return repoDigests.stream()
+            .map(entry -> entry.substring(entry.indexOf('@') + 1))
+            .filter(value -> value.startsWith("sha256:"))
+            .findFirst()
+            .orElse("");
+      } catch (RuntimeException unavailable) {
+        return "";
+      }
+    });
+    return digest.isBlank() ? null : digest;
   }
 
   private static String primaryName(Container c) {

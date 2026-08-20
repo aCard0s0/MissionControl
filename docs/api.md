@@ -27,7 +27,7 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts |
+| `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts. `imageDigest` is the registry manifest digest of the image the container runs, or null when it was never pulled from a registry — the only evidence that a container on a floating tag such as `latest` is behind |
 | `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates. `ramMb` excludes the reclaimable page cache, matching what `docker stats` reports rather than raw `memory_stats.usage`. 503 if the daemon returns no sample. |
 | `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | container-scoped `{ ts, level, source, msg }`; multiline frames are split, empty records dropped, and explicit severity preserved |
 | `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. `version` is validated as an image tag (same rule as the update endpoint) — blank or absent means `latest`. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. A gateway that never reports ready is 503, not 500. |

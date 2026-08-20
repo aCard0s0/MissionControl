@@ -8,6 +8,13 @@
       <mc-status [status]="ctr.status" [live]="ctr.status !== 'stopped'" />
       <span class="sep">·</span>
       <span>{{ ctr.image }}:{{ ctr.version }}</span>
+      @if (update(); as target) {
+        <!-- beside the version it qualifies, rather than a banner pushing the telemetry down -->
+        <a class="update-notice" routerLink="/containers" [title]="updateHint(ctr, target)">
+          <span class="chip warn">update available</span>
+          <span class="faint">{{ updateHint(ctr, target) }}</span>
+        </a>
+      }
       <span class="sep">·</span>
       <span>up {{ uptime(ctr.startedAt) }}</span>
     </div>

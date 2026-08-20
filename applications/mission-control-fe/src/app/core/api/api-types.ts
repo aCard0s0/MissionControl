@@ -12,6 +12,7 @@ export interface ApiContainer {
   status: 'running' | 'stopped' | 'unhealthy' | 'unknown';
   image: string;
   version: string;
+  imageDigest: string | null;
   startedAt: number | null;
   sizeRootFsGb: number | null;
   profiles: string[];
@@ -48,6 +49,9 @@ export interface ApiImageTag {
   tag: string;
   pulled: boolean;
   remote: boolean;
+  /** Registry manifest digest, when the registry reported one. Compared against a
+   *  container's own image digest to tell whether a floating tag has moved on. */
+  digest: string | null;
 }
 
 export interface ApiImageTags {

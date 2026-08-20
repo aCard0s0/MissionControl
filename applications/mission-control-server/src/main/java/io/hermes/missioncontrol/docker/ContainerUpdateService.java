@@ -40,6 +40,8 @@ public class ContainerUpdateService {
    * @return the id of the replacement container
    */
   public String update(DockerHostRef host, String containerId, String version) {
+    log.info("update requested for container {} on {} -> {}",
+        containerId.substring(0, Math.min(12, containerId.length())), host.id(), version);
     UpgradeResult result = docker.upgrade(host, containerId, version);
     remap(host.id(), result.oldContainerId(), result.newContainerId());
     return result.newContainerId();

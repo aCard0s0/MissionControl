@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { JobStore } from '../core/store/job-store';
+import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { LogStore } from '../core/store/log-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import {
-  AgentProfile, CronJob, HermesContainer, Integration, LogEntry, McpServer, SkillRef,
+  AgentProfile, CronJob, HermesContainer, ImageCatalog, Integration, LogEntry, McpServer, SkillRef,
 } from '../core/models';
 import { OverviewPage } from './overview';
 import { el, text } from '../testing/dom';
@@ -17,7 +18,7 @@ import { agent, cronJob as job, mcpServer, skill as buildSkill } from '../testin
 
 const container: HermesContainer = {
   id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
-  image: 'hermes', version: 'v1', startedAt: 1, cpu: 12, ram: 512, ramTotal: 2048,
+  image: 'hermes', version: 'v1', imageDigest: null, startedAt: 1, cpu: 12, ram: 512, ramTotal: 2048,
   disk: 4, diskTotal: 40, netIn: 1, netOut: 2, cpuHist: [1, 2], ramHist: [1, 2], netHist: [1, 2],
 };
 
@@ -26,8 +27,10 @@ const log = (level: LogEntry['level'], msg: string): LogEntry =>
 
 const storeStub = (opts: {
   agents?: AgentProfile[]; logs?: LogEntry[]; jobs?: CronJob[];
+  catalog?: Record<string, ImageCatalog>;
+  container?: HermesContainer;
 } = {}) => ({
-  containers: { selected: signal(container) },
+  containers: { selected: signal(opts.container ?? container) },
   agents: { forSelectedContainer: signal(opts.agents ?? []) },
   jobs: { forSelectedContainer: signal(opts.jobs ?? []) },
   logs: {
@@ -38,6 +41,7 @@ const storeStub = (opts: {
     refresh: vi.fn(),
   },
   terminal: { open: vi.fn(), openAgentShell: vi.fn() },
+  images: { catalog: signal(opts.catalog ?? {}), refreshAll: vi.fn() },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -49,6 +53,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
       { provide: ContainerStore, useValue: store.containers },
       { provide: JobStore, useValue: store.jobs },
       { provide: LogStore, useValue: store.logs },
+      { provide: ImageCatalogStore, useValue: store.images },
       { provide: TerminalRequestStore, useValue: store.terminal },
     ],
   });
@@ -313,5 +318,47 @@ describe('OverviewPage log tail', () => {
     }));
 
     expect(text(fixture)).not.toContain('error in tail');
+  });
+});
+
+describe('OverviewPage image-is-behind notice', () => {
+  const catalog = (digest: string | null): Record<string, ImageCatalog> => ({
+    'dh-local': {
+      repository: 'hermes',
+      tags: [{ tag: 'latest', pulled: true, digest }],
+      registryStatus: 'ok',
+      fetchedAt: 0,
+    },
+  });
+
+  const onLatest = (imageDigest: string | null): HermesContainer =>
+    ({ ...container, version: 'latest', imageDigest });
+
+  it('says so when the registry has moved the tag the container runs', () => {
+    // the overview is where an operator lands to ask why an Agent is behaving oddly, and
+    // "the image is two months old" is an answer this page should not hide
+    const { fixture } = render(storeStub({
+      container: onLatest('sha256:aaa'), catalog: catalog('sha256:bbb'),
+    }));
+
+    expect(text(fixture)).toContain('update available');
+    expect(text(fixture)).toContain('a newer image was published on latest');
+  });
+
+  it('stays quiet when the container already runs what the tag points at', () => {
+    const { fixture } = render(storeStub({
+      container: onLatest('sha256:aaa'), catalog: catalog('sha256:aaa'),
+    }));
+
+    expect(text(fixture)).not.toContain('update available');
+  });
+
+  it('stays quiet when there is no digest to compare', () => {
+    // an air-gapped install must read as "cannot tell", never as an update prompt
+    const { fixture } = render(storeStub({
+      container: onLatest(null), catalog: catalog('sha256:bbb'),
+    }));
+
+    expect(text(fixture)).not.toContain('update available');
   });
 });

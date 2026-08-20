@@ -55,9 +55,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import com.github.dockerjava.api.command.PullImageResultCallback;
+import com.github.dockerjava.api.command.PullImageCmd;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
+import org.mockito.ArgumentMatchers;
 import org.mockito.ArgumentCaptor;
 
 class DockerGatewayTest {
@@ -327,6 +331,42 @@ class DockerGatewayTest {
     assertThrows(ResourceConflictException.class,
         () -> gateway.upgrade(HOST, "cid", "v2026.8.3"));
     verify(client, never()).renameContainerCmd(anyString());
+  }
+
+  @Test
+  void upgradeRefreshesAFloatingTagInsteadOfCallingItAlreadyCurrent() {
+    // `latest` is the one tag whose local copy is exactly what goes stale, so the conflict
+    // check below it — which compares image ids — would otherwise refuse the update that
+    // moving onto a newer `latest` is asking for.
+    stubManagedInspect("cid", "hermes/image:latest", true, managedLabels(), Map.of());
+    InspectImageCmd inspect = mock(InspectImageCmd.class);
+    InspectImageResponse stale = mock(InspectImageResponse.class);
+    InspectImageResponse fresh = mock(InspectImageResponse.class);
+    when(client.inspectImageCmd("hermes/image:latest")).thenReturn(inspect);
+    when(stale.getId()).thenReturn("old-sha");     // the id the container already runs
+    when(fresh.getId()).thenReturn("new-sha");     // what the pull brings down
+    when(inspect.exec()).thenReturn(stale, fresh);
+    PullImageCmd pull = mock(PullImageCmd.class, Answers.RETURNS_SELF);
+    PullImageResultCallback pullCallback = mock(PullImageResultCallback.class);
+    when(streamingClient.pullImageCmd("hermes/image")).thenReturn(pull);
+    when(pull.exec(ArgumentMatchers.<PullImageResultCallback>any())).thenReturn(pullCallback);
+    try {
+      when(pullCallback.awaitCompletion(180, TimeUnit.SECONDS)).thenReturn(true);
+    } catch (InterruptedException impossible) {
+      throw new AssertionError(impossible);
+    }
+    stubRename("cid");
+    stubStop("cid");
+    stubCreate("hermes/image:latest", "new-id");
+    stubStartAndReady("new-id");
+    RemoveContainerCmd removeOld = mock(RemoveContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.removeContainerCmd("cid")).thenReturn(removeOld);
+
+    UpgradeResult result = gateway.upgrade(HOST, "cid", "latest");
+
+    verify(pull).withTag("latest");
+    assertEquals("new-id", result.newContainerId());
+    assertEquals("latest", result.toTag());
   }
 
   @Test

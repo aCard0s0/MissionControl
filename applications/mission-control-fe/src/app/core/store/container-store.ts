@@ -60,7 +60,8 @@ export class ContainerStore {
           const old = prevById.get(c.id);
           return {
             id: c.id, name: c.name, shortId: c.shortId, hostId: c.hostId,
-            status: c.status, image: c.image, version: c.version, startedAt: c.startedAt,
+            status: c.status, image: c.image, version: c.version,
+            imageDigest: c.imageDigest ?? null, startedAt: c.startedAt,
             disk: c.sizeRootFsGb ?? 0, diskTotal: 0,   // daemons report size, not quota
             cpu: old?.cpu ?? 0, ram: old?.ram ?? 0, ramTotal: old?.ramTotal ?? 0,
             netIn: old?.netIn ?? 0, netOut: old?.netOut ?? 0,

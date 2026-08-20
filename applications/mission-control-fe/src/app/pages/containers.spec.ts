@@ -13,7 +13,7 @@ import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 import { ContainersPage, containerUpdate, newerImageTags, normalizeSeedProfiles } from './containers';
 import {
-  TestFixture, button, choose, el, field, fill, press, settle, text, type,
+  TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
 } from '../testing/dom';
 import { container, dockerHost } from '../testing/models';
 
@@ -26,14 +26,69 @@ describe('normalizeSeedProfiles', () => {
 
 const HERMES = 'nousresearch/hermes-agent';
 
-const cat = (tags: (string | ImageTag)[], repository = HERMES): ImageCatalog => ({
+type TagSpec = string | (Partial<ImageTag> & { tag: string });
+
+const cat = (tags: TagSpec[], repository = HERMES): ImageCatalog => ({
   repository,
-  tags: tags.map(t => typeof t === 'string' ? { tag: t, pulled: true } : t),
+  tags: tags.map(t => typeof t === 'string'
+    ? { tag: t, pulled: true, digest: null }
+    : { pulled: true, digest: null, ...t }),
   registryStatus: 'ok',
   fetchedAt: 0,
 });
 
 const on = (version: string, image = HERMES) => ({ image, version });
+
+/** A container on a floating tag, with the digest of the image it actually runs. */
+const onFloating = (version: string, imageDigest: string | null, image = HERMES) =>
+  ({ image, version, imageDigest });
+
+describe('containerUpdate on a floating tag', () => {
+  // A container on `latest` is never behind by tag string — its tag is always the newest
+  // one. The digests are the only evidence, which is why every case below turns on them.
+  const registry = (digest: string | null) => cat([{ tag: 'latest', pulled: true, digest }]);
+
+  it('offers the same tag again once the registry has moved it', () => {
+    const target = containerUpdate(onFloating('latest', 'sha256:aaa'), registry('sha256:bbb'));
+
+    expect(target?.tag).toBe('latest');
+  });
+
+  it('stays quiet while the container runs what the tag points at', () => {
+    expect(containerUpdate(onFloating('latest', 'sha256:aaa'), registry('sha256:aaa'))).toBeNull();
+  });
+
+  it('claims nothing when either digest is unknown', () => {
+    // an image built locally and never pushed has no repo digest …
+    expect(containerUpdate(onFloating('latest', null), registry('sha256:bbb'))).toBeNull();
+    // … and an air-gapped install or MC_REGISTRY_TAGS=false reports no registry digest
+    expect(containerUpdate(onFloating('latest', 'sha256:aaa'), registry(null))).toBeNull();
+  });
+
+  it('covers the other tags that track a stream, not just latest', () => {
+    for (const tag of ['main', 'edge', 'nightly', 'dev']) {
+      const catalog = cat([{ tag, pulled: true, digest: 'sha256:bbb' }]);
+      expect(containerUpdate(onFloating(tag, 'sha256:aaa'), catalog)?.tag).toBe(tag);
+    }
+  });
+
+  it('never answers with another repository\'s tag', () => {
+    const foreign = cat([{ tag: 'latest', pulled: true, digest: 'sha256:bbb' }], 'someone/else');
+
+    expect(containerUpdate(onFloating('latest', 'sha256:aaa'), foreign)).toBeNull();
+  });
+
+  it('leaves a pinned container to the release rules', () => {
+    // a pinned tag is judged by version order, and a digest must not drag it onto a stream
+    const catalog = cat([
+      { tag: 'latest', pulled: true, digest: 'sha256:bbb' },
+      { tag: 'v2026.8.3', pulled: true, digest: null },
+    ]);
+
+    expect(containerUpdate(onFloating('v2026.7.20', 'sha256:aaa'), catalog)?.tag)
+      .toBe('v2026.8.3');
+  });
+});
 
 describe('containerUpdate', () => {
   it('offers the newest release and lists every step in between', () => {
@@ -90,7 +145,7 @@ describe('containerUpdate', () => {
 
   it('surfaces a tag the host has not pulled yet, and says so', () => {
     const target = containerUpdate(on('v2026.7.20'), cat([{ tag: 'v2026.8.3', pulled: false }]));
-    expect(target).toEqual({ tag: 'v2026.8.3', pulled: false });
+    expect(target).toEqual({ tag: 'v2026.8.3', pulled: false, digest: null });
   });
 
   it('computes the maximum from an unsorted catalog', () => {
@@ -182,6 +237,7 @@ const openDeploy = async (fixture: TestFixture): Promise<void> => {
 };
 
 describe('ContainersPage fleet', () => {
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -308,6 +364,7 @@ describe('ContainersPage fleet', () => {
 });
 
 describe('ContainersPage docker hosts', () => {
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -374,6 +431,7 @@ describe('ContainersPage docker hosts', () => {
 });
 
 describe('ContainersPage deploy', () => {
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -529,14 +587,22 @@ describe('ContainersPage deploy', () => {
 });
 
 describe('ContainersPage image update', () => {
-  const catalog = (tags: (string | ImageTag)[]): Record<string, ImageCatalog> => ({
+  const catalog = (tags: TagSpec[]): Record<string, ImageCatalog> => ({
     'dh-local': {
       repository: HERMES,
-      tags: tags.map(t => typeof t === 'string' ? { tag: t, pulled: true } : t),
+      tags: tags.map(t => typeof t === 'string'
+        ? { tag: t, pulled: true, digest: null }
+        : { pulled: true, digest: null, ...t }),
       registryStatus: 'ok',
       fetchedAt: 0,
     },
   });
+
+  /** The card's update button — its label now carries the target tag, so match by prefix. */
+  const pressUpdate = (fixture: TestFixture): void => {
+    buttonWith(fixture, 'update', '.card').click();
+    fixture.detectChanges();
+  };
 
   beforeEach(() => vi.useFakeTimers());
 
@@ -545,19 +611,40 @@ describe('ContainersPage image update', () => {
     vi.useRealTimers();
   });
 
-  it('badges a container that has a newer release, and says what the move is', () => {
-    const { fixture } = render(storeStub([container('hermes-prod')], catalog(['v2026.8.3'])));
+  it('offers the update on a floating tag once the registry has moved it', () => {
+    // the case the tag rules alone can never see: `latest` is always the newest tag,
+    // so only the digests say the running image is two months old
+    const stale = container('hermes-prod', { version: 'latest', imageDigest: 'sha256:aaa' });
+    const { fixture } = render(storeStub([stale],
+      catalog([{ tag: 'latest', digest: 'sha256:bbb' }])));
 
-    const badge = el(fixture).querySelector('.chip.warn')!;
-    expect(badge.textContent).toContain('update v2026.8.3');
-    expect(badge.getAttribute('title')).toBe('v2026.7.20 → v2026.8.3');
+    const button = el(fixture).querySelector('.btn.upd')!;
+    expect(button.textContent).toContain('update latest');
+    expect(button.getAttribute('title'))
+      .toContain('the registry published a new image on this tag');
   });
 
-  it('warns on the badge when the target is not on the host yet', () => {
+  it('offers nothing on a floating tag it already matches', () => {
+    const current = container('hermes-prod', { version: 'latest', imageDigest: 'sha256:aaa' });
+    const { fixture } = render(storeStub([current],
+      catalog([{ tag: 'latest', digest: 'sha256:aaa' }])));
+
+    expect(el(fixture).querySelector('.btn.upd')).toBeNull();
+  });
+
+  it('names the move on the update button, which is the only badge now', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')], catalog(['v2026.8.3'])));
+
+    const button = el(fixture).querySelector('.btn.upd')!;
+    expect(button.textContent).toContain('update v2026.8.3');
+    expect(button.getAttribute('title')).toBe('v2026.7.20 → v2026.8.3');
+  });
+
+  it('warns on the button when the target is not on the host yet', () => {
     const { fixture } = render(storeStub(
       [container('hermes-prod')], catalog([{ tag: 'v2026.8.3', pulled: false }])));
 
-    expect(el(fixture).querySelector('.chip.warn')!.getAttribute('title'))
+    expect(el(fixture).querySelector('.btn.upd')!.getAttribute('title'))
       .toBe('v2026.7.20 → v2026.8.3 · not pulled on this host yet');
   });
 
@@ -572,7 +659,7 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([container('hermes-prod')],
       catalog(['v2026.8.3', 'v2026.7.30'])));
 
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     const options = Array.from(field(fixture, 'target version').querySelectorAll('option'));
     expect(options.map(o => o.textContent?.trim())).toEqual(['v2026.8.3', 'v2026.7.30']);
@@ -583,7 +670,7 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([container('hermes-prod')],
       catalog([{ tag: 'v2026.8.3', pulled: false }])));
 
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     expect(text(fixture)).toContain('the image is pulled first');
   });
@@ -592,7 +679,7 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([container('hermes-prod', { status: 'stopped' })],
       catalog(['v2026.8.3'])));
 
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     expect(text(fixture)).toContain('this container is stopped — it stays stopped after the update');
   });
@@ -600,7 +687,7 @@ describe('ContainersPage image update', () => {
   it('recreates the container on the chosen tag and closes', async () => {
     const { fixture, store } = render(storeStub([container('hermes-prod')],
       catalog(['v2026.8.3', 'v2026.7.30'])));
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
     await choose(fixture, 'target version', 'v2026.7.30');
 
     press(fixture, 'update to v2026.7.30');
@@ -614,7 +701,7 @@ describe('ContainersPage image update', () => {
     const store = storeStub([container('hermes-prod')], catalog(['v2026.8.3']));
     store.lifecycle.update.mockResolvedValue('');
     const { fixture } = render(store);
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     press(fixture, 'update to v2026.8.3');
     await settle(fixture);
@@ -627,12 +714,14 @@ describe('ContainersPage image update', () => {
     let land!: (value: string) => void;
     store.lifecycle.update.mockReturnValue(new Promise<string>(r => { land = r; }));
     const { fixture } = render(store);
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     press(fixture, 'update to v2026.8.3');
     fixture.detectChanges();
 
-    expect(text(fixture)).toContain('recreating…');
+    // a recreate takes long enough to look stalled, so it says what it is doing and spins
+    expect(text(fixture)).toContain('recreating the container');
+    expect(el(fixture).querySelectorAll('.modal .spin').length).toBeGreaterThan(0);
     press(fixture, 'cancel');                       // a cancel mid-flight must not close it
     expect(el(fixture).querySelector('.modal')).not.toBeNull();
 
@@ -642,7 +731,7 @@ describe('ContainersPage image update', () => {
 
   it('cancels back out without touching the container', () => {
     const { fixture, store } = render(storeStub([container('hermes-prod')], catalog(['v2026.8.3'])));
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     press(fixture, 'cancel');
 

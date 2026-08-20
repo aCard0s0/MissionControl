@@ -339,3 +339,24 @@ a:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+// A spinner for work that runs long enough to look stalled — an image pull is minutes.
+// Global because the update flow shows it on a card button and inside its modal.
+.spin {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: mc-spin .7s linear infinite;
+  vertical-align: -1px;
+}
+
+@keyframes mc-spin { to { transform: rotate(360deg); } }
+
+// respects an operator who has asked the OS for less motion
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation-duration: 2.4s; }
+}

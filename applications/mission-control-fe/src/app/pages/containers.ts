@@ -14,6 +14,7 @@ import { Reveal } from '../shared/reveal';
 import { TerminalIcon } from '../shared/terminal-icon';
 import { errorMessage } from '../core/errors';
 import { uptime } from '../core/format';
+import { isFloatingTag } from '../core/image-tags';
 import { HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 
 export function normalizeSeedProfiles(value: string): string[] {
@@ -68,8 +69,14 @@ function sameRepository(a: string, b: string): boolean {
  *  - a catalog for a different repository is ignored outright, so a fork is
  *    never handed Hermes' tags.
  */
+/** What the update rules need off a container — the digest optional, because the
+ *  tag-only rules below never look at it. */
+type UpdateCandidate = Pick<HermesContainer, 'image' | 'version'> & {
+  readonly imageDigest?: string | null;
+};
+
 export function newerImageTags(
-  container: Pick<HermesContainer, 'image' | 'version'>,
+  container: UpdateCandidate,
   catalog: ImageCatalog | undefined,
 ): ImageTag[] {
   if (!catalog || !sameRepository(container.image, catalog.repository)) return [];
@@ -83,12 +90,32 @@ export function newerImageTags(
     .map(x => x.entry);
 }
 
-/** The newest release this container could move to, or null when it is current. */
-export function containerUpdate(
-  container: Pick<HermesContainer, 'image' | 'version'>,
+/**
+ * The same floating tag, when the registry has moved it somewhere this container is not.
+ *
+ * A container on `latest` can never be "behind" by tag string — its tag is always the newest
+ * one. The digests are the only evidence: the registry's manifest digest for that tag against
+ * the digest of the image the container actually runs. Both have to be known, so a locally
+ * built image (no repo digest), an air-gapped install and `MC_REGISTRY_TAGS=false` all keep
+ * today's silence rather than inventing a prompt nobody can act on.
+ */
+export function floatingUpdate(
+  container: UpdateCandidate,
   catalog: ImageCatalog | undefined,
 ): ImageTag | null {
-  return newerImageTags(container, catalog)[0] ?? null;
+  if (!catalog || !sameRepository(container.image, catalog.repository)) return null;
+  if (!isFloatingTag(container.version) || !container.imageDigest) return null;
+  const entry = catalog.tags.find(t => t.tag === container.version);
+  if (!entry?.digest) return null;
+  return entry.digest === container.imageDigest ? null : entry;
+}
+
+/** The newest release this container could move to, or null when it is current. */
+export function containerUpdate(
+  container: UpdateCandidate,
+  catalog: ImageCatalog | undefined,
+): ImageTag | null {
+  return newerImageTags(container, catalog)[0] ?? floatingUpdate(container, catalog);
 }
 
 @Component({
@@ -166,7 +193,31 @@ export class ContainersPage {
   }
 
   protected updateHint(c: HermesContainer, target: ImageTag): string {
-    return `${c.version} → ${target.tag}${target.pulled ? '' : ' · not pulled on this host yet'}`;
+    // a floating tag moves in place, so "latest → latest" would read as a no-op
+    const move = target.tag === c.version
+      ? `${c.version} · the registry published a new image on this tag`
+      : `${c.version} → ${target.tag}`;
+    return `${move}${target.pulled ? '' : ' · not pulled on this host yet'}`;
+  }
+
+  /** Everything this container could move to: newer releases, or the same tag re-pulled. */
+  private targetsFor(c: HermesContainer): ImageTag[] {
+    const catalog = this.images.catalog()[c.hostId];
+    const newer = newerImageTags(c, catalog);
+    if (newer.length) return newer;
+    const floating = floatingUpdate(c, catalog);
+    return floating ? [floating] : [];
+  }
+
+  /**
+   * What the backend is doing right now, in the operator's words.
+   *
+   * <p>An update on a cold host pulls an image before it recreates anything, which is minutes
+   * of a spinner with nothing to read. Naming the slow half is the difference between "it is
+   * working" and "it is stuck".
+   */
+  protected updateStage(): string {
+    return this.targetPulled() ? 'recreating the container' : 'pulling the image, then recreating';
   }
 
   protected targetPulled(): boolean {
@@ -174,7 +225,7 @@ export class ContainersPage {
   }
 
   protected beginUpdate(c: HermesContainer): void {
-    const targets = newerImageTags(c, this.images.catalog()[c.hostId]);
+    const targets = this.targetsFor(c);
     if (!targets.length || this.updatingBusy()) return;
     this.updateTargets.set(targets);
     this.updateVersion = targets[0].tag;

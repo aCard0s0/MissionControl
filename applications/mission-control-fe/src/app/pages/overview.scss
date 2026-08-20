@@ -229,3 +229,13 @@
   cursor: pointer;
   &:hover { border-color: var(--line-2); }
 }
+
+// the image-is-behind notice, inline in the head beside the version it qualifies
+.update-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+  color: inherit;
+  &:hover .faint { color: var(--text); }
+}

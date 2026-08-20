@@ -178,9 +178,12 @@ export function toMcpRetainedResource(api: ApiMcpRetainedResource): McpRetainedR
 export function toImageCatalog(r: ApiImageTags): ImageCatalog {
   // a backend without `entries` only ever reported local tags, so treat them as pulled
   const pulled = new Set(r.entries?.filter(e => e.pulled).map(e => e.tag) ?? r.tags);
+  // a backend without `entries` reports no digests either, so those tags compare as unknown
+  const digests = new Map((r.entries ?? []).map(e => [e.tag, e.digest ?? null]));
   return {
     repository: r.repository,
-    tags: (r.entries?.map(e => e.tag) ?? r.tags).map(tag => ({ tag, pulled: pulled.has(tag) })),
+    tags: (r.entries?.map(e => e.tag) ?? r.tags).map(tag =>
+      ({ tag, pulled: pulled.has(tag), digest: digests.get(tag) ?? null })),
     registryStatus: r.registryStatus ?? 'unavailable',
     fetchedAt: Date.now(),
   };
