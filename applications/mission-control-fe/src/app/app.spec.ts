@@ -270,16 +270,23 @@ describe('App shell sidebar', () => {
   });
 
   it('keeps the collapse out of the drawer\'s way', () => {
-    // the drawer closes on navigation; the collapse must not, or every nav click would put
-    // away a sidebar the operator chose to keep
+    // Closing the drawer must not put the sidebar away, or every nav item — which closes it
+    // through this same handler — would undo a collapse the operator chose to keep. Driven
+    // through the scrim rather than a nav link, because navigating here would need the real
+    // route table and the assertion is about the two states, not about routing.
     const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    (host(fixture).querySelector('.menu-btn') as HTMLButtonElement).click();
+    fixture.detectChanges();
     collapse(fixture).click();
     fixture.detectChanges();
 
-    const firstNavLink = host(fixture).querySelector('nav a') as HTMLAnchorElement;
-    firstNavLink.click();
+    const scrim = host(fixture).querySelector('.side-scrim') as HTMLElement;
+    expect(scrim).not.toBeNull();
+    scrim.click();
     fixture.detectChanges();
 
+    expect(host(fixture).querySelector('.side-scrim')).toBeNull();   // drawer closed
     expect(host(fixture).classList.contains('side-collapsed')).toBe(true);
   });
 });
