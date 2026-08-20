@@ -31,6 +31,7 @@ const NAV = [
   imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusDot, TerminalPanel],
   templateUrl: './app.html',
   styleUrl: './app.scss',
+  host: { '[class.side-collapsed]': 'sideCollapsed()' },
 })
 export class App {
   protected readonly agents = inject(AgentStore);
@@ -45,7 +46,21 @@ export class App {
 
   protected readonly now = signal(new Date());
   protected readonly pickerOpen = signal(false);
+  /**
+   * The narrow-viewport drawer. Transient by design: it closes on navigation, because it
+   * covers the page it navigated to.
+   */
   protected readonly sideOpen = signal(false);
+
+  /**
+   * The wide-viewport collapse, which is a preference rather than a mode — so it persists,
+   * and navigating must not undo it.
+   *
+   * <p>Deliberately not the same signal as {@link sideOpen}. Sharing one would mean either
+   * the drawer stops closing on navigation, or every click on a nav item collapses a sidebar
+   * the operator wants to keep.
+   */
+  protected readonly sideCollapsed = signal(this.savedCollapsed());
   protected readonly theme = signal<'dark' | 'light'>(this.savedTheme());
 
   protected readonly utc = computed(() =>
@@ -87,6 +102,20 @@ export class App {
 
   protected toggleSide(): void {
     this.sideOpen.update(v => !v);
+  }
+
+  protected toggleCollapsed(): void {
+    this.sideCollapsed.update(v => {
+      try { localStorage.setItem('mc-side-collapsed', String(!v)); } catch { /* private mode */ }
+      return !v;
+    });
+  }
+
+  private savedCollapsed(): boolean {
+    try {
+      return localStorage.getItem('mc-side-collapsed') === 'true';
+    } catch { /* private mode */ }
+    return false;
   }
 
   protected closeSide(): void {

@@ -222,3 +222,65 @@ describe('App theme', () => {
     setItem.mockRestore();
   });
 });
+
+describe('App shell sidebar', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  const host = (fixture: { nativeElement: unknown }) => el(fixture);
+  const collapse = (fixture: { nativeElement: unknown }) =>
+    (host(fixture).querySelector('.collapse-btn') as HTMLButtonElement);
+
+  it('collapses the sidebar and brings it back', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    expect(host(fixture).classList.contains('side-collapsed')).toBe(false);
+
+    collapse(fixture).click();
+    fixture.detectChanges();
+    expect(host(fixture).classList.contains('side-collapsed')).toBe(true);
+
+    collapse(fixture).click();
+    fixture.detectChanges();
+    expect(host(fixture).classList.contains('side-collapsed')).toBe(false);
+  });
+
+  it('remembers the choice, because it is a preference and not a mode', () => {
+    const first = render(storeStub([container('hermes-prod')]));
+    collapse(first.fixture).click();
+    first.fixture.detectChanges();
+    expect(localStorage.getItem('mc-side-collapsed')).toBe('true');
+
+    // a reload lands on the same layout rather than reopening what was put away
+    const second = render(storeStub([container('hermes-prod')]));
+    expect(host(second.fixture).classList.contains('side-collapsed')).toBe(true);
+  });
+
+  it('says which way it will go, for anyone not reading the icon', () => {
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+
+    expect(collapse(fixture).getAttribute('aria-label')).toBe('hide sidebar');
+    expect(collapse(fixture).getAttribute('aria-expanded')).toBe('true');
+
+    collapse(fixture).click();
+    fixture.detectChanges();
+
+    expect(collapse(fixture).getAttribute('aria-label')).toBe('show sidebar');
+    expect(collapse(fixture).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('keeps the collapse out of the drawer\'s way', () => {
+    // the drawer closes on navigation; the collapse must not, or every nav click would put
+    // away a sidebar the operator chose to keep
+    const { fixture } = render(storeStub([container('hermes-prod')]));
+    collapse(fixture).click();
+    fixture.detectChanges();
+
+    const firstNavLink = host(fixture).querySelector('nav a') as HTMLAnchorElement;
+    firstNavLink.click();
+    fixture.detectChanges();
+
+    expect(host(fixture).classList.contains('side-collapsed')).toBe(true);
+  });
+});
+

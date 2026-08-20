@@ -7,6 +7,19 @@
     'side main'
     'side term';
   height: 100dvh;
+  transition: grid-template-columns .2s ease;
+}
+
+// Collapsed to nothing rather than to an icon rail: the nav is a numbered list of words with
+// no icons behind it, so a rail would show nothing an operator could read. The header keeps
+// the control that brings it back.
+:host.side-collapsed {
+  grid-template-columns: 0 1fr;
+
+  .side {
+    overflow: hidden;
+    border-right: 0;
+  }
 }
 
 mc-terminal-panel {
@@ -114,8 +127,9 @@ nav {
   background: var(--panel);
 }
 
-.menu-btn {
-  display: none;
+// One look, two controls. Which one is on screen is a width question, so CSS answers it and
+// neither button has to know about the viewport.
+.menu-btn, .collapse-btn {
   background: none;
   border: 0;
   padding: 4px 2px;
@@ -127,6 +141,9 @@ nav {
 
   &:hover { color: var(--text); }
 }
+
+.menu-btn { display: none; }        // the drawer, below 900px only
+.collapse-btn { display: block; }   // the collapse, above it
 
 .ctx {
   position: relative;
@@ -298,6 +315,12 @@ main {
   }
 
   .menu-btn { display: block; }
+  .collapse-btn { display: none; }
+
+  // The drawer owns the sidebar at this width, and the grid here is a single column. Without
+  // this the collapsed rule outside still applies its two-column template and the named areas
+  // stop matching — a collapse stored on a wide screen would break the narrow layout.
+  :host.side-collapsed { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

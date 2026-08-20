@@ -26,7 +26,14 @@
 </aside>
 
 <header class="top">
+  <!-- Two controls, not one: CSS decides which width each belongs to, so neither has to ask
+       the viewport. The drawer is transient and closes on navigation; the collapse is a
+       preference and must not. -->
   <button class="menu-btn" aria-label="menu" (click)="toggleSide()">☰</button>
+  <button class="collapse-btn" (click)="toggleCollapsed()"
+          [attr.aria-expanded]="!sideCollapsed()"
+          [attr.aria-label]="sideCollapsed() ? 'show sidebar' : 'hide sidebar'"
+          [title]="sideCollapsed() ? 'show sidebar' : 'hide sidebar'">☰</button>
 
   <div class="ctx">
     <button class="ctx-btn" (click)="pickerOpen.set(!pickerOpen())">
