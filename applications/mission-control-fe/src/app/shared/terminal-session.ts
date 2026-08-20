@@ -60,6 +60,18 @@ export class TerminalSession {
   private readonly fit = new FitAddon();
   private ws: WebSocket | null = null;
   private observer: ResizeObserver | null = null;
+
+  /**
+   * The size the backend PTY was last told about.
+   *
+   * <p>A height drag resizes the host div on every pointer frame, and most of those pixel
+   * steps land on the same character grid — so an unguarded fit sent dozens of identical
+   * `resize` frames per drag. Each one is a SIGWINCH the shell answers by redrawing its
+   * prompt, which is what stamped `qa › qa › qa ›` across the input line.
+   */
+  private lastCols = 0;
+  private lastRows = 0;
+  private fitQueued = false;
   private readonly encoder = new TextEncoder();
   /** has connect() ever run — re-parking the host div must not restart a shell */
   private started = false;
@@ -108,7 +120,7 @@ export class TerminalSession {
     term.onData(data => {
       if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(this.encoder.encode(data));
     });
-    this.observer = new ResizeObserver(() => this.fitNow());
+    this.observer = new ResizeObserver(() => this.queueFit());
     this.observer.observe(this.hostEl);
     this.term = term;
     this.fitNow();
@@ -127,6 +139,9 @@ export class TerminalSession {
     const { hostId, containerId, label, command } = this.target();
     if (!containerId) return;
     this.started = true;
+    // a new socket has been told nothing, so the next fit must report even an unchanged grid
+    this.lastCols = 0;
+    this.lastRows = 0;
     this.ws?.close(1000);
     this.status.set('connecting');
     this.armCommand(command);
@@ -242,14 +257,35 @@ export class TerminalSession {
     this.connect();
   }
 
+  /**
+   * Collapses a burst of layout changes into one fit.
+   *
+   * <p>The observer fires per frame while the panel is being dragged; measuring and
+   * reflowing xterm that often is wasted work even before the frames reach the socket.
+   */
+  private queueFit(): void {
+    if (this.fitQueued) return;
+    this.fitQueued = true;
+    requestAnimationFrame(() => {
+      this.fitQueued = false;
+      this.fitNow();
+    });
+  }
+
   /** Fit + report size — only for the on-screen tab. Background tabs fit when
    *  they next become active, so a height drag does not fan resize frames out
    *  across every open socket. */
   fitNow(): void {
     if (!this.term || !this.active) return;
     try { this.fit.fit(); } catch { /* host not measurable yet */ }
+    const { cols, rows } = this.term;
+    // the grid is what the PTY cares about; a height change that does not cross a row
+    // boundary is nothing for it to learn, and telling it anyway costs a prompt redraw
+    if (cols === this.lastCols && rows === this.lastRows) return;
+    this.lastCols = cols;
+    this.lastRows = rows;
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'resize', cols: this.term.cols, rows: this.term.rows }));
+      this.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
   }
 

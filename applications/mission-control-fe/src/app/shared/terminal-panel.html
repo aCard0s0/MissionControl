@@ -1,3 +1,8 @@
+<!-- the panel's own top edge, so the handle is where the boundary being moved is -->
+@if (open()) {
+  <div class="drag" (pointerdown)="dragStart($event)" title="drag to resize"><span class="grip"></span></div>
+}
+
 <div class="bar mono" (click)="toggle()">
   <span class="chev">{{ open() ? '▾' : '▴' }}</span>
   <span class="title">TERMINAL</span>
@@ -57,7 +62,6 @@
 }
 
 @if (open()) {
-  <div class="drag" (pointerdown)="dragStart($event)" title="drag to resize"><span class="grip"></span></div>
   <div class="body" [style.height.px]="height.px()">
     @if (sessions().length === 0) {
       <p class="hint mono">+ a shell to get started.</p>

@@ -3,9 +3,6 @@ import { LogEntry, LogLevel } from '../core/models';
 import { logStamp } from '../core/format';
 import { PanelHeight } from './panel-height';
 
-/** How much one press of the size controls moves the panel. */
-const STEP_PX = 120;
-
 type Filter = LogLevel | 'all';
 
 const FILTERS: readonly Filter[] = ['all', 'error', 'warn', 'info', 'debug'];
@@ -58,12 +55,6 @@ export class LogView {
     const level = this.level();
     return level === 'all' ? this.lines() : this.lines().filter(l => l.level === level);
   });
-
-  protected resize(by: number): void {
-    this.height().bump(by);
-  }
-
-  protected readonly step = STEP_PX;
 
   /** The grip sits under the rows, so dragging down is what makes the panel taller. */
   protected grip(down: PointerEvent): void {

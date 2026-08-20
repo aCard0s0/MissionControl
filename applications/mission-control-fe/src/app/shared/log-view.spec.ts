@@ -108,22 +108,22 @@ describe('LogView', () => {
     expect(text(fixture)).toContain('1 / 2');
   });
 
-  it('grows and shrinks the panel, and remembers the height per placement', () => {
+  it('resizes by dragging its bottom edge, and remembers where it was let go', () => {
     const { fixture } = render();
-    const body = () => el(fixture).querySelector<HTMLElement>('.logs')!;
-    const heightOf = () => Number(body().style.height.replace('px', ''));
+    const heightOf = () =>
+      Number(el(fixture).querySelector<HTMLElement>('.logs')!.style.height.replace('px', ''));
 
     const start = heightOf();
-    el(fixture).querySelector<HTMLButtonElement>('[aria-label="expand height"]')!.click();
+    el(fixture).querySelector<HTMLElement>('.log-grip')!
+      .dispatchEvent(new PointerEvent('pointerdown', { clientY: 100, bubbles: true }));
+    // the grip is under the rows, so dragging down is what makes the panel taller
+    window.dispatchEvent(new PointerEvent('pointermove', { clientY: 160 }));
+    window.dispatchEvent(new PointerEvent('pointerup'));
     fixture.detectChanges();
-    expect(heightOf()).toBeGreaterThan(start);
 
-    el(fixture).querySelector<HTMLButtonElement>('[aria-label="reduce height"]')!.click();
-    fixture.detectChanges();
-    expect(heightOf()).toBe(start);
-
+    expect(heightOf()).toBe(start + 60);
     // the size survives a reload, and is keyed so two placements do not fight over one value
-    expect(Number(localStorage.getItem('mc-log-spec'))).toBe(start);
+    expect(Number(localStorage.getItem('mc-log-spec'))).toBe(start + 60);
   });
 
   it('keeps the rows on screen when a refresh fails', () => {
