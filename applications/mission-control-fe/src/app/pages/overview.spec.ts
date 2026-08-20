@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { JobStore } from '../core/store/job-store';
+import { ContainerLifecycle } from '../core/store/container-lifecycle';
 import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { LogStore } from '../core/store/log-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
@@ -13,7 +14,7 @@ import {
   AgentProfile, CronJob, HermesContainer, ImageCatalog, Integration, LogEntry, McpServer, SkillRef,
 } from '../core/models';
 import { OverviewPage } from './overview';
-import { el, text } from '../testing/dom';
+import { button, el, text } from '../testing/dom';
 import { agent, cronJob as job, mcpServer, skill as buildSkill } from '../testing/models';
 
 const container: HermesContainer = {
@@ -42,6 +43,7 @@ const storeStub = (opts: {
   },
   terminal: { open: vi.fn(), openAgentShell: vi.fn() },
   images: { catalog: signal(opts.catalog ?? {}), refreshAll: vi.fn() },
+  lifecycle: { setStatus: vi.fn() },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -54,6 +56,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
       { provide: JobStore, useValue: store.jobs },
       { provide: LogStore, useValue: store.logs },
       { provide: ImageCatalogStore, useValue: store.images },
+      { provide: ContainerLifecycle, useValue: store.lifecycle },
       { provide: TerminalRequestStore, useValue: store.terminal },
     ],
   });
@@ -360,5 +363,36 @@ describe('OverviewPage image-is-behind notice', () => {
     }));
 
     expect(text(fixture)).not.toContain('update available');
+  });
+});
+
+describe('OverviewPage stopped container', () => {
+  const stopped = (): HermesContainer => ({ ...container, status: 'stopped', startedAt: null });
+
+  it('offers to start the container it is already about', () => {
+    // the empty state used to describe the action in prose and send the operator to
+    // another page to perform it
+    const { fixture } = render(storeStub({ container: stopped() }));
+
+    expect(text(fixture)).toContain('Container is stopped');
+    expect(text(fixture)).toContain('start hermes-prod');
+  });
+
+  it('starts it, and says so while the daemon works', () => {
+    const store = storeStub({ container: stopped() });
+    const { fixture } = render(store);
+
+    button(fixture, 'start hermes-prod').click();
+    fixture.detectChanges();
+
+    expect(store.lifecycle.setStatus).toHaveBeenCalledWith('c-1', 'running');
+    expect(text(fixture)).toContain('starting…');
+  });
+
+  it('shows no telemetry and no start button once it is running', () => {
+    const { fixture } = render(storeStub());
+
+    expect(text(fixture)).not.toContain('Container is stopped');
+    expect(() => button(fixture, 'start hermes-prod')).toThrow();
   });
 });

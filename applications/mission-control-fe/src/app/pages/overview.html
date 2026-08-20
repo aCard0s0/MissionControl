@@ -23,7 +23,11 @@
   @if (ctr.status === 'stopped') {
     <div class="panel empty" data-reveal>
       <p class="mono dim">Container is stopped — no telemetry.</p>
-      <p class="lock-hint">start it from <a routerLink="/containers">containers</a> or run <code>hermes gateway start</code></p>
+      <button class="btn primary" [disabled]="starting()" (click)="start(ctr)">
+        @if (starting()) { <span class="spin" aria-hidden="true"></span> }
+        {{ starting() ? 'starting…' : 'start ' + ctr.name }}
+      </button>
+      <p class="lock-hint">or run <code>hermes gateway start</code> inside it</p>
     </div>
   } @else {
     <!-- resource strip -->
