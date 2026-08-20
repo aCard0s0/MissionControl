@@ -106,6 +106,8 @@ class McpComposeLifecycle {
           "up", "--no-start", "--pull", "always", "--force-recreate", targets), COMPOSE_TIMEOUT);
       ServerRow fresh = requireRow(id);
       repository.finishOperation(id, "stopped", fresh.revision());
+      log.info("provisioned MCP {} ({}) on {} — created, not started",
+          row.name(), id, row.hostId());
     } catch (Exception e) {
       fail(id, e);
     }
@@ -122,6 +124,7 @@ class McpComposeLifecycle {
       compose.execute(row.hostId(), stack, args, COMPOSE_TIMEOUT);
       ServerRow fresh = requireRow(id);
       repository.finishOperation(id, "running", fresh.revision());
+      log.info("started MCP {} ({}) on {}", row.name(), id, row.hostId());
     } catch (Exception e) {
       fail(id, e);
     }
@@ -136,6 +139,7 @@ class McpComposeLifecycle {
           Duration.ofMinutes(2));
       ServerRow fresh = requireRow(id);
       repository.finishOperation(id, "stopped", fresh.appliedRevision());
+      log.info("stopped MCP {} ({}) on {}", row.name(), id, row.hostId());
     } catch (Exception e) {
       fail(id, e);
     }
@@ -152,6 +156,9 @@ class McpComposeLifecycle {
       for (String volume : volumes) retained.retain(row.id(), row.name(), row.hostId(), volume);
       repository.delete(id);
       compose.writeOnly(row.hostId(), renderHost(row.hostId()));
+      // the volumes outlive the record on purpose — say so, or the data looks lost
+      log.warn("deleted MCP {} ({}) on {}{}", row.name(), id, row.hostId(),
+          volumes.isEmpty() ? "" : "; retaining volume(s) " + volumes + " until purged");
     } catch (Exception e) {
       fail(id, e);
     }
@@ -212,7 +219,10 @@ class McpComposeLifecycle {
   }
 
   private void fail(String id, Exception error) {
-    log.warn("managed MCP operation failed for {}: {}", id, error.toString());
+    // Stack trace included: nothing else logs this. The operation runs on its own executor,
+    // so no request thread ever sees the exception and no exception advice reports it — the
+    // caller learns only that operation_state went to 'error'.
+    log.error("managed MCP operation failed for {}: {}", id, error.getMessage(), error);
     if (repository.findById(id).isPresent()) repository.failOperation(id, error.getMessage());
   }
 

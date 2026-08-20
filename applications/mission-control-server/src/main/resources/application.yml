@@ -10,6 +10,11 @@ server:
 spring:
   application:
     name: mission-control-server
+  main:
+    # the ASCII banner carries no information, and the two startup-info lines
+    # (jar path, PID, "no active profile set") are restated by StartupSummary
+    banner-mode: "off"
+    log-startup-info: false
   datasource:
     url: jdbc:sqlite:${MC_DB_PATH:./data/mission-control.db}
     driver-class-name: org.sqlite.JDBC
@@ -66,5 +71,26 @@ mc:
     openrouter: ${MC_MODELS_OPENROUTER:nousresearch/hermes-4-405b,anthropic/claude-opus-4.7,anthropic/claude-sonnet-4,openai/gpt-5.2,google/gemini-2.5-pro,deepseek/deepseek-chat}
 
 logging:
+  # One process per container, one application per process: the PID, the application
+  # name and the `---` separator repeat on every line without ever distinguishing two
+  # lines from each other. The simple class name is what an operator scans for, so the
+  # 40-character fully-qualified logger is traded for it.
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%-5p) %clr(%-25.25logger{0}){cyan} %clr(:){faint} %m%n%wEx"
   level:
+    root: INFO
+    # the one knob worth exposing: MC_LOG_LEVEL=DEBUG turns on this application's
+    # per-operation detail without also turning on the libraries' own
+    io.hermes.missioncontrol: ${MC_LOG_LEVEL:INFO}
+    # Third-party boot chatter. Everything it reports that an operator needs —
+    # the port, the database, the daemon — is in the StartupSummary block instead,
+    # and these otherwise bury it under a dozen lines about servlet contexts.
     com.github.dockerjava: WARN
+    org.apache.hc: WARN
+    org.apache.catalina: WARN
+    org.apache.coyote: WARN
+    com.zaxxer.hikari: WARN
+    org.springframework.boot.web.embedded.tomcat: WARN
+    org.springframework.boot.web.servlet.context: WARN
+    org.springframework.boot.autoconfigure.web: WARN
+    org.springframework.web.servlet.DispatcherServlet: WARN

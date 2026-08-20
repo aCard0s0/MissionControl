@@ -6,9 +6,12 @@ import com.github.dockerjava.api.model.Version;
 import io.hermes.missioncontrol.config.AppProperties;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -26,6 +29,23 @@ import org.springframework.stereotype.Component;
 public class ContainerInventory {
 
   private static final Logger log = LoggerFactory.getLogger(ContainerInventory.class);
+
+  /**
+   * Containers already reported as hidden from the fleet, as {@code hostId/name}, so each is
+   * reported once rather than once per listing.
+   *
+   * <p>This is what the exclusion warnings are for: an operator looking for a container that
+   * is not on the dashboard. They describe a standing property of a container, not an event,
+   * and the fleet view polls every 10 seconds — so unguarded they re-fire forever. On a
+   * machine running the managed MCP stack that was 572 of 612 log lines, and it buried the
+   * upgrade and terminal failures the file existed to surface.
+   *
+   * <p>Pruned in {@link #listContainers} against the names that daemon still reports, so a
+   * container that goes away and comes back is reported again — the second occurrence is
+   * genuinely new information. Keyed by host as well as name because container names are only
+   * unique per daemon, and listing one host must not re-arm another host's report.
+   */
+  private final Set<String> reportedExclusions = ConcurrentHashMap.newKeySet();
 
   private final DockerClients clients;
   private final AppProperties props;
@@ -54,16 +74,31 @@ public class ContainerInventory {
         .exec();
 
     List<ContainerDto> result = new ArrayList<>();
+    Set<String> present = new HashSet<>();
     for (Container c : containers) {
-      if (!includeAll && !isFleetMember(c)) continue;
+      present.add(exclusionKey(host.id(), primaryName(c)));
+      if (!includeAll && !isFleetMember(host.id(), c)) continue;
       result.add(toDto(client, c, host.id()));
     }
+    // every call lists the whole daemon (withShowAll), so anything this host reported before
+    // and does not report now is gone; other hosts' entries are left alone
+    reportedExclusions.removeIf(
+        key -> key.startsWith(host.id() + "/") && !present.contains(key));
     return result;
+  }
+
+  /** True the first time a container is excluded, false while that exclusion stands. */
+  private boolean firstReportOf(String hostId, String name) {
+    return reportedExclusions.add(exclusionKey(hostId, name));
+  }
+
+  private static String exclusionKey(String hostId, String name) {
+    return hostId + "/" + name;
   }
 
   /** Whether the filtered fleet view shows this container. Every rejection is logged or
    *  commented at the point it is made, because each hid a container an operator looked for. */
-  private boolean isFleetMember(Container c) {
+  private boolean isFleetMember(String hostId, Container c) {
     String name = primaryName(c);
     String image = c.getImage() == null ? "" : c.getImage();
     Map<String, String> labels = c.getLabels() == null ? Map.of() : c.getLabels();
@@ -71,7 +106,10 @@ public class ContainerInventory {
     if (ParkedContainerName.isUpgradeLeftover(name)) {
       // a daemon crash mid-upgrade can strand the parked original; keep it out
       // of the fleet view but reachable through ?all=true
-      log.warn("ignoring container left parked by an interrupted upgrade: {}", name);
+      if (firstReportOf(hostId, name)) {
+        log.warn("hiding {} from the fleet: left parked by an interrupted upgrade "
+            + "(still listed by ?all=true)", name);
+      }
       return false;
     }
     if (ManagedContainer.isBootstrap(labels)) {
@@ -86,8 +124,10 @@ public class ContainerInventory {
     if (ManagedContainer.isManaged(labels)) return true;
 
     if (isImageIdReference(image)) {
-      log.warn("container {} reports an image id rather than a reference and is not "
-          + "Mission Control-managed, so it is not shown in the fleet", name);
+      if (firstReportOf(hostId, name)) {
+        log.warn("hiding {} from the fleet: it reports an image id rather than a reference "
+            + "and carries no Mission Control label", name);
+      }
       return false;
     }
     String hermesRepo = images.normalizedHermesRepository();

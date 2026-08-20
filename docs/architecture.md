@@ -212,6 +212,33 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
 | `MC_TERMINAL_USER` | `hermes` | container user the web terminal's shell runs as; empty keeps the image default |
 | `MC_SECRET_KEY` | required | AES key for encrypted template secrets; `./mc` creates and reuses it automatically |
 | `MC_SECRET_KEY_PREVIOUS` | empty | prior key accepted temporarily during rotation |
+| `MC_LOG_LEVEL` | `INFO` | level for `io.hermes.missioncontrol` only; `DEBUG` adds per-operation detail without turning on the libraries' own logging |
+
+### Logging
+
+The console pattern is `timestamp LEVEL SimpleClassName : message`. The PID, the application
+name and the fully-qualified logger are dropped — one process per container makes all three
+constant — and Spring's banner, its startup-info lines and the boot chatter from Tomcat,
+Hikari and the servlet context are switched off. `StartupSummary` replaces them with one
+block naming the port, the Docker endpoint and whether it answered, the database file, the
+MCP stack directory, and whether secrets use a real key or the dev one.
+
+What each level means here:
+
+- **ERROR** — a defect or a state the operator must repair: an unhandled request failure, an
+  MCP Compose operation that failed on its own executor (where no request ever sees it), an
+  upgrade that could not remove its replacement.
+- **WARN** — degraded but handled, and anything destructive: removing a container and its
+  data volume, deleting an MCP server whose volumes are retained, a rolled-back deploy, an
+  unreachable daemon, a container hidden from the fleet view.
+- **INFO** — one line per real state change: deploy, upgrade, start, stop, host added or
+  removed, MCP provisioned/started/stopped, startup summary.
+- **DEBUG** — per-operation detail that is normally uninteresting: terminal teardown and
+  sweeps, best-effort refreshes, a terminal opened on a stopped container.
+
+Conditions that hold across polls are reported once, not once per poll — the fleet view
+refreshes every 10 seconds, and its exclusion warnings previously accounted for 93% of all
+log output.
 
 ### Container deploy defaults
 

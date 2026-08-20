@@ -80,6 +80,7 @@ describe('App shell', () => {
     expect(links).toEqual([
       'Containers', 'Overview', 'Agents', 'Blueprints', 'Models',
       'MCP Servers', 'Ops Board', 'Calendar', 'Webhooks', 'CLI Reference',
+      'Server Logs',
     ]);
   });
 
@@ -89,7 +90,7 @@ describe('App shell', () => {
     const indices = Array.from(el(fixture).querySelectorAll('nav a .idx'))
       .map(span => (span.textContent ?? '').trim());
     expect(indices.at(0)).toBe('01');
-    expect(indices.at(-1)).toBe('10');
+    expect(indices.at(9)).toBe('10');
   });
 
   it('shows the fleet counts and the clock in UTC', () => {

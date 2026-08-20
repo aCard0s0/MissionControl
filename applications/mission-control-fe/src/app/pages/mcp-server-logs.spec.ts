@@ -72,7 +72,7 @@ describe('McpServerLogs', () => {
     const { fixture } = render(store);
     await settle(fixture);
 
-    expect(el(fixture).querySelector('.error')?.textContent).toContain('container is not running');
+    expect(el(fixture).querySelector('.err')?.textContent).toContain('container is not running');
   });
 
   it('keeps re-reading while it is open', async () => {

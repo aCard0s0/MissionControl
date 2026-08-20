@@ -22,6 +22,7 @@ const NAV = [
   { path: '/calendar', label: 'Calendar', exact: false },
   { path: '/webhooks', label: 'Webhooks', exact: false },
   { path: '/reference', label: 'CLI Reference', exact: false },
+  { path: '/server-logs', label: 'Server Logs', exact: false },
 ];
 
 @Component({

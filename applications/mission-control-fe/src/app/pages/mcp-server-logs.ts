@@ -3,8 +3,8 @@ import {
 } from '@angular/core';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { errorMessage } from '../core/errors';
-import { clock } from '../core/format';
 import { LogEntry, McpCatalogServer } from '../core/models';
+import { LogView } from '../shared/log-view';
 
 /** A managed server's log tail is short-lived, so it is re-read rather than streamed. */
 const POLL_INTERVAL = 3_000;
@@ -18,6 +18,7 @@ const TAIL = 150;
 @Component({
   selector: 'mc-mcp-server-logs',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [LogView],
   templateUrl: './mcp-server-logs.html',
   styleUrl: './mcp-server-logs.scss',
 })
@@ -26,7 +27,6 @@ export class McpServerLogs {
   readonly closed = output<void>();
 
   private readonly catalog = inject(McpCatalogStore);
-  protected readonly clock = clock;
 
   protected readonly lines = signal<LogEntry[]>([]);
   protected readonly loading = signal(false);

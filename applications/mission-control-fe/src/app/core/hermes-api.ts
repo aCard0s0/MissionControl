@@ -5,6 +5,7 @@ import { HostsApi } from './api/hosts-api';
 import { ApiHttp } from './api/http';
 import { McpCatalogApi } from './api/mcp-catalog-api';
 import { ProvidersApi } from './api/providers-api';
+import { ServerApi } from './api/server-api';
 import { TemplatesApi } from './api/templates-api';
 
 // Typed client for mission-control-server. apiBaseUrl '' = same origin
@@ -17,6 +18,7 @@ export type { AgentRef } from './api/agent-ref';
 export type { AgentMcpRequest } from './api/agent-mcp-api';
 export type { CreateAgentRequest } from './api/agents-api';
 export type { McpServerOperation } from './api/mcp-catalog-api';
+export type { ApiServerInfo } from './api/server-api';
 
 export class HermesApi {
   private readonly http: ApiHttp;
@@ -28,6 +30,7 @@ export class HermesApi {
   readonly providers: ProvidersApi;
   readonly templates: TemplatesApi;
   readonly board: BoardApi;
+  readonly server: ServerApi;
 
   /** `http` is the one seam a test substitutes to answer every resource
    *  client at once; production always builds the real one. */
@@ -40,6 +43,7 @@ export class HermesApi {
     this.providers = new ProvidersApi(this.http);
     this.templates = new TemplatesApi(this.http);
     this.board = new BoardApi(this.http);
+    this.server = new ServerApi(this.http);
   }
 
   health(): Promise<{ status: string; version: string; dockerConnected: boolean }> {

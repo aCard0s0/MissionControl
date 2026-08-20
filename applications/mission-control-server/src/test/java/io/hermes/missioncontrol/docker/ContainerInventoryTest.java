@@ -8,6 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.InspectContainerCmd;
 import com.github.dockerjava.api.command.InspectContainerResponse.ContainerState;
@@ -19,9 +23,11 @@ import io.hermes.missioncontrol.config.AppProperties;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
+import org.slf4j.LoggerFactory;
 
 class ContainerInventoryTest {
 
@@ -36,10 +42,28 @@ class ContainerInventoryTest {
   private final DockerExecService dockerExec = mock(DockerExecService.class);
   private final ContainerInventory subject = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true));
 
+  private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+
   @BeforeEach
   void setUp() {
     when(clients.forUrl("unix:///sock")).thenReturn(client);
     when(clients.streamingForUrl("unix:///sock")).thenReturn(streamingClient);
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(ContainerInventory.class)).addAppender(appender);
+  }
+
+  @AfterEach
+  void tearDown() {
+    ((Logger) LoggerFactory.getLogger(ContainerInventory.class)).detachAppender(appender);
+    appender.stop();
+  }
+
+  /** The WARN lines emitted so far, so a test can count reports rather than assert on a set. */
+  private List<String> warningsSoFar() {
+    return appender.list.stream()
+        .filter(event -> event.getLevel() == Level.WARN)
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList();
   }
 
   @Test
@@ -255,6 +279,59 @@ class ContainerInventoryTest {
     assertEquals(List.of("demo"), names(subject.listContainers(HOST, false)));
     assertEquals(List.of("demo", "nostalgic_wozniak"),
         names(subject.listContainers(HOST, true)));
+  }
+
+  // ── exclusion reporting ────────────────────────────────────────────────────
+
+  @Test
+  void aStandingExclusionIsReportedOnceAcrossRepeatedListings() {
+    stubListing(
+        container("aaaaaaa1111", "/demo", "hermes/image:v1"),
+        container("bbbbbbb2222", "/foreign", BARE_IMAGE_ID));
+
+    // the fleet view polls every 10s forever; the warning describes a property of the
+    // container, so re-reporting it per poll drowns every real event in the log
+    for (int i = 0; i < 5; i++) {
+      assertEquals(List.of("demo"), names(subject.listContainers(HOST, false)));
+    }
+
+    assertEquals(1, warningsSoFar().stream().filter(line -> line.contains("foreign")).count());
+  }
+
+  @Test
+  void anExclusionIsReportedAgainAfterTheContainerGoesAwayAndComesBack() {
+    stubListing(container("bbbbbbb2222", "/foreign", BARE_IMAGE_ID));
+    subject.listContainers(HOST, false);
+
+    stubListing(container("aaaaaaa1111", "/demo", "hermes/image:v1"));
+    subject.listContainers(HOST, false);
+
+    stubListing(container("bbbbbbb2222", "/foreign", BARE_IMAGE_ID));
+    subject.listContainers(HOST, false);
+
+    // a container that came back is a new occurrence, not the one already reported
+    assertEquals(2, warningsSoFar().stream().filter(line -> line.contains("foreign")).count());
+  }
+
+  @Test
+  void listingOneHostDoesNotReArmAnIdenticallyNamedExclusionOnAnother() {
+    DockerHostRef other = new DockerHostRef("remote", "tcp://elsewhere:2375");
+    DockerClient otherClient = mock(DockerClient.class);
+    when(clients.forUrl("tcp://elsewhere:2375")).thenReturn(otherClient);
+
+    stubListing(container("bbbbbbb2222", "/foreign", BARE_IMAGE_ID));
+    subject.listContainers(HOST, false);
+
+    // container names are unique per daemon, not across them
+    ListContainersCmd list = mock(ListContainersCmd.class, Answers.RETURNS_SELF);
+    when(otherClient.listContainersCmd()).thenReturn(list);
+    when(list.exec()).thenReturn(List.<Container>of());
+    subject.listContainers(other, false);
+
+    stubListing(container("bbbbbbb2222", "/foreign", BARE_IMAGE_ID));
+    subject.listContainers(HOST, false);
+
+    assertEquals(1, warningsSoFar().stream().filter(line -> line.contains("foreign")).count());
   }
 
   private static List<String> names(List<ContainerDto> containers) {

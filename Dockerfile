@@ -36,4 +36,8 @@ EXPOSE 8080
 # RAM — the container shares the tailscale netns and would otherwise see host
 # totals. CPU pool sizing is left to the cgroup CPU quota (compose `cpus`); do
 # not pin -XX:ActiveProcessorCount. Fail fast on OOM so restart policy recovers.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]
+# --enable-native-access: sqlite-jdbc loads its native library through
+# System::load, which on Java 24 prints a four-line unformatted warning to stderr
+# in the middle of startup. Granting it up front is the documented way to silence
+# that, and it is required rather than merely tidy once JEP 472 blocks the call.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]

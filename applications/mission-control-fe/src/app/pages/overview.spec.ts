@@ -1,12 +1,13 @@
 import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { JobStore } from '../core/store/job-store';
 import { LogStore } from '../core/store/log-store';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import {
   AgentProfile, CronJob, HermesContainer, Integration, LogEntry, McpServer, SkillRef,
 } from '../core/models';
@@ -36,6 +37,7 @@ const storeStub = (opts: {
     updatedAt: signal<number | null>(1),
     refresh: vi.fn(),
   },
+  terminal: { open: vi.fn(), openAgentShell: vi.fn() },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -47,11 +49,16 @@ const render = (store: ReturnType<typeof storeStub>) => {
       { provide: ContainerStore, useValue: store.containers },
       { provide: JobStore, useValue: store.jobs },
       { provide: LogStore, useValue: store.logs },
+      { provide: TerminalRequestStore, useValue: store.terminal },
     ],
   });
+  // the real router, with navigation recorded — the RouterLinks in this template
+  // need the routes provider intact
+  const router = TestBed.inject(Router);
+  const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(OverviewPage);
   fixture.detectChanges();
-  return { fixture, store };
+  return { fixture, store, navigate };
 };
 
 /** The panel whose header names this section — several panels carry a count row. */
@@ -140,7 +147,77 @@ describe('OverviewPage tallies', () => {
   });
 });
 
+describe('OverviewPage profile rows', () => {
+  it('is itself the way to the roster, with no link of its own to carry', () => {
+    const { fixture, navigate } = render(storeStub({ agents: [agent('a-1')] }));
+    const card = panel(fixture, 'PROFILES / AGENTS');
+
+    expect(text(fixture)).not.toContain('all →');
+    card.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/agents']);
+  });
+
+  it('sends a row to the profile, and its chips to the tab each one names', () => {
+    const { fixture } = render(storeStub({ agents: [
+      agent('a-1', { skills: [skill('bundled')], mcp: [mcp('a', 'connected', 4)] }),
+    ] }));
+    const row = panel(fixture, 'PROFILES / AGENTS').querySelector('.agent-row')!;
+    const href = (sel: string) => row.querySelector(sel)!.getAttribute('href');
+
+    expect(href('.agent-pick')).toBe('/agents/a-1');
+    expect(href('.caps .cap:nth-of-type(1)')).toBe('/agents/a-1?tab=skills');
+    expect(href('.caps .cap:nth-of-type(2)')).toBe('/agents/a-1?tab=mcp');
+  });
+
+  it('states each profile\'s skills and MCP reach in one chip apiece', () => {
+    const { fixture } = render(storeStub({ agents: [
+      agent('a-1', {
+        skills: [skill('bundled'), skill('user'), skill('user')],
+        mcp: [mcp('a', 'connected', 4), mcp('b', 'error', 9)],
+      }),
+    ] }));
+    const caps = Array.from(panel(fixture, 'PROFILES / AGENTS')
+      .querySelectorAll('.caps .cap'))
+      .map(c => (c.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+    // a failing server's advertised tools are not reach this profile has
+    expect(caps).toEqual(['3 skills · 2 custom', '2 mcp · 4 tools']);
+  });
+
+  it('says nothing about custom skills for a profile that authored none', () => {
+    const { fixture } = render(storeStub({ agents: [
+      agent('a-1', { skills: [skill('bundled')] }),
+    ] }));
+
+    expect(panel(fixture, 'PROFILES / AGENTS').querySelector('.caps .cap')!.textContent)
+      .not.toContain('custom');
+  });
+
+  it('opens a shell in the profile\'s session without leaving the page', () => {
+    const a = agent('a-1');
+    const { fixture, store, navigate } = render(storeStub({ agents: [a] }));
+    const term = panel(fixture, 'PROFILES / AGENTS').querySelector<HTMLButtonElement>('.term')!;
+
+    expect(term.getAttribute('aria-label')).toContain('a-1');
+    term.click();
+
+    expect(store.terminal.openAgentShell).toHaveBeenCalledWith(a, container);
+    // the shell button sits inside a card that navigates — it must not do both
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
 describe('OverviewPage scheduled jobs', () => {
+  it('is itself the way to the calendar, with no link of its own to carry', () => {
+    const { fixture, navigate } = render(storeStub({ jobs: [job('j-1')] }));
+
+    expect(text(fixture)).not.toContain('calendar →');
+    panel(fixture, 'SCHEDULER').click();
+
+    expect(navigate).toHaveBeenCalledWith(['/calendar']);
+  });
+
   it('counts enabled against paused, and names the next one due', () => {
     const { fixture } = render(storeStub({ jobs: [
       job('j-1', { enabled: true, nextRun: 5_000 }),
@@ -198,7 +275,7 @@ describe('OverviewPage log tail', () => {
 
     const filter = (label: string) => {
       const match = Array.from(el(fixture).querySelectorAll('button'))
-        .find(b => (b.textContent ?? '').trim() === label)!;
+        .find(b => (b.textContent ?? '').trim().startsWith(label))!;
       (match as HTMLButtonElement).click();
       fixture.detectChanges();
     };
@@ -209,7 +286,11 @@ describe('OverviewPage log tail', () => {
 
     filter('error');
     expect(el(fixture).querySelectorAll('.log-line').length).toBe(0);
-    expect(text(fixture)).toContain('No log entries match this filter');
+    expect(text(fixture)).toContain('No lines at this level');
+
+    filter('info');
+    expect(el(fixture).querySelectorAll('.log-line').length).toBe(1);
+    expect(text(fixture)).toContain('started');
 
     filter('all');
     expect(el(fixture).querySelectorAll('.log-line').length).toBe(2);

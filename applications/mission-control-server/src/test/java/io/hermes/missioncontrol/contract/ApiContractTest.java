@@ -31,6 +31,7 @@ import io.hermes.missioncontrol.docker.ImageTagsDto;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.docker.StatsDto;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
+import io.hermes.missioncontrol.web.ServerInfoDto;
 import io.hermes.missioncontrol.mcp.ConfigValueDto;
 import io.hermes.missioncontrol.mcp.HealthcheckSpec;
 import io.hermes.missioncontrol.mcp.McpServerDto;
@@ -111,6 +112,8 @@ class ApiContractTest {
     CONTRACT.put("ApiSetupKeyProvider", ApiKeyProviderDto.class);
     CONTRACT.put("ApiSetupMessaging", MessagingStatusDto.class);
     CONTRACT.put("ApiModelProvider", ProviderOptionDto.class);
+    // the dashboard's own process
+    CONTRACT.put("ApiServerInfo", ServerInfoDto.class);
     // scheduled jobs
     CONTRACT.put("ApiCronJob", CronJobDto.class);
     CONTRACT.put("ApiCronJobs", CronJobsDto.class);
@@ -166,7 +169,7 @@ class ApiContractTest {
 
   /** The frontend files that declare the wire types. */
   private static final List<String> SOURCES =
-      List.of("api/api-types.ts", "hermes-api.ts", "models.ts");
+      List.of("api/api-types.ts", "api/server-api.ts", "hermes-api.ts", "models.ts");
 
   @Test
   void everyResponseTypeCarriesTheKeysTheFrontendReads() {

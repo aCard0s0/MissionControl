@@ -6,6 +6,7 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.ExecCreateCmd;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.model.Frame;
 import io.hermes.missioncontrol.docker.DockerClients;
 import io.hermes.missioncontrol.hosts.HostService;
@@ -216,7 +217,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
 
         @Override
         public void onError(Throwable t) {
-          log.warn("terminal stream error for {}: {}", containerId, t.getMessage());
+          log.warn("terminal stream error for {}: {}", shortId(containerId), brief(t.getMessage()));
           teardown(shells.remove(session.getId()),
               CloseStatus.SERVER_ERROR.withReason("stream error"), "stream-error");
         }
@@ -226,7 +227,15 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
       shells.put(session.getId(), shell);   // register before start so an early frame finds the holder
       client.execStartCmd(exec.getId()).withStdIn(stdinSource).exec(output);
     } catch (Exception e) {
-      log.warn("terminal setup failed for {}: {}", containerId, e.getMessage());
+      // A stopped container is the operator clicking a terminal on a card that is not
+      // running — the browser is told, and there is nothing for anyone to act on here.
+      // It was previously a WARN carrying the 64-character id twice, once in the text and
+      // again inside the daemon's raw JSON.
+      if (e instanceof ConflictException) {
+        log.debug("terminal refused for {}: container is not running", shortId(containerId));
+      } else {
+        log.warn("terminal setup failed for {}: {}", shortId(containerId), brief(e.getMessage()));
+      }
       if (shell != null) {
         teardown(shells.remove(session.getId()),
             CloseStatus.SERVER_ERROR.withReason("setup failed"), "setup-failure");
@@ -351,6 +360,19 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
     log.debug("terminal teardown {} ({})", shell.execId, reason);
   }
 
+
+  /** The 12-character prefix the Docker CLI and the dashboard both show. A full 64-character
+   *  id in a log line is unreadable and matches nothing an operator has in front of them. */
+  private static String shortId(String containerId) {
+    return containerId == null ? "?" : containerId.substring(0, Math.min(12, containerId.length()));
+  }
+
+  /** Docker error bodies arrive as raw JSON with a trailing newline, which puts a blank line
+   *  into the log after every one of them. */
+  private static String brief(String message) {
+    if (message == null || message.isBlank()) return "no detail";
+    return message.strip().lines().findFirst().orElse("no detail");
+  }
 
   private static String remoteKey(WebSocketSession session) {
     InetSocketAddress addr = session.getRemoteAddress();

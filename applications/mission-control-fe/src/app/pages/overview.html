@@ -64,13 +64,11 @@
     </div>
 
     <div class="grid cols-3">
-      <!-- agents -->
-      <div class="panel" data-reveal>
-        <div class="panel-h">
-          PROFILES / AGENTS
-          <span class="spacer"></span>
-          <a routerLink="/agents" class="mono">all →</a>
-        </div>
+      <!-- agents — the card itself is the way to the roster, so it carries no "all" link -->
+      <div class="panel nav" data-reveal role="button" tabindex="0" title="open the agents page"
+           (click)="go('/agents')" (keydown.enter)="go('/agents')"
+           (keydown.space)="go('/agents'); $event.preventDefault()">
+        <div class="panel-h">PROFILES / AGENTS</div>
         <div class="panel-b">
           <div class="count-row mono">
             <span class="count on">{{ agentCounts().active }} active</span>
@@ -83,53 +81,32 @@
           </div>
           @for (a of agents.forSelectedContainer(); track a.id) {
             @let m = agentMeta(a);
+            <!-- two lines: who the profile is, then what it can do. Every control
+                 stops the click, or the card would send it to the roster instead. -->
             <div class="agent-row">
-              <div class="agent-pick">
+              <a class="agent-pick" [routerLink]="['/agents', a.id]"
+                 [title]="'open ' + a.name" (click)="$event.stopPropagation()">
                 <mc-status [status]="a.state" label=" " [live]="a.state === 'active'" />
                 <span class="mono name">{{ a.name }}</span>
                 <span class="dim role">{{ a.role }}</span>
-                <span class="meta mono">
-                  <span class="mc-badge" title="{{ m.skills }} skills">{{ m.skills }} sk</span>
-                  @if (m.custom) {
-                    <span class="mc-badge custom" title="{{ m.custom }} agent-authored skill(s)">{{ m.custom }} custom</span>
-                  }
-                  <span class="mc-badge" title="{{ m.mcp }} MCP servers">{{ m.mcp }} mcp</span>
-                  <span class="mc-badge" title="{{ m.tools }} MCP tools">{{ m.tools }} tl</span>
-                </span>
                 <span class="mono faint right">{{ a.model }} · {{ ago(a.lastActive) }}</span>
+              </a>
+              <button class="term" type="button"
+                      [title]="'open a terminal in ' + a.name + '’s session'"
+                      [attr.aria-label]="'open a terminal in ' + a.name + '’s session'"
+                      (click)="openAgentShell(a); $event.stopPropagation()">
+                <mc-terminal-icon />
+              </button>
+              <div class="caps mono">
+                <a class="cap" [routerLink]="['/agents', a.id]" [queryParams]="{ tab: 'skills' }"
+                   [title]="'open ' + a.name + '’s skills'" (click)="$event.stopPropagation()">
+                  {{ m.skills }} skills@if (m.custom) {<span class="custom"> · {{ m.custom }} custom</span>}
+                </a>
+                <a class="cap" [routerLink]="['/agents', a.id]" [queryParams]="{ tab: 'mcp' }"
+                   [title]="'open ' + a.name + '’s MCP servers'" (click)="$event.stopPropagation()">
+                  {{ m.mcp }} mcp · {{ m.tools }} tools
+                </a>
               </div>
-              <a class="details" [routerLink]="['/agents', a.id]" title="open agent details">details →</a>
-            </div>
-          }
-        </div>
-      </div>
-
-      <!-- jobs -->
-      <div class="panel" data-reveal>
-        <div class="panel-h">
-          SCHEDULER
-          <span class="spacer"></span>
-          <a routerLink="/calendar" class="mono">calendar →</a>
-        </div>
-        <div class="panel-b">
-          <div class="count-row mono">
-            <span class="count on">{{ jobStats().enabled }} enabled</span>
-            <span class="count off">{{ jobStats().total - jobStats().enabled }} paused</span>
-            @if (jobStats().failed > 0) { <span class="count crit">{{ jobStats().failed }} failing</span> }
-          </div>
-          @if (jobStats().next; as next) {
-            <div class="next-job mono">
-              <span class="faint">next:</span> {{ next.name }}
-              <span class="chip info">{{ until(next.nextRun) }}</span>
-              <span class="faint">→ {{ next.deliverTo }}</span>
-            </div>
-          }
-          @for (j of jobs.forSelectedContainer().slice(0, 4); track j.id) {
-            <div class="job-row mono">
-              <mc-status [status]="j.enabled ? (j.lastStatus === 'fail' ? 'fail' : 'ok') : 'off'" label=" " />
-              <span>{{ j.name }}</span>
-              <span class="faint sched">{{ j.schedule }}</span>
-              <span class="faint right">{{ j.lastRun ? 'ran ' + ago(j.lastRun) : 'never ran' }}</span>
             </div>
           }
         </div>
@@ -154,6 +131,35 @@
           </div>
         </div>
       </div>
+
+      <!-- jobs — the card itself opens the calendar, so it carries no link of its own -->
+      <div class="panel nav" data-reveal role="button" tabindex="0" title="open the calendar"
+           (click)="go('/calendar')" (keydown.enter)="go('/calendar')"
+           (keydown.space)="go('/calendar'); $event.preventDefault()">
+        <div class="panel-h">SCHEDULER</div>
+        <div class="panel-b">
+          <div class="count-row mono">
+            <span class="count on">{{ jobStats().enabled }} enabled</span>
+            <span class="count off">{{ jobStats().total - jobStats().enabled }} paused</span>
+            @if (jobStats().failed > 0) { <span class="count crit">{{ jobStats().failed }} failing</span> }
+          </div>
+          @if (jobStats().next; as next) {
+            <div class="next-job mono">
+              <span class="faint">next:</span> {{ next.name }}
+              <span class="chip info">{{ until(next.nextRun) }}</span>
+              <span class="faint">→ {{ next.deliverTo }}</span>
+            </div>
+          }
+          @for (j of jobs.forSelectedContainer().slice(0, 4); track j.id) {
+            <div class="job-row mono">
+              <mc-status [status]="j.enabled ? (j.lastStatus === 'fail' ? 'fail' : 'ok') : 'off'" label=" " />
+              <span>{{ j.name }}</span>
+              <span class="faint sched">{{ j.schedule }}</span>
+              <span class="faint right">{{ j.lastRun ? 'ran ' + ago(j.lastRun) : 'never ran' }}</span>
+            </div>
+          }
+        </div>
+      </div>
     </div>
 
     <!-- log tail — full width -->
@@ -166,23 +172,13 @@
         @if (logs.loading()) { <span class="faint">refreshing…</span> }
         @if (errorCount() > 0) { <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }} in tail</span> }
         <button class="btn sm ghost" [disabled]="logs.loading()" (click)="logs.refresh()">refresh</button>
-        <div class="log-filter mono">
-          <button [class.on]="logLevel() === 'all'" (click)="logLevel.set('all')">all</button>
-          <button [class.on]="logLevel() === 'error'" (click)="logLevel.set('error')">error</button>
-          <button [class.on]="logLevel() === 'warn'" (click)="logLevel.set('warn')">warn</button>
-        </div>
+        <a class="btn sm ghost" routerLink="/server-logs">server logs</a>
       </div>
-      <div class="panel-b logs mono">
-        @for (l of recentLogs(); track logKey(l)) {
-          <div class="log-line">
-            <span class="faint">{{ clock(l.ts) }}</span>
-            <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase().padEnd(5) }}</span>
-            <span class="src faint">{{ l.source }}</span>
-            <span class="msg">{{ l.msg }}</span>
-          </div>
-        }
-        @if (logs.error()) { <p class="dim">Log refresh failed — {{ logs.error() }}</p> }
-        @else if (!recentLogs().length) { <p class="dim">{{ logs.loading() ? 'Loading container logs…' : 'No log entries match this filter.' }}</p> }
+      <div class="panel-b">
+        <mc-log-view [lines]="tailWindow()" [loading]="logs.loading()"
+                     [error]="logs.error() ? 'Log refresh failed — ' + logs.error() : null"
+                     emptyText="No container log entries."
+                     heightKey="mc-log-overview" />
       </div>
     </div>
   }

@@ -13,5 +13,6 @@ export const routes: Routes = [
   { path: 'calendar', loadComponent: () => import('./pages/calendar').then(m => m.CalendarPage), title: 'Calendar · Mission Control' },
   { path: 'webhooks', loadComponent: () => import('./pages/webhooks').then(m => m.WebhooksPage), title: 'Webhooks · Mission Control' },
   { path: 'reference', loadComponent: () => import('./pages/reference').then(m => m.ReferencePage), title: 'CLI Reference · Mission Control' },
+  { path: 'server-logs', loadComponent: () => import('./pages/server-logs').then(m => m.ServerLogsPage), title: 'Server Logs · Mission Control' },
   { path: '**', redirectTo: 'containers' },
 ];
