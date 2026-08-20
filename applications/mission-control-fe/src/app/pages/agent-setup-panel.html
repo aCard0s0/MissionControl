@@ -24,24 +24,16 @@
 @if (profileSetup(); as s) {
   <div class="grid cols-2">
     <div class="panel" data-reveal>
-      <div class="panel-h">API KEYS</div>
+      <div class="panel-h">API-KEY PROVIDERS</div>
       <div class="panel-b">
-        @for (k of s.apiKeys; track k.envVar) {
+        @for (p of s.apiKeyProviders; track p.label) {
           <div class="env-row">
-            <mc-status [status]="k.set ? 'up' : 'off'" [label]="k.label" />
-            <span class="mono faint var">{{ k.envVar }}</span>
-            @if (k.masked) { <span class="mono dim masked">{{ k.masked }}</span> }
-            <span class="spacer"></span>
-            <input class="input key-in" type="password" [(ngModel)]="envDrafts[k.envVar]" placeholder="value" />
-            <button class="btn sm primary"
-                    [disabled]="!envDrafts[k.envVar]?.trim() || envBusy() === k.envVar"
-                    (click)="setEnv(k.envVar)">{{ envBusy() === k.envVar ? '…' : 'set' }}</button>
-            @if (k.set) {
-              <button class="btn sm danger ghost" [disabled]="envBusy() === k.envVar" (click)="clearEnv(k.envVar)">clear</button>
-            }
+            <mc-status [status]="p.ok ? 'up' : 'off'" [label]="p.label" />
+            <span class="dim status-text">{{ p.status }}</span>
           </div>
         }
-        @if (!s.apiKeys.length) { <p class="dim">No API keys defined.</p> }
+        @if (!s.apiKeyProviders.length) { <p class="dim">No API-key providers detected.</p> }
+        <p class="lock-hint">configure via <code>hermes model</code> in the terminal</p>
       </div>
     </div>
 
@@ -64,16 +56,24 @@
     </div>
 
     <div class="panel" data-reveal>
-      <div class="panel-h">API-KEY PROVIDERS</div>
+      <div class="panel-h">API KEYS</div>
       <div class="panel-b">
-        @for (p of s.apiKeyProviders; track p.label) {
+        @for (k of s.apiKeys; track k.envVar) {
           <div class="env-row">
-            <mc-status [status]="p.ok ? 'up' : 'off'" [label]="p.label" />
-            <span class="dim status-text">{{ p.status }}</span>
+            <mc-status [status]="k.set ? 'up' : 'off'" [label]="k.label" />
+            <span class="mono faint var">{{ k.envVar }}</span>
+            @if (k.masked) { <span class="mono dim masked">{{ k.masked }}</span> }
+            <span class="spacer"></span>
+            <input class="input key-in" type="password" [(ngModel)]="envDrafts[k.envVar]" placeholder="value" />
+            <button class="btn sm primary"
+                    [disabled]="!envDrafts[k.envVar]?.trim() || envBusy() === k.envVar"
+                    (click)="setEnv(k.envVar)">{{ envBusy() === k.envVar ? '…' : 'set' }}</button>
+            @if (k.set) {
+              <button class="btn sm danger ghost" [disabled]="envBusy() === k.envVar" (click)="clearEnv(k.envVar)">clear</button>
+            }
           </div>
         }
-        @if (!s.apiKeyProviders.length) { <p class="dim">No API-key providers detected.</p> }
-        <p class="lock-hint">configure via <code>hermes model</code> in the terminal</p>
+        @if (!s.apiKeys.length) { <p class="dim">No API keys defined.</p> }
       </div>
     </div>
 
