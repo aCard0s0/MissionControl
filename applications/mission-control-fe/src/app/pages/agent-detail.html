@@ -118,17 +118,11 @@
           @if (agentLogsLoading()) { <span class="faint">refreshing…</span> }
           <button class="btn sm ghost" [disabled]="agentLogsLoading()" (click)="loadAgentLogs()">refresh</button>
         </div>
-        <div class="panel-b logs mono">
-          @for (l of agentLogEntries(); track l.ts + ':' + l.level + ':' + l.source + ':' + l.msg) {
-            <div class="log-line">
-              <span class="faint">{{ clock(l.ts) }}</span>
-              <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase() }}</span>
-              <span class="src faint">{{ l.source }}</span>
-              <span class="msg">{{ l.msg }}</span>
-            </div>
-          }
-          @if (agentLogsError()) { <p class="dim">Agent log refresh failed — {{ agentLogsError() }}</p> }
-          @else if (!agentLogEntries().length) { <p class="dim">{{ agentLogsLoading() ? 'Loading agent gateway logs…' : 'No gateway log entries for this agent.' }}</p> }
+        <div class="panel-b">
+          <mc-log-view [lines]="agentLogEntries()" [loading]="agentLogsLoading()"
+                       [error]="agentLogsError() ? 'Agent log refresh failed — ' + agentLogsError() : null"
+                       emptyText="No gateway log entries for this agent."
+                       heightKey="mc-log-agent" />
         </div>
       </div>
     }

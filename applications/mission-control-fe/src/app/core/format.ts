@@ -36,6 +36,14 @@ export function shortDate(ts: number): string {
   return new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
 
+/**
+ * Date and time for a log line. A tail can span midnight — and a stopped container's
+ * tail is often days old — so a bare clock reads as "today" for entries that are not.
+ */
+export function logStamp(ts: number): string {
+  return `${shortDate(ts)} ${clock(ts)}`;
+}
+
 export function mb(v: number): string {
   return v >= 1024 ? `${(v / 1024).toFixed(1)} GB` : `${Math.round(v)} MB`;
 }

@@ -106,16 +106,19 @@
   padding: 0 12px 10px;
   border-bottom: 1px solid var(--term-line);
 }
+// Sits on the panel's top border, spanning the full width: the whole edge is the
+// handle, so grabbing it needs no aim. The negative top margin pulls it over the
+// host's own 1px border rather than adding height above the bar.
 .drag {
-  height: 8px;
+  height: 7px;
+  margin-top: -1px;
   cursor: row-resize;
-  margin: -6px 0 -2px;
   display: flex;
   align-items: center;
-  justify-content: center;
   touch-action: none;   /* keep touch drags resizing instead of scrolling */
   .grip {
-    width: 44px; height: 3px; border-radius: 2px;
+    width: 100%;
+    height: 3px;
     background: var(--term-line);
   }
   &:hover .grip, &:active .grip { background: var(--term-acc); }

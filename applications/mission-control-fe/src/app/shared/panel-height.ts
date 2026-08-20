@@ -30,13 +30,19 @@ export class PanelHeight {
     this.set(this.px() + delta);
   }
 
-  /** Follows the pointer until it is released; `onSettled` runs once, after. */
-  drag(down: PointerEvent, onSettled: () => void): void {
+  /**
+   * Follows the pointer until it is released; `onSettled` runs once, after.
+   *
+   * <p>`edge` is which edge carries the grip, because that decides which way is taller: the
+   * terminal is docked at the bottom and grows upward, an inline log card grows downward.
+   */
+  drag(down: PointerEvent, onSettled: () => void, edge: 'top' | 'bottom' = 'top'): void {
     down.preventDefault();
     const startY = down.clientY;
     const startPx = this.px();
-    // dragging the top edge upward makes the panel taller
-    const move = (e: PointerEvent) => this.set(startPx + (startY - e.clientY));
+    // a top grip grows the panel when dragged up, a bottom grip when dragged down
+    const move = (e: PointerEvent) => this.set(
+      startPx + (edge === 'top' ? startY - e.clientY : e.clientY - startY));
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);

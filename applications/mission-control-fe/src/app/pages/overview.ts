@@ -1,21 +1,24 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { JobStore } from '../core/store/job-store';
 import { LogStore } from '../core/store/log-store';
-import { AgentProfile, LogEntry } from '../core/models';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
+import { AgentProfile } from '../core/models';
 import { Sparkline } from '../shared/sparkline';
 import { Gauge } from '../shared/gauge';
 import { StatusDot } from '../shared/status-dot';
 import { RollingNumber } from '../shared/rolling-number';
 import { Reveal } from '../shared/reveal';
-import { ago, clock, mb, until, uptime } from '../core/format';
+import { LogView } from '../shared/log-view';
+import { TerminalIcon } from '../shared/terminal-icon';
+import { ago, mb, until, uptime } from '../core/format';
 
 @Component({
   selector: 'mc-overview',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Sparkline, Gauge, StatusDot, RollingNumber, Reveal],
+  imports: [RouterLink, Sparkline, Gauge, StatusDot, RollingNumber, Reveal, TerminalIcon, LogView],
   templateUrl: './overview.html',
   styleUrl: './overview.scss',
 })
@@ -24,11 +27,12 @@ export class OverviewPage {
   protected readonly containers = inject(ContainerStore);
   protected readonly jobs = inject(JobStore);
   protected readonly logs = inject(LogStore);
+  protected readonly terminal = inject(TerminalRequestStore);
+  private readonly router = inject(Router);
 
   protected readonly uptime = uptime;
   protected readonly ago = ago;
   protected readonly until = until;
-  protected readonly clock = clock;
   protected readonly mb = mb;
 
   protected readonly c = this.containers.selected;
@@ -52,6 +56,17 @@ export class OverviewPage {
     };
   });
 
+  /** A summary card is itself the link to the page it summarizes — see overview.html. */
+  protected go(path: string): void {
+    void this.router.navigate([path]);
+  }
+
+  /** Open the terminal panel on a shell already inside this profile's session. */
+  protected openAgentShell(a: AgentProfile): void {
+    const c = this.c();
+    if (c) this.terminal.openAgentShell(a, c);
+  }
+
   /** per-agent skill / MCP / tool tallies for the row badges; `custom` counts
    *  agent-authored skills (source 'user') so they stand out from bundled/hub */
   protected agentMeta(a: AgentProfile) {
@@ -63,21 +78,12 @@ export class OverviewPage {
     };
   }
 
-  /** quick level filter for the log tail */
-  protected readonly logLevel = signal<'all' | 'error' | 'warn'>('all');
-
+  /** The window the card shows; the level filter inside {@link LogView} narrows it further. */
   protected readonly tailWindow = computed(() => this.logs.selectedLogs().slice(0, 40));
-  protected readonly recentLogs = computed(() => {
-    const level = this.logLevel();
-    return this.tailWindow()
-      .filter(l => (level === 'all' ? true : l.level === level))
-  });
+
+  /** Counted over the window rather than the whole tail, so the chip matches what is on screen. */
   protected readonly errorCount = computed(() =>
     this.tailWindow().filter(l => l.level === 'error').length);
-
-  protected logKey(l: LogEntry): string {
-    return `${l.ts}:${l.level}:${l.source}:${l.msg}`;
-  }
 
   protected readonly jobStats = computed(() => {
     const js = this.jobs.forSelectedContainer();

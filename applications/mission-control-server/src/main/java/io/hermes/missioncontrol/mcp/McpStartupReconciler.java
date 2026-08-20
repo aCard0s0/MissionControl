@@ -2,6 +2,8 @@ package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,8 @@ import org.springframework.stereotype.Component;
 @Component
 class McpStartupReconciler {
 
+  private static final Logger log = LoggerFactory.getLogger(McpStartupReconciler.class);
+
   private final McpServerRepository repository;
   private final McpCatalogSeeder seeder;
   private final McpComposeLifecycle lifecycle;
@@ -43,7 +47,10 @@ class McpStartupReconciler {
   public void onApplicationReady() {
     // A context test boots the whole application without a daemon, so seeding and
     // reconciliation — which pull images and create containers — must be skippable.
-    if (!enabled) return;
+    if (!enabled) {
+      log.info("MCP startup reconcile is off (MC_STARTUP_RECONCILE=false)");
+      return;
+    }
     run();
   }
 
@@ -59,6 +66,7 @@ class McpStartupReconciler {
         .map(McpCatalogSeeder.SEED_VERSION::equals).orElse(false)) {
       return;
     }
+    log.info("seeding the default MCP catalog entries ({})", McpCatalogSeeder.SEED_VERSION);
     seeder.seedDefaults();
     repository.putMeta(McpCatalogSeeder.SEED_META, McpCatalogSeeder.SEED_VERSION);
   }
@@ -73,6 +81,7 @@ class McpStartupReconciler {
         .map(McpCatalogSeeder.SEED_REPAIR_VERSION::equals).orElse(false)) {
       return;
     }
+    log.info("repairing seeded MCP catalog entries ({})", McpCatalogSeeder.SEED_REPAIR_VERSION);
     seeder.repairSeeds();
     repository.putMeta(McpCatalogSeeder.SEED_REPAIR_META, McpCatalogSeeder.SEED_REPAIR_VERSION);
   }
@@ -82,14 +91,25 @@ class McpStartupReconciler {
    * with any seed provisioning already queued above.
    */
   private void reconcileEveryManagedRecord() {
+    int queued = 0;
+    int resumedDeletes = 0;
     for (ServerRow row : repository.findAll()) {
       if (!"managed".equals(row.kind())) continue;
       if ("deleting".equals(row.operationState())) {
+        resumedDeletes++;
         lifecycle.submit(row.id(), () -> lifecycle.runDelete(row.id()));
       } else {
         repository.beginOperation(row.id(), row.desiredState(), "reconciling");
         lifecycle.submit(row.id(), () -> lifecycle.reconcile(row.id()));
       }
+      queued++;
+    }
+    // Queued, not finished: each of these is a Compose run with an image pull behind it,
+    // and they report their own completion. Saying how many were handed to the executor is
+    // what makes a record that never reports one identifiable.
+    if (queued > 0) {
+      log.info("queued {} managed MCP record(s) for reconcile{}", queued,
+          resumedDeletes > 0 ? " (" + resumedDeletes + " resuming an interrupted delete)" : "");
     }
   }
 }

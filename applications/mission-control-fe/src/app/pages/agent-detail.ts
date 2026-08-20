@@ -16,7 +16,8 @@ import { Reveal } from '../shared/reveal';
 import { AgentMcpPanel } from './agent-mcp-panel';
 import { AgentSetupPanel } from './agent-setup-panel';
 import { AgentSkillsPanel } from './agent-skills-panel';
-import { ago, clock, until } from '../core/format';
+import { LogView } from '../shared/log-view';
+import { ago, until } from '../core/format';
 import { errorMessage } from '../core/errors';
 import { ChatMessage, LogEntry, SessionInfo } from '../core/models';
 import { SessionViewer } from './session-viewer';
@@ -34,7 +35,7 @@ interface SessionView {
   selector: 'mc-agent-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    FormsModule, RouterLink, StatusDot, Reveal,
+    FormsModule, RouterLink, StatusDot, Reveal, LogView,
     AgentMcpPanel, AgentSetupPanel, AgentSkillsPanel, SessionViewer,
   ],
   templateUrl: './agent-detail.html',
@@ -51,15 +52,18 @@ export class AgentDetailPage {
   private readonly router = inject(Router);
 
   protected readonly ago = ago;
-  protected readonly clock = clock;
   protected readonly until = until;
 
   private readonly id = toSignal(this.route.paramMap.pipe(map(p => p.get('id'))), { initialValue: null });
 
   protected readonly agent = computed(() => this.agents.byId(this.id()));
 
-  protected readonly tab = signal<Tab>('overview');
   protected readonly tabs: Tab[] = ['overview', 'setup', 'skills', 'mcp', 'jobs', 'activity', 'files', 'sessions'];
+  protected readonly tab = signal<Tab>('overview');
+
+  /** `?tab=` — how another page links straight at one tab of this profile. */
+  private readonly tabParam = toSignal(
+    this.route.queryParamMap.pipe(map(p => p.get('tab'))), { initialValue: null });
 
   protected soulDraft = signal('');
   protected readonly soulDirty = computed(() => this.soulDraft() !== (this.agent()?.soul ?? ''));
@@ -127,6 +131,14 @@ export class AgentDetailPage {
       lastId = id;
       lastSoul = soul;
       lastConfig = config;
+    });
+
+    // A ?tab= link (the overview's skills/MCP chips) opens on that tab. It seeds the
+    // tab rather than owning it: pressing a tab here stays local, so flipping through
+    // them neither rewrites the URL nor fills the back button with tab changes.
+    effect(() => {
+      const t = this.tabParam();
+      if (t && this.tabs.includes(t as Tab)) untracked(() => this.selectTab(t as Tab));
     });
 
     // Poll only while Activity is visible. The cleanup runs on tab/agent changes

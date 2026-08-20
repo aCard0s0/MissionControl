@@ -352,3 +352,94 @@ describe('TerminalSession identity and wiring', () => {
     expect(ws.sent).toEqual([]);
   });
 });
+
+/**
+ * Resize frames are SIGWINCH at the far end: the shell answers each one by redrawing its
+ * prompt. A height drag resizes the host div on every pointer frame, and most of those
+ * pixel steps land on the same character grid — so an unguarded fit stamped the prompt
+ * across the input line, `qa › qa › qa ›`.
+ */
+describe('TerminalSession resize reporting', () => {
+  beforeEach(() => {
+    FakeSocket.last = null;
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.stubGlobal('ResizeObserver', class {
+      observe(): void { /* the drag is driven directly below */ }
+      disconnect(): void { /* no-op */ }
+    });
+    // xterm watches the device-pixel-ratio query through the legacy listener API
+    vi.stubGlobal('matchMedia', (media: string) => ({
+      media, matches: false,
+      addListener: () => { /* the dpr never changes here */ },
+      removeListener: () => { /* the dpr never changes here */ },
+      addEventListener: () => { /* the dpr never changes here */ },
+      removeEventListener: () => { /* the dpr never changes here */ },
+    }));
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The size frames sent so far, parsed. */
+  const resizes = (ws: FakeSocket) =>
+    ws.sent.map(s => { try { return JSON.parse(s); } catch { return null; } })
+      .filter((m): m is { type: string; cols: number; rows: number } => m?.type === 'resize');
+
+  it('tells the pty a size once, however many fits land on the same grid', () => {
+    const session = new TerminalSession(target(), 'http://mc.test');
+    session.ensureTerm();
+    session.setActive(true);
+    session.connect();
+    const ws = FakeSocket.last!;
+    ws.onopen!();
+
+    const afterOpen = resizes(ws).length;
+    // what a drag looks like: many fits, one grid
+    for (let i = 0; i < 30; i++) session.fitNow();
+
+    expect(resizes(ws).length).toBe(afterOpen);
+  });
+
+  it('holds fits for the length of a drag, so the buffer reflows once and not per frame', () => {
+    // Fitting reflows xterm, and the far end repaints its input line on the SIGWINCH that
+    // follows. Per pointer frame, the app repaints against a buffer that moved underneath
+    // it — which is the prompt drawn twice.
+    let fire!: () => void;
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { fire = cb; }
+      observe(): void { /* driven by hand */ }
+      disconnect(): void { /* no-op */ }
+    });
+
+    const session = new TerminalSession(target(), 'http://mc.test');
+    session.ensureTerm();
+    session.setActive(true);
+
+    // stubbed only now: xterm wants a real one while it is being built
+    const raf = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', raf);
+
+    session.setFitsSuspended(true);
+    for (let i = 0; i < 30; i++) fire();
+    expect(raf).not.toHaveBeenCalled();
+
+    // what the panel does when the drag settles
+    session.setFitsSuspended(false);
+    fire();
+    expect(raf).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the size again on a new socket, which has been told nothing', () => {
+    const session = new TerminalSession(target(), 'http://mc.test');
+    session.ensureTerm();
+    session.setActive(true);
+    session.connect();
+    FakeSocket.last!.onopen!();
+
+    session.connect();                       // ↻ restart
+    const fresh = FakeSocket.last!;
+    fresh.onopen!();
+    session.fitNow();
+
+    expect(resizes(fresh).length).toBeGreaterThan(0);
+  });
+});

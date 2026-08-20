@@ -62,6 +62,7 @@ public class HostService {
   public void seedLocalHost() {
     if (repository.findById(LOCAL_HOST_ID).isEmpty()) {
       repository.insert(new HostRow(LOCAL_HOST_ID, "localhost", props.dockerSocket(), "local"));
+      log.info("seeded the local docker host from MC_DOCKER_SOCKET: {}", props.dockerSocket());
     }
   }
 
@@ -118,6 +119,7 @@ public class HostService {
     }
     HostRow row = new HostRow("dh-" + UUID.randomUUID().toString().substring(0, 8), name, url, "remote");
     repository.insert(row);
+    log.info("added remote docker host {} ({}) at {}", row.id(), name, url);
     return toDto(row, probe(row, true));
   }
 
@@ -130,6 +132,7 @@ public class HostService {
     probeCache.remove(id);
     // the url is read from the row above, because it is no longer resolvable from the id
     clients.release(row.url());
+    log.info("removed docker host {} ({}) at {}", id, row.name(), row.url());
   }
 
   public boolean isLocalDaemonConnected() {

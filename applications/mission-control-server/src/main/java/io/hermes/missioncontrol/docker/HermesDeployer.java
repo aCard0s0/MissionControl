@@ -93,11 +93,24 @@ public class HermesDeployer {
       containerId = created.getId();
       client.startContainerCmd(containerId).exec();
       readiness.validate(host, client, containerId, seedProfiles);
+      log.info("deployed {} from {} on {} — container {}, volume {}, seed profiles {}",
+          name, image, host.id(), shortId(containerId), volumeName,
+          seedProfiles.isEmpty() ? "none" : seedProfiles);
       return containerId;
     } catch (RuntimeException failure) {
+      // The deploy pulls an image and runs bootstrap containers, so a failure can arrive
+      // minutes in. Naming what is being undone is the only way to tell a clean rollback
+      // from one that stranded a volume — the caller sees the cause, never the cleanup.
+      log.warn("deploy of {} on {} failed, rolling back{}: {}", name, host.id(),
+          volumeCreated ? " (container and data volume " + volumeName + ")" : "",
+          failure.getMessage());
       rollback(client, containerId, volumeCreated ? volumeName : null, failure);
       throw failure;
     }
+  }
+
+  private static String shortId(String containerId) {
+    return containerId == null ? "?" : containerId.substring(0, Math.min(12, containerId.length()));
   }
 
   private static CreateContainerResponse createContainer(

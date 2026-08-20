@@ -9,6 +9,7 @@ import { ContainerStore } from '../core/store/container-store';
 import { HostStore } from '../core/store/host-store';
 import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { StoreContext } from '../core/store/store-context';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 import { ContainersPage, containerUpdate, newerImageTags, normalizeSeedProfiles } from './containers';
 import {
@@ -150,6 +151,7 @@ const storeStub = (containers: HermesContainer[], catalogs: Record<string, Image
       update: vi.fn().mockResolvedValue('c-updated'),
       remove: vi.fn().mockResolvedValue(true),
     },
+    terminal: { open: vi.fn() },
   };
 };
 
@@ -165,6 +167,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
       { provide: HostStore, useValue: store.hosts },
       { provide: ImageCatalogStore, useValue: store.images },
       { provide: StoreContext, useValue: store.ctx },
+      { provide: TerminalRequestStore, useValue: store.terminal },
     ],
   });
   const fixture = TestBed.createComponent(ContainersPage);
@@ -241,13 +244,18 @@ describe('ContainersPage fleet', () => {
     expect(space.defaultPrevented).toBe(true);
   });
 
-  it('selects a container and leaves the page for its overview', () => {
+  it('selects a container from a click on the card and leaves the page for its overview', () => {
     const { fixture, store, router } = render(storeStub([container('hermes-prod')]));
+    const card = el(fixture).querySelector<HTMLElement>('.card')!;
 
-    press(fixture, 'select', '.card');
+    card.click();
+    fixture.detectChanges();
 
     expect(store.containers.select).toHaveBeenCalledWith('hermes-prod');
     expect(router.navigate).toHaveBeenCalledWith(['/overview']);
+    // the card is the control; a separate select button would only duplicate it
+    expect(Array.from(card.querySelectorAll('button'))
+      .map(b => (b.textContent ?? '').trim())).not.toContain('select');
   });
 
   it('offers start for a stopped container, and shows no telemetry for it', () => {
@@ -265,6 +273,37 @@ describe('ContainersPage fleet', () => {
     press(fixture, 'stop', '.card');
 
     expect(store.lifecycle.setStatus).toHaveBeenCalledWith('hermes-prod', 'stopped');
+  });
+
+  it('opens a terminal on the container without running anything in it', () => {
+    const { fixture, store, router } = render(storeStub([container('hermes-prod')]));
+    const term = el(fixture).querySelector<HTMLButtonElement>('.card .term')!;
+
+    // an icon-only control still has to say what it does
+    expect(term.getAttribute('aria-label')).toBe('open a terminal in hermes-prod');
+    term.click();
+    fixture.detectChanges();
+
+    expect(store.terminal.open).toHaveBeenCalledWith({
+      hostId: 'dh-local', containerId: 'hermes-prod', label: 'hermes-prod',
+    });
+    // the operator asked for a prompt, not for something to be run at it
+    expect(store.terminal.open.mock.calls[0][0]).not.toHaveProperty('command');
+    // the shell is not a reason to leave the page
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('says why a stopped container has no shell to open', () => {
+    const { fixture, store } = render(storeStub([container('hermes-prod', { status: 'stopped' })]));
+    const term = el(fixture).querySelector<HTMLButtonElement>('.card .term')!;
+
+    expect(term.disabled).toBe(true);
+    expect(term.title).toContain('start it to open a shell');
+
+    term.click();
+    fixture.detectChanges();
+
+    expect(store.terminal.open).not.toHaveBeenCalled();
   });
 });
 

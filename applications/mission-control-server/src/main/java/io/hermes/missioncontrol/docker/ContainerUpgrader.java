@@ -190,7 +190,14 @@ public class ContainerUpgrader {
       log.warn("upgraded {} but could not remove the parked container {}: {}",
           spec.name(), parkedName, leftover.getMessage());
     }
+    log.info("upgraded {} {} -> {} on {} — container {} -> {}, {}",
+        spec.name(), spec.tag(), tag, host.id(), shortId(spec.id()), shortId(newContainerId),
+        result.running() ? "running" : "left stopped");
     return result;
+  }
+
+  private static String shortId(String containerId) {
+    return containerId == null ? "?" : containerId.substring(0, Math.min(12, containerId.length()));
   }
 
   private static void stopBeforeReplace(DockerClient client, ManagedContainerSpec spec) {

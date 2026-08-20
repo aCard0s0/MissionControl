@@ -1,0 +1,82 @@
+:host {
+  display: block;
+}
+
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+
+  .spacer { flex: 1; }
+  .shown { font-size: 9.5px; letter-spacing: .06em; }
+}
+
+.log-filter {
+  display: flex;
+  gap: 2px;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all .15s;
+
+    &:hover { color: var(--text); }
+    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+
+    .n { font-size: 9px; opacity: .75; }
+  }
+}
+
+.logs {
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: auto;
+
+  .log-line {
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
+
+    .ts  { width: 96px; flex: none; }
+    .lvl { width: 44px; flex: none; }
+    // wide enough for the class names the server logs under (ContainerInventory,
+    // McpStartupReconciler) rather than the 64px a container's short source needed
+    .src { width: 150px; flex: none; overflow: hidden; text-overflow: ellipsis; }
+    .msg { color: var(--dim); }
+  }
+
+  .err { color: var(--red); }
+}
+
+// Full width, like the terminal panel's: the whole bottom edge is the handle.
+.log-grip {
+  height: 7px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  cursor: ns-resize;
+  touch-action: none;   /* keep touch drags resizing instead of scrolling */
+
+  &::after {
+    content: '';
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+  &:hover::after, &:active::after { background: var(--acc-line); }
+}

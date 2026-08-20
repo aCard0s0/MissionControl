@@ -1,0 +1,46 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">DIAGNOSTICS</div>
+    <h2>Server Logs</h2>
+  </div>
+  <a class="btn ghost" routerLink="/overview">container log tail</a>
+</div>
+
+<div class="panel" data-reveal>
+  <div class="panel-h">
+    PROCESS
+    <span class="spacer"></span>
+    @if (info(); as i) {
+      <span class="chip">v{{ i.version }}</span>
+      <span class="chip">up {{ runningFor() }}</span>
+      <span class="chip">{{ i.retained }} lines retained</span>
+    } @else {
+      <span class="faint">process details unavailable</span>
+    }
+  </div>
+</div>
+
+<div class="panel" data-reveal>
+  <div class="panel-h">
+    LOG TAIL
+    <span class="faint">newest first</span>
+    <span class="spacer"></span>
+    @if (updatedAt(); as updated) { <span class="faint">updated {{ ago(updated) }}</span> }
+    @if (loading()) { <span class="faint">refreshing…</span> }
+    @if (warnCount() > 0) {
+      <span class="chip warn">{{ warnCount() }} {{ warnCount() === 1 ? 'warning' : 'warnings' }}</span>
+    }
+    @if (errorCount() > 0) {
+      <span class="chip crit">{{ errorCount() }} {{ errorCount() === 1 ? 'error' : 'errors' }}</span>
+    }
+    <button class="btn sm ghost" (click)="togglePause()">
+      {{ paused() ? 'resume' : 'pause' }}
+    </button>
+    <button class="btn sm ghost" [disabled]="loading()" (click)="refresh()">refresh</button>
+  </div>
+  <div class="panel-b">
+    <mc-log-view [lines]="lines()" [loading]="loading()" [error]="error()"
+                 emptyText="No server log entries retained yet."
+                 heightKey="mc-log-server" />
+  </div>
+</div>

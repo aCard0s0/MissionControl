@@ -6,20 +6,10 @@
       @if (loading()) { <span class="chip info">polling</span> }
       <button class="btn sm ghost" (click)="closed.emit()">close</button>
     </div>
-    <div class="log-body mono">
-      @if (error()) {
-        <p class="error">{{ error() }}</p>
-      }
-      @for (line of lines(); track line.ts + '-' + $index) {
-        <div class="log-line">
-          <span class="faint">{{ clock(line.ts) }}</span>
-          <span [class]="'lvl-' + line.level">{{ line.level }}</span>
-          <span class="source">{{ line.source }}</span>
-          <span>{{ line.msg }}</span>
-        </div>
-      } @empty {
-        <p class="faint">{{ loading() ? 'loading logs…' : 'No log lines returned.' }}</p>
-      }
+    <div class="log-body">
+      <mc-log-view [lines]="lines()" [loading]="loading()" [error]="error()"
+                   emptyText="No log lines returned."
+                   heightKey="mc-log-mcp" />
     </div>
   </div>
 </div>

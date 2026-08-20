@@ -27,7 +27,7 @@ const storeStub = (agents: AgentProfile[]) => ({
     containers: signal([container]),
     selected: signal(container),
   },
-  terminal: { open: vi.fn() },
+  terminal: { open: vi.fn(), openAgentShell: vi.fn() },
   // the create dialog, rendered as a child
   templates: { templates: signal([]), byId: () => null },
   providers: {
@@ -86,15 +86,14 @@ describe('AgentsPage roster', () => {
     expect(el(fixture).querySelectorAll('.card-wrap').length).toBe(0);
   });
 
-  it('opens a shell on the agent\'s own session', () => {
-    const { fixture, store } = render(storeStub([agent('atlas')]));
+  it('opens a shell on the agent\'s own session, in the container it runs in', () => {
+    const a = agent('atlas');
+    const { fixture, store } = render(storeStub([a]));
 
     el(fixture).querySelector<HTMLButtonElement>('.shell-btn')!.click();
 
-    expect(store.terminal.open).toHaveBeenCalledWith({
-      hostId: 'dh-local', containerId: 'c-1', label: 'atlas',
-      agentKey: 'atlas', command: 'hermes -p atlas',
-    });
+    // what such a request looks like is the store's business — see its own spec
+    expect(store.terminal.openAgentShell).toHaveBeenCalledWith(a, container);
   });
 
   it('lists only the integrations that are up or degraded', () => {

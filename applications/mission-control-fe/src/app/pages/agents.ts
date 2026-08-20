@@ -56,14 +56,7 @@ export class AgentsPage {
   /** Open the terminal panel on a shell already running this agent. */
   protected openShell(a: AgentProfile): void {
     const c = this.containers.containers().find(x => x.id === a.containerId);
-    if (!c) return;
-    this.terminal.open({
-      hostId: c.hostId,
-      containerId: c.id,
-      label: a.name,
-      agentKey: a.id,
-      command: agentSessionCommand(a.name),
-    });
+    if (c) this.terminal.openAgentShell(a, c);
   }
 
   protected upIntegrations(agentId: string): string[] {

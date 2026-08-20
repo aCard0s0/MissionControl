@@ -410,6 +410,38 @@ describe('TerminalPanel requests from other pages', () => {
     expect(FakeSocket.opened.length).toBe(1);
   });
 
+  it('focuses the shell a container already has instead of stacking another', async () => {
+    const store = storeStub([container('hermes-prod')]);
+    const { fixture } = render(store);
+    const request = { seq: 1, hostId: 'dh-local', containerId: 'hermes-prod', label: 'hermes-prod' };
+    store.terminal.request.set(request);
+    await settle(fixture);
+
+    store.terminal.request.set({ ...request, seq: 2 });
+    await settle(fixture);
+
+    expect(tabs(fixture).length).toBe(1);
+    expect(FakeSocket.opened.length).toBe(1);
+  });
+
+  it('gives a container shell its own tab rather than an agent tab in the same container', async () => {
+    const store = storeStub([container('hermes-prod')]);
+    const { fixture } = render(store);
+    store.terminal.request.set({
+      seq: 1, hostId: 'dh-local', containerId: 'hermes-prod', label: 'ops-bot',
+      agentKey: 'a-ops', command: 'hermes -p ops-bot',
+    });
+    await settle(fixture);
+
+    // that prompt is inside `hermes session` — a container shell is not the same shell
+    store.terminal.request.set({
+      seq: 2, hostId: 'dh-local', containerId: 'hermes-prod', label: 'hermes-prod',
+    });
+    await settle(fixture);
+
+    expect(labels(fixture)).toEqual(['ops-bot', 'hermes-prod']);
+  });
+
   it('revives an agent shell the operator had let close', async () => {
     const store = storeStub([container('hermes-prod')]);
     const { fixture } = render(store);

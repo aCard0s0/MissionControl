@@ -11,6 +11,8 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 |---|---|
 | `GET /health` | `{ status, version, dockerConnected }` |
 | `GET /config.js` | frontend runtime config as JS (from `MC_*` env, `no-store`) |
+| `GET /api/server/info` | `{ version, retained, startedAt }` — what the Server Logs page header shows. Separate from `/health`, which the launcher polls and should not grow fields for one page |
+| `GET /api/server/logs` | the dashboard's **own** log tail — `?tail=200` (max 1000), `?level=error\|warn\|info\|debug`. Newest first, in the same `{ ts, level, source, msg }` shape a container tail returns. Served from an in-memory ring; what falls out of it is still in `docker logs` |
 
 ## Docker hosts — registry in SQLite, status probed live (10s cache)
 

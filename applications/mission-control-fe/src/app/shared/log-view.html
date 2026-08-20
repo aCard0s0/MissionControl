@@ -1,0 +1,27 @@
+<div class="log-toolbar">
+  <div class="log-filter mono">
+    @for (f of filters; track f) {
+      <button [class.on]="level() === f" (click)="level.set(f)">
+        {{ f }}@if (f !== 'all') { <span class="n">{{ counts()[f] }}</span> }
+      </button>
+    }
+  </div>
+  <span class="spacer"></span>
+  <span class="faint shown mono">{{ visible().length }} / {{ lines().length }}</span>
+</div>
+
+<div class="logs mono" [style.height.px]="height().px()">
+  @for (l of visible(); track key(l)) {
+    <div class="log-line">
+      <span class="ts faint">{{ stamp(l.ts) }}</span>
+      <span class="lvl lvl-{{ l.level }}">{{ l.level.toUpperCase() }}</span>
+      <span class="src faint">{{ l.source }}</span>
+      <span class="msg">{{ l.msg }}</span>
+    </div>
+  }
+  @if (error()) { <p class="dim err">{{ error() }}</p> }
+  @else if (!visible().length) { <p class="dim">{{ placeholder() }}</p> }
+</div>
+
+<!-- the panel's bottom edge is the handle, full width so grabbing it needs no aim -->
+<div class="log-grip" (pointerdown)="grip($event)" title="drag to resize"></div>
