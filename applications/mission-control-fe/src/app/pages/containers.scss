@@ -78,6 +78,8 @@
   .actions {
     display: flex; gap: 8px;
     .spacer { flex: 1; }
+    // icon-only, so square padding rather than the label padding .btn.sm carries
+    .term { padding: 4px 6px; }
     // an available update is advisory, not a fault — amber, never red
     .upd {
       color: var(--amber);

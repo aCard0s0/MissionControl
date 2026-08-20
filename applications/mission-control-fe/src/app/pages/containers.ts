@@ -7,9 +7,11 @@ import { ContainerStore } from '../core/store/container-store';
 import { HostStore } from '../core/store/host-store';
 import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { StoreContext } from '../core/store/store-context';
+import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { StatusDot } from '../shared/status-dot';
 import { Sparkline } from '../shared/sparkline';
 import { Reveal } from '../shared/reveal';
+import { TerminalIcon } from '../shared/terminal-icon';
 import { errorMessage } from '../core/errors';
 import { uptime } from '../core/format';
 import { HermesContainer, ImageCatalog, ImageTag } from '../core/models';
@@ -92,7 +94,7 @@ export function containerUpdate(
 @Component({
   selector: 'mc-containers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, StatusDot, Sparkline, Reveal],
+  imports: [FormsModule, StatusDot, Sparkline, Reveal, TerminalIcon],
   templateUrl: './containers.html',
   styleUrl: './containers.scss',
 })
@@ -103,6 +105,7 @@ export class ContainersPage {
   protected readonly hosts = inject(HostStore);
   protected readonly images = inject(ImageCatalogStore);
   protected readonly lifecycle = inject(ContainerLifecycle);
+  protected readonly terminal = inject(TerminalRequestStore);
   private readonly router = inject(Router);
 
   protected readonly uptime = uptime;
@@ -151,6 +154,15 @@ export class ContainersPage {
 
   protected isUpdating(id: string): boolean {
     return this.updatingBusy() && this.updating()?.id === id;
+  }
+
+  /**
+   * Open the bottom terminal panel on a shell in this container. No command: the
+   * operator asked for a prompt, not for something to be run in it. A repeat
+   * click focuses the tab this container already has rather than stacking one.
+   */
+  protected openTerminal(c: HermesContainer): void {
+    this.terminal.open({ hostId: c.hostId, containerId: c.id, label: c.name });
   }
 
   protected updateHint(c: HermesContainer, target: ImageTag): string {

@@ -75,7 +75,6 @@
           <div class="spark flat mono faint">no telemetry — stopped</div>
         }
         <div class="actions">
-          <button class="btn sm primary" (click)="open(c.id)">select</button>
           @if (c.status === 'stopped') {
             <button class="btn sm" [disabled]="isUpdating(c.id)"
                     (click)="lifecycle.setStatus(c.id, 'running'); $event.stopPropagation()">start</button>
@@ -89,6 +88,16 @@
               {{ isUpdating(c.id) ? 'updating…' : 'update' }}
             </button>
           }
+          <!-- icon-only: the row is already crowded, and a shell needs no label -->
+          <button class="btn sm ghost term" type="button"
+                  [disabled]="c.status === 'stopped' || isUpdating(c.id)"
+                  [title]="c.status === 'stopped'
+                    ? 'container is stopped — start it to open a shell'
+                    : 'open a terminal in ' + c.name"
+                  [attr.aria-label]="'open a terminal in ' + c.name"
+                  (click)="openTerminal(c); $event.stopPropagation()">
+            <mc-terminal-icon />
+          </button>
           <span class="spacer"></span>
           <button class="btn sm danger ghost" [disabled]="isUpdating(c.id)"
                   (click)="removing.set(c); $event.stopPropagation()">remove</button>

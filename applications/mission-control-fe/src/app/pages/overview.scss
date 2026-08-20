@@ -66,61 +66,78 @@
   .count.off  { color: var(--faint); }
 }
 
+// Two lines, because one was never enough for six numbers: who the profile is,
+// then what it can do. The capability chips sit outside .agent-pick rather than
+// inside it — they are links of their own, and a link cannot nest in a link.
 .agent-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "who term" "caps caps";
   align-items: center;
   border-radius: var(--r);
   margin: 0 -8px;
+  padding-bottom: 5px;
 
   &:hover, &.active { background: var(--panel-2); }
   &.active { box-shadow: inset 2px 0 0 var(--acc); }
 
   .agent-pick {
-    flex: 1;
+    grid-area: who;
     min-width: 0;
     overflow: hidden;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 7px 8px;
-    background: none;
-    border: 0;
+    padding: 7px 8px 3px;
     color: var(--text);
     font-size: 12px;
     text-align: left;
+    text-decoration: none;
     cursor: pointer;
 
     .name { font-weight: 500; flex: none; }
     .role { font-size: 11px; flex: none; }
-    .meta {
-      flex: none;
-      display: flex;
-      gap: 4px;
-      .mc-badge {
-        padding: 1px 6px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        background: var(--panel-2);
-        color: var(--dim);
-        font-size: 9.5px;
-        line-height: 1.5;
-        white-space: nowrap;
-        &.custom { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 45%, transparent); background: color-mix(in srgb, var(--violet) 14%, transparent); }
-      }
-    }
     .right { margin-left: auto; padding-left: 8px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    &:hover .name { color: var(--acc); }
   }
 
-  .details {
-    flex: none;
-    padding: 7px 10px 7px 6px;
-    border-left: 1px solid var(--line);
-    font-family: var(--font-mono);
-    font-size: 10px;
+  // the shell shortcut: icon-only, so it never competes with the name for width
+  .term {
+    grid-area: term;
+    display: inline-flex;
+    align-items: center;
+    margin-right: 6px;
+    padding: 4px 5px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--r);
     color: var(--faint);
-    text-decoration: none;
-    white-space: nowrap;
-    &:hover { color: var(--acc); }
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    &:hover { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+  }
+
+  .caps {
+    grid-area: caps;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 8px;
+
+    .cap {
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--dim);
+      font-size: 9.5px;
+      line-height: 1.6;
+      white-space: nowrap;
+      text-decoration: none;
+      &:hover { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+      // agent-authored skills, called out inside the count they belong to
+      .custom { color: var(--violet); }
+    }
   }
 }
 
@@ -205,4 +222,10 @@
   gap: 8px;
   padding: 48px;
   text-align: center;
+}
+
+// a summary card that is itself a link to its page
+.panel.nav {
+  cursor: pointer;
+  &:hover { border-color: var(--line-2); }
 }

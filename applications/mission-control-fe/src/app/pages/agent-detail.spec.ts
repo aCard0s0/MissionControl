@@ -86,10 +86,12 @@ const storeStub = (profile: AgentProfile | null) => {
   };
 };
 
-const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas') => {
+const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas', tab?: string) => {
   // a live paramMap, so a test can navigate to another profile the way the
   // router does rather than tearing the page down
   const route = new BehaviorSubject(convertToParamMap({ id: agentId }));
+  // ?tab= — how the overview links straight at one tab of a profile
+  const queryParams = new BehaviorSubject(convertToParamMap(tab ? { tab } : {}));
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
@@ -104,7 +106,7 @@ const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas') => {
       { provide: McpCatalogStore, useValue: store.catalog },
       { provide: StoreContext, useValue: store.ctx },
       { provide: TemplateStore, useValue: store.templates },
-      { provide: ActivatedRoute, useValue: { paramMap: route } },
+      { provide: ActivatedRoute, useValue: { paramMap: route, queryParamMap: queryParams } },
     ],
   });
   // the real router, with navigation recorded — RouterLink in these templates
@@ -113,7 +115,7 @@ const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas') => {
   const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(AgentDetailPage);
   fixture.detectChanges();
-  return { fixture, store, navigate, route };
+  return { fixture, store, navigate, route, queryParams };
 };
 
 const openTab = (fixture: TestFixture, name: string): void => {
@@ -140,6 +142,40 @@ describe('AgentDetailPage', () => {
     expect(el(fixture).textContent).toContain('atlas');
     expect(el(fixture).textContent).toContain('Ops & infrastructure');
     expect(el(fixture).querySelector('.tabbar')).not.toBeNull();
+  });
+
+  it('opens on the tab the link asked for', () => {
+    // the overview's MCP chip links here
+    const { fixture } = render(storeStub(agent()), 'a-atlas', 'mcp');
+
+    expect(el(fixture).querySelector('mc-agent-mcp-panel')).not.toBeNull();
+  });
+
+  it('follows a later link to another tab of the same profile', () => {
+    const { fixture, queryParams } = render(storeStub(agent()), 'a-atlas', 'mcp');
+
+    // the router reuses this component when only the query string changes
+    queryParams.next(convertToParamMap({ tab: 'skills' }));
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelector('mc-agent-skills-panel')).not.toBeNull();
+    expect(el(fixture).querySelector('mc-agent-mcp-panel')).toBeNull();
+  });
+
+  it('ignores a tab name it does not have, rather than showing nothing', () => {
+    const { fixture } = render(storeStub(agent()), 'a-atlas', 'not-a-tab');
+
+    expect(el(fixture).textContent).toContain('Ops & infrastructure');
+  });
+
+  it('leaves the URL alone when the operator presses a tab', () => {
+    const { fixture, navigate } = render(storeStub(agent()));
+
+    openTab(fixture, 'mcp');
+
+    // flipping tabs is not navigation — it must not fill the back button either
+    expect(navigate).not.toHaveBeenCalled();
+    expect(el(fixture).querySelector('mc-agent-mcp-panel')).not.toBeNull();
   });
 
   it('says so when the route names a profile the active container does not have', () => {

@@ -1,4 +1,6 @@
 import { Injectable, signal } from '@angular/core';
+import { agentSessionCommand } from '../hermes-commands';
+import { AgentProfile, HermesContainer } from '../models';
 
 /**
  * A request to open the bottom terminal panel. Everything past `seq` is
@@ -40,5 +42,27 @@ export class TerminalRequestStore {
    */
   open(target?: Omit<TerminalRequest, 'seq'>): void {
     this.request.set({ ...target, seq: ++this.seq });
+  }
+
+  /**
+   * Open a shell already inside this profile's own session.
+   *
+   * One method rather than a request every page assembles itself: `agentKey` and
+   * the session command have to travel together — the key is what lets a repeat
+   * click focus the tab this profile already has instead of stacking a second
+   * shell for it, and the command is what makes that tab the profile's session
+   * rather than the container's prompt.
+   */
+  openAgentShell(
+    agent: Pick<AgentProfile, 'id' | 'name'>,
+    container: Pick<HermesContainer, 'id' | 'hostId'>,
+  ): void {
+    this.open({
+      hostId: container.hostId,
+      containerId: container.id,
+      label: agent.name,
+      agentKey: agent.id,
+      command: agentSessionCommand(agent.name),
+    });
   }
 }

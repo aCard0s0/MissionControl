@@ -169,8 +169,8 @@ export class TerminalPanel {
   /**
    * Act on a request from another page. An untargeted one keeps the original
    * behaviour (open, seed a tab on the selected container). A targeted one
-   * opens a tab pinned to that container — or, when the same agent already has
-   * a tab, focuses that one instead of stacking another shell for it.
+   * opens a tab pinned to that container — or focuses the tab that target
+   * already has, instead of stacking a second shell for it.
    */
   private handleRequest(req: TerminalRequest): void {
     if (!this.open()) this.open.set(true);
@@ -181,9 +181,7 @@ export class TerminalPanel {
       return;
     }
 
-    const existing = req.agentKey
-      ? this.sessions().find(s => s.target().agentKey === req.agentKey)
-      : undefined;
+    const existing = this.tabFor(req);
     if (existing) {
       // the render effect fits + focuses whatever activeId points at
       this.activeId.set(existing.id);
@@ -200,6 +198,19 @@ export class TerminalPanel {
       agentKey: req.agentKey,
       command: req.command,
     }), req.insert);
+  }
+
+  /**
+   * The tab a repeated request should land in rather than stack another shell onto: an
+   * agent's own tab is keyed by its profile, a plain container shell by its container.
+   *
+   * A container request never adopts an agent tab, however same the container: that
+   * prompt is inside `hermes session`, not at the container's own shell.
+   */
+  private tabFor(req: TerminalRequest): TerminalSession | undefined {
+    return this.sessions().find(s => req.agentKey
+      ? s.target().agentKey === req.agentKey
+      : !s.target().agentKey && s.target().containerId === req.containerId);
   }
 
   /** Types a requested line into `session`, which may still be connecting — TerminalSession
