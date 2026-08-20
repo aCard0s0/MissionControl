@@ -65,8 +65,10 @@ public class ServerLogBuffer extends AppenderBase<ILoggingEvent> {
   /**
    * Newest first, optionally filtered by level, capped at {@code tail} lines.
    *
-   * <p>Newest first because that is the order the dashboard renders — the container tail it
-   * sits beside is sorted the same way, so the two panels read alike.
+   * <p>Newest first so that {@code tail} caps to the newest lines rather than the oldest. The
+   * dashboard reads them the other way round — oldest at the top, like any log — but it orders
+   * them for display itself, because the readers sharing that panel disagree on the order they
+   * hand their lines over in.
    */
   public List<LogLineDto> tail(int tail, String level) {
     int limit = Math.min(Math.max(tail, 1), CAPACITY);

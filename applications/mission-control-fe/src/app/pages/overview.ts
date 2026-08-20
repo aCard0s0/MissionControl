@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AgentStore } from '../core/store/agent-store';
+import { ContainerLifecycle } from '../core/store/container-lifecycle';
 import { ContainerStore } from '../core/store/container-store';
 import { JobStore } from '../core/store/job-store';
 import { ImageCatalogStore } from '../core/store/image-catalog-store';
@@ -29,6 +30,7 @@ export class OverviewPage {
   protected readonly containers = inject(ContainerStore);
   protected readonly jobs = inject(JobStore);
   protected readonly logs = inject(LogStore);
+  protected readonly lifecycle = inject(ContainerLifecycle);
   protected readonly images = inject(ImageCatalogStore);
   protected readonly terminal = inject(TerminalRequestStore);
   private readonly router = inject(Router);
@@ -39,6 +41,35 @@ export class OverviewPage {
   protected readonly mb = mb;
 
   protected readonly c = this.containers.selected;
+
+  /**
+   * Held while a start is in flight.
+   *
+   * <p>Cleared by the container leaving 'stopped' rather than by the call returning, because
+   * {@link ContainerLifecycle#setStatus} hands the request to the daemon and refreshes the
+   * inventory behind it — the status is what says the container actually came up.
+   */
+  protected readonly starting = signal(false);
+
+  constructor() {
+    // the store's TTL collapses this with the containers page's own refresh
+    void this.images.refreshAll();
+
+    effect(() => {
+      // a failed start toasts and leaves the container stopped, so this also has to give up
+      // on a selection change, or the button would sit on 'starting…' for a container that
+      // is not even on screen any more
+      const container = this.c();
+      if (!container || container.status !== 'stopped') this.starting.set(false);
+    });
+  }
+
+  /** Starts the container this page is already about, rather than sending them elsewhere. */
+  protected start(container: HermesContainer): void {
+    if (this.starting()) return;
+    this.starting.set(true);
+    this.lifecycle.setStatus(container.id, 'running');
+  }
 
   /**
    * The image this container could move to, or null.
@@ -76,11 +107,6 @@ export class OverviewPage {
         (t, m) => t + (m.status === 'connected' ? m.tools : 0), 0), 0),
     };
   });
-
-  constructor() {
-    // the store's TTL collapses this with the containers page's own refresh
-    void this.images.refreshAll();
-  }
 
   /** A summary card is itself the link to the page it summarizes — see overview.html. */
   protected go(path: string): void {

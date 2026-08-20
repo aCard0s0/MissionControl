@@ -106,8 +106,10 @@ describe('ServerLogsPage', () => {
     await settle(fixture, 5_000);
     expect(ctx.api.server.logs.mock.calls.length).toBeGreaterThan(afterFirst);
 
-    press(fixture, 'pause');
+    // counted before the press, so a fetch on the way into the pause cannot hide inside it
     const afterPause = ctx.api.server.logs.mock.calls.length;
+    press(fixture, 'pause');
+    expect(ctx.api.server.logs.mock.calls.length).toBe(afterPause);
     await settle(fixture, 20_000);
     expect(ctx.api.server.logs.mock.calls.length).toBe(afterPause);
 

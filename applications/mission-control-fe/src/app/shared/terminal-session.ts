@@ -271,8 +271,10 @@ export class TerminalSession {
   /**
    * Collapses a burst of layout changes into one fit.
    *
-   * <p>The observer fires per frame while the panel is being dragged; measuring and
-   * reflowing xterm that often is wasted work even before the frames reach the socket.
+   * <p>Not for drags — those are excluded outright by {@link fitsSuspended} on the next line.
+   * This covers the bursts nothing suspends: a window resize, the panel opening, the command
+   * drawer toggling. The observer can fire several times as one of those settles, and each
+   * fit measures and reflows the whole buffer.
    */
   private queueFit(): void {
     if (this.fitsSuspended || this.fitQueued) return;
@@ -288,7 +290,35 @@ export class TerminalSession {
    *  across every open socket. */
   fitNow(): void {
     if (!this.term || !this.active) return;
-    try { this.fit.fit(); } catch { /* host not measurable yet */ }
+
+    // A fit re-lays the buffer out and leaves the viewport at the bottom. Someone who had
+    // scrolled up to read history sees that as the history disappearing on resize, so the
+    // distance from the bottom is measured before and restored after. Measured from the
+    // bottom rather than as an absolute line, because a reflow moves every absolute line.
+    // A degenerate measurement is worse than no fit at all: resizing to one row pushes the
+    // whole screen into scrollback, and one column rewraps every line to nothing. The host is
+    // briefly unmeasurable mid-layout — a window resize, the panel opening — so the fit is
+    // skipped and the observer that follows the real change performs it.
+    //
+    // Only the fit is skipped. The size still gets reported below, because a socket that has
+    // just opened has been told nothing and needs the grid the terminal already has.
+    const proposed = this.fit.proposeDimensions();
+    const measurable = !!proposed
+        && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows)
+        && proposed.cols >= 2 && proposed.rows >= 2;
+
+    if (measurable) {
+      const before = this.term.buffer.active;
+      const fromBottom = Math.max(0, before.baseY - before.viewportY);
+
+      try { this.fit.fit(); } catch { /* host not measurable yet */ }
+
+      if (fromBottom > 0) {
+        const after = this.term.buffer.active;
+        this.term.scrollToLine(Math.max(0, after.baseY - fromBottom));
+      }
+    }
+
     const { cols, rows } = this.term;
     // the grid is what the PTY cares about; a height change that does not cross a row
     // boundary is nothing for it to learn, and telling it anyway costs a prompt redraw
