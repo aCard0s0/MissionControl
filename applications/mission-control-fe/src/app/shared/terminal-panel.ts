@@ -304,7 +304,13 @@ export class TerminalPanel {
   }
 
   protected dragStart(down: PointerEvent): void {
-    this.height.drag(down, () => this.active()?.fitNow());
+    // held for the whole drag so the shell is resized once, at the size it ends on
+    const session = this.active();
+    session?.setFitsSuspended(true);
+    this.height.drag(down, () => {
+      session?.setFitsSuspended(false);
+      session?.fitNow();
+    });
   }
 
   /** xterm only recomputes its grid when told to, so every resize refits. */

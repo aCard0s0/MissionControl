@@ -399,6 +399,35 @@ describe('TerminalSession resize reporting', () => {
     expect(resizes(ws).length).toBe(afterOpen);
   });
 
+  it('holds fits for the length of a drag, so the buffer reflows once and not per frame', () => {
+    // Fitting reflows xterm, and the far end repaints its input line on the SIGWINCH that
+    // follows. Per pointer frame, the app repaints against a buffer that moved underneath
+    // it — which is the prompt drawn twice.
+    let fire!: () => void;
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { fire = cb; }
+      observe(): void { /* driven by hand */ }
+      disconnect(): void { /* no-op */ }
+    });
+
+    const session = new TerminalSession(target(), 'http://mc.test');
+    session.ensureTerm();
+    session.setActive(true);
+
+    // stubbed only now: xterm wants a real one while it is being built
+    const raf = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', raf);
+
+    session.setFitsSuspended(true);
+    for (let i = 0; i < 30; i++) fire();
+    expect(raf).not.toHaveBeenCalled();
+
+    // what the panel does when the drag settles
+    session.setFitsSuspended(false);
+    fire();
+    expect(raf).toHaveBeenCalledTimes(1);
+  });
+
   it('reports the size again on a new socket, which has been told nothing', () => {
     const session = new TerminalSession(target(), 'http://mc.test');
     session.ensureTerm();

@@ -72,6 +72,17 @@ export class TerminalSession {
   private lastCols = 0;
   private lastRows = 0;
   private fitQueued = false;
+
+  /**
+   * Set while the panel is being dragged.
+   *
+   * <p>Fitting reflows xterm's buffer, and the far end repaints its input line on every
+   * SIGWINCH that follows. Doing that per pointer frame is what left the prompt drawn twice:
+   * the app repaints from where it thinks the cursor is, and a buffer that reflowed underneath
+   * it no longer agrees. The panel suspends fits for the drag and fits once when it settles,
+   * so a drag costs one reflow and one SIGWINCH instead of one per frame.
+   */
+  private fitsSuspended = false;
   private readonly encoder = new TextEncoder();
   /** has connect() ever run — re-parking the host div must not restart a shell */
   private started = false;
@@ -264,7 +275,7 @@ export class TerminalSession {
    * reflowing xterm that often is wasted work even before the frames reach the socket.
    */
   private queueFit(): void {
-    if (this.fitQueued) return;
+    if (this.fitsSuspended || this.fitQueued) return;
     this.fitQueued = true;
     requestAnimationFrame(() => {
       this.fitQueued = false;
@@ -287,6 +298,11 @@ export class TerminalSession {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
+  }
+
+  /** See {@link fitsSuspended}. The panel clears this and fits once when the drag settles. */
+  setFitsSuspended(suspended: boolean): void {
+    this.fitsSuspended = suspended;
   }
 
   setActive(active: boolean): void {
