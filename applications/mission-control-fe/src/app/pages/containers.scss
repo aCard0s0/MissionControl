@@ -131,3 +131,11 @@
     .input, .select { width: 100%; }
   }
 }
+
+// the running account of a long update, under the warning it elaborates
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--acc);
+}

@@ -14,6 +14,7 @@ import { Reveal } from '../shared/reveal';
 import { TerminalIcon } from '../shared/terminal-icon';
 import { errorMessage } from '../core/errors';
 import { uptime } from '../core/format';
+import { isFloatingTag } from '../core/image-tags';
 import { HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 
 export function normalizeSeedProfiles(value: string): string[] {
@@ -45,13 +46,6 @@ function compareVer(a: Ver, b: Ver): number {
   if (a.pre === null) return 1;      // a release outranks any pre-release of the same number
   if (b.pre === null) return -1;
   return a.pre < b.pre ? -1 : a.pre > b.pre ? 1 : 0;
-}
-
-/** Tags that track a stream rather than pinning a release — mirrors ImageRef.FLOATING. */
-const FLOATING_TAGS = new Set(['latest', 'main', 'edge', 'nightly', 'dev']);
-
-function isFloatingTag(tag: string): boolean {
-  return FLOATING_TAGS.has(tag.trim().toLowerCase());
 }
 
 function sameRepository(a: string, b: string): boolean {
@@ -213,6 +207,17 @@ export class ContainersPage {
     if (newer.length) return newer;
     const floating = floatingUpdate(c, catalog);
     return floating ? [floating] : [];
+  }
+
+  /**
+   * What the backend is doing right now, in the operator's words.
+   *
+   * <p>An update on a cold host pulls an image before it recreates anything, which is minutes
+   * of a spinner with nothing to read. Naming the slow half is the difference between "it is
+   * working" and "it is stuck".
+   */
+  protected updateStage(): string {
+    return this.targetPulled() ? 'recreating the container' : 'pulling the image, then recreating';
   }
 
   protected targetPulled(): boolean {

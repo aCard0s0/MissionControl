@@ -58,9 +58,6 @@
         <h3 class="mono">{{ c.name }}</h3>
         <div class="meta mono faint">
           {{ c.image }}:{{ c.version }} · on {{ hostLabel(c.hostId) }}
-          @if (updates().get(c.id); as target) {
-            <span class="chip warn" [title]="updateHint(c, target)">update {{ target.tag }}</span>
-          }
         </div>
         <div class="stats mono">
           <div><span class="faint">uptime</span><span>{{ uptime(c.startedAt) }}</span></div>
@@ -85,7 +82,8 @@
           @if (updates().get(c.id); as target) {
             <button class="btn sm upd" [disabled]="isUpdating(c.id)" [title]="updateHint(c, target)"
                     (click)="beginUpdate(c); $event.stopPropagation()">
-              {{ isUpdating(c.id) ? 'updating…' : 'update' }}
+              @if (isUpdating(c.id)) { <span class="spin" aria-hidden="true"></span> }
+              {{ isUpdating(c.id) ? 'updating…' : 'update ' + target.tag }}
             </button>
           }
           <!-- icon-only: the row is already crowded, and a shell needs no label -->
@@ -201,10 +199,17 @@
         <p class="lock-hint warn">
           brief downtime while it restarts{{ targetPulled() ? '' : ' — the image is pulled first, which can take a few minutes on a cold host' }}
         </p>
+        @if (updatingBusy()) {
+          <p class="lock-hint progress mono">
+            <span class="spin" aria-hidden="true"></span>{{ updateStage() }} — this can take a few
+            minutes on a cold host; the Server Logs page carries the backend's own account
+          </p>
+        }
         <div class="modal-actions">
           <button class="btn ghost" [disabled]="updatingBusy()" (click)="cancelUpdate()">cancel</button>
           <button class="btn primary" [disabled]="!updateVersion || updatingBusy()" (click)="confirmUpdate()">
-            {{ updatingBusy() ? (targetPulled() ? 'recreating…' : 'pulling & recreating…') : 'update to ' + updateVersion }}
+            @if (updatingBusy()) { <span class="spin" aria-hidden="true"></span> }
+            {{ updatingBusy() ? updateStage() : 'update to ' + updateVersion }}
           </button>
         </div>
       </div>

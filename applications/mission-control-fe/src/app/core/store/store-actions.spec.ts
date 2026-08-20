@@ -231,6 +231,23 @@ describe('store actions: container updates', () => {
     expect(store.containers.containers().some(c => c.id === 'c-1')).toBe(true);
   });
 
+  it('still sends the update when the tag it already runs is a floating one', async () => {
+    // The bug this pins: `latest` always equals itself, so the no-op guard above dropped the
+    // request and the update button did nothing at all. A moved floating tag is exactly the
+    // case worth sending — the backend re-pulls it for that reason.
+    const update = vi.fn().mockResolvedValue({ id: 'c-2' });
+    const store = await loaded({
+      containers: {
+        list: vi.fn().mockResolvedValue([{ ...CONTAINER, version: 'latest' }]),
+        update,
+      },
+    });
+
+    await store.lifecycle.update('c-1', 'latest');
+
+    expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'latest');
+  });
+
   it('caches the image catalog per host and refetches only when forced', async () => {
     const imageTags = vi.fn().mockResolvedValue({
       repository: 'nousresearch/hermes-agent',

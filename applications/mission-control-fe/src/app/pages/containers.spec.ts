@@ -13,7 +13,7 @@ import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 import { ContainersPage, containerUpdate, newerImageTags, normalizeSeedProfiles } from './containers';
 import {
-  TestFixture, button, choose, el, field, fill, press, settle, text, type,
+  TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
 } from '../testing/dom';
 import { container, dockerHost } from '../testing/models';
 
@@ -598,6 +598,12 @@ describe('ContainersPage image update', () => {
     },
   });
 
+  /** The card's update button — its label now carries the target tag, so match by prefix. */
+  const pressUpdate = (fixture: TestFixture): void => {
+    buttonWith(fixture, 'update', '.card').click();
+    fixture.detectChanges();
+  };
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -612,8 +618,9 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([stale],
       catalog([{ tag: 'latest', digest: 'sha256:bbb' }])));
 
-    expect(el(fixture).querySelector('.chip.warn')?.textContent).toContain('update latest');
-    expect(el(fixture).querySelector('.chip.warn')!.getAttribute('title'))
+    const button = el(fixture).querySelector('.btn.upd')!;
+    expect(button.textContent).toContain('update latest');
+    expect(button.getAttribute('title'))
       .toContain('the registry published a new image on this tag');
   });
 
@@ -622,22 +629,22 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([current],
       catalog([{ tag: 'latest', digest: 'sha256:aaa' }])));
 
-    expect(el(fixture).querySelector('.chip.warn')).toBeNull();
+    expect(el(fixture).querySelector('.btn.upd')).toBeNull();
   });
 
-  it('badges a container that has a newer release, and says what the move is', () => {
+  it('names the move on the update button, which is the only badge now', () => {
     const { fixture } = render(storeStub([container('hermes-prod')], catalog(['v2026.8.3'])));
 
-    const badge = el(fixture).querySelector('.chip.warn')!;
-    expect(badge.textContent).toContain('update v2026.8.3');
-    expect(badge.getAttribute('title')).toBe('v2026.7.20 → v2026.8.3');
+    const button = el(fixture).querySelector('.btn.upd')!;
+    expect(button.textContent).toContain('update v2026.8.3');
+    expect(button.getAttribute('title')).toBe('v2026.7.20 → v2026.8.3');
   });
 
-  it('warns on the badge when the target is not on the host yet', () => {
+  it('warns on the button when the target is not on the host yet', () => {
     const { fixture } = render(storeStub(
       [container('hermes-prod')], catalog([{ tag: 'v2026.8.3', pulled: false }])));
 
-    expect(el(fixture).querySelector('.chip.warn')!.getAttribute('title'))
+    expect(el(fixture).querySelector('.btn.upd')!.getAttribute('title'))
       .toBe('v2026.7.20 → v2026.8.3 · not pulled on this host yet');
   });
 
@@ -652,7 +659,7 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([container('hermes-prod')],
       catalog(['v2026.8.3', 'v2026.7.30'])));
 
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     const options = Array.from(field(fixture, 'target version').querySelectorAll('option'));
     expect(options.map(o => o.textContent?.trim())).toEqual(['v2026.8.3', 'v2026.7.30']);
@@ -663,7 +670,7 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([container('hermes-prod')],
       catalog([{ tag: 'v2026.8.3', pulled: false }])));
 
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     expect(text(fixture)).toContain('the image is pulled first');
   });
@@ -672,7 +679,7 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([container('hermes-prod', { status: 'stopped' })],
       catalog(['v2026.8.3'])));
 
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     expect(text(fixture)).toContain('this container is stopped — it stays stopped after the update');
   });
@@ -680,7 +687,7 @@ describe('ContainersPage image update', () => {
   it('recreates the container on the chosen tag and closes', async () => {
     const { fixture, store } = render(storeStub([container('hermes-prod')],
       catalog(['v2026.8.3', 'v2026.7.30'])));
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
     await choose(fixture, 'target version', 'v2026.7.30');
 
     press(fixture, 'update to v2026.7.30');
@@ -694,7 +701,7 @@ describe('ContainersPage image update', () => {
     const store = storeStub([container('hermes-prod')], catalog(['v2026.8.3']));
     store.lifecycle.update.mockResolvedValue('');
     const { fixture } = render(store);
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     press(fixture, 'update to v2026.8.3');
     await settle(fixture);
@@ -707,12 +714,14 @@ describe('ContainersPage image update', () => {
     let land!: (value: string) => void;
     store.lifecycle.update.mockReturnValue(new Promise<string>(r => { land = r; }));
     const { fixture } = render(store);
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     press(fixture, 'update to v2026.8.3');
     fixture.detectChanges();
 
-    expect(text(fixture)).toContain('recreating…');
+    // a recreate takes long enough to look stalled, so it says what it is doing and spins
+    expect(text(fixture)).toContain('recreating the container');
+    expect(el(fixture).querySelectorAll('.modal .spin').length).toBeGreaterThan(0);
     press(fixture, 'cancel');                       // a cancel mid-flight must not close it
     expect(el(fixture).querySelector('.modal')).not.toBeNull();
 
@@ -722,7 +731,7 @@ describe('ContainersPage image update', () => {
 
   it('cancels back out without touching the container', () => {
     const { fixture, store } = render(storeStub([container('hermes-prod')], catalog(['v2026.8.3'])));
-    press(fixture, 'update', '.card');
+    pressUpdate(fixture);
 
     press(fixture, 'cancel');
 

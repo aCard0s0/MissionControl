@@ -1,4 +1,5 @@
 import { inject, Injectable } from '@angular/core';
+import { isFloatingTag } from '../image-tags';
 import { ContainerStatus } from '../models';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';
@@ -55,7 +56,11 @@ export class ContainerLifecycle {
       this.ctx.gone('container');
       return '';
     }
-    if (!version || version === container.version) return '';   // nothing to do
+    if (!version) return '';
+    // A floating tag matching what the container already runs is the whole point of asking:
+    // `latest` moved, and the local copy is what is stale. Dropping it as a no-op here is why
+    // 'update to latest' did nothing — the backend re-pulls floating tags precisely for this.
+    if (version === container.version && !isFloatingTag(version)) return '';
     const wasSelected = this.containers.selectedContainerId() === id;
     try {
       const r = await this.ctx.api.containers.update(container.hostId, id, version);
