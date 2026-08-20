@@ -1,12 +1,12 @@
 <div class="page-head" data-reveal>
   <div>
-    <div class="crumb mono">blueprints</div>
-    <h2>Agent Profiles</h2>
+    <div class="crumb mono">GLOBAL LIBRARY</div>
+    <h2>Blueprints</h2>
   </div>
   <div class="head-stats mono">
     <span>{{ templates.templates().length }} templates</span>
   </div>
-  <button class="btn primary" (click)="newTemplate()">+ new profile</button>
+  <button class="btn primary" (click)="newTemplate()">+ new blueprint</button>
 </div>
 
 <div class="layout" data-reveal>
@@ -14,7 +14,7 @@
   <div class="list">
     @if (templates.templates().length === 0) {
       <div class="panel empty">
-        <p class="mono dim">No reusable profiles yet.</p>
+        <p class="mono dim">No blueprints yet.</p>
         <p class="lock-hint">Build a blueprint once, deploy it to any container.</p>
         <button class="btn primary" (click)="newTemplate()">+ create one</button>
       </div>
