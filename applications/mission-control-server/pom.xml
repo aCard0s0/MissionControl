@@ -19,7 +19,7 @@
 
   <properties>
     <java.version>24</java.version>
-    <docker-java.version>3.4.2</docker-java.version>
+    <docker-java.version>3.7.1</docker-java.version>
     <!-- not managed by spring-boot-starter-parent, so pin it here -->
     <jacoco.version>0.8.13</jacoco.version>
     <!-- overridden to empty by the docker acceptance job, which selects that group instead -->
