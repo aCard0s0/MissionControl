@@ -11,7 +11,7 @@ import { ProfileEditorPanel } from './profile-editor-panel';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 
 /**
- * Agent Profiles — author reusable blueprints (soul, memory, skills, MCP servers,
+ * Blueprints — author reusable agent profiles (soul, memory, skills, MCP servers,
  * encrypted keys) that can be applied when deploying an agent (see the Agents
  * page "from profile" selector).
  *

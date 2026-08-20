@@ -128,7 +128,7 @@ describe('AgentProfilesPage', () => {
   it('starts a new blueprint from the two files an operator fills in', async () => {
     const fixture = render();
 
-    press(fixture, '+ new profile');
+    press(fixture, '+ new blueprint');
     await settle(fixture);
 
     expect(el(fixture).textContent).toContain('new profile template');
@@ -141,7 +141,7 @@ describe('AgentProfilesPage', () => {
 
   it('refuses to save a blueprint with no name', async () => {
     const fixture = render();
-    press(fixture, '+ new profile');
+    press(fixture, '+ new blueprint');
     await settle(fixture);
 
     const save = () => Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.editor-actions .btn'))
@@ -154,7 +154,7 @@ describe('AgentProfilesPage', () => {
 
   it('adds a skill and takes it away again', async () => {
     const fixture = render();
-    press(fixture, '+ new profile');
+    press(fixture, '+ new blueprint');
     await settle(fixture);
 
     const skills = field(fixture, 'skills');
@@ -174,7 +174,7 @@ describe('AgentProfilesPage', () => {
 
   it('keeps an invalid skill id out of the blueprint a deploy would install', async () => {
     const fixture = render();
-    press(fixture, '+ new profile');
+    press(fixture, '+ new blueprint');
     await settle(fixture);
 
     const skills = field(fixture, 'skills');
@@ -191,7 +191,7 @@ describe('AgentProfilesPage', () => {
 
   it('adds a custom MCP definition and removes it', async () => {
     const fixture = render();
-    press(fixture, '+ new profile');
+    press(fixture, '+ new blueprint');
     await settle(fixture);
 
     const add = el(fixture).querySelector('.add-mcp')!;
@@ -212,7 +212,7 @@ describe('AgentProfilesPage', () => {
 
   it('adds a key, and refuses one the backend would not accept as a variable', async () => {
     const fixture = render();
-    press(fixture, '+ new profile');
+    press(fixture, '+ new blueprint');
     await settle(fixture);
 
     const keys = field(fixture, 'keys');
@@ -322,7 +322,7 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
   it('offers a way in from the empty state', () => {
     const fixture = render(storeStub([]));
 
-    expect(el(fixture).textContent).toContain('No reusable profiles yet.');
+    expect(el(fixture).textContent).toContain('No blueprints yet.');
     press(fixture, '+ create one');
 
     expect(el(fixture).querySelector('.editor')).not.toBeNull();

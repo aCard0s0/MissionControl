@@ -4,7 +4,7 @@ import {
 import { quoteMcpArgs } from '../shared/mcp-args';
 import { providerNameOf, resolveProviderOption } from '../shared/provider-resolve';
 
-// The Agent Profiles editor, minus the UI: what a draft is, how a stored template
+// The Blueprints editor, minus the UI: what a draft is, how a stored template
 // becomes one, what makes it saveable, and what the backend gets on save. Pure
 // functions, so every rule here is testable without rendering the page.
 
