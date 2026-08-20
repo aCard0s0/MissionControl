@@ -80,7 +80,8 @@ export class ServerLogsPage {
     this.loading.set(true);
     try {
       const lines = await this.ctx.api.server.logs(TAIL);
-      // the tail arrives newest-first, which is the order the panel renders
+      // handed over newest-first so the cap keeps the newest lines; LogView orders them
+      // for reading, oldest at the top
       this.lines.set(lines.map(l => ({ ...l, agentId: null })));
       this.updatedAt.set(Date.now());
       this.error.set(null);

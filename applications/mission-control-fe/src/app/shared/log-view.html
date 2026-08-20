@@ -10,7 +10,7 @@
   <span class="faint shown mono">{{ visible().length }} / {{ lines().length }}</span>
 </div>
 
-<div class="logs mono" [style.height.px]="height().px()">
+<div #body class="logs mono" [style.height.px]="height().px()" (scroll)="onScroll($event)">
   @for (l of visible(); track key(l)) {
     <div class="log-line">
       <span class="ts faint">{{ stamp(l.ts) }}</span>

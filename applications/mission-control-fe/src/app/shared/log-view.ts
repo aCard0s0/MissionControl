@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, ElementRef, computed, effect, input, signal, viewChild,
+} from '@angular/core';
 import { LogEntry, LogLevel } from '../core/models';
 import { logStamp } from '../core/format';
 import { PanelHeight } from './panel-height';
@@ -51,10 +53,49 @@ export class LogView {
     return tally;
   });
 
+  /**
+   * Oldest at the top, newest on the last line — the way `tail -f` and every terminal reads.
+   *
+   * <p>Sorted here rather than reversed, because the four callers disagree: the container and
+   * server tails hand these over newest-first so a caller can take the newest N, while the MCP
+   * reader already sorts ascending. Ordering by the timestamp is the one rule that is right
+   * for all of them.
+   */
   protected readonly visible = computed(() => {
     const level = this.level();
-    return level === 'all' ? this.lines() : this.lines().filter(l => l.level === level);
+    const rows = level === 'all' ? this.lines() : this.lines().filter(l => l.level === level);
+    return rows.slice().sort((a, b) => a.ts - b.ts);
   });
+
+  private readonly body = viewChild<ElementRef<HTMLDivElement>>('body');
+
+  /**
+   * Whether new lines pull the view down with them.
+   *
+   * <p>True until the operator scrolls up, because yanking someone back to the bottom while
+   * they are reading is the thing that made older lines feel unreachable. Scrolling back to
+   * the bottom re-arms it, which is what every log viewer does.
+   */
+  private follow = true;
+
+  constructor() {
+    effect(() => {
+      this.visible();
+      this.height().px();     // a taller panel reveals more; keep the newest line in view
+      if (this.follow) queueMicrotask(() => this.toBottom());
+    });
+  }
+
+  private toBottom(): void {
+    const el = this.body()?.nativeElement;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  /** A few pixels of slack: a browser can land fractionally short of the true bottom. */
+  protected onScroll(event: Event): void {
+    const el = event.target as HTMLElement;
+    this.follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+  }
 
   /** The grip sits under the rows, so dragging down is what makes the panel taller. */
   protected grip(down: PointerEvent): void {

@@ -288,7 +288,21 @@ export class TerminalSession {
    *  across every open socket. */
   fitNow(): void {
     if (!this.term || !this.active) return;
+
+    // A fit re-lays the buffer out and leaves the viewport at the bottom. Someone who had
+    // scrolled up to read history sees that as the history disappearing on resize, so the
+    // distance from the bottom is measured before and restored after. Measured from the
+    // bottom rather than as an absolute line, because a reflow moves every absolute line.
+    const before = this.term.buffer.active;
+    const fromBottom = Math.max(0, before.baseY - before.viewportY);
+
     try { this.fit.fit(); } catch { /* host not measurable yet */ }
+
+    if (fromBottom > 0) {
+      const after = this.term.buffer.active;
+      this.term.scrollToLine(Math.max(0, after.baseY - fromBottom));
+    }
+
     const { cols, rows } = this.term;
     // the grid is what the PTY cares about; a height change that does not cross a row
     // boundary is nothing for it to learn, and telling it anyway costs a prompt redraw

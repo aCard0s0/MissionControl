@@ -148,4 +148,73 @@ describe('LogView', () => {
     fixture.detectChanges();
     expect(text(fixture)).toContain('No container log entries.');
   });
+
+  // ── reading order ──────────────────────────────────────────────────────────
+
+  const messages = (fixture: ReturnType<typeof render>['fixture']) =>
+    rows(fixture).map(r => (r.querySelector('.msg')?.textContent ?? '').trim());
+
+  it('reads like a log: oldest at the top, newest on the last line', () => {
+    const { fixture, host } = render();
+    host.lines.set([
+      line('info', 'newest', TS + 2000),
+      line('info', 'middle', TS + 1000),
+      line('info', 'oldest', TS),
+    ]);
+    fixture.detectChanges();
+
+    expect(messages(fixture)).toEqual(['oldest', 'middle', 'newest']);
+  });
+
+  it('orders by time whichever way the caller handed them over', () => {
+    // the container and server tails arrive newest-first so a caller can take the newest N;
+    // the MCP reader already sorts ascending. Both have to render the same way round.
+    const ascending = [line('info', 'a', TS), line('info', 'b', TS + 1000)];
+    const { fixture, host } = render();
+
+    host.lines.set(ascending);
+    fixture.detectChanges();
+    expect(messages(fixture)).toEqual(['a', 'b']);
+
+    host.lines.set([...ascending].reverse());
+    fixture.detectChanges();
+    expect(messages(fixture)).toEqual(['a', 'b']);
+  });
+
+  it('keeps the newest line in view as lines arrive', async () => {
+    const { fixture, host } = render();
+    const body = el(fixture).querySelector<HTMLElement>('.logs')!;
+    Object.defineProperty(body, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(body, 'clientHeight', { value: 100, configurable: true });
+
+    host.lines.set([line('info', 'first', TS)]);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    expect(body.scrollTop).toBe(500);
+  });
+
+  it('stops following once the operator scrolls up, and resumes at the bottom', async () => {
+    // pulling someone back down while they are reading is what made older lines
+    // feel unreachable in the first place
+    const { fixture, host } = render();
+    const body = el(fixture).querySelector<HTMLElement>('.logs')!;
+    Object.defineProperty(body, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(body, 'clientHeight', { value: 100, configurable: true });
+    await Promise.resolve();                   // let the initial follow settle first
+
+    body.scrollTop = 20;                       // scrolled up into the history
+    body.dispatchEvent(new Event('scroll'));
+    host.lines.set([line('info', 'arrived while reading', TS + 5000)]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(body.scrollTop).toBe(20);
+
+    body.scrollTop = 400;                      // back at the bottom (500 - 100)
+    body.dispatchEvent(new Event('scroll'));
+    host.lines.set([line('info', 'arrived after catching up', TS + 6000)]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(body.scrollTop).toBe(500);
+  });
 });
