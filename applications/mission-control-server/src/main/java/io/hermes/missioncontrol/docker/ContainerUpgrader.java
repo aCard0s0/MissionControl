@@ -139,8 +139,13 @@ public class ContainerUpgrader {
 
     // Pull before touching the running container: a bad tag or an unreachable
     // registry then costs nothing, instead of leaving the Agent stopped.
+    //
+    // A floating tag is pulled even when it is already in the local store, because that is
+    // the whole point of moving onto one: the local `latest` is precisely what is stale. The
+    // conflict check below compares image ids, so without this refresh a container asking to
+    // move onto a newer `latest` is told it already runs it.
     String targetImageId = ImageStore.imageIdOf(client, image);
-    if (targetImageId == null) {
+    if (targetImageId == null || ImageRef.isFloating(tag)) {
       images.pull(host, repository, tag);
       targetImageId = ImageStore.imageIdOf(client, image);
     }

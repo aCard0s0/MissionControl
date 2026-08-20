@@ -201,7 +201,8 @@ describe('toImageCatalog', () => {
       repository: 'nousresearch/hermes-agent', tags: ['v1', 'v2'],
     } as ApiImageTags);
 
-    expect(catalog.tags).toEqual([{ tag: 'v1', pulled: true }, { tag: 'v2', pulled: true }]);
+    expect(catalog.tags).toEqual([
+      { tag: 'v1', pulled: true, digest: null }, { tag: 'v2', pulled: true, digest: null }]);
     expect(catalog.registryStatus).toBe('unavailable');
   });
 
@@ -211,7 +212,8 @@ describe('toImageCatalog', () => {
       entries: [{ tag: 'v2', pulled: true, remote: true }, { tag: 'v3', pulled: false, remote: true }],
     } as ApiImageTags);
 
-    expect(catalog.tags).toEqual([{ tag: 'v2', pulled: true }, { tag: 'v3', pulled: false }]);
+    expect(catalog.tags).toEqual([
+      { tag: 'v2', pulled: true, digest: null }, { tag: 'v3', pulled: false, digest: null }]);
     expect(catalog.registryStatus).toBe('ok');
   });
 });

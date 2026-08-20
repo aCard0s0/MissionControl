@@ -3,9 +3,11 @@ import { Router, RouterLink } from '@angular/router';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { JobStore } from '../core/store/job-store';
+import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { LogStore } from '../core/store/log-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
-import { AgentProfile } from '../core/models';
+import { AgentProfile, HermesContainer, ImageTag } from '../core/models';
+import { containerUpdate } from './containers';
 import { Sparkline } from '../shared/sparkline';
 import { Gauge } from '../shared/gauge';
 import { StatusDot } from '../shared/status-dot';
@@ -27,6 +29,7 @@ export class OverviewPage {
   protected readonly containers = inject(ContainerStore);
   protected readonly jobs = inject(JobStore);
   protected readonly logs = inject(LogStore);
+  protected readonly images = inject(ImageCatalogStore);
   protected readonly terminal = inject(TerminalRequestStore);
   private readonly router = inject(Router);
 
@@ -36,6 +39,24 @@ export class OverviewPage {
   protected readonly mb = mb;
 
   protected readonly c = this.containers.selected;
+
+  /**
+   * The image this container could move to, or null.
+   *
+   * <p>Shown here as well as on the card because the overview is where an operator lands to
+   * ask why an Agent is behaving oddly, and "the image is two months old" is an answer that
+   * page should not make them go looking for.
+   */
+  protected readonly update = computed<ImageTag | null>(() => {
+    const container = this.c();
+    return container ? containerUpdate(container, this.images.catalog()[container.hostId]) : null;
+  });
+
+  protected updateHint(c: HermesContainer, target: ImageTag): string {
+    return target.tag === c.version
+      ? `a newer image was published on ${c.version}`
+      : `${c.version} → ${target.tag}`;
+  }
 
   protected readonly agentCounts = computed(() => {
     const as = this.agents.forSelectedContainer();
@@ -55,6 +76,11 @@ export class OverviewPage {
         (t, m) => t + (m.status === 'connected' ? m.tools : 0), 0), 0),
     };
   });
+
+  constructor() {
+    // the store's TTL collapses this with the containers page's own refresh
+    void this.images.refreshAll();
+  }
 
   /** A summary card is itself the link to the page it summarizes — see overview.html. */
   protected go(path: string): void {

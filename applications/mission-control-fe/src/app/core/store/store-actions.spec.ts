@@ -246,7 +246,8 @@ describe('store actions: container updates', () => {
     await store.images.refresh('dh-local');
     expect(imageTags).toHaveBeenCalledTimes(1);
     expect(store.images.catalog()['dh-local'].tags).toEqual([
-      { tag: 'v2026.8.3', pulled: false }, { tag: 'v2026.7.20', pulled: true },
+      { tag: 'v2026.8.3', pulled: false, digest: null },
+      { tag: 'v2026.7.20', pulled: true, digest: null },
     ]);
 
     await store.images.refresh('dh-local', true);
@@ -264,6 +265,7 @@ describe('store actions: container updates', () => {
     });
 
     await store.images.refresh('dh-local');
-    expect(store.images.catalog()['dh-local'].tags).toEqual([{ tag: 'v2026.7.20', pulled: true }]);
+    expect(store.images.catalog()['dh-local'].tags)
+      .toEqual([{ tag: 'v2026.7.20', pulled: true, digest: null }]);
   });
 });

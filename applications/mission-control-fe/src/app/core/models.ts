@@ -51,6 +51,7 @@ export interface OllamaModel {
 export interface ImageTag {
   tag: string;
   pulled: boolean;             // already in that host's image store
+  digest: string | null;       // registry manifest digest, when the registry reported one
 }
 
 /** Registry and local tags for one docker host, as the backend merged them. */
@@ -69,6 +70,7 @@ export interface HermesContainer {
   status: ContainerStatus;
   image: string;
   version: string;
+  imageDigest: string | null;     // registry digest of the image it runs, null if never pulled
   startedAt: number | null;       // epoch ms, null when stopped
   cpu: number;                    // percent 0–100
   ram: number;                    // MB used

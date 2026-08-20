@@ -13,6 +13,15 @@
     </div>
   </div>
 
+  @if (update(); as target) {
+    <div class="panel update-notice" data-reveal>
+      <span class="chip warn">update available</span>
+      <span class="mono">{{ updateHint(ctr, target) }}</span>
+      <span class="spacer"></span>
+      <a class="btn sm" routerLink="/containers">update from containers</a>
+    </div>
+  }
+
   @if (ctr.status === 'stopped') {
     <div class="panel empty" data-reveal>
       <p class="mono dim">Container is stopped — no telemetry.</p>

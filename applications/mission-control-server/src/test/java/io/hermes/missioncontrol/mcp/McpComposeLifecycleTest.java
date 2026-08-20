@@ -374,7 +374,7 @@ class McpComposeLifecycleTest {
 
   private static ContainerDto container(String id, String status) {
     return new ContainerDto(id, id.substring(0, Math.min(6, id.length())), "mc-mcp-files", HOST,
-        status, "example/files:1", null, null, null, List.of());
+        status, "example/files:1", null, null, null, null, List.of());
   }
 
   private String insertManaged(String name) {

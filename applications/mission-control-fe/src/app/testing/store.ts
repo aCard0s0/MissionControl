@@ -55,7 +55,8 @@ export const testSlices = (api: unknown = {}): StoreSlices => {
 /** One container as the backend reports it. */
 export const apiContainer = (patch: Partial<ApiContainer> = {}): ApiContainer => ({
   id: 'c-1', shortId: 'aa11bb2', name: 'hermes-prod', hostId: 'dh-local', status: 'running',
-  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', startedAt: 10, sizeRootFsGb: 2,
+  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', imageDigest: null,
+  startedAt: 10, sizeRootFsGb: 2,
   profiles: ['atlas'], ...patch,
 });
 

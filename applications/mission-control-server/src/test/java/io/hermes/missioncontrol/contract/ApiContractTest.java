@@ -160,7 +160,8 @@ class ApiContractTest {
    */
   private static final Map<String, Set<String>> UNREAD_PAYLOAD = Map.of(
       // the registry lookup resolves these; the tag picker shows only tag/pulled/remote
-      "ApiImageTag", Set.of("digest", "lastUpdated", "sizeBytes"),
+      // digest is read now — it is the only evidence a floating tag has moved
+      "ApiImageTag", Set.of("lastUpdated", "sizeBytes"),
       "ApiImageTags", Set.of("registryCheckedAt"),
       // sourceServerId is request-only (the frontend extends TemplateMcp locally to send it,
       // and strips it again); environment/headers are the redacted key lists of a captured

@@ -26,14 +26,69 @@ describe('normalizeSeedProfiles', () => {
 
 const HERMES = 'nousresearch/hermes-agent';
 
-const cat = (tags: (string | ImageTag)[], repository = HERMES): ImageCatalog => ({
+type TagSpec = string | (Partial<ImageTag> & { tag: string });
+
+const cat = (tags: TagSpec[], repository = HERMES): ImageCatalog => ({
   repository,
-  tags: tags.map(t => typeof t === 'string' ? { tag: t, pulled: true } : t),
+  tags: tags.map(t => typeof t === 'string'
+    ? { tag: t, pulled: true, digest: null }
+    : { pulled: true, digest: null, ...t }),
   registryStatus: 'ok',
   fetchedAt: 0,
 });
 
 const on = (version: string, image = HERMES) => ({ image, version });
+
+/** A container on a floating tag, with the digest of the image it actually runs. */
+const onFloating = (version: string, imageDigest: string | null, image = HERMES) =>
+  ({ image, version, imageDigest });
+
+describe('containerUpdate on a floating tag', () => {
+  // A container on `latest` is never behind by tag string — its tag is always the newest
+  // one. The digests are the only evidence, which is why every case below turns on them.
+  const registry = (digest: string | null) => cat([{ tag: 'latest', pulled: true, digest }]);
+
+  it('offers the same tag again once the registry has moved it', () => {
+    const target = containerUpdate(onFloating('latest', 'sha256:aaa'), registry('sha256:bbb'));
+
+    expect(target?.tag).toBe('latest');
+  });
+
+  it('stays quiet while the container runs what the tag points at', () => {
+    expect(containerUpdate(onFloating('latest', 'sha256:aaa'), registry('sha256:aaa'))).toBeNull();
+  });
+
+  it('claims nothing when either digest is unknown', () => {
+    // an image built locally and never pushed has no repo digest …
+    expect(containerUpdate(onFloating('latest', null), registry('sha256:bbb'))).toBeNull();
+    // … and an air-gapped install or MC_REGISTRY_TAGS=false reports no registry digest
+    expect(containerUpdate(onFloating('latest', 'sha256:aaa'), registry(null))).toBeNull();
+  });
+
+  it('covers the other tags that track a stream, not just latest', () => {
+    for (const tag of ['main', 'edge', 'nightly', 'dev']) {
+      const catalog = cat([{ tag, pulled: true, digest: 'sha256:bbb' }]);
+      expect(containerUpdate(onFloating(tag, 'sha256:aaa'), catalog)?.tag).toBe(tag);
+    }
+  });
+
+  it('never answers with another repository\'s tag', () => {
+    const foreign = cat([{ tag: 'latest', pulled: true, digest: 'sha256:bbb' }], 'someone/else');
+
+    expect(containerUpdate(onFloating('latest', 'sha256:aaa'), foreign)).toBeNull();
+  });
+
+  it('leaves a pinned container to the release rules', () => {
+    // a pinned tag is judged by version order, and a digest must not drag it onto a stream
+    const catalog = cat([
+      { tag: 'latest', pulled: true, digest: 'sha256:bbb' },
+      { tag: 'v2026.8.3', pulled: true, digest: null },
+    ]);
+
+    expect(containerUpdate(onFloating('v2026.7.20', 'sha256:aaa'), catalog)?.tag)
+      .toBe('v2026.8.3');
+  });
+});
 
 describe('containerUpdate', () => {
   it('offers the newest release and lists every step in between', () => {
@@ -90,7 +145,7 @@ describe('containerUpdate', () => {
 
   it('surfaces a tag the host has not pulled yet, and says so', () => {
     const target = containerUpdate(on('v2026.7.20'), cat([{ tag: 'v2026.8.3', pulled: false }]));
-    expect(target).toEqual({ tag: 'v2026.8.3', pulled: false });
+    expect(target).toEqual({ tag: 'v2026.8.3', pulled: false, digest: null });
   });
 
   it('computes the maximum from an unsorted catalog', () => {
@@ -182,6 +237,7 @@ const openDeploy = async (fixture: TestFixture): Promise<void> => {
 };
 
 describe('ContainersPage fleet', () => {
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -308,6 +364,7 @@ describe('ContainersPage fleet', () => {
 });
 
 describe('ContainersPage docker hosts', () => {
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -374,6 +431,7 @@ describe('ContainersPage docker hosts', () => {
 });
 
 describe('ContainersPage deploy', () => {
+
   beforeEach(() => vi.useFakeTimers());
 
   afterEach(() => {
@@ -529,10 +587,12 @@ describe('ContainersPage deploy', () => {
 });
 
 describe('ContainersPage image update', () => {
-  const catalog = (tags: (string | ImageTag)[]): Record<string, ImageCatalog> => ({
+  const catalog = (tags: TagSpec[]): Record<string, ImageCatalog> => ({
     'dh-local': {
       repository: HERMES,
-      tags: tags.map(t => typeof t === 'string' ? { tag: t, pulled: true } : t),
+      tags: tags.map(t => typeof t === 'string'
+        ? { tag: t, pulled: true, digest: null }
+        : { pulled: true, digest: null, ...t }),
       registryStatus: 'ok',
       fetchedAt: 0,
     },
@@ -543,6 +603,26 @@ describe('ContainersPage image update', () => {
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
+  });
+
+  it('offers the update on a floating tag once the registry has moved it', () => {
+    // the case the tag rules alone can never see: `latest` is always the newest tag,
+    // so only the digests say the running image is two months old
+    const stale = container('hermes-prod', { version: 'latest', imageDigest: 'sha256:aaa' });
+    const { fixture } = render(storeStub([stale],
+      catalog([{ tag: 'latest', digest: 'sha256:bbb' }])));
+
+    expect(el(fixture).querySelector('.chip.warn')?.textContent).toContain('update latest');
+    expect(el(fixture).querySelector('.chip.warn')!.getAttribute('title'))
+      .toContain('the registry published a new image on this tag');
+  });
+
+  it('offers nothing on a floating tag it already matches', () => {
+    const current = container('hermes-prod', { version: 'latest', imageDigest: 'sha256:aaa' });
+    const { fixture } = render(storeStub([current],
+      catalog([{ tag: 'latest', digest: 'sha256:aaa' }])));
+
+    expect(el(fixture).querySelector('.chip.warn')).toBeNull();
   });
 
   it('badges a container that has a newer release, and says what the move is', () => {
