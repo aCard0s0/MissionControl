@@ -55,6 +55,7 @@ The dashboard treats both uniformly: select a container → see its profiles.
 4. **Ops Board** — Kanban-style execution view of agent tasks (queued / running / review / done).
 5. **Calendar** — scheduled cron jobs across the container; create, pause, edit prompt, reassign to another agent.
 6. **Webhooks** — manage inbound webhooks per agent (URL, secret, event filters, recent deliveries).
+7. **CLI Reference** — the hermes command surface, searchable and scoped to a chosen profile, with each line insertable into the web terminal. Reading only: the dashboard never runs one of these on its own.
 
 ---
 

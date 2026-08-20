@@ -32,7 +32,11 @@ class FakeSocket {
     FakeSocket.opened.push(this);
   }
 
-  send(): void { /* asserted in terminal-session.spec.ts */ }
+  readonly sent: string[] = [];
+
+  send(data: ArrayBufferView | string): void {
+    this.sent.push(typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array));
+  }
 
   close(): void {
     this.closed = true;
@@ -434,6 +438,111 @@ describe('TerminalPanel requests from other pages', () => {
     await settle(fixture);
 
     expect(tabs(fixture).length).toBe(1);
+  });
+});
+
+describe('TerminalPanel command drawer', () => {
+  liveShells();
+
+  const cmds = (fixture: Fixture): HTMLElement =>
+    el(fixture).querySelector<HTMLElement>('button[title="hermes commands"]')!;
+
+  /** What actually reached the shell's stdin — resize frames are control traffic, not typing. */
+  const typed = (socket: FakeSocket): string[] =>
+    socket.sent.filter(frame => !frame.startsWith('{"type":'));
+
+  /** Clicks the insert action on the drawer row for this command line. */
+  const insert = async (fixture: Fixture, line: string): Promise<void> => {
+    const row = Array.from(el(fixture).querySelectorAll<HTMLElement>('.cheat .cmd'))
+      .find(r => (r.querySelector('.line')?.textContent ?? '').trim() === line);
+    if (!row) throw new Error(`no drawer row for "${line}"`);
+    Array.from(row.querySelectorAll<HTMLButtonElement>('button.act'))
+      .find(b => (b.textContent ?? '').trim() === 'insert')!.click();
+    await settle(fixture);
+  };
+
+  it('stays out of the way until asked for', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+
+    expect(el(fixture).querySelector('.cheat')).toBeNull();
+  });
+
+  it('opens the panel with it, because a reference with no prompt under it is a web page', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+
+    cmds(fixture).click();
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.cheat')).not.toBeNull();
+    expect(el(fixture).querySelector('.body')).not.toBeNull();
+    expect(text(fixture)).toContain('hermes cron');
+  });
+
+  it('closes again', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    cmds(fixture).click();
+    await settle(fixture);
+
+    cmds(fixture).click();
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.cheat')).toBeNull();
+  });
+
+  it('types the line at the prompt with no newline — the operator runs it', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+    cmds(fixture).click();
+    await settle(fixture);
+
+    await insert(fixture, 'hermes status');
+
+    expect(typed(FakeSocket.opened[0])).toEqual(['hermes status']);
+  });
+
+  it('scopes the lines to the profile the active tab is a shell for', async () => {
+    const store = storeStub([container('hermes-prod')]);
+    const { fixture } = render(store);
+    store.terminal.request.set({
+      seq: 1, hostId: 'dh-local', containerId: 'hermes-prod', label: 'ops-bot',
+      agentKey: 'a-ops',
+    });
+    await settle(fixture);
+
+    cmds(fixture).click();
+    await settle(fixture);
+
+    await insert(fixture, 'hermes -p ops-bot cron');
+    expect(typed(FakeSocket.opened[0])).toEqual(['hermes -p ops-bot cron']);
+  });
+
+  it('leaves a plain container shell unscoped — it is not running any one profile', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+
+    cmds(fixture).click();
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.cheat')!.textContent).not.toContain('-p ');
+  });
+
+  it('says so rather than swallowing a line when the tab has no container yet', async () => {
+    const { fixture, store } = render(storeStub());   // nothing selected — the tab opens unbound
+    await openPanel(fixture);
+    cmds(fixture).click();
+    await settle(fixture);
+
+    await insert(fixture, 'hermes status');
+
+    expect(store.ctx.toast).toHaveBeenCalledWith(
+      'no live shell — pick a container or reconnect the tab first');
+    expect(FakeSocket.opened).toEqual([]);
   });
 });
 

@@ -8,6 +8,7 @@ import { StoreContext } from '../core/store/store-context';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { TerminalRequest } from '../core/store/terminal-request-store';
 import { HermesContainer } from '../core/models';
+import { HermesCommands } from './hermes-commands';
 import { PanelHeight } from './panel-height';
 import { StatusDot } from './status-dot';
 import { TermTarget, TerminalSession } from './terminal-session';
@@ -36,7 +37,7 @@ const MAX_TABS = 12;
 @Component({
   selector: 'mc-terminal-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [StatusDot],
+  imports: [HermesCommands, StatusDot],
   templateUrl: './terminal-panel.html',
   styleUrl: './terminal-panel.scss',
 })
@@ -48,6 +49,8 @@ export class TerminalPanel {
   private readonly apiBase = this.ctx.config.apiBaseUrl || location.origin;
 
   protected readonly open = signal(false);
+  /** the hermes command drawer — a reference you read at the prompt, not away from it */
+  protected readonly cheatOpen = signal(false);
   protected readonly height = new PanelHeight('mc-terminal-height');
   protected readonly sessions = signal<TerminalSession[]>([]);
   protected readonly activeId = signal<string | null>(null);
@@ -55,6 +58,13 @@ export class TerminalPanel {
 
   protected readonly active = computed(() =>
     this.sessions().find(s => s.id === this.activeId()) ?? null);
+
+  /** The profile the active tab is a shell for, so the drawer's lines carry its `-p`. Only an
+   *  agent tab has one — a plain container shell is not scoped to any profile. */
+  protected readonly activeProfile = computed(() => {
+    const t = this.active()?.target();
+    return t?.agentKey ? t.label : undefined;
+  });
 
   private readonly mount = viewChild<ElementRef<HTMLDivElement>>('mount');
 
@@ -129,6 +139,33 @@ export class TerminalPanel {
     if (this.open()) this.onOpened();
   }
 
+  /** Open the panel too — the drawer is only useful with a prompt under it. */
+  protected toggleCheat(): void {
+    this.cheatOpen.update(v => !v);
+    if (this.cheatOpen() && !this.open()) {
+      this.open.set(true);
+      this.onOpened();
+    }
+    queueMicrotask(() => this.active()?.fitNow());
+  }
+
+  /**
+   * Put a line at the active prompt without running it.
+   *
+   * A tab that is still connecting is fine — TerminalSession holds the line for the first live
+   * frame. A tab with no container chosen, or one the operator closed, has no shell coming at
+   * all: arming a line there would swallow the click silently, so it says so instead and
+   * leaves the drawer open, where copy still works.
+   */
+  protected insertCommand(line: string): void {
+    const session = this.active();
+    if (!session || !session.target().containerId || session.status() === 'closed') {
+      this.ctx.toast('no live shell — pick a container or reconnect the tab first');
+      return;
+    }
+    session.type(line);
+  }
+
   /**
    * Act on a request from another page. An untargeted one keeps the original
    * behaviour (open, seed a tab on the selected container). A targeted one
@@ -140,6 +177,7 @@ export class TerminalPanel {
 
     if (!req.containerId) {
       this.onOpened();
+      this.insertInto(this.active(), req.insert);
       return;
     }
 
@@ -151,16 +189,23 @@ export class TerminalPanel {
       this.activeId.set(existing.id);
       // the user closed it, or its container went away and came back — revive
       if (existing.status() === 'closed') existing.connect();
+      this.insertInto(existing, req.insert);
       return;
     }
 
-    this.newSession({
+    this.insertInto(this.newSession({
       hostId: req.hostId ?? '',
       containerId: req.containerId,
       label: req.label ?? req.containerId,
       agentKey: req.agentKey,
       command: req.command,
-    });
+    }), req.insert);
+  }
+
+  /** Types a requested line into `session`, which may still be connecting — TerminalSession
+   *  arms it for the first live frame rather than dropping it into a socket nobody reads. */
+  private insertInto(session: TerminalSession | null, insert: string | undefined): void {
+    if (session && insert) session.type(insert);
   }
 
   /** On first open (or external request): seed a tab if empty, then fit. The

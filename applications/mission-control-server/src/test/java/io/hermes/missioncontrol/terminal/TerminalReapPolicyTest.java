@@ -20,7 +20,8 @@ class TerminalReapPolicyTest {
       Duration.ofMinutes(30),   // idle
       Duration.ofHours(8),      // max lifetime
       Duration.ofSeconds(30),   // heartbeat
-      Duration.ofSeconds(90));  // pong
+      Duration.ofSeconds(90),   // pong
+      "hermes");
 
   /** A session created, active and ponging right now. */
   private static String reasonFor(long ageMs, long idleMs, long sincePongMs) {
@@ -90,8 +91,17 @@ class TerminalReapPolicyTest {
   }
 
   @Test
+  void anUnsetUserDefaultsToHermesRatherThanTheImageDefault() {
+    // the default matters more than the other defaults do: it is the difference between a web
+    // shell that writes /opt/data as the agent and one that writes it as root
+    assertEquals("hermes", new TerminalProperties(null, null, null, null, null, null, null).user());
+    // and an operator who blanks it still gets the image default, not the fallback back
+    assertEquals("", new TerminalProperties(null, null, null, null, null, null, "").user());
+  }
+
+  @Test
   void defaultedPropertiesStillProduceUsableBounds() {
-    TerminalProperties defaults = new TerminalProperties(null, null, null, null, null, null);
+    TerminalProperties defaults = new TerminalProperties(null, null, null, null, null, null, null);
 
     assertNull(TerminalSocketHandler.reapReason(NOW, NOW, NOW, NOW, defaults));
     assertEquals("max-lifetime", TerminalSocketHandler.reapReason(

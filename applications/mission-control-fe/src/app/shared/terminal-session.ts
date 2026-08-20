@@ -67,6 +67,8 @@ export class TerminalSession {
   private active = false;
   /** target().command awaiting a live shell; nulled the moment it is sent */
   private pending: string | null = null;
+  /** whether {@link pending} ends in a newline — false for an inserted line */
+  private pendingSubmit = true;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(target: TermTarget, private readonly apiBase: string, id?: string) {
@@ -159,9 +161,42 @@ export class TerminalSession {
     };
   }
 
-  private armCommand(command: string | undefined): void {
-    this.clearPending();
-    this.pending = command || null;
+  /**
+   * Put `text` at the prompt WITHOUT running it — no trailing newline, so the operator is
+   * still the one who presses Enter. That is the whole safety story of the command drawer:
+   * the list it comes from contains `uninstall` and `config set`, and a click is too cheap
+   * to be a decision to run one.
+   *
+   * A tab whose shell is not up yet arms it the same way a startup command is armed, so
+   * inserting into a reconnecting tab lands once the exec is actually wired rather than
+   * disappearing into a socket the backend is still ignoring.
+   */
+  type(text: string): void {
+    if (!text) return;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(this.encoder.encode(text));
+      this.term?.focus();
+      return;
+    }
+    this.armCommand(text, false);
+  }
+
+  /**
+   * Arms the text {@link flushCommand} sends once the shell is live. `submit` is what
+   * separates a startup command (runs itself) from an inserted line (waits for Enter).
+   *
+   * A tab with no startup command arms nothing and, crucially, discards nothing: connect()
+   * calls this on every (re)connect, and a line inserted into a tab whose shell is still
+   * coming up is armed here — clearing on an absent command would drop exactly that.
+   */
+  private armCommand(command: string | undefined, submit = true): void {
+    if (this.pendingTimer !== null) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+    if (!command) return;
+    this.pending = command;
+    this.pendingSubmit = submit;
   }
 
   /**
@@ -177,12 +212,14 @@ export class TerminalSession {
   private flushCommand(ws: WebSocket): void {
     if (this.ws !== ws || !this.pending || ws.readyState !== WebSocket.OPEN) return;
     const cmd = this.pending;
+    const submit = this.pendingSubmit;
     this.clearPending();
-    ws.send(this.encoder.encode(cmd + '\n'));
+    ws.send(this.encoder.encode(submit ? cmd + '\n' : cmd));
   }
 
   private clearPending(): void {
     this.pending = null;
+    this.pendingSubmit = true;
     if (this.pendingTimer !== null) {
       clearTimeout(this.pendingTimer);
       this.pendingTimer = null;

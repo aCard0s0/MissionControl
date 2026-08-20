@@ -18,6 +18,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param sessionMaxLifetime   absolute lifetime ceiling → reap
  * @param heartbeatInterval    ping cadence / reaper tick
  * @param pongTimeout          no pong within this of the last ping → dead browser, reap
+ * @param user                 container user the shell runs as; blank keeps Docker's default
  */
 @ConfigurationProperties(prefix = "mc.terminal")
 public record TerminalProperties(
@@ -26,7 +27,8 @@ public record TerminalProperties(
     Duration idleTimeout,
     Duration sessionMaxLifetime,
     Duration heartbeatInterval,
-    Duration pongTimeout) {
+    Duration pongTimeout,
+    String user) {
 
   public TerminalProperties {
     if (maxSessions == null) maxSessions = 50;
@@ -35,5 +37,10 @@ public record TerminalProperties(
     if (sessionMaxLifetime == null) sessionMaxLifetime = Duration.ofHours(8);
     if (heartbeatInterval == null) heartbeatInterval = Duration.ofSeconds(30);
     if (pongTimeout == null) pongTimeout = Duration.ofSeconds(90);
+    // `hermes` rather than the image default: every other exec Mission Control runs against a
+    // profile goes through DockerExecService as that user, and a root shell writing into
+    // /opt/data leaves files the agent itself can no longer read. An image without the user
+    // sets MC_TERMINAL_USER to empty, which keeps Docker's default.
+    if (user == null) user = "hermes";
   }
 }

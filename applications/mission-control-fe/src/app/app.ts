@@ -15,12 +15,13 @@ const NAV = [
   { path: '/containers', label: 'Containers', exact: false },
   { path: '/overview', label: 'Overview', exact: false },
   { path: '/agents', label: 'Agents', exact: false },
-  { path: '/profiles', label: 'Profiles', exact: false },
+  { path: '/profiles', label: 'Blueprints', exact: false },
   { path: '/models', label: 'Models', exact: false },
   { path: '/mcp-servers', label: 'MCP Servers', exact: false },
   { path: '/board', label: 'Ops Board', exact: false },
   { path: '/calendar', label: 'Calendar', exact: false },
   { path: '/webhooks', label: 'Webhooks', exact: false },
+  { path: '/reference', label: 'CLI Reference', exact: false },
 ];
 
 @Component({
@@ -37,6 +38,8 @@ export class App {
   protected readonly hosts = inject(HostStore);
   protected readonly liveSync = inject(LiveSync);
   protected readonly nav = NAV;
+  /** Two-digit nav index — a tenth entry must not render as "010". */
+  protected readonly navIndex = (i: number): string => String(i + 1).padStart(2, '0');
   protected readonly uptime = uptime;
 
   protected readonly now = signal(new Date());

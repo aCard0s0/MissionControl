@@ -372,7 +372,8 @@ class TerminalSocketHandlerTest {
     // a negative lifetime ceiling makes every session instantly over-lifetime, so the reap is
     // deterministic without sleeping through a real timeout
     TerminalSocketHandler handler = handler(new TerminalProperties(
-        1, 5, Duration.ofMinutes(30), Duration.ofMillis(-1), Duration.ofSeconds(30), Duration.ofSeconds(90)));
+        1, 5, Duration.ofMinutes(30), Duration.ofMillis(-1), Duration.ofSeconds(30),
+        Duration.ofSeconds(90), "hermes"));
     WebSocketSession session = session("a", "10.0.0.1", QUERY);
     handler.afterConnectionEstablished(session);
 
@@ -411,6 +412,28 @@ class TerminalSocketHandlerTest {
     verify(second).close(CloseStatus.GOING_AWAY.withReason("server shutdown"));
   }
 
+  @Test
+  void theShellRunsAsTheConfiguredUserSoItCannotLeaveRootOwnedFilesBehind() throws Exception {
+    // every profile-scoped exec goes through DockerExecService as `hermes`; a web shell running
+    // as the image default would write /opt/data files the agent itself can no longer read
+    TerminalSocketHandler handler = handler(props(5, 5));
+
+    handler.afterConnectionEstablished(session("a", "10.0.0.1", QUERY));
+
+    verify(create).withUser("hermes");
+  }
+
+  @Test
+  void aBlankUserKeepsTheImageDefaultForAnImageWithoutThatAccount() throws Exception {
+    TerminalSocketHandler handler = handler(new TerminalProperties(
+        5, 5, Duration.ofMinutes(30), Duration.ofHours(8), Duration.ofSeconds(30),
+        Duration.ofSeconds(90), "   "));
+
+    handler.afterConnectionEstablished(session("a", "10.0.0.1", QUERY));
+
+    verify(create, never()).withUser(anyString());
+  }
+
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private static final String QUERY = "hostId=dh-local&containerId=cid";
@@ -421,7 +444,8 @@ class TerminalSocketHandlerTest {
 
   private static TerminalProperties props(int maxSessions, int maxPerClient) {
     return new TerminalProperties(maxSessions, maxPerClient,
-        Duration.ofMinutes(30), Duration.ofHours(8), Duration.ofSeconds(30), Duration.ofSeconds(90));
+        Duration.ofMinutes(30), Duration.ofHours(8), Duration.ofSeconds(30), Duration.ofSeconds(90),
+        "hermes");
   }
 
   private WebSocketSession session(String id, String remoteAddress, String query) {

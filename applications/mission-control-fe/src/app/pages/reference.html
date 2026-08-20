@@ -1,0 +1,36 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">HERMES AGENT · CLI</div>
+    <h2>Reference</h2>
+  </div>
+</div>
+
+<div class="panel intro" data-reveal>
+  <div class="panel-b">
+    <p>
+      What an operator types inside a Hermes container. Mission Control drives a few of these
+      itself and reads the files the rest of them write — everything with no button on a page
+      is done here. <strong>Insert</strong> puts a line at the terminal panel's prompt without
+      running it; you press Enter.
+    </p>
+    <p class="how mono">
+      outside the dashboard: <code>docker exec -it -u hermes &lt;container&gt; hermes status</code>
+    </p>
+  </div>
+</div>
+
+<div class="filter mono" data-reveal>
+  <span class="lbl">scope</span>
+  <button class="chip" [class.on]="scopeId() === null" (click)="scopeId.set(null)">no profile</button>
+  @for (a of agents.forSelectedContainer(); track a.id) {
+    <button class="chip" [class.on]="scopeId() === a.id" (click)="scopeId.set(a.id)">&#64;{{ a.name }}</button>
+  } @empty {
+    <span class="faint">no profiles on {{ containers.selected()?.name ?? 'this container' }} — lines stay unscoped</span>
+  }
+</div>
+
+<div class="panel" data-reveal>
+  <div class="panel-b">
+    <mc-hermes-commands [canInsert]="true" [profile]="scoped()" (insert)="send($event)" />
+  </div>
+</div>

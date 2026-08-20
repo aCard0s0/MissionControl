@@ -170,6 +170,11 @@ client control messages — `{ "type": "resize", "cols": n, "rows": n }`.
 Handshake enforces same-origin (or the dev origins `localhost:4200/4300`).
 The exec ends when the socket closes (stdin EOF exits the shell).
 
+The shell runs as `mc.terminal.user` (`MC_TERMINAL_USER`, default `hermes`) — the
+same user the profile-scoped execs above use, so a command typed here cannot
+leave root-owned files in `/opt/data`. Set it empty for an image with no `hermes`
+account.
+
 ## Ops board — dashboard-owned state in SQLite
 
 | Method & path | Body / params |
