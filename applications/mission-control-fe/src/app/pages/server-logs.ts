@@ -57,10 +57,10 @@ export class ServerLogsPage {
   constructor() {
     void this.loadInfo();
     effect(onCleanup => {
-      // reading the signal is what re-arms the timer when the operator resumes
-      const paused = this.paused();
+      // read first, and before any load: this is what re-arms on resume, and pausing has to
+      // buy silence — a fetch on the way into a pause repaints the thing being held still
+      if (this.paused()) return;
       untracked(() => void this.load());
-      if (paused) return;
       const timer = setInterval(() => void this.load(), POLL_INTERVAL);
       onCleanup(() => clearInterval(timer));
     });

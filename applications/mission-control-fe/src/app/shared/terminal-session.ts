@@ -271,8 +271,10 @@ export class TerminalSession {
   /**
    * Collapses a burst of layout changes into one fit.
    *
-   * <p>The observer fires per frame while the panel is being dragged; measuring and
-   * reflowing xterm that often is wasted work even before the frames reach the socket.
+   * <p>Not for drags — those are excluded outright by {@link fitsSuspended} on the next line.
+   * This covers the bursts nothing suspends: a window resize, the panel opening, the command
+   * drawer toggling. The observer can fire several times as one of those settles, and each
+   * fit measures and reflows the whole buffer.
    */
   private queueFit(): void {
     if (this.fitsSuspended || this.fitQueued) return;
