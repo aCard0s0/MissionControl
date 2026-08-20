@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -200,5 +201,83 @@ class ContainerLogReaderTest {
     return ContainerLogReader.parseLogFrame(
         frame(StreamType.STDOUT, "2026-08-13T10:25:55.000000000Z " + message + "\n"))
         .getFirst().level();
+  }
+
+  // ── frames are slices of a stream, not records ─────────────────────────────
+
+  /**
+   * The exact tear seen in production: the daemon cut a line between the millisecond and the
+   * microsecond digits of its own timestamp. Parsed per frame, that became two entries —
+   * a bare `2026-08-20T01:19:51.227` and an orphaned `450970Z → gateway…` — both stamped with
+   * the wall clock, so they sorted above every real line in the tail.
+   */
+  @Test
+  void aLineCutMidTimestampIsPutBackTogether() {
+    ContainerLogReader.LineAssembler assembler = new ContainerLogReader.LineAssembler();
+
+    List<LogLineDto> first = assembler.accept(
+        frame(StreamType.STDOUT, "2026-08-20T01:19:51.227"));
+    List<LogLineDto> second = assembler.accept(
+        frame(StreamType.STDOUT, "450970Z \u2192 gateway is now running under s6 supervision\n"));
+
+    assertEquals(List.of(), first, "half a line is not a line");
+    assertEquals(1, second.size());
+    assertEquals("\u2192 gateway is now running under s6 supervision", second.get(0).msg());
+    assertEquals(Instant.parse("2026-08-20T01:19:51.227450970Z").toEpochMilli(),
+        second.get(0).ts(), "the timestamp is the line's own, not the wall clock");
+  }
+
+  @Test
+  void aLineCutMidMessageIsPutBackTogether() {
+    ContainerLogReader.LineAssembler assembler = new ContainerLogReader.LineAssembler();
+
+    assembler.accept(frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z WARNING gateway.run: No user "));
+    List<LogLineDto> lines = assembler.accept(frame(StreamType.STDOUT, "allowlists configured.\n"));
+
+    assertEquals(1, lines.size());
+    assertEquals("WARNING gateway.run: No user allowlists configured.", lines.get(0).msg());
+    assertEquals("warn", lines.get(0).level());
+  }
+
+  @Test
+  void stdoutAndStderrCarryTheirOwnRemainder() {
+    // the two streams interleave at frame granularity, so one buffer would splice them together
+    ContainerLogReader.LineAssembler assembler = new ContainerLogReader.LineAssembler();
+
+    assembler.accept(frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z out-"));
+    assembler.accept(frame(StreamType.STDERR, "2026-08-14T10:00:01.000000000Z err-"));
+    List<LogLineDto> out = assembler.accept(frame(StreamType.STDOUT, "side\n"));
+    List<LogLineDto> err = assembler.accept(frame(StreamType.STDERR, "side\n"));
+
+    assertEquals(List.of("out-side"), out.stream().map(LogLineDto::msg).toList());
+    assertEquals(List.of("err-side"), err.stream().map(LogLineDto::msg).toList());
+  }
+
+  @Test
+  void theLastLineIsKeptEvenWithoutATerminator() {
+    ContainerLogReader.LineAssembler assembler = new ContainerLogReader.LineAssembler();
+
+    assembler.accept(frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z started\n"
+        + "2026-08-14T10:00:01.000000000Z no trailing newline here"));
+
+    assertEquals(List.of("no trailing newline here"),
+        assembler.flush().stream().map(LogLineDto::msg).toList());
+  }
+
+  /**
+   * A continuation belongs beside the line it continues. Stamping it "now" is what let a
+   * fragment claim to be the newest entry in a tail whose real lines were hours old.
+   */
+  @Test
+  void aLineWithNoTimestampInheritsTheOneAboveItRatherThanTheWallClock() {
+    Frame frame = frame(StreamType.STDOUT,
+        "2026-08-14T10:00:00.000000000Z Traceback (most recent call last):\n"
+        + "      File \"/opt/hermes/app.py\", line 3\n");
+
+    List<LogLineDto> lines = ContainerLogReader.parseLogFrame(frame);
+
+    assertEquals(2, lines.size());
+    assertEquals(lines.get(0).ts(), lines.get(1).ts());
+    assertEquals(Instant.parse("2026-08-14T10:00:00Z").toEpochMilli(), lines.get(1).ts());
   }
 }
