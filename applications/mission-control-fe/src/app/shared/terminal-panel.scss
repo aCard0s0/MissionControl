@@ -123,9 +123,7 @@
   }
   &:hover .grip, &:active .grip { background: var(--term-acc); }
 }
-// overflow is clipped because fits are held for the length of a drag: until it settles the
-// terminal still carries its old row count, which would otherwise paint past the panel edge
-.body { position: relative; padding: 4px 8px 8px; overflow: hidden; }
+.body { position: relative; padding: 4px 8px 8px; }
 // host divs are stacked absolutely inside the mount; only the active one is
 // visible (others stay attached + measurable so their buffers keep filling)
 .mount { position: relative; height: 100%; &.hidden { display: none; } }

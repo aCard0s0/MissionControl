@@ -295,14 +295,28 @@ export class TerminalSession {
     // scrolled up to read history sees that as the history disappearing on resize, so the
     // distance from the bottom is measured before and restored after. Measured from the
     // bottom rather than as an absolute line, because a reflow moves every absolute line.
-    const before = this.term.buffer.active;
-    const fromBottom = Math.max(0, before.baseY - before.viewportY);
+    // A degenerate measurement is worse than no fit at all: resizing to one row pushes the
+    // whole screen into scrollback, and one column rewraps every line to nothing. The host is
+    // briefly unmeasurable mid-layout — a window resize, the panel opening — so the fit is
+    // skipped and the observer that follows the real change performs it.
+    //
+    // Only the fit is skipped. The size still gets reported below, because a socket that has
+    // just opened has been told nothing and needs the grid the terminal already has.
+    const proposed = this.fit.proposeDimensions();
+    const measurable = !!proposed
+        && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows)
+        && proposed.cols >= 2 && proposed.rows >= 2;
 
-    try { this.fit.fit(); } catch { /* host not measurable yet */ }
+    if (measurable) {
+      const before = this.term.buffer.active;
+      const fromBottom = Math.max(0, before.baseY - before.viewportY);
 
-    if (fromBottom > 0) {
-      const after = this.term.buffer.active;
-      this.term.scrollToLine(Math.max(0, after.baseY - fromBottom));
+      try { this.fit.fit(); } catch { /* host not measurable yet */ }
+
+      if (fromBottom > 0) {
+        const after = this.term.buffer.active;
+        this.term.scrollToLine(Math.max(0, after.baseY - fromBottom));
+      }
     }
 
     const { cols, rows } = this.term;
