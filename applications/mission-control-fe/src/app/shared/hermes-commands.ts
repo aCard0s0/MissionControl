@@ -27,7 +27,7 @@ const COPIED_MS = 1200;
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './hermes-commands.html',
   styleUrl: './hermes-commands.scss',
-  host: { '[class.dark]': 'dark()' },
+  host: { '[class.dark]': 'dark()', '[class.compact]': 'compact()' },
 })
 export class HermesCommands {
   /** Scopes every line with `-p <profile>`; absent leaves them bare. */
@@ -36,6 +36,15 @@ export class HermesCommands {
   readonly canInsert = input(false);
   /** Render against the terminal's own dark tokens instead of the page's. */
   readonly dark = input(false);
+  /**
+   * Narrow rendering, for the terminal panel's side rail.
+   *
+   * <p>At ~300px there is no room for a line, a summary, its flags and three worded buttons
+   * side by side. So the line and its actions stay on one row and everything explanatory
+   * folds into a box under it, and the actions become glyphs. The Reference page, which has a
+   * whole page and exists to be read, keeps the wide form.
+   */
+  readonly compact = input(false);
 
   /** The line to put at the prompt, already profile-scoped. */
   readonly insert = output<string>();
@@ -48,6 +57,9 @@ export class HermesCommands {
   protected readonly query = signal('');
   /** The command last copied, so one row can confirm without a toast. */
   protected readonly copied = signal<string | null>(null);
+  /** Which rows have their description open. Compact only — the wide form shows
+   *  everything at once, so there is nothing there to expand. */
+  protected readonly opened = signal<ReadonlySet<string>>(new Set());
 
   protected readonly groups = computed(() => searchHermesCommands(this.query()));
   protected readonly matches = computed(() =>
@@ -81,5 +93,19 @@ export class HermesCommands {
 
   protected onInsert(command: HermesCommand): void {
     this.insert.emit(this.line(command));
+  }
+
+  protected isOpen(command: HermesCommand): boolean {
+    return this.opened().has(command.cmd);
+  }
+
+  /** Several rows may be open at once: comparing two commands is the common reason to open
+   *  one, and an accordion that shuts the other makes that impossible. */
+  protected toggleOpen(command: HermesCommand): void {
+    this.opened.update(open => {
+      const next = new Set(open);
+      if (!next.delete(command.cmd)) next.add(command.cmd);
+      return next;
+    });
   }
 }

@@ -8,7 +8,8 @@ import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { LogStore } from '../core/store/log-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile, HermesContainer, ImageTag } from '../core/models';
-import { containerUpdate } from './containers';
+import { isFloatingTag } from '../core/image-tags';
+import { containerUpdate, displayVersion, targetVersion } from './containers';
 import { Sparkline } from '../shared/sparkline';
 import { Gauge } from '../shared/gauge';
 import { StatusDot } from '../shared/status-dot';
@@ -83,10 +84,20 @@ export class OverviewPage {
     return container ? containerUpdate(container, this.images.catalog()[container.hostId]) : null;
   });
 
+  /** The version to show — the release it runs, not the pointer it followed there. */
+  protected version(c: HermesContainer): string {
+    return displayVersion(c, this.images.catalog()[c.hostId]);
+  }
+
+  /** The moving tag this container follows, when that is not the version itself. */
+  protected tracks(c: HermesContainer): string | null {
+    return isFloatingTag(c.version) && this.version(c) !== c.version ? c.version : null;
+  }
+
   protected updateHint(c: HermesContainer, target: ImageTag): string {
-    return target.tag === c.version
-      ? `a newer image was published on ${c.version}`
-      : `${c.version} → ${target.tag}`;
+    const from = this.version(c);
+    const to = targetVersion(target, this.images.catalog()[c.hostId]);
+    return from === to ? `a newer image was published on ${c.version}` : `${from} → ${to}`;
   }
 
   protected readonly agentCounts = computed(() => {

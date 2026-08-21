@@ -12,29 +12,52 @@
 @for (group of groups(); track group.title) {
   <section class="group">
     <h3 class="mono">{{ group.title }}</h3>
-    <p class="blurb">{{ group.blurb }}</p>
+    @if (!compact()) {
+      <p class="blurb">{{ group.blurb }}</p>
+    }
 
     @for (c of group.commands; track c.cmd) {
-      <div class="cmd" [class.install]="c.install">
+      <div class="cmd" [class.install]="c.install" [class.open]="isOpen(c)">
+        <!-- The line and its actions stay together on one row. In the side rail the rest
+             folds away under them; on the Reference page there is room for all of it. -->
         <code class="line mono">{{ line(c) }}</code>
-        <span class="summary">{{ c.summary }}</span>
-        @if (c.flags) {
-          <span class="flags mono">{{ c.flags }}</span>
-        }
-        @if (c.install) {
-          <span class="warn mono">{{ installWarning }}</span>
-        }
+
         <span class="acts">
-          <button class="act" (click)="copy(c)" [title]="'copy ' + line(c)">
-            {{ copied() === c.cmd ? 'copied' : 'copy' }}
+          @if (compact()) {
+            <button class="act disc" (click)="toggleOpen(c)"
+                    [attr.aria-expanded]="isOpen(c)"
+                    [title]="isOpen(c) ? 'hide what this does' : 'what this does'">
+              {{ isOpen(c) ? '▾' : '▸' }}
+            </button>
+          }
+          <button class="act" (click)="copy(c)" [title]="'copy ' + line(c)" aria-label="copy">
+            @if (compact()) {
+              {{ copied() === c.cmd ? '✓' : '⧉' }}
+            } @else {
+              {{ copied() === c.cmd ? 'copied' : 'copy' }}
+            }
           </button>
           @if (canInsert()) {
-            <button class="act" (click)="onInsert(c)"
-                    title="put this line at the prompt — you press Enter">insert</button>
+            <button class="act" (click)="onInsert(c)" aria-label="insert"
+                    title="put this line at the prompt — you press Enter">
+              {{ compact() ? '→' : 'insert' }}
+            </button>
           }
-          <a class="act" [href]="docsUrl(c)" target="_blank" rel="noopener"
-             [title]="'documentation for hermes ' + c.cmd">docs ↗</a>
+          <a class="act" [href]="docsUrl(c)" target="_blank" rel="noopener" aria-label="docs"
+             [title]="'documentation for hermes ' + c.cmd">{{ compact() ? '↗' : 'docs ↗' }}</a>
         </span>
+
+        @if (!compact() || isOpen(c)) {
+          <div class="about">
+            <span class="summary">{{ c.summary }}</span>
+            @if (c.flags) {
+              <span class="flags mono">{{ c.flags }}</span>
+            }
+            @if (c.install) {
+              <span class="warn mono">{{ installWarning }}</span>
+            }
+          </div>
+        }
       </div>
     }
   </section>

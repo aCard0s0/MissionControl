@@ -6,13 +6,20 @@
 <div class="bar mono" (click)="toggle()">
   <span class="chev">{{ open() ? '▾' : '▴' }}</span>
   <span class="title">TERMINAL</span>
-  @if (active(); as a) {
-    <span class="faint">{{ liveLabel(a) }}</span>
-    <span class="status" [class.on]="a.status() === 'connected'">{{ a.status() }}</span>
+  @if (focused(); as f) {
+    <span class="faint">{{ liveLabel(f) }}</span>
+    <span class="status" [class.on]="f.status() === 'connected'">{{ f.status() }}</span>
   } @else {
     <span class="faint">no shell</span>
   }
   <span class="spacer"></span>
+  @if (open()) {
+    <button class="add" (click)="addTab(); $event.stopPropagation()" title="new shell">+</button>
+    <button class="act" (click)="splitTab('right'); $event.stopPropagation()"
+            title="split right — a new shell beside this one (half the columns)">◫</button>
+    <button class="act" (click)="splitTab('below'); $event.stopPropagation()"
+            title="split down — a new shell under this one (keeps every column)">⬓</button>
+  }
   @if (open()) {
     <button class="act" (click)="shorter(); $event.stopPropagation()" title="shorter">▼</button>
     <button class="act" (click)="taller(); $event.stopPropagation()" title="taller">▲</button>
@@ -22,50 +29,45 @@
     <button class="act" (click)="clear(); $event.stopPropagation()" title="clear">⌫</button>
   }
   <button class="act" [class.on]="cheatOpen()" (click)="toggleCheat(); $event.stopPropagation()"
-          title="hermes commands">cmds</button>
+          title="hermes commands">▤</button>
 </div>
 
 @if (open()) {
-  <div class="tabs mono">
-    @for (s of sessions(); track s.id) {
-      <div class="tab" [class.act]="s.id === activeId()" (click)="setActive(s)">
-        <mc-status [status]="s.status()" label=" " />
-        <span class="lbl" [class.gone]="isStale(s)">{{ liveLabel(s) }}</span>
-        <button class="caret" (click)="togglePicker(s); $event.stopPropagation()" title="change container">▾</button>
-        <button class="x" (click)="closeTab(s); $event.stopPropagation()" title="close">×</button>
-        @if (pickerForId() === s.id) {
-          <div class="scrim" (click)="pickerForId.set(null); $event.stopPropagation()"></div>
-          <div class="pop">
-            @for (c of containers.containers(); track c.id) {
-              <button class="row" [class.sel]="c.id === s.target().containerId"
-                      (click)="pickContainer(s, c); $event.stopPropagation()">
-                <mc-status [status]="c.status" label=" " />
-                <span class="nm">{{ c.name }}</span>
-                <span class="meta">{{ hosts.byId(c.hostId)?.name }}</span>
-              </button>
-            } @empty {
-              <div class="none">no containers</div>
-            }
-          </div>
-        }
-      </div>
-    }
-    <button class="add" (click)="addTab(); $event.stopPropagation()" title="new shell">+</button>
-  </div>
-}
-
-@if (open() && cheatOpen()) {
-  <div class="cheat">
-    <mc-hermes-commands [dark]="true" [canInsert]="true" [profile]="activeProfile()"
-                        (insert)="insertCommand($event)" />
-  </div>
-}
-
-@if (open()) {
   <div class="body" [style.height.px]="height.px()">
-    @if (sessions().length === 0) {
-      <p class="hint mono">+ a shell to get started.</p>
+    <div class="shells">
+      @if (sessions().length === 0) {
+        <p class="hint mono">+ a shell to get started.</p>
+      }
+      <!-- the dock renders the tab strips, the groups and the sashes between them;
+           every pane inside it is one shell's host div -->
+      <div #dock class="dock" [class.hidden]="sessions().length === 0"></div>
+    </div>
+
+    <!-- A rail beside the prompt rather than a drawer above it: the point of this
+         list is to read a line while the shell it is for is still on screen. -->
+    @if (cheatOpen()) {
+      <aside class="cheat">
+        <mc-hermes-commands [dark]="true" [compact]="true" [canInsert]="true"
+                            [profile]="focusedProfile()" (insert)="insertCommand($event)" />
+      </aside>
     }
-    <div #mount class="mount" [class.hidden]="sessions().length === 0"></div>
+  </div>
+}
+
+<!-- Fixed to the viewport, not nested in the tab that opened it: the tab strip
+     scrolls and clips, so a popover living inside one would be cut off. -->
+@if (pickerAt(); as at) {
+  <div class="scrim" (click)="pickerAt.set(null)"></div>
+  <div class="pop" [style.left.px]="at.x" [style.top.px]="at.y">
+    @for (c of containers.containers(); track c.id) {
+      <button class="row" [class.sel]="c.id === pickerFor()?.target()?.containerId"
+              (click)="pickContainer(c); $event.stopPropagation()">
+        <mc-status [status]="c.status" label=" " />
+        <span class="nm">{{ c.name }}</span>
+        <span class="meta">{{ hosts.byId(c.hostId)?.name }}</span>
+      </button>
+    } @empty {
+      <div class="none">no containers</div>
+    }
   </div>
 }

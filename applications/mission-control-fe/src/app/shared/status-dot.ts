@@ -1,12 +1,18 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
-const TONE: Record<string, 'ok' | 'warn' | 'crit' | 'idle' | 'info'> = {
+export type StatusTone = 'ok' | 'warn' | 'crit' | 'idle' | 'info';
+
+const TONE: Record<string, StatusTone> = {
   running: 'ok', active: 'ok', up: 'ok', connected: 'ok', ok: 'ok', open: 'ok',
   idle: 'warn', degraded: 'warn', warn: 'warn',
   unhealthy: 'crit', error: 'crit', down: 'crit', fail: 'crit',
   stopped: 'idle', dormant: 'idle', off: 'idle', disabled: 'idle', closed: 'idle', disconnected: 'idle',
   unknown: 'info', checking: 'info', connecting: 'info',
 };
+
+/** The tone a status word carries, for the places that cannot use the component:
+ *  the terminal dock builds its tabs as plain DOM outside any template. */
+export const statusTone = (status: string): StatusTone => TONE[status] ?? 'info';
 
 /** Status is always dot + word — never color alone. */
 @Component({
@@ -49,5 +55,5 @@ export class StatusDot {
   /** live=true adds the breathing glow — reserved for genuinely live signals */
   readonly live = input(false);
 
-  readonly tone = computed(() => TONE[this.status()] ?? 'info');
+  readonly tone = computed(() => statusTone(this.status()));
 }

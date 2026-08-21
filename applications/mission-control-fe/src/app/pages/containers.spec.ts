@@ -11,7 +11,10 @@ import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { StoreContext } from '../core/store/store-context';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
-import { ContainersPage, containerUpdate, newerImageTags, normalizeSeedProfiles } from './containers';
+import {
+  ContainersPage, containerUpdate, displayVersion, newerImageTags, normalizeSeedProfiles,
+  resolvedVersion, targetVersion,
+} from './containers';
 import {
   TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
 } from '../testing/dom';
@@ -42,6 +45,81 @@ const on = (version: string, image = HERMES) => ({ image, version });
 /** A container on a floating tag, with the digest of the image it actually runs. */
 const onFloating = (version: string, imageDigest: string | null, image = HERMES) =>
   ({ image, version, imageDigest });
+
+describe('resolvedVersion', () => {
+  // `latest` is a pointer, not a version. The digest is what turns it back into one.
+  it('names the release a floating tag currently points at', () => {
+    expect(resolvedVersion(onFloating('latest', 'sha256:aaa'), cat([
+      { tag: 'latest', digest: 'sha256:aaa' },
+      { tag: 'v2026.8.3', digest: 'sha256:aaa' },
+    ]))).toBe('v2026.8.3');
+  });
+
+  it('prefers the most specific release sharing the digest', () => {
+    // a registry commonly points 1, 1.4 and 1.4.2 at one image; 1.4.2 says the most
+    expect(resolvedVersion(onFloating('latest', 'sha256:aaa'), cat([
+      { tag: '1', digest: 'sha256:aaa' },
+      { tag: '1.4', digest: 'sha256:aaa' },
+      { tag: '1.4.2', digest: 'sha256:aaa' },
+    ]))).toBe('1.4.2');
+  });
+
+  it('never resolves to another floating tag, which would answer nothing', () => {
+    expect(resolvedVersion(onFloating('latest', 'sha256:aaa'), cat([
+      { tag: 'latest', digest: 'sha256:aaa' },
+      { tag: 'edge', digest: 'sha256:aaa' },
+    ]))).toBeNull();
+  });
+
+  it('leaves a pinned container alone — there is nothing to resolve', () => {
+    expect(resolvedVersion(
+      { image: HERMES, version: 'v2026.8.3', imageDigest: 'sha256:aaa' },
+      cat([{ tag: 'v2026.8.3', digest: 'sha256:aaa' }]))).toBeNull();
+  });
+
+  it('gives up rather than guessing when the evidence is missing', () => {
+    const registry = cat([{ tag: 'v2026.8.3', digest: 'sha256:aaa' }]);
+    // a locally built image has no repo digest to match on
+    expect(resolvedVersion(onFloating('latest', null), registry)).toBeNull();
+    // an unreachable registry, or a release whose tag has since been deleted
+    expect(resolvedVersion(onFloating('latest', 'sha256:aaa'), undefined)).toBeNull();
+    expect(resolvedVersion(onFloating('latest', 'sha256:zzz'), registry)).toBeNull();
+    // and a catalog for someone else's fork is never consulted
+    expect(resolvedVersion(onFloating('latest', 'sha256:aaa'),
+      cat([{ tag: 'v9.9.9', digest: 'sha256:aaa' }], 'someone/fork'))).toBeNull();
+  });
+
+  it('falls back to the tag for display, which is always truthful', () => {
+    expect(displayVersion(onFloating('latest', null), cat(['v1.0.0']))).toBe('latest');
+    expect(displayVersion(onFloating('latest', 'sha256:aaa'), cat([
+      { tag: 'v1.0.0', digest: 'sha256:aaa' },
+    ]))).toBe('v1.0.0');
+  });
+});
+
+describe('targetVersion', () => {
+  it('names where a move along a floating tag actually lands', () => {
+    const catalog = cat([
+      { tag: 'latest', digest: 'sha256:bbb' },
+      { tag: 'v2026.8.3', digest: 'sha256:bbb' },
+    ]);
+    expect(targetVersion({ tag: 'latest', pulled: true, digest: 'sha256:bbb' }, catalog))
+      .toBe('v2026.8.3');
+  });
+
+  it('leaves a release target as itself', () => {
+    const catalog = cat([{ tag: 'v2026.8.3', digest: 'sha256:bbb' }]);
+    expect(targetVersion({ tag: 'v2026.8.3', pulled: true, digest: 'sha256:bbb' }, catalog))
+      .toBe('v2026.8.3');
+  });
+
+  it('keeps the tag when nothing resolves it', () => {
+    expect(targetVersion({ tag: 'latest', pulled: true, digest: null }, cat(['v1.0.0'])))
+      .toBe('latest');
+    expect(targetVersion({ tag: 'latest', pulled: true, digest: 'sha256:bbb' }, undefined))
+      .toBe('latest');
+  });
+});
 
 describe('containerUpdate on a floating tag', () => {
   // A container on `latest` is never behind by tag string — its tag is always the newest
@@ -618,10 +696,42 @@ describe('ContainersPage image update', () => {
     const { fixture } = render(storeStub([stale],
       catalog([{ tag: 'latest', digest: 'sha256:bbb' }])));
 
+    // no release tag shares either digest here, so `latest` stays the only honest name
     const button = el(fixture).querySelector('.btn.upd')!;
     expect(button.textContent).toContain('update latest');
     expect(button.getAttribute('title'))
-      .toContain('the registry published a new image on this tag');
+      .toContain('the registry published a new image on latest');
+  });
+
+  it('names both ends as releases, so a move on latest is not "latest → latest"', () => {
+    // what the operator was actually asking about: the card said `:latest` and the
+    // button said `update latest`, which reads as a no-op even though it is not
+    const stale = container('hermes-prod', { version: 'latest', imageDigest: 'sha256:aaa' });
+    const { fixture } = render(storeStub([stale], catalog([
+      { tag: 'latest', digest: 'sha256:bbb' },
+      { tag: 'v2026.8.3', digest: 'sha256:bbb' },
+      { tag: 'v2026.7.20', digest: 'sha256:aaa' },
+    ])));
+
+    // the version it runs, not the pointer it followed there
+    expect(text(fixture)).toContain('v2026.7.20');
+    const button = el(fixture).querySelector('.btn.upd')!;
+    expect(button.textContent).toContain('update v2026.8.3');
+    expect(button.getAttribute('title')).toContain('v2026.7.20 → v2026.8.3');
+    // and it still says which moving tag carries it there
+    expect(button.getAttribute('title')).toContain('on latest');
+  });
+
+  it('still says which tag a resolved container follows', () => {
+    const c = container('hermes-prod', { version: 'latest', imageDigest: 'sha256:aaa' });
+    const { fixture } = render(storeStub([c],
+      catalog([{ tag: 'v2026.7.20', digest: 'sha256:aaa' }])));
+
+    // a container pinned to v2026.7.20 and one on latest that resolves to it behave
+    // differently the next time they are recreated, so the pointer stays visible
+    const meta = el(fixture).querySelector('.panel-b .meta')!;
+    expect(meta.textContent).toContain('v2026.7.20');
+    expect(meta.querySelector('.tracks')!.textContent!.trim()).toBe('latest');
   });
 
   it('offers nothing on a floating tag it already matches', () => {

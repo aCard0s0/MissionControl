@@ -33,6 +33,9 @@
               "src/styles.scss",
               "node_modules/@xterm/xterm/css/xterm.css"
             ],
+            "allowedCommonJsDependencies": [
+              "dockview-core/dist/dockview-core.js"
+            ],
             "security": {
               "allowedHosts": []
             }

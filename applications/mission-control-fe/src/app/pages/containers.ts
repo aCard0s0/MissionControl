@@ -118,6 +118,67 @@ export function containerUpdate(
   return newerImageTags(container, catalog)[0] ?? floatingUpdate(container, catalog);
 }
 
+/**
+ * The release a container is actually running, when it was started from a tag that moves.
+ *
+ * <p>`latest` is a pointer, not a version, and showing it as one is what made an "update
+ * latest" button read as a no-op: the card claimed the container was on the newest thing while
+ * the button said otherwise. Both were true — the tag was newest, the image behind it was not.
+ * The digest is what resolves that: whichever release tag the registry published at the same
+ * digest is what this container is really on.
+ *
+ * <p>Null whenever that cannot be established rather than guessed — a tag that does not move
+ * needs no resolving, and a locally built image, an unreachable registry or a release whose
+ * tag has since been deleted all leave the pointer as the only honest answer.
+ */
+export function resolvedVersion(
+  container: UpdateCandidate,
+  catalog: ImageCatalog | undefined,
+): string | null {
+  if (!isFloatingTag(container.version)) return null;
+  if (!catalog || !sameRepository(container.image, catalog.repository)) return null;
+  if (!container.imageDigest) return null;
+  return releaseAt(container.imageDigest, catalog);
+}
+
+/** What to show as a container's version: the release it runs, else the tag it was given. */
+export function displayVersion(
+  container: UpdateCandidate,
+  catalog: ImageCatalog | undefined,
+): string {
+  return resolvedVersion(container, catalog) ?? container.version;
+}
+
+/**
+ * The release an update target actually is.
+ *
+ * <p>Same resolution as {@link resolvedVersion}, applied to where the container is going
+ * rather than where it is — so a move along a floating tag can be offered as the version
+ * change it really is instead of as `latest → latest`. Falls back to the tag, which is always
+ * a truthful thing to call it.
+ */
+export function targetVersion(target: ImageTag, catalog: ImageCatalog | undefined): string {
+  if (!catalog || !isFloatingTag(target.tag) || !target.digest) return target.tag;
+  return releaseAt(target.digest, catalog) ?? target.tag;
+}
+
+/**
+ * The release tag published at `digest`, preferring the most specific one.
+ *
+ * <p>A registry commonly points `1`, `1.4` and `1.4.2` at one image. `1.4.2` is the answer a
+ * reader wants — it says the most — so tags are ranked by how many components they carry
+ * before falling back to comparing versions.
+ */
+function releaseAt(digest: string, catalog: ImageCatalog): string | null {
+  const releases = catalog.tags
+    .filter(t => !!t.digest && t.digest === digest && !isFloatingTag(t.tag))
+    .map(t => ({ tag: t.tag, ver: parseTag(t.tag) }))
+    .filter((x): x is { tag: string; ver: Ver } => !!x.ver);
+  if (!releases.length) return null;
+  releases.sort((a, b) => b.ver.nums.length - a.ver.nums.length || compareVer(b.ver, a.ver));
+  return releases[0].tag;
+}
+
 @Component({
   selector: 'mc-containers',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -192,12 +253,37 @@ export class ContainersPage {
     this.terminal.open({ hostId: c.hostId, containerId: c.id, label: c.name });
   }
 
+  /** The version to show for this container — the release it runs, not the pointer. */
+  protected version(c: HermesContainer): string {
+    return displayVersion(c, this.images.catalog()[c.hostId]);
+  }
+
+  /** True when the container tracks a moving tag, so the card can still say which. */
+  protected tracks(c: HermesContainer): string | null {
+    return isFloatingTag(c.version) && this.version(c) !== c.version ? c.version : null;
+  }
+
+  /** What the update moves it to, named as the release rather than the tag. */
+  protected targetLabel(c: HermesContainer, target: ImageTag): string {
+    return targetVersion(target, this.images.catalog()[c.hostId]);
+  }
+
   protected updateHint(c: HermesContainer, target: ImageTag): string {
-    // a floating tag moves in place, so "latest → latest" would read as a no-op
-    const move = target.tag === c.version
-      ? `${c.version} · the registry published a new image on this tag`
-      : `${c.version} → ${target.tag}`;
-    return `${move}${target.pulled ? '' : ' · not pulled on this host yet'}`;
+    const from = this.version(c);
+    const to = this.targetLabel(c, target);
+    // both ends resolved, so a move along a floating tag reads as the version change it is
+    const move = from === to
+      ? `${from} · the registry published a new image on ${c.version}`
+      : `${from} → ${to}`;
+    const via = isFloatingTag(target.tag) && to !== target.tag ? ` · on ${target.tag}` : '';
+    return `${move}${via}${target.pulled ? '' : ' · not pulled on this host yet'}`;
+  }
+
+  /** A target option, naming the release a moving tag currently points at. */
+  protected optionLabel(c: HermesContainer, t: ImageTag): string {
+    const release = targetVersion(t, this.images.catalog()[c.hostId]);
+    const name = release === t.tag ? t.tag : `${t.tag} — ${release}`;
+    return `${name}${t.pulled ? '' : ' — not pulled'}`;
   }
 
   /** Everything this container could move to: newer releases, or the same tag re-pulled. */

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Terminal } from '@xterm/xterm';
 import { TerminalSession } from './terminal-session';
 
 /** Minimal stand-in for the browser WebSocket — records what the tab sends. */
@@ -331,15 +332,18 @@ describe('TerminalSession identity and wiring', () => {
     expect(session.hostEl.isConnected).toBe(false);
   });
 
-  it('parks its host div hidden until it is the tab on screen', () => {
+  it('leaves it to the dock to say what is on screen, and never hides itself', () => {
+    // The dock parks this div in a pane and shows or hides the pane. A session that
+    // also set its own visibility would fight that: with panes side by side, more than
+    // one is on screen at once, and none of them is "the tab".
     const session = new TerminalSession(target(), 'http://mc.test');
-    expect(session.hostEl.style.visibility).toBe('hidden');
+    expect(session.hostEl.style.visibility).toBe('');
 
-    session.setActive(true);
-    expect(session.hostEl.style.visibility).toBe('visible');
+    session.setVisible(true);
+    expect(session.hostEl.style.visibility).toBe('');
 
-    session.setActive(false);
-    expect(session.hostEl.style.visibility).toBe('hidden');
+    session.setVisible(false);
+    expect(session.hostEl.style.visibility).toBe('');
   });
 
   it('reports no size while it is off screen, so a drag fans no resize frames out', () => {
@@ -387,7 +391,7 @@ describe('TerminalSession resize reporting', () => {
   it('tells the pty a size once, however many fits land on the same grid', () => {
     const session = new TerminalSession(target(), 'http://mc.test');
     session.ensureTerm();
-    session.setActive(true);
+    session.setVisible(true);
     session.connect();
     const ws = FakeSocket.last!;
     ws.onopen!();
@@ -399,39 +403,67 @@ describe('TerminalSession resize reporting', () => {
     expect(resizes(ws).length).toBe(afterOpen);
   });
 
-  it('holds fits for the length of a drag, so the buffer reflows once and not per frame', () => {
-    // Fitting reflows xterm, and the far end repaints its input line on the SIGWINCH that
-    // follows. Per pointer frame, the app repaints against a buffer that moved underneath
-    // it — which is the prompt drawn twice.
+  /** A ResizeObserver whose callback the test fires by hand, one call per "frame". */
+  const observedFrames = (): (() => void) => {
     let fire!: () => void;
     vi.stubGlobal('ResizeObserver', class {
       constructor(cb: () => void) { fire = cb; }
       observe(): void { /* driven by hand */ }
       disconnect(): void { /* no-op */ }
     });
+    return () => fire();
+  };
 
+  it('collapses a burst of layout changes into one fit, once the layout holds still', () => {
+    // A dock sash drag reports a new size per pointer frame and gives no drag-ended event
+    // to hang a single fit off. Fitting per frame reflows xterm and the far end repaints
+    // its input line on every SIGWINCH that follows — the prompt drawn twice.
+    const frame = observedFrames();
     const session = new TerminalSession(target(), 'http://mc.test');
     session.ensureTerm();
-    session.setActive(true);
+    session.setVisible(true);
 
-    // stubbed only now: xterm wants a real one while it is being built
-    const raf = vi.fn();
-    vi.stubGlobal('requestAnimationFrame', raf);
+    // faked only now: xterm wants real timers while it is being built
+    const fits = vi.spyOn(session, 'fitNow');
+    vi.useFakeTimers();
 
-    session.setFitsSuspended(true);
-    for (let i = 0; i < 30; i++) fire();
-    expect(raf).not.toHaveBeenCalled();
+    for (let i = 0; i < 30; i++) frame();
+    expect(fits).not.toHaveBeenCalled();      // nothing lands while it is still moving
+
+    vi.advanceTimersByTime(200);
+    expect(fits).toHaveBeenCalledTimes(1);    // thirty frames, one reflow
+
+    vi.useRealTimers();
+  });
+
+  it('holds fits for the length of a drag, and drops one already queued', () => {
+    const frame = observedFrames();
+    const session = new TerminalSession(target(), 'http://mc.test');
+    session.ensureTerm();
+    session.setVisible(true);
+
+    const fits = vi.spyOn(session, 'fitNow');
+    vi.useFakeTimers();
+
+    frame();                                  // a fit is now pending
+    session.setFitsSuspended(true);           // the panel's drag begins
+    for (let i = 0; i < 30; i++) frame();
+    vi.advanceTimersByTime(1000);
+    expect(fits).not.toHaveBeenCalled();      // including the one queued before the drag
 
     // what the panel does when the drag settles
     session.setFitsSuspended(false);
-    fire();
-    expect(raf).toHaveBeenCalledTimes(1);
+    frame();
+    vi.advanceTimersByTime(200);
+    expect(fits).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
   });
 
   it('reports the size again on a new socket, which has been told nothing', () => {
     const session = new TerminalSession(target(), 'http://mc.test');
     session.ensureTerm();
-    session.setActive(true);
+    session.setVisible(true);
     session.connect();
     FakeSocket.last!.onopen!();
 
@@ -441,5 +473,193 @@ describe('TerminalSession resize reporting', () => {
     session.fitNow();
 
     expect(resizes(fresh).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Growing a terminal is harmless; shrinking one rewraps every hard-wrapped line it
+ * already holds. Output printed once and never redrawn cannot survive that — hermes
+ * draws a full-width banner at startup and does not repaint on SIGWINCH — so the grid
+ * a pane has printed at becomes a floor it never goes below.
+ */
+describe('TerminalSession column floor', () => {
+  beforeEach(() => {
+    FakeSocket.last = null;
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.stubGlobal('ResizeObserver', class {
+      observe(): void { /* fits are driven directly below */ }
+      disconnect(): void { /* no-op */ }
+    });
+    vi.stubGlobal('matchMedia', (media: string) => ({
+      media, matches: false,
+      addListener: () => { /* the dpr never changes here */ },
+      removeListener: () => { /* the dpr never changes here */ },
+      addEventListener: () => { /* the dpr never changes here */ },
+      removeEventListener: () => { /* the dpr never changes here */ },
+    }));
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  /**
+   * A live pane whose box measures `cols` wide. jsdom lays nothing out, so the
+   * measurement the fit addon would take is stubbed — the floor is about which of two
+   * numbers wins, and that is decided in the session, not by the browser.
+   */
+  const pane = (cols: number) => {
+    const session = new TerminalSession(target(), 'http://mc.test');
+    session.ensureTerm();
+    session.setVisible(true);
+    const box = { cols, rows: 24 };
+    (session as unknown as { fit: { proposeDimensions: () => typeof box } })
+      .fit.proposeDimensions = () => box;
+    session.connect();
+    const ws = FakeSocket.last!;
+    ws.onopen!();
+    // the over-wide notice is terminal output like any other, so it is counted where it
+    // is written rather than through an accessor that would exist only for this test
+    const term = (session as unknown as { term: Terminal }).term;
+    const written: string[] = [];
+    const write = term.write.bind(term);
+    term.write = (data: string | Uint8Array) => {
+      if (typeof data === 'string') written.push(data);
+      return write(data);
+    };
+    return {
+      session, ws,
+      /** anything the pane wrote into its own buffer — which the notice must never do */
+      selfWritten: () => written.filter(w => w.includes('cols in a')).length,
+      /** resize the box and refit, as a split or a sash drag would */
+      resizeTo(next: number): void {
+        box.cols = next;
+        session.fitNow();
+      },
+      /** the pty's view of the grid, from the last resize frame on the wire */
+      sentCols(): number | undefined {
+        const frames = ws.sent
+          .filter(f => f.startsWith('{"type":"resize"'))
+          .map(f => (JSON.parse(f) as { cols: number }).cols);
+        return frames.at(-1);
+      },
+    };
+  };
+
+  it('narrows freely while the screen is still empty', () => {
+    const p = pane(200);
+    expect(p.session.grid().cols).toBe(200);
+
+    p.resizeTo(80);
+
+    // nothing has been printed, so there is nothing a reflow could damage
+    expect(p.session.grid().cols).toBe(80);
+    expect(p.sentCols()).toBe(80);
+  });
+
+  it('refuses to narrow below what the shell has already printed at', () => {
+    const p = pane(200);
+    p.ws.emit('── a rule drawn at two hundred columns ──');
+
+    p.resizeTo(80);
+
+    // the pane scrolls sideways to the grid instead of rewrapping it
+    expect(p.session.grid().cols).toBe(200);
+    expect(p.sentCols()).toBe(200);
+  });
+
+  it('still grows, because widening damages nothing', () => {
+    const p = pane(120);
+    p.ws.emit('printed at a hundred and twenty');
+
+    p.resizeTo(240);
+
+    expect(p.session.grid().cols).toBe(240);
+  });
+
+  it('raises the floor again as the shell prints at the wider grid', () => {
+    const p = pane(120);
+    p.ws.emit('first');
+    p.resizeTo(240);
+    p.ws.emit('now printed this wide too');
+
+    p.resizeTo(120);
+
+    expect(p.session.grid().cols).toBe(240);
+  });
+
+  it('reports being held wide as state, not as writing into its own scrollback', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+
+    p.resizeTo(80);
+    p.resizeTo(90);
+    p.resizeTo(100);
+
+    // the output is intact but half of it is off to the right, which reads as truncation
+    // unless something says otherwise. The panel draws that as pane chrome — writing it into
+    // the buffer put it in the scrollback people copy and across the line the shell was
+    // drawing, so nothing goes into the terminal at all.
+    expect(p.session.grid().cols).toBe(200);
+    expect(p.session.overWide()).toEqual({ cols: 200, boxCols: 100 });
+    expect(p.selfWritten()).toBe(0);
+  });
+
+  it('stops reporting it once the box is wide enough again', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+
+    p.resizeTo(80);
+    expect(p.session.overWide()).not.toBeNull();
+
+    p.resizeTo(300);
+    expect(p.session.overWide()).toBeNull();
+  });
+
+  it('lets go of the floor on a refit, which is the button the notice carries', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+    p.resizeTo(80);
+    expect(p.session.overWide()).not.toBeNull();
+
+    p.session.refit();
+
+    expect(p.session.grid().cols).toBe(80);
+    expect(p.session.overWide()).toBeNull();
+  });
+
+  it('holds the floor however much output goes by, because that output is wide too', () => {
+    // Tempting to expire the floor once the guarded banner must have scrolled away. But
+    // the floor is what keeps the grid wide, so every row since was drawn wide as well —
+    // dropping it would rewrap the whole buffer instead of just the banner.
+    const p = pane(200);
+    p.ws.emit('printed wide');
+    p.resizeTo(80);
+
+    p.ws.emit('line\n'.repeat(9000));
+    p.resizeTo(80);
+
+    expect(p.session.grid().cols).toBe(200);
+  });
+
+  it('lets go of the floor when the screen is cleared', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+    p.resizeTo(80);
+    expect(p.session.grid().cols).toBe(200);
+
+    p.session.clear();
+
+    // an empty buffer holds nothing that could rewrap, so ⌫ is a way back to fitting
+    expect(p.session.grid().cols).toBe(80);
+  });
+
+  it('lets go of the floor on a reconnect, which redraws from nothing', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+    p.resizeTo(80);
+
+    p.session.connect();          // ↻
+    FakeSocket.last!.onopen!();
+
+    expect(p.session.grid().cols).toBe(80);
   });
 });
