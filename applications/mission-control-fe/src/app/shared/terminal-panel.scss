@@ -1,7 +1,7 @@
 // Terminal chrome is pinned to the --term-* tokens — dark in both themes.
 // The tab strip, the groups and the sashes between them are dockview's DOM, so
-// they are themed globally instead (`.mc-dock-theme` in styles.scss): nothing it
-// creates at runtime carries this component's encapsulation attribute.
+// they are themed globally instead (`mc-terminal-panel .dock` in styles.scss):
+// nothing it creates at runtime carries this component's encapsulation attribute.
 :host {
   display: flex;
   flex-direction: column;
