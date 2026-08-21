@@ -6,6 +6,13 @@
  * when it loads, so that is the entry the app imports — without it the dock
  * renders with no sashes, no tab strip and no overlay positioning.
  *
+ * Two things about this are the library's private business rather than its API: this file
+ * name, and the shape `SerializedDockview` persists a layout in (which terminal-tabs.ts walks
+ * by hand in pruneLayout). Neither would fail at compile time if a release moved it, so the
+ * dependency is pinned to `~8.2.0` and a spec puts a real `toJSON()` back through the prune
+ * and into a fresh dock — a shape change fails that test instead of silently costing the
+ * saved arrangement.
+ *
  * The published types only cover the package root, so they are mapped across
  * here. That keeps the deep import fully typed and, because the type side and
  * the value side resolve to the same declarations, keeps exactly one copy of the

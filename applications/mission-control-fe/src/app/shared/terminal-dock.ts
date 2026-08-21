@@ -1,13 +1,13 @@
 import type {
-  DockviewApi, DockviewIDisposable, DockviewTheme, GroupPanelPartInitParameters, IContentRenderer,
-  SerializedDockview,
+  DockviewApi, DockviewGroupPanel, DockviewIDisposable, DockviewTheme,
+  GroupPanelPartInitParameters, IContentRenderer, SerializedDockview,
 } from 'dockview-core';
 // The one value import of the library, and deliberately of the styled bundle:
 // it is the only published entry that brings dockview's stylesheet with it.
 // See src/dockview-core-styled.d.ts.
 import { createDockview, themeDark } from 'dockview-core/dist/dockview-core.js';
 import type { ITabRenderer } from 'dockview-core';
-import { TerminalSession } from './terminal-session';
+import { TerminalSession, isPaneChord } from './terminal-session';
 
 /** The one component name the dock registers — every panel is a terminal. */
 const PANE = 'mc-terminal';
@@ -37,6 +37,17 @@ export const TERM_THEME: DockviewTheme = {
 };
 
 /**
+ * The smallest a pane may be squeezed to, in pixels.
+ *
+ * <p>Twelve shells can be split into a grid whose cells are slivers, and dockview will
+ * happily let a sash take one down to nothing. A pane narrower than this holds no readable
+ * terminal, so the grid stops there and the drag simply will not go further. Roughly a
+ * 24-column, 4-row terminal at the panel's 12px monospace — small, but still a terminal.
+ */
+const MIN_PANE_W = 220;
+const MIN_PANE_H = 80;
+
+/**
  * Where a new pane goes relative to the one it was split from.
  *
  * <p>Not a cosmetic choice. `right` halves the columns; `below` keeps every column
@@ -47,6 +58,12 @@ export const TERM_THEME: DockviewTheme = {
  * read, so it is the operator's to make rather than ours to hard-code.
  */
 export type SplitDirection = 'right' | 'below';
+
+/** The pane chrome the panel builds, as little of it as the dock needs to know. */
+export interface PaneNotice {
+  readonly element: HTMLElement;
+  dispose(): void;
+}
 
 /**
  * What the dock needs the panel to decide, and what it reports back to it.
@@ -59,6 +76,8 @@ export type SplitDirection = 'right' | 'below';
 export interface DockHooks {
   /** the tab chrome for a pane; the dock only ever hands it to dockview */
   createTab(session: TerminalSession): ITabRenderer;
+  /** the chrome that sits inside a pane, over the terminal — see TerminalNoticeView */
+  createNotice(session: TerminalSession): PaneNotice;
   /** a pane went away — by its ×, or with the group it was the last member of */
   removed(id: string): void;
   /** the pane the toolbar should act on; null when the last one closed */
@@ -93,7 +112,7 @@ export class TerminalDock {
   /** set while a layout is being loaded, so the restore does not save itself back */
   private restoring = false;
 
-  constructor(root: HTMLElement, private readonly hooks: DockHooks) {
+  constructor(private readonly root: HTMLElement, private readonly hooks: DockHooks) {
     this.api = createDockview(root, {
       theme: TERM_THEME,
       defaultRenderer: 'always',
@@ -113,7 +132,31 @@ export class TerminalDock {
       this.api.onDidLayoutChange(() => {
         if (!this.restoring) this.hooks.arranged();
       }),
+      // every group, however it arrived — split, drag, or a restored layout
+      this.api.onDidAddGroup(group => this.prepareGroup(group)),
     );
+    for (const group of this.api.groups) this.prepareGroup(group);
+
+    // The chord arrives here rather than at the session because moving between panes is
+    // layout's business, and because a session has declined it precisely so it would reach
+    // one listener instead of every open terminal. Capture phase so it is decided before
+    // anything inside the pane sees it.
+    this.root.addEventListener('keydown', this.onKeydown, true);
+  }
+
+  /**
+   * Move the keyboard to the next or previous pane.
+   *
+   * <p>`includePanel` walks the tabs within a group before stepping to the next group, so one
+   * chord covers both halves of the offer — a stack of tabs and a row of splits read as one
+   * ring rather than as two separate motions to learn.
+   */
+  focusNext(): void {
+    this.api.moveToNext({ includePanel: true });
+  }
+
+  focusPrevious(): void {
+    this.api.moveToPrevious({ includePanel: true });
   }
 
   /** The sessions the dock is currently showing, in tab order. */
@@ -212,11 +255,34 @@ export class TerminalDock {
   }
 
   dispose(): void {
+    this.root.removeEventListener('keydown', this.onKeydown, true);
     for (const sub of this.subs) sub.dispose();
     this.subs.length = 0;
     this.sessions.clear();
     this.api.dispose();
   }
+
+  /**
+   * What a freshly arrived group needs from us: a floor on how far it can be squeezed, and a
+   * `tablist` on the strip dockview built for it.
+   *
+   * <p>The role is set here because the strip is dockview's DOM — a `role="tab"` on a tab
+   * (see TerminalTabView) is only meaningful inside a `tablist`, and there is nowhere else
+   * that element can be reached. Guarded rather than asserted: a class name is a weaker
+   * contract than an API, and a missing strip should cost the role, not the dock.
+   */
+  private prepareGroup(group: DockviewGroupPanel): void {
+    group.api.setConstraints({ minimumWidth: MIN_PANE_W, minimumHeight: MIN_PANE_H });
+    group.element.querySelector('.dv-tabs-container')?.setAttribute('role', 'tablist');
+  }
+
+  /** Bound once so dispose() can take it off again. */
+  private readonly onKeydown = (event: KeyboardEvent): void => {
+    if (!isPaneChord(event)) return;
+    event.preventDefault();
+    if (event.key === 'ArrowRight') this.focusNext();
+    else this.focusPrevious();
+  };
 
   private addPanel(
     session: TerminalSession, splitFrom: string | null,
@@ -237,7 +303,9 @@ export class TerminalDock {
     // A layout naming a panel with no session is pruned out before it ever gets
     // here (see pruneLayout), so this is a bug rather than a payload problem —
     // an empty pane says so instead of crashing the whole dock.
-    return session ? new TerminalPaneView(session) : new MissingPaneView(id);
+    return session
+      ? new TerminalPaneView(session, this.hooks.createNotice(session))
+      : new MissingPaneView(id);
   }
 
   private createTab(id: string): ITabRenderer | undefined {
@@ -257,8 +325,13 @@ class TerminalPaneView implements IContentRenderer {
   readonly element: HTMLDivElement;
 
   private readonly subs: DockviewIDisposable[] = [];
+  /** kept so dispose() can take it off again — init() is where the api to call arrives */
+  private onFocusIn: (() => void) | null = null;
 
-  constructor(private readonly session: TerminalSession) {
+  constructor(
+    private readonly session: TerminalSession,
+    private readonly notice: PaneNotice,
+  ) {
     // styled here, not in the panel's stylesheet: created outside any template,
     // so emulated view encapsulation would never scope a class rule to it
     this.element = document.createElement('div');
@@ -267,7 +340,7 @@ class TerminalPaneView implements IContentRenderer {
     this.element.style.width = '100%';
     this.element.style.height = '100%';
     this.element.style.overflow = 'hidden';
-    this.element.appendChild(session.hostEl);
+    this.element.append(session.hostEl, notice.element);
   }
 
   init(params: GroupPanelPartInitParameters): void {
@@ -287,10 +360,12 @@ class TerminalPaneView implements IContentRenderer {
 
     // clicking into a shell is how an operator picks which pane the toolbar acts
     // on; without this the tab strip would be the only way to say so
-    this.element.addEventListener('focusin', () => params.api.setActive());
+    this.element.addEventListener('focusin', this.onFocusIn = () => params.api.setActive());
   }
 
   dispose(): void {
+    if (this.onFocusIn) this.element.removeEventListener('focusin', this.onFocusIn);
+    this.notice.dispose();
     for (const sub of this.subs) sub.dispose();
     this.subs.length = 0;
     // the session itself outlives the pane only until the panel disposes it —
@@ -310,3 +385,4 @@ class MissingPaneView implements IContentRenderer {
 
   init(): void { /* nothing to wire — there is no session */ }
 }
+

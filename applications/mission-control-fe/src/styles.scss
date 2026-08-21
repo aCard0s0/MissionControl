@@ -468,6 +468,41 @@ mc-terminal-panel .dock {
     font-family: var(--font-mono);
     font-size: 11px;
   }
+
+  // The pane is being held wider than its box, so it scrolls sideways (see the column floor
+  // in terminal-session.ts). Said here rather than written into the buffer: it stays out of
+  // the scrollback, and it can carry the button that clears it.
+  //
+  // Over the terminal at the bottom edge, where xterm's own horizontal scrollbar is — the
+  // notice and the thing it is about are then in the same place. Only two rows tall, because
+  // it is covering output someone may be reading.
+  .mc-term-notice {
+    display: none;
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 2;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 8px;
+    background: color-mix(in srgb, var(--term-bg) 88%, transparent);
+    border-top: 1px solid var(--term-line);
+    color: var(--term-faint);
+    font-size: 10px;
+    letter-spacing: .02em;
+    &.on { display: flex; }
+    .msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .refit {
+      flex: none;
+      background: none;
+      border: 1px solid var(--term-line);
+      border-radius: 3px;
+      color: var(--term-acc);
+      cursor: pointer;
+      font: inherit;
+      padding: 1px 7px;
+      &:hover { border-color: var(--term-acc); background: var(--acc-soft); }
+    }
+  }
 }
 
 // The moving tag a container follows, beside the release it currently resolves to

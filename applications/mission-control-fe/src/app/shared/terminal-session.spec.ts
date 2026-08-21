@@ -527,7 +527,8 @@ describe('TerminalSession column floor', () => {
     };
     return {
       session, ws,
-      notices: () => written.filter(w => w.includes('to refit')).length,
+      /** anything the pane wrote into its own buffer — which the notice must never do */
+      selfWritten: () => written.filter(w => w.includes('cols in a')).length,
       /** resize the box and refit, as a split or a sash drag would */
       resizeTo(next: number): void {
         box.cols = next;
@@ -585,7 +586,7 @@ describe('TerminalSession column floor', () => {
     expect(p.session.grid().cols).toBe(240);
   });
 
-  it('says so in the pane, once, when the floor holds it wider than the box', () => {
+  it('reports being held wide as state, not as writing into its own scrollback', () => {
     const p = pane(200);
     p.ws.emit('printed wide');
 
@@ -593,10 +594,36 @@ describe('TerminalSession column floor', () => {
     p.resizeTo(90);
     p.resizeTo(100);
 
-    // the output is intact but half of it is off to the right, which reads as
-    // truncation unless the pane says otherwise — and says it exactly once
+    // the output is intact but half of it is off to the right, which reads as truncation
+    // unless something says otherwise. The panel draws that as pane chrome — writing it into
+    // the buffer put it in the scrollback people copy and across the line the shell was
+    // drawing, so nothing goes into the terminal at all.
     expect(p.session.grid().cols).toBe(200);
-    expect(p.notices()).toBe(1);
+    expect(p.session.overWide()).toEqual({ cols: 200, boxCols: 100 });
+    expect(p.selfWritten()).toBe(0);
+  });
+
+  it('stops reporting it once the box is wide enough again', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+
+    p.resizeTo(80);
+    expect(p.session.overWide()).not.toBeNull();
+
+    p.resizeTo(300);
+    expect(p.session.overWide()).toBeNull();
+  });
+
+  it('lets go of the floor on a refit, which is the button the notice carries', () => {
+    const p = pane(200);
+    p.ws.emit('printed wide');
+    p.resizeTo(80);
+    expect(p.session.overWide()).not.toBeNull();
+
+    p.session.refit();
+
+    expect(p.session.grid().cols).toBe(80);
+    expect(p.session.overWide()).toBeNull();
   });
 
   it('holds the floor however much output goes by, because that output is wide too', () => {

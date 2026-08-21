@@ -38,6 +38,29 @@ const FIT_SETTLE_MS = 120;
 /** Rows of history a pane keeps. */
 const SCROLLBACK_ROWS = 4000;
 
+/** How wide the grid is, and how wide the box holding it is, while the column floor is
+ *  holding the two apart. Null when the pane fits its box, which is almost always. */
+export interface OverWide {
+  cols: number;
+  boxCols: number;
+}
+
+/**
+ * Whether a key event is the chord for moving between panes, rather than input for the shell.
+ *
+ * <p>Lives here because the session is what has to decline it — xterm would otherwise send it
+ * to the PTY — while the dock is what acts on it. Returning false from xterm's custom handler
+ * leaves the event to the browser, so it reaches the dock's own listener and is handled in one
+ * place rather than two.
+ *
+ * <p>Ctrl+Shift+←/→ deliberately: Alt+←/→ is Back/Forward in Chrome on Windows and Linux, and
+ * Ctrl+Alt+←/→ switches workspaces on most Linux desktops. This collides with neither, nor
+ * with anything xterm binds by default.
+ */
+export const isPaneChord = (event: KeyboardEvent): boolean =>
+  event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
+  && (event.key === 'ArrowLeft' || event.key === 'ArrowRight');
+
 let uid = 0;
 const newId = (): string => {
   try {
@@ -126,9 +149,9 @@ export class TerminalSession {
    * is not binding, and then dropping it changes nothing.
    */
   private floorCols = 0;
-  /** whether the floor is currently holding the grid wider than the box, so the pane says so
-   *  once rather than on every fit */
-  private overWide = false;
+  /** Set while the floor is holding the grid wider than the pane's box. The panel renders it
+   *  as chrome on the pane, with the action that clears it. */
+  readonly overWide = signal<OverWide | null>(null);
   /** target().command awaiting a live shell; nulled the moment it is sent */
   private pending: string | null = null;
   /** whether {@link pending} ends in a newline — false for an inserted line */
@@ -169,6 +192,9 @@ export class TerminalSession {
       scrollback: SCROLLBACK_ROWS,
     });
     term.loadAddon(this.fit);
+    // decline the pane chord instead of sending it to the PTY. Returning false leaves the
+    // event to the browser, so the dock's listener handles it — one place, not two.
+    term.attachCustomKeyEventHandler(event => !isPaneChord(event));
     term.open(this.hostEl);
     term.onData(data => {
       if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(this.encoder.encode(data));
@@ -397,24 +423,22 @@ export class TerminalSession {
   /** Lets the pane fit its box again. The buffer is empty, so there is nothing left to wrap. */
   private dropFloor(): void {
     this.floorCols = 0;
-    this.overWide = false;
+    this.overWide.set(null);
   }
 
   /**
-   * Says once, in the pane, that its grid is wider than its box.
+   * Says that this pane's grid is wider than its box, as state the panel renders rather than
+   * as terminal output.
    *
-   * <p>Without this the floor is invisible: the output is intact but half of it is off to the
-   * right, which reads as truncation rather than as something to scroll or reset. Written as
-   * terminal output because that is where the operator is looking, and only on the transition
-   * so a drag does not fill the screen with notices.
+   * <p>Without saying it somewhere the floor is invisible: the output is intact but half of it
+   * is off to the right, which reads as truncation rather than as something to scroll or
+   * reset. It was written into the buffer at first, which put it where the operator is looking
+   * but also into the scrollback they copy, into a stream tools parse, and — leading CRLF and
+   * all — across whatever line the shell was mid-way through drawing. The panel draws it as
+   * pane chrome instead, where it can carry the button that fixes it.
    */
   private noteOverWide(over: boolean, cols: number, boxCols: number): void {
-    if (over === this.overWide) return;
-    this.overWide = over;
-    if (!over) return;
-    this.term?.write(
-      `\r\n\x1b[2m── ${cols} cols in a ${boxCols}-col pane; scroll, or ↻ to refit ──`
-      + '\x1b[0m\r\n');
+    this.overWide.set(over ? { cols, boxCols } : null);
   }
 
   /** See {@link fitsSuspended}. The panel clears this and fits once when the drag settles. */
@@ -456,6 +480,18 @@ export class TerminalSession {
     this.term?.clear();
     this.dropFloor();
     this.fitNow();
+  }
+
+  /**
+   * Let the pane fit its box again.
+   *
+   * <p>Which means emptying the buffer, because that is the only thing that makes narrowing
+   * safe: the floor is there to protect output that would rewrap, so it can only lift once
+   * there is no such output left. Named for what the operator wants rather than for what it
+   * does internally — the notice that offers it says plainly that it clears.
+   */
+  refit(): void {
+    this.clear();
   }
 
   focus(): void {

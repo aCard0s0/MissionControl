@@ -13,6 +13,7 @@ import { HermesCommands } from './hermes-commands';
 import { PanelHeight } from './panel-height';
 import { StatusDot } from './status-dot';
 import type { DockHooks, SplitDirection, TerminalDock } from './terminal-dock';
+import { TerminalNoticeView } from './terminal-notice-view';
 import { TerminalTabView } from './terminal-tab-view';
 import { TermTarget, TerminalSession } from './terminal-session';
 import { readTerminalTabs, writeTerminalTabs } from './terminal-tabs';
@@ -109,11 +110,18 @@ export class TerminalPanel {
   private mounting = false;
   /** a tab that wants its picker open as soon as it has a caret to hang it on */
   private pendingPickerId: string | null = null;
-  /** pending arrangement write; see scheduleSave() */
+  /** pending arrangement capture; see scheduleSave() */
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
-  /** the arrangement to rebuild the dock from — kept current as it changes, so a
-   *  collapse and reopen comes back to the same splits */
-  private arrangement: SerializedDockview | null = null;
+  /**
+   * The arrangement to rebuild the dock from — kept current as it changes, so a collapse and
+   * reopen comes back to the same splits.
+   *
+   * <p>A signal, so the persistence effect below is the only thing that writes the storage
+   * key. It was a plain field, which worked only because every path that changed it also
+   * happened to touch a signal the effect read — an invariant held by luck rather than by
+   * anything that would fail loudly.
+   */
+  private readonly arrangement = signal<SerializedDockview | null>(null);
 
   /** last request seq acted on — a request is handled exactly once */
   private lastSeq = 0;
@@ -142,10 +150,11 @@ export class TerminalPanel {
       });
     });
 
-    // persist tab targets and the arrangement (never the live socket/scrollback)
+    // The one writer of the storage key: tab targets and the arrangement, never the live
+    // socket or scrollback. Everything else changes a signal and lets this land.
     effect(() => {
       writeTerminalTabs(
-        this.sessions().map(s => s.toJSON()), this.focusedId(), this.arrangement);
+        this.sessions().map(s => s.toJSON()), this.focusedId(), this.arrangement());
     });
 
     // a tab whose container disappeared from the inventory will never stream
@@ -170,8 +179,9 @@ export class TerminalPanel {
     window.addEventListener('pagehide', onPageHide);
     destroyRef.onDestroy(() => {
       window.removeEventListener('pagehide', onPageHide);
-      // the same teardown the panel collapsing uses, so both flush the arrangement
-      this.unmountDock();
+      // the same teardown the panel collapsing uses, so both flush the arrangement — but
+      // writing it too, since the effect that would have is already destroyed
+      this.unmountDock({ write: true });
       this.sessions().forEach(s => s.dispose());
     });
   }
@@ -438,7 +448,7 @@ export class TerminalPanel {
       if (!this.open() || this.dock) return;
       const slot = this.dockEl()?.nativeElement ?? host;
       this.dock = new TerminalDock(slot, this.hooks());
-      this.dock.restore(this.sessions(), this.arrangement, this.focusedId());
+      this.dock.restore(this.sessions(), this.arrangement(), this.focusedId());
       this.openPendingPicker();   // a shell seeded before the dock has a strip now
       queueMicrotask(() => this.relayout());
     } finally {
@@ -456,6 +466,9 @@ export class TerminalPanel {
         stale: s => this.isStale(s),
         pick: (s, anchor) => this.openPicker(s, anchor),
       }, this.injector),
+      // likewise the pane's own chrome: the notice that a pane is being held wider than its
+      // box, and the button that clears it
+      createNotice: session => new TerminalNoticeView(session, this.injector),
       removed: id => this.dropTab(id),
       focused: id => this.focusedId.set(id),
       arranged: () => this.scheduleSave(),
@@ -469,28 +482,34 @@ export class TerminalPanel {
   }
 
   /**
-   * Capture the arrangement and write it, now.
+   * Capture the arrangement, now.
    *
    * <p>The one place that does it, because every route to it has to behave the same: the
-   * settle timer, the panel collapsing, and the component being torn down. The write is direct
-   * rather than a nudge to the persistence effect — a rearrangement changes no signal the
-   * effect reads, and on teardown the effect is already gone.
+   * settle timer, the panel collapsing, and the component being torn down. Setting the signal
+   * is the whole of it on the first two — the persistence effect writes it. Teardown is the
+   * exception: the effect is already gone by then, so that path writes directly.
    */
   private saveNow(): void {
     if (this.saveTimer !== null) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    this.arrangement = this.dock?.toJSON() ?? this.arrangement;
-    writeTerminalTabs(
-      this.sessions().map(s => s.toJSON()), this.focusedId(), this.arrangement);
+    this.arrangement.set(this.dock?.toJSON() ?? this.arrangement());
   }
 
-  private unmountDock(): void {
-    if (!this.dock) return;
-    // saved before the dock stops being able to answer, so a rearrangement made in the
-    // last moments before a collapse is not lost with the timer that was going to save it
+  /** The same capture, plus the write the effect would have done. Teardown only. */
+  private saveOnTeardown(): void {
     this.saveNow();
+    writeTerminalTabs(
+      this.sessions().map(s => s.toJSON()), this.focusedId(), this.arrangement());
+  }
+
+  private unmountDock(opts: { write?: boolean } = {}): void {
+    if (!this.dock) return;
+    // captured before the dock stops being able to answer, so a rearrangement made in the
+    // last moments before a collapse is not lost with the timer that was going to save it
+    if (opts.write) this.saveOnTeardown();
+    else this.saveNow();
     this.dock.dispose();
     this.dock = null;
   }
@@ -522,6 +541,6 @@ export class TerminalPanel {
       return session;
     }));
     this.focusedId.set(activeId);
-    this.arrangement = layout;
+    this.arrangement.set(layout);
   }
 }

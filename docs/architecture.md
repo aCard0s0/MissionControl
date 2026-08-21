@@ -181,7 +181,15 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   rather than only while visible, which is what keeps a hidden shell attached and streaming
   instead of torn out of the DOM. Floating and popped-out groups are disabled: xterm binds a
   terminal to the document it was opened in. The dock is a lazy chunk fetched on first open —
-  the panel starts collapsed and shouldn't cost a layout engine before then.
+  the panel starts collapsed and shouldn't cost a layout engine before then. Every group is
+  held above `220x80` px, so a twelve-way split cannot produce panes too small to hold a
+  terminal.
+- **Keyboard.** `Ctrl+Shift+←/→` moves the keyboard between panes, walking the tabs inside a
+  group before stepping to the next one — a stack and a row read as one ring. The session
+  *declines* the chord (`isPaneChord`, returned as `false` from xterm's custom key handler) so
+  it reaches the dock's single capture-phase listener instead of every open terminal's PTY.
+  Tabs are `role="tab"` on a `role="tablist"` strip with `aria-selected` and a roving
+  tabindex, so the whole strip is one Tab stop and `Enter`/`Space` activates a pane.
 - **Fits.** Only a pane that is on screen fits and reports its grid, and a fit lands 120ms
   after the layout stops moving (`fitLater`). Every fit is a SIGWINCH the far end answers by
   redrawing its prompt, and a sash drag reports a new size per pointer frame with no
@@ -199,16 +207,24 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   which is what makes `⌫` and `↻` the way back to a pane fitting its box. Deliberately with no
   expiry: while the floor binds it is holding the grid wide, so everything printed since was
   drawn wide too, and dropping it after some number of rows would rewrap a buffer that is
-  *entirely* wide content — one mangled banner traded for a shredded history. The pane says
-  once that it is being held wide, since intact-but-offscreen output otherwise reads as
-  truncated.
+  *entirely* wide content — one mangled banner traded for a shredded history. A pane being held
+  wide says so, since intact-but-offscreen output otherwise reads as truncated — as chrome
+  along the pane's bottom edge (`terminal-notice-view.ts`) carrying the `refit` that clears it,
+  not as text written into the buffer. It *was* written into the buffer, which put it where the
+  operator was looking at the cost of putting it into the scrollback they copy, into a stream
+  tools parse, and across whatever line the shell was mid-way through drawing.
 - **Targets.** A new tab defaults to the active container but is re-pointable to any container
   via a per-tab picker. The tab list (host+container per tab) *and the arrangement* persist to
   `localStorage` (`mc-terminal-tabs`, envelope `v: 2`; a `v: 1` payload restores its tabs into
   one group) and are restored on reload; the exec sessions themselves always restart on
   reconnect, since a shell is bound to its connection. A saved arrangement is pruned to the
   tabs that actually came back before it is loaded (`pruneLayout`) — an unconfigured tab is
-  never saved, so its pane has to go with it and the split it was half of collapses.
+  never saved, so its pane has to go with it and the split it was half of collapses. Two things
+  `pruneLayout` leans on are dockview's private business, not its API: the serialized layout's
+  shape, and the `dist/dockview-core.js` path the styled bundle lives at. Neither fails at
+  compile time if a release moves it, so the dependency is pinned (`~8.2.0`) and a spec puts a
+  real `toJSON()` back through the prune into a fresh dock — a shape change fails that instead
+  of silently costing the saved arrangement.
 - **Agent shortcut.** `shell →` on an agent card (`/agents`) opens a tab pinned to that agent's
   container and types `hermes -p <profile>` into it, so one click lands in a session with that
   agent. `HermesStore.openTerminal()` carries the target; the command is sent as ordinary stdin

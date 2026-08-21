@@ -42,6 +42,12 @@ export class TerminalTabView implements ITabRenderer {
   ) {
     this.element = document.createElement('div');
     this.element.className = 'tab';
+    // dockview's strip is divs, so the tab has to declare what it is. Without this a pane is
+    // reachable only by pointer: nothing here is a control as far as the keyboard is concerned.
+    this.element.setAttribute('role', 'tab');
+    // roving tabindex — one stop for the whole strip, then Ctrl+Shift+←/→ between panes,
+    // rather than a Tab press per open shell before anything else on the page
+    this.element.tabIndex = -1;
     // which shell this tab is for, so the panel can find a tab it did not just
     // get handed — anchoring the container picker on a freshly made one
     this.element.dataset['session'] = session.id;
@@ -85,14 +91,17 @@ export class TerminalTabView implements ITabRenderer {
     // and a tab showing in an unfocused group has to look like neither the
     // focused one nor a tab buried in a stack.
     this.releaseSubs();
-    this.element.classList.toggle('act', params.api.isActive);
+    this.setActive(params.api.isActive);
     this.element.classList.toggle('vis', params.api.isVisible);
     this.subs.push(
-      params.api.onDidActiveChange(event =>
-        this.element.classList.toggle('act', event.isActive)),
+      params.api.onDidActiveChange(event => this.setActive(event.isActive)),
       params.api.onDidVisibilityChange(event =>
         this.element.classList.toggle('vis', event.isVisible)),
     );
+
+    // Enter/Space on a focused tab, which is what a role=tab is expected to answer to. The
+    // chord that moves between panes is the dock's — it listens in capture, above this.
+    this.element.addEventListener('keydown', this.onKeydown);
 
     this.live?.destroy();
     this.live = effect(() => {
@@ -110,6 +119,14 @@ export class TerminalTabView implements ITabRenderer {
     this.live = null;
     this.releaseSubs();
     this.element.removeEventListener('click', this.onClick);
+    this.element.removeEventListener('keydown', this.onKeydown);
+  }
+
+  /** Active is both a look and a promise to assistive tech, and the only tab in the tab order. */
+  private setActive(active: boolean): void {
+    this.element.classList.toggle('act', active);
+    this.element.setAttribute('aria-selected', String(active));
+    this.element.tabIndex = active ? 0 : -1;
   }
 
   private releaseSubs(): void {
@@ -120,6 +137,13 @@ export class TerminalTabView implements ITabRenderer {
   /** Bound once so dispose() can take it off again. */
   private readonly onClick = (): void => {
     this.api?.setActive();
+  };
+
+  private readonly onKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();   // Space would otherwise scroll the panel
+    this.api?.setActive();
+    this.session.focus();
   };
 }
 

@@ -1082,6 +1082,175 @@ describe('TerminalPanel column floor', () => {
   });
 });
 
+describe('TerminalPanel keyboard', () => {
+  liveShells();
+
+  const chord = (fixture: Fixture, key: string): void => {
+    const target = document.activeElement ?? el(fixture);
+    target.dispatchEvent(new KeyboardEvent('keydown', {
+      key, ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true,
+    }));
+  };
+
+  it('says what a tab is, so the strip is not divs to a screen reader', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+
+    const tab = tabs(fixture)[0];
+    expect(tab.getAttribute('role')).toBe('tab');
+    expect(tab.getAttribute('aria-selected')).toBe('true');
+    // roving tabindex: the strip is one Tab stop, not one per open shell
+    expect(tab.tabIndex).toBe(0);
+    expect(tab.closest('[role="tablist"]')).not.toBeNull();
+  });
+
+  it('takes the inactive tabs out of the tab order', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+    el(fixture).querySelector<HTMLButtonElement>('.add')!.click();
+    await settle(fixture);
+
+    const order = tabs(fixture).map(t => t.tabIndex);
+    expect(order.filter(i => i === 0).length).toBe(1);
+    expect(tabs(fixture).map(t => t.getAttribute('aria-selected')))
+      .toEqual(['false', 'true']);
+  });
+
+  it('moves the keyboard between panes without a pointer', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+    el(fixture).querySelector<HTMLButtonElement>('button[title^="split right"]')!.click();
+    await settle(fixture, 300);
+
+    const before = tabs(fixture).findIndex(t => t.classList.contains('act'));
+    chord(fixture, 'ArrowLeft');
+    await settle(fixture);
+
+    const after = tabs(fixture).findIndex(t => t.classList.contains('act'));
+    expect(after).not.toBe(before);
+
+    chord(fixture, 'ArrowRight');
+    await settle(fixture);
+    expect(tabs(fixture).findIndex(t => t.classList.contains('act'))).toBe(before);
+  });
+
+  it('activates a pane from its tab with Enter, which role=tab promises', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+    el(fixture).querySelector<HTMLButtonElement>('.add')!.click();
+    await settle(fixture);
+
+    tabs(fixture)[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await settle(fixture);
+
+    expect(tabs(fixture)[0].classList).toContain('act');
+  });
+});
+
+describe('TerminalPanel over-wide notice', () => {
+  liveShells();
+
+  const notice = (fixture: Fixture): HTMLElement[] =>
+    Array.from(el(fixture).querySelectorAll<HTMLElement>('.mc-term-notice'));
+
+  it('gives every pane a notice, shown only while the floor is holding it wide', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+
+    expect(notice(fixture).length).toBe(1);
+    expect(notice(fixture)[0].classList).not.toContain('on');
+  });
+
+  it('never writes the notice into the shell, which is the scrollback people copy', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+    const socket = FakeSocket.opened[0];
+    socket.onopen?.();
+    socket.onmessage?.({ data: 'output drawn at the full width' });
+    await settle(fixture);
+
+    el(fixture).querySelector<HTMLButtonElement>('button[title^="split right"]')!.click();
+    await settle(fixture, 300);
+
+    // whatever the floor does, it does not do it by typing into the terminal
+    expect(el(fixture).textContent).not.toContain('cols in a');
+    expect(notice(fixture)[0].textContent).not.toContain('\u001b');
+  });
+
+  it('offers a refit that clears, and says so rather than surprising anyone', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+
+    const refit = notice(fixture)[0].querySelector<HTMLButtonElement>('.refit')!;
+    expect(refit.title).toContain('clear');
+    refit.click();
+    await settle(fixture);
+
+    expect(el(fixture).querySelectorAll('.tab').length).toBe(1);   // the pane survived it
+  });
+});
+
+describe('TerminalPanel arrangement round-trip', () => {
+  liveShells();
+
+  /**
+   * The guard on the one contract dockview does not publish: the shape of its serialized
+   * layout, which pruneLayout walks by hand. A version that renames or restructures a leaf
+   * would still round-trip through dockview itself, so only putting a real toJSON() back
+   * through the prune and into a fresh dock catches it — the failure mode otherwise is a
+   * silent fall back to one group, which no other test would notice.
+   */
+  it('restores the splits a previous visit was left in', async () => {
+    const c = container('hermes-prod');
+    const first = render(storeStub([c], c));
+    await openPanel(first.fixture);
+    el(first.fixture).querySelector<HTMLButtonElement>('button[title^="split right"]')!.click();
+    await settle(first.fixture, 300);
+    expect(groups(first.fixture)).toBe(2);
+
+    const saved = localStorage.getItem('mc-terminal-tabs');
+    expect(JSON.parse(saved!).layout).toBeTruthy();
+    first.fixture.destroy();
+    localStorage.setItem('mc-terminal-tabs', saved!);
+
+    const second = render(storeStub([c], c));
+    await openPanel(second.fixture);
+
+    // side by side again, not stacked — which is the fallback a broken shape would give
+    expect(groups(second.fixture)).toBe(2);
+    expect(sashes(second.fixture)).toBe(1);
+    expect(tabs(second.fixture).length).toBe(2);
+  });
+
+  it('holds every pane above the size a terminal stops being readable at', async () => {
+    const c = container('hermes-prod');
+    const { fixture } = render(storeStub([c], c));
+    await openPanel(fixture);
+    el(fixture).querySelector<HTMLButtonElement>('button[title^="split right"]')!.click();
+    await settle(fixture, 300);
+
+    // reached through the private fields on purpose: enforcing the floor is dockview's job,
+    // so the only thing worth pinning is that every group was actually told about it —
+    // including one that arrived from a split rather than with the dock
+    // the readable minimums sit on the group panel, not on its api — setConstraints() pushes
+    // them down into the grid and the panel is what reports back what it settled on
+    const panes = (fixture.componentInstance as unknown as {
+      dock: { api: { groups: { minimumWidth: number; minimumHeight: number }[] } };
+    }).dock.api.groups;
+    expect(panes.length).toBe(2);
+    expect(panes.map(g => g.minimumWidth)).toEqual([220, 220]);
+    expect(panes.map(g => g.minimumHeight)).toEqual([80, 80]);
+  });
+});
+
 describe('TerminalPanel command rail', () => {
   liveShells();
 
