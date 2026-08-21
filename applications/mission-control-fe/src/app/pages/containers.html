@@ -57,7 +57,15 @@
       <div class="panel-b">
         <h3 class="mono">{{ c.name }}</h3>
         <div class="meta mono faint">
-          {{ c.image }}:{{ c.version }} · on {{ hostLabel(c.hostId) }}
+          {{ c.image }}:{{ version(c) }}
+          @if (tracks(c); as tag) {
+            <!-- the release is the identity, but which tag it follows is what decides
+                 whether a restart moves it, so the pointer stays on the card -->
+            <span class="tracks" [title]="'follows the ' + tag + ' tag, so it moves when that does'">
+              {{ tag }}
+            </span>
+          }
+          · on {{ hostLabel(c.hostId) }}
         </div>
         <div class="stats mono">
           <div><span class="faint">uptime</span><span>{{ uptime(c.startedAt) }}</span></div>
@@ -83,7 +91,7 @@
             <button class="btn sm upd" [disabled]="isUpdating(c.id)" [title]="updateHint(c, target)"
                     (click)="beginUpdate(c); $event.stopPropagation()">
               @if (isUpdating(c.id)) { <span class="spin" aria-hidden="true"></span> }
-              {{ isUpdating(c.id) ? 'updating…' : 'update ' + target.tag }}
+              {{ isUpdating(c.id) ? 'updating…' : 'update ' + targetLabel(c, target) }}
             </button>
           }
           <!-- icon-only: the row is already crowded, and a shell needs no label -->
@@ -179,7 +187,7 @@
       <div class="panel-h">UPDATE IMAGE — {{ c.name }}</div>
       <div class="modal-b">
         <p class="dim">
-          <span class="mono">{{ c.name }}</span> runs <span class="mono">{{ c.image }}:{{ c.version }}</span>.
+          <span class="mono">{{ c.name }}</span> runs <span class="mono">{{ c.image }}:{{ version(c) }}</span>.
           Mission Control stops it, replaces the container, and starts it again on the tag below with the
           same name, profiles and managed data volume.
         </p>
@@ -187,7 +195,9 @@
           <label>target version</label>
           <select class="select" [(ngModel)]="updateVersion" [disabled]="updatingBusy()">
             @for (t of updateTargets(); track t.tag) {
-              <option [value]="t.tag">{{ t.tag }}{{ t.pulled ? '' : ' — not pulled' }}</option>
+              <!-- the value stays the tag: a tag is what gets pulled, a release is only
+                   what it currently means -->
+              <option [value]="t.tag">{{ optionLabel(c, t) }}</option>
             }
           </select>
         </div>
