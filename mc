@@ -238,8 +238,10 @@ start_plain() {  # $1 = --build flag, $2 = --no-socket flag
     --restart unless-stopped \
     "${IMAGE}:${TAG}" >/dev/null
 
-  echo "✓ deployed — http://${BIND_ADDRESS}:${PORT}  (dataMode=${mode}, filter=${MC_CONTAINER_FILTER})"
-  if [[ -z "$3" ]]; then socket_note; fi
+  echo "✓ deployed — http://${BIND_ADDRESS}:${PORT}  (filter=${MC_CONTAINER_FILTER})"
+  # socket_note describes the mounted docker.sock, so it only applies when one was
+  # mounted: $2 is the --no-socket flag, empty means the -v above landed.
+  if [[ -z "$2" ]]; then socket_note; fi
 }
 
 # the ollama service publishes OLLAMA_PORT for Hermes agent containers that
