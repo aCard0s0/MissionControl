@@ -85,6 +85,8 @@
   &:hover { background: var(--hc-acc-soft); }
 
   .line { flex: none; color: var(--hc-acc); font-size: 11.5px; }
+  // wide form: the explanation sits inline, so the row reads as one sentence
+  .about { display: contents; }
   .summary { min-width: 0; color: var(--hc-text); font-size: 11.5px; }
   .flags { color: var(--hc-faint); font-size: 10.5px; }
   .warn { color: var(--hc-warn); font-size: 10.5px; }
@@ -108,3 +110,61 @@
 }
 
 .none { padding: 16px 8px; color: var(--hc-faint); font-size: 11.5px; }
+
+// ── the side rail ───────────────────────────────────────────────────────────
+// ~300px wide, so the row is line + glyphs and everything else folds under it.
+:host(.compact) {
+  .find {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 0 8px;
+    .input { flex: 1 0 100%; font-size: 11px; }
+    .ref { margin-left: auto; }
+  }
+
+  .group { padding-top: 8px; }
+
+  .cmd {
+    // the line takes the row and the glyphs sit at its end; the description, when
+    // open, becomes a full-width second row rather than competing for the first
+    align-items: center;
+    gap: 2px 6px;
+    padding: 5px 4px;
+
+    .line {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+    }
+
+    .acts { gap: 2px; }
+    .act {
+      // square glyph buttons: a legible target at this width, where a worded one
+      // would push the line it belongs to off its own row
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      font-size: 11px;
+      line-height: 1;
+    }
+    .act.disc { border-color: transparent; color: var(--hc-faint); }
+
+    .about {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1 0 100%;
+      padding: 2px 2px 4px;
+      border-left: 2px solid var(--hc-line-2);
+      padding-left: 8px;
+      margin: 2px 0 2px 2px;
+    }
+    .summary { font-size: 11px; line-height: 1.5; }
+  }
+}
