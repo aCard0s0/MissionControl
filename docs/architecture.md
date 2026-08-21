@@ -31,7 +31,7 @@ mission-control/
 │  ├── /api/containers     inventory / stats / logs / lifecycle        │
 │  ├── /api/mcp-servers    MCP registry + Compose lifecycle             │
 │  ├── /api/board/tasks    kanban state (SQLite)                       │
-│  └── /ws/terminal        xterm.js ↔ docker exec (multi-tab shells)   │
+│  └── /ws/terminal        xterm.js ↔ docker exec (split shell panes)  │
 │            │                                                         │
 │            ▼ docker-java (zerodep transport)                         │
 │  unix:///var/run/docker.sock  (mounted)  +  tcp://remote:2376 hosts  │
@@ -175,11 +175,40 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   container, or shells across different containers/hosts, at once. The backend treats every
   connection as a separate `docker exec` keyed by WebSocket session id, so N concurrent
   sessions need no server-side change.
+- **Splits.** The panel body is a [dockview](https://dockview.dev) grid (`terminal-dock.ts`):
+  `+` stacks a shell as another tab in the focused group, `◫` puts one *beside* it, and tabs
+  drag between groups with the sashes resizing them against each other. Panes render `always`
+  rather than only while visible, which is what keeps a hidden shell attached and streaming
+  instead of torn out of the DOM. Floating and popped-out groups are disabled: xterm binds a
+  terminal to the document it was opened in. The dock is a lazy chunk fetched on first open —
+  the panel starts collapsed and shouldn't cost a layout engine before then.
+- **Fits.** Only a pane that is on screen fits and reports its grid, and a fit lands 120ms
+  after the layout stops moving (`fitLater`). Every fit is a SIGWINCH the far end answers by
+  redrawing its prompt, and a sash drag reports a new size per pointer frame with no
+  drag-ended event to hang one fit off — unbounded, that is the prompt stamped across the
+  input line. The panel-height drag brackets its own fits explicitly on top of that.
+- **The column floor.** Growing a terminal is harmless; *shrinking* one rewraps every
+  hard-wrapped line it already holds, and output printed once and never redrawn cannot
+  survive that — hermes draws a full-width bordered banner at startup and does not repaint
+  on `SIGWINCH`, so a rule printed at 236 columns rewrapped at 118 puts its right-hand text
+  across the seam. Any terminal does this; drag a window narrower after running `hermes` to
+  see the same wreckage. So the grid a pane has *printed at* is a floor it never goes below:
+  a narrower box scrolls sideways to it (xterm's viewport declares `overflow-y: scroll`,
+  which resolves `overflow-x` to `auto`) instead of reflowing. The floor is raised by output
+  arriving, not by any box the pane once had, and it lifts when the buffer is empty again —
+  which is what makes `⌫` and `↻` the way back to a pane fitting its box. Deliberately with no
+  expiry: while the floor binds it is holding the grid wide, so everything printed since was
+  drawn wide too, and dropping it after some number of rows would rewrap a buffer that is
+  *entirely* wide content — one mangled banner traded for a shredded history. The pane says
+  once that it is being held wide, since intact-but-offscreen output otherwise reads as
+  truncated.
 - **Targets.** A new tab defaults to the active container but is re-pointable to any container
-  via a per-tab picker. The tab list (host+container per tab) persists to `localStorage`
-  (`mc-terminal-tabs`) and is restored on reload; the exec sessions themselves always restart
-  on reconnect, since a shell is bound to its connection. Background tabs keep their socket
-  open, so their output keeps streaming while another tab is on screen.
+  via a per-tab picker. The tab list (host+container per tab) *and the arrangement* persist to
+  `localStorage` (`mc-terminal-tabs`, envelope `v: 2`; a `v: 1` payload restores its tabs into
+  one group) and are restored on reload; the exec sessions themselves always restart on
+  reconnect, since a shell is bound to its connection. A saved arrangement is pruned to the
+  tabs that actually came back before it is loaded (`pruneLayout`) — an unconfigured tab is
+  never saved, so its pane has to go with it and the split it was half of collapses.
 - **Agent shortcut.** `shell →` on an agent card (`/agents`) opens a tab pinned to that agent's
   container and types `hermes -p <profile>` into it, so one click lands in a session with that
   agent. `HermesStore.openTerminal()` carries the target; the command is sent as ordinary stdin
@@ -193,7 +222,7 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   variable empty, which keeps the image default.
 - **Command drawer.** The `cmds` button opens the hermes CLI reference inside the panel
   ([docs/hermes-cli.md](hermes-cli.md) is the same catalog, and a spec keeps the two in step).
-  Its lines carry the active tab's profile, and **insert** types one at the prompt *without* a
+  Its lines carry the focused pane's profile, and **insert** types one at the prompt *without* a
   newline — the operator still presses Enter. The same list is a full page at `/reference`,
   which sends its lines through the existing terminal request channel.
 

@@ -1,4 +1,7 @@
 // Terminal chrome is pinned to the --term-* tokens — dark in both themes.
+// The tab strip, the groups and the sashes between them are dockview's DOM, so
+// they are themed globally instead (`.mc-dock-theme` in styles.scss): nothing it
+// creates at runtime carries this component's encapsulation attribute.
 :host {
   display: flex;
   flex-direction: column;
@@ -11,7 +14,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 28px;
+  height: 32px;
   padding: 0 12px;
   font-size: 10px;
   letter-spacing: .18em;
@@ -21,55 +24,27 @@
   .faint { color: var(--term-faint); letter-spacing: .04em; }
   .status { color: var(--term-faint); letter-spacing: .04em; &.on { color: var(--term-acc); } }
   .spacer { flex: 1; }
-  .act {
+  // sized as real targets, not decorations: these are pressed mid-task, often on a
+  // touch screen propped next to a rack, and the old 2px/7px chips were a poke
+  .act, .add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 22px;
     background: none; border: 1px solid var(--term-line); color: var(--term-faint);
-    border-radius: 3px; cursor: pointer; font-size: 11px; line-height: 1;
-    padding: 2px 7px;
+    border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1;
+    padding: 0 6px;
     &:hover { color: var(--term-acc); border-color: var(--term-acc); }
     &.on { color: var(--term-acc); border-color: var(--term-acc); background: var(--acc-soft); }
   }
+  .add { font-size: 15px; }
 }
-// tab strip — wraps instead of clipping so the picker popover can escape
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px 0;
-}
-.tab {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px 3px 8px;
-  border: 1px solid var(--term-line);
-  border-radius: 4px 4px 0 0;
-  color: var(--term-faint);
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-  &:hover { color: var(--term-text); }
-  &.act { color: var(--term-text); border-color: var(--term-acc); background: var(--acc-soft); }
-  .lbl { letter-spacing: .02em; &.gone { opacity: .6; text-decoration: line-through; } }
-  .caret, .x {
-    background: none; border: 0; color: var(--term-faint);
-    cursor: pointer; font-size: 11px; line-height: 1; padding: 0 2px;
-    &:hover { color: var(--term-acc); }
-  }
-}
-.add {
-  flex: none;
-  background: none; border: 1px solid var(--term-line); color: var(--term-faint);
-  border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; padding: 1px 8px;
-  &:hover { color: var(--term-acc); border-color: var(--term-acc); }
-}
-// container picker — reuses the .ctx-pop look but in dark term tokens
+// container picker — reuses the .ctx-pop look but in dark term tokens. Fixed to
+// the viewport because the tab it belongs to lives in a strip that scrolls.
 .scrim { position: fixed; inset: 0; z-index: 80; }
 .pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  position: fixed;
   z-index: 90;
   min-width: 220px;
   max-height: 320px;
@@ -98,13 +73,16 @@
   }
   .none { padding: 10px 12px; color: var(--term-faint); font-size: 11px; }
 }
-// the command drawer sits between the tabs and the shell: a reference you read with the
-// prompt still on screen. Its own scroll, capped so it can never crowd out the terminal.
+// The command rail sits beside the shells, not above them: a reference is read with
+// the prompt it is for still on screen. Narrow and fixed — the shells take the rest,
+// so opening it costs columns once rather than taking height away from the output.
 .cheat {
-  max-height: min(42vh, 340px);
+  flex: none;
+  width: 300px;
+  min-width: 0;
   overflow-y: auto;
-  padding: 0 12px 10px;
-  border-bottom: 1px solid var(--term-line);
+  padding: 0 10px 10px;
+  border-left: 1px solid var(--term-line);
 }
 // Sits on the panel's top border, spanning the full width: the whole edge is the
 // handle, so grabbing it needs no aim. The negative top margin pulls it over the
@@ -123,8 +101,9 @@
   }
   &:hover .grip, &:active .grip { background: var(--term-acc); }
 }
-.body { position: relative; padding: 4px 8px 8px; }
-// host divs are stacked absolutely inside the mount; only the active one is
-// visible (others stay attached + measurable so their buffers keep filling)
-.mount { position: relative; height: 100%; &.hidden { display: none; } }
+.body { display: flex; align-items: stretch; padding: 4px 4px 6px; }
+// the shells take whatever the rail leaves; min-width:0 is what lets them shrink
+// instead of pushing the rail off the panel
+.shells { position: relative; flex: 1; min-width: 0; }
+.dock { position: relative; width: 100%; height: 100%; &.hidden { display: none; } }
 .hint { padding: 12px; color: var(--term-dim); }

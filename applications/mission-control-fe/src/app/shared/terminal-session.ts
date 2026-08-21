@@ -30,6 +30,14 @@ export interface PersistedTab {
 
 export type TermStatus = 'idle' | 'connecting' | 'connected' | 'closed';
 
+/** How long the layout must hold still before a fit is worth its SIGWINCH. See {@link
+ *  TerminalSession.fitLater}. Short enough to feel immediate, long enough that a sash drag
+ *  or a window resize costs one fit rather than one per frame. */
+const FIT_SETTLE_MS = 120;
+
+/** Rows of history a pane keeps. */
+const SCROLLBACK_ROWS = 4000;
+
 let uid = 0;
 const newId = (): string => {
   try {
@@ -39,11 +47,15 @@ const newId = (): string => {
 };
 
 /**
- * One terminal tab. Owns a single xterm {@link Terminal} + {@link FitAddon} +
- * {@link WebSocket} and a host `<div>` for its entire life. The panel parks the
- * div in a shared mount slot and toggles its visibility — it never moves the
- * Terminal, which xterm binds to one element for life. Background tabs keep
- * their socket open, so output streams into the buffer while another tab shows.
+ * One terminal pane. Owns a single xterm {@link Terminal} + {@link FitAddon} +
+ * {@link WebSocket} and a host `<div>` for its entire life. The dock parks that
+ * div inside whichever pane currently shows it — it never moves the Terminal,
+ * which xterm binds to one element for life. Panes that are not on screen keep
+ * their socket open, so output streams into the buffer either way.
+ *
+ * Nothing here knows about tabs, groups or splits: the session is told when it
+ * is on screen ({@link setVisible}) and when its box may have changed
+ * ({@link fitLater}), and that is the whole of its relationship with layout.
  *
  * The connect/ensureTerm/fit logic is lifted near-verbatim from the original
  * single-terminal panel; the wire protocol is unchanged (binary frames carry
@@ -53,7 +65,7 @@ export class TerminalSession {
   readonly id: string;
   readonly target;
   readonly status = signal<TermStatus>('idle');
-  /** created once and term.open()'d once; the panel keeps it parked in #mount */
+  /** created once and term.open()'d once; the dock parks it in a pane element */
   readonly hostEl: HTMLDivElement;
 
   private term: Terminal | null = null;
@@ -71,7 +83,7 @@ export class TerminalSession {
    */
   private lastCols = 0;
   private lastRows = 0;
-  private fitQueued = false;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Set while the panel is being dragged.
@@ -86,8 +98,37 @@ export class TerminalSession {
   private readonly encoder = new TextEncoder();
   /** has connect() ever run — re-parking the host div must not restart a shell */
   private started = false;
-  /** only the on-screen tab fits + reports its size to the backend */
-  private active = false;
+  /** only a pane that is actually on screen fits + reports its size to the backend */
+  private visible = false;
+  /**
+   * The widest grid this pane has printed at, and so the narrowest it may be resized to.
+   * Zero until output arrives, because an empty screen has nothing to protect.
+   *
+   * Growing a terminal is harmless. Shrinking one is what does the damage.
+   *
+   * <p>xterm rewraps hard-wrapped lines when the grid narrows, and output that was printed once
+   * and is never redrawn cannot survive that: hermes draws a full-width bordered banner at
+   * startup and does not repaint on SIGWINCH, so a rule printed at 236 columns rewrapped at 118
+   * puts its right-hand text across the seam and takes the box apart. Every terminal does this —
+   * drag any window narrower after running `hermes` to see the same wreckage.
+   *
+   * <p>So the grid a pane has printed at is a floor it never goes below. A narrower box scrolls
+   * sideways to it instead of reflowing, which keeps the output exactly as the shell drew it.
+   * The floor is set by what was actually printed rather than by any box this pane once had, and
+   * it lifts only when the buffer is empty again — {@link clear} and a reconnect both do that,
+   * which is what makes ↻ the way to get a pane back to fitting its box.
+   *
+   * <p>Deliberately with no expiry. It is tempting to drop the floor once a scrollback's worth
+   * of rows has scrolled by, on the grounds that the output it guarded must be gone — but
+   * while the floor binds it is holding the grid wide, so everything printed since was drawn
+   * wide too. Dropping it then rewraps a buffer that is *entirely* wide content, turning one
+   * mangled banner into a whole shredded history. The floor is only ever safe to drop when it
+   * is not binding, and then dropping it changes nothing.
+   */
+  private floorCols = 0;
+  /** whether the floor is currently holding the grid wider than the box, so the pane says so
+   *  once rather than on every fit */
+  private overWide = false;
   /** target().command awaiting a live shell; nulled the moment it is sent */
   private pending: string | null = null;
   /** whether {@link pending} ends in a newline — false for an inserted line */
@@ -104,7 +145,8 @@ export class TerminalSession {
     const st = this.hostEl.style;
     st.position = 'absolute';
     st.top = '0'; st.left = '0'; st.right = '0'; st.bottom = '0';
-    st.visibility = 'hidden';
+    // deliberately no visibility of its own: which panes are on screen is the
+    // dock's layout, and a session that hid itself would fight it.
   }
 
   /** Build the xterm instance (idempotent). Call only once hostEl is attached
@@ -124,14 +166,14 @@ export class TerminalSession {
         cursor: '#3ff08f',
         selectionBackground: '#3a4150',
       },
-      scrollback: 4000,
+      scrollback: SCROLLBACK_ROWS,
     });
     term.loadAddon(this.fit);
     term.open(this.hostEl);
     term.onData(data => {
       if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(this.encoder.encode(data));
     });
-    this.observer = new ResizeObserver(() => this.queueFit());
+    this.observer = new ResizeObserver(() => this.fitLater());
     this.observer.observe(this.hostEl);
     this.term = term;
     this.fitNow();
@@ -153,6 +195,8 @@ export class TerminalSession {
     // a new socket has been told nothing, so the next fit must report even an unchanged grid
     this.lastCols = 0;
     this.lastRows = 0;
+    // a fresh exec redraws from nothing, so whatever the last one printed wide stops mattering
+    this.dropFloor();
     this.ws?.close(1000);
     this.status.set('connecting');
     this.armCommand(command);
@@ -177,6 +221,8 @@ export class TerminalSession {
       if (this.ws !== ws) return;   // drop frames from a superseded socket
       if (typeof e.data === 'string') this.term?.write(e.data);
       else this.term?.write(new Uint8Array(e.data as ArrayBuffer));
+      // the shell has now drawn something at this grid, so this width is a floor
+      this.raiseFloor();
       this.flushCommand(ws);
     };
     ws.onclose = () => {
@@ -269,27 +315,30 @@ export class TerminalSession {
   }
 
   /**
-   * Collapses a burst of layout changes into one fit.
+   * Fit once the layout has stopped moving, rather than on every frame of it moving.
    *
-   * <p>Not for drags — those are excluded outright by {@link fitsSuspended} on the next line.
-   * This covers the bursts nothing suspends: a window resize, the panel opening, the command
-   * drawer toggling. The observer can fire several times as one of those settles, and each
-   * fit measures and reflows the whole buffer.
+   * <p>Each fit reflows the buffer and sends a SIGWINCH the far end answers by redrawing its
+   * prompt, so a burst of them is what stamps `qa › qa › qa ›` across the input line. The
+   * height drag avoids that by suspending fits explicitly ({@link setFitsSuspended}), but a
+   * dock sash drag has no such bracket — dockview reports a new size per pointer frame and
+   * there is no drag-ended event to hang the single fit off. A trailing debounce covers that,
+   * and subsumes the bursts a window resize or the command drawer toggling used to produce.
    */
-  private queueFit(): void {
-    if (this.fitsSuspended || this.fitQueued) return;
-    this.fitQueued = true;
-    requestAnimationFrame(() => {
-      this.fitQueued = false;
+  fitLater(): void {
+    if (this.fitsSuspended) return;
+    if (this.settleTimer !== null) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
       this.fitNow();
-    });
+    }, FIT_SETTLE_MS);
   }
 
-  /** Fit + report size — only for the on-screen tab. Background tabs fit when
-   *  they next become active, so a height drag does not fan resize frames out
-   *  across every open socket. */
+  /** Fit + report size — only for a pane that is on screen. A hidden pane fits when it next
+   *  becomes visible, so resizing the panel does not fan resize frames out across every open
+   *  socket, and a hidden pane's box (which the dock may have collapsed to nothing) is never
+   *  mistaken for the size its shell should run at. */
   fitNow(): void {
-    if (!this.term || !this.active) return;
+    if (!this.term || !this.visible) return;
 
     // A fit re-lays the buffer out and leaves the viewport at the bottom. Someone who had
     // scrolled up to read history sees that as the history disappearing on resize, so the
@@ -307,11 +356,17 @@ export class TerminalSession {
         && Number.isFinite(proposed.cols) && Number.isFinite(proposed.rows)
         && proposed.cols >= 2 && proposed.rows >= 2;
 
-    if (measurable) {
+    if (measurable && proposed) {
       const before = this.term.buffer.active;
       const fromBottom = Math.max(0, before.baseY - before.viewportY);
 
-      try { this.fit.fit(); } catch { /* host not measurable yet */ }
+      // rows always follow the box — the PTY must not believe it has lines that are not on
+      // screen — but columns never go below what this pane has already printed at, and xterm's
+      // own viewport scrolls to reach them (`overflow-y: scroll` there resolves `overflow-x`
+      // to `auto`). See {@link floorCols}.
+      const cols = Math.max(proposed.cols, this.floorCols);
+      try { this.term.resize(cols, proposed.rows); } catch { /* host not measurable yet */ }
+      this.noteOverWide(cols > proposed.cols, cols, proposed.cols);
 
       if (fromBottom > 0) {
         const after = this.term.buffer.active;
@@ -330,18 +385,77 @@ export class TerminalSession {
     }
   }
 
+  /**
+   * Records that the shell has drawn at the grid it currently has, so no later fit may narrow
+   * below it. Called for output rather than on resize: a box the pane merely *had* is not
+   * something to protect, only a width something was printed at.
+   */
+  private raiseFloor(): void {
+    if (this.term) this.floorCols = Math.max(this.floorCols, this.term.cols);
+  }
+
+  /** Lets the pane fit its box again. The buffer is empty, so there is nothing left to wrap. */
+  private dropFloor(): void {
+    this.floorCols = 0;
+    this.overWide = false;
+  }
+
+  /**
+   * Says once, in the pane, that its grid is wider than its box.
+   *
+   * <p>Without this the floor is invisible: the output is intact but half of it is off to the
+   * right, which reads as truncation rather than as something to scroll or reset. Written as
+   * terminal output because that is where the operator is looking, and only on the transition
+   * so a drag does not fill the screen with notices.
+   */
+  private noteOverWide(over: boolean, cols: number, boxCols: number): void {
+    if (over === this.overWide) return;
+    this.overWide = over;
+    if (!over) return;
+    this.term?.write(
+      `\r\n\x1b[2m── ${cols} cols in a ${boxCols}-col pane; scroll, or ↻ to refit ──`
+      + '\x1b[0m\r\n');
+  }
+
   /** See {@link fitsSuspended}. The panel clears this and fits once when the drag settles. */
   setFitsSuspended(suspended: boolean): void {
     this.fitsSuspended = suspended;
+    if (suspended && this.settleTimer !== null) {
+      clearTimeout(this.settleTimer);   // a fit already queued must not land mid-drag
+      this.settleTimer = null;
+    }
   }
 
-  setActive(active: boolean): void {
-    this.active = active;
-    this.hostEl.style.visibility = active ? 'visible' : 'hidden';
+  /**
+   * Whether this pane is on screen. Only that — the dock decides what is shown, and with
+   * several panes side by side "visible" is no longer the same question as "focused".
+   *
+   * <p>A pane that has just come on screen was not fitting while it was hidden, so its shell
+   * is still sized to whatever box it last had. The fit is immediate rather than debounced:
+   * showing a stale grid for even a frame is a visibly mangled prompt.
+   */
+  setVisible(visible: boolean): void {
+    const changed = this.visible !== visible;
+    this.visible = visible;
+    if (visible && changed) this.fitNow();
   }
 
+  /** The grid this pane is running, which is not always the grid its box would give it —
+   *  see the note on the column floor. */
+  grid(): { cols: number; rows: number } {
+    return { cols: this.term?.cols ?? 0, rows: this.term?.rows ?? 0 };
+  }
+
+  /**
+   * Clear the screen, and with it the reason the grid was being held wide.
+   *
+   * <p>An empty buffer has nothing that could rewrap, so the floor lifts and the pane refits
+   * its box — which is what makes ⌫ (and ↻) the way back from a pane scrolling sideways.
+   */
   clear(): void {
     this.term?.clear();
+    this.dropFloor();
+    this.fitNow();
   }
 
   focus(): void {
@@ -350,6 +464,7 @@ export class TerminalSession {
 
   dispose(): void {
     this.clearPending();
+    if (this.settleTimer !== null) clearTimeout(this.settleTimer);
     this.ws?.close(1000);
     this.observer?.disconnect();
     this.term?.dispose();

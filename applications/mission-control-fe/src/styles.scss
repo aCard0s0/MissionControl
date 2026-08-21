@@ -360,3 +360,128 @@ a:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) {
   .spin { animation-duration: 2.4s; }
 }
+
+// ── terminal dock ───────────────────────────────────────────────────────────
+// dockview builds its own tab strips, groups and sashes at runtime, so none of
+// its elements carry a component's encapsulation attribute and none of this can
+// live in terminal-panel.scss.
+//
+// The division of labour: dockview owns the strip, the drag targets and the
+// sashes; the panel owns what a tab *looks* like (terminal-tab-view.ts builds
+// `.tab`). So dockview's own tab painting is turned off rather than themed —
+// every `*-tab-background-color` is transparent, which also blanks the 2px
+// borders it derives from them (`.dv-tabs-and-actions-container` bottom,
+// `.dv-tab.dv-active-tab` top). Feeding those an accent instead is what drew a
+// green rule across the top of every focused group.
+mc-terminal-panel .dock {
+  // the variables are read off the shell element, which is where dockview stamps
+  // its theme class — an ancestor could not outrank that
+  .dv-shell {
+    --dv-group-view-background-color: var(--term-bg);
+    --dv-tabs-and-actions-container-background-color: var(--term-bg);
+    --dv-tabs-and-actions-container-height: 28px;
+    --dv-tabs-and-actions-container-font-size: 11px;
+    --dv-tab-font-size: 11px;
+
+    // dockview's tab fills and the borders it derives from them: all off, so the
+    // chip below is the whole tab. The colours stay as inherited foregrounds.
+    --dv-activegroup-visiblepanel-tab-background-color: transparent;
+    --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+    --dv-inactivegroup-visiblepanel-tab-background-color: transparent;
+    --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+    --dv-activegroup-visiblepanel-tab-color: var(--term-text);
+    --dv-activegroup-hiddenpanel-tab-color: var(--term-faint);
+    --dv-inactivegroup-visiblepanel-tab-color: var(--term-dim);
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--term-faint);
+
+    --dv-separator-border: var(--term-line);
+    --dv-tab-divider-color: transparent;   // the chips already read as separate
+    --dv-sash-color: var(--term-line);
+    --dv-active-sash-color: var(--term-acc);
+    --dv-drag-over-background-color: var(--acc-soft);
+    --dv-drag-over-border-color: var(--term-acc);
+    --dv-icon-hover-background-color: var(--acc-soft);
+    --dv-context-menu-background-color: var(--term-bg);
+    --dv-context-menu-color: var(--term-text);
+    --dv-tabs-container-scrollbar-color: var(--term-faint);
+    --dv-tab-border-radius: 0;             // the chip carries its own
+    background: var(--term-bg);
+  }
+
+  // dockview's tab is now only a slot: our chip supplies padding and shape, and
+  // the margin is the gap the old strip got from `gap: 4px`
+  .dv-tab {
+    padding: 0;
+    margin: 3px 4px 0 0;
+  }
+
+  // the tab the panel builds (terminal-tab-view.ts): the chip the strip had
+  // before dockview rendered it. Three states, because with groups side by side
+  // "on screen" and "has the keyboard" stopped being the same question:
+  //   .act        — the focused pane, the one the toolbar acts on
+  //   .vis        — on screen, in a group that does not have focus
+  //   neither     — a background tab in someone's stack
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    padding: 0 4px 0 8px;
+    border: 1px solid var(--term-line);
+    border-radius: 4px 4px 0 0;
+    color: var(--term-faint);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+    &:hover { color: var(--term-text); }
+    &.vis { color: var(--term-dim); }
+    &.act {
+      border-color: var(--term-acc);
+      background: var(--acc-soft);
+      color: var(--term-text);
+    }
+    .lbl {
+      letter-spacing: .02em;
+      max-width: 22ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      &.gone { opacity: .6; text-decoration: line-through; }
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+    .dot.ok   { background: var(--acc); }
+    .dot.warn { background: var(--amber); }
+    .dot.crit { background: var(--red); }
+    .dot.idle { background: var(--faint); }
+    .dot.info { background: var(--cyan); }
+    .caret, .x {
+      background: none; border: 0; color: var(--term-faint);
+      cursor: pointer; font-size: 11px; line-height: 1; padding: 0 2px;
+      &:hover { color: var(--term-acc); }
+    }
+  }
+
+  // the box a shell's host div is parked in — dockview sizes it, xterm fills it
+  .mc-term-pane {
+    background: var(--term-bg);
+    color: var(--term-faint);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+}
+
+// The moving tag a container follows, beside the release it currently resolves to
+// (see resolvedVersion). Global because both the containers cards and the overview
+// header carry it, and one concept rendered two ways is how they drift apart.
+// Quiet on purpose: the version is the identity, this is only the qualifier on it.
+.tracks {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
