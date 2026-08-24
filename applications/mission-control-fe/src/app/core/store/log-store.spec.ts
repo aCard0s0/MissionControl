@@ -146,6 +146,7 @@ describe('LogStore', () => {
 
     containers.select('c-1');
 
-    expect(logs).toHaveBeenCalledWith('dh-local', 'c-1', 100);
+    // no cursor on a fresh selection: the whole tail is re-read rather than resumed
+    expect(logs).toHaveBeenCalledWith('dh-local', 'c-1', 100, undefined);
   });
 });

@@ -5,6 +5,7 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,14 +29,35 @@ public class ContainerLogReader {
 
   private static final Logger log = LoggerFactory.getLogger(ContainerLogReader.class);
 
+  /**
+   * How long a tail may take before what has arrived is returned as a partial read.
+   *
+   * <p>This, not a socket timeout, is the real bound — which is why the read runs on the
+   * streaming client. Keep it well under that client's absence of one rather than near the
+   * unary client's 20s, or a slow daemon turns a partial tail into a failed request.
+   */
+  private static final Duration READ_TIMEOUT = Duration.ofSeconds(8);
+
   private final DockerClients clients;
 
   public ContainerLogReader(DockerClients clients) {
     this.clients = clients;
   }
 
-  public List<LogLineDto> logs(DockerHostRef host, String containerId, int tail) {
-    DockerClient client = clients.forUrl(host.url());
+  /**
+   * The tail, or only what has arrived since a moment the caller already has.
+   *
+   * <p>{@code since} is what stops a five-second poll re-reading the same hundred lines
+   * forever. Docker takes it in whole seconds, so a cursor taken from the newest line can
+   * return that line again; callers are expected to drop what they already hold rather than
+   * have this guess, because only the caller knows what it kept.
+   *
+   * <p>The streaming client, per its own documentation: this response body arrives as frames
+   * and the bound that matters is {@link #READ_TIMEOUT} below, not a socket timeout the unary
+   * client would install underneath it.
+   */
+  public List<LogLineDto> logs(DockerHostRef host, String containerId, int tail, Long since) {
+    DockerClient client = clients.streamingForUrl(host.url());
     List<LogLineDto> lines = new ArrayList<>();
     // one assembler for the whole read: a line the daemon cut in half arrives as two frames,
     // and only something spanning them can put it back together
@@ -52,13 +74,19 @@ public class ContainerLogReader {
         }
       }
     }) {
-      client.logContainerCmd(containerId)
+      var command = client.logContainerCmd(containerId)
           .withStdOut(true)
           .withStdErr(true)
-          .withTimestamps(true)
-          .withTail(Math.min(Math.max(tail, 1), 500))
-          .exec(callback);
-      complete = callback.awaitCompletion(8, TimeUnit.SECONDS);
+          .withTimestamps(true);
+      if (since != null) {
+        // a cursor and a tail together would cap a quiet container's catch-up at `tail` lines;
+        // since already bounds the read to what the caller is missing
+        command.withSince((int) (since / 1000));
+      } else {
+        command.withTail(Math.min(Math.max(tail, 1), 500));
+      }
+      command.exec(callback);
+      complete = callback.awaitCompletion(READ_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     } catch (Exception e) {
@@ -68,7 +96,8 @@ public class ContainerLogReader {
     if (!complete) {
       // close() does not join the reader thread, so it may still append after the wait
       // expires. Returning the live list would hand a mutating ArrayList to Jackson.
-      log.warn("log tail for {} was cut short after 8s — returning a partial read", containerId);
+      log.warn("log tail for {} was cut short after {}s — returning a partial read",
+          containerId, READ_TIMEOUT.toSeconds());
     }
     // the final line often has no terminator — without this it is dropped from every tail
     List<LogLineDto> trailing = assembler.flush();
