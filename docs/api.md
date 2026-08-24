@@ -186,6 +186,25 @@ account.
 | `PATCH /api/board/tasks/{id}` | `{ column }` — `queued | running | review | done` |
 | `DELETE /api/board/tasks/{id}` | — |
 
+## Prompt library — dashboard-owned state in SQLite
+
+Reusable prompt text with a category, notes and tags. Nothing inside a Hermes container
+reads this: it is a dictionary the dashboard keeps so a prompt can be found again and
+pasted where it is needed.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/prompts` | `?category=` | newest edit first; the filter is case-insensitive and a blank one is not a filter |
+| `GET /api/prompts/{id}` | — | 404 for an id nobody holds |
+| `POST /api/prompts` | `{ title, body, category?, notes?, tags? }` | `title`/`body` required; a blank category becomes `general`, categories and tags are trimmed and lower-cased, blank/duplicate tags dropped (max 12) |
+| `PUT /api/prompts/{id}` | same body | replaces everything an editor owns and keeps `createdAt`; 404 rather than an insert when the prompt is gone |
+| `DELETE /api/prompts/{id}` | — | idempotent |
+
+Prompt DTO: `{ id, title, body, category, notes, tags, createdAt, updatedAt }`.
+
+A fresh install is seeded with one sample prompt, once — the marker lives in
+`prompt_meta`, so a sample an operator deletes does not come back at the next boot.
+
 ## Roadmap (not implemented)
 
 - Hermes cron jobs and webhooks introspection; would light up the Calendar and

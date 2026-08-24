@@ -8,6 +8,7 @@ import { JobStore } from './job-store';
 import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
+import { PromptStore } from './prompt-store';
 import { ProviderStore } from './provider-store';
 import { StoreContext } from './store-context';
 import { TemplateStore } from './template-store';
@@ -57,6 +58,7 @@ export class LiveSync {
   private readonly board = inject(BoardStore);
   private readonly templates = inject(TemplateStore);
   private readonly mcp = inject(McpCatalogStore);
+  private readonly prompts = inject(PromptStore);
   private readonly providers = inject(ProviderStore);
   private readonly images = inject(ImageCatalogStore);
   private readonly jobs = inject(JobStore);
@@ -79,6 +81,7 @@ export class LiveSync {
     await Promise.all([
       this.hosts.refresh(), this.providers.refresh(), this.providers.refreshRegistry(),
       this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
+      this.prompts.refresh(),
       this.mcp.refresh(), this.mcp.refreshRetainedResources(),
     ]);
     await this.agents.refresh();   // needs the container list

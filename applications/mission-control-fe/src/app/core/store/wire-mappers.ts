@@ -1,11 +1,11 @@
 import {
   ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck,
-  ApiMcpRetainedResource, ApiMcpSupportService, ApiProfileTemplate,
+  ApiMcpRetainedResource, ApiMcpSupportService, ApiProfileTemplate, ApiPrompt,
 } from '../hermes-api';
 import {
   AgentProfile, ImageCatalog, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, McpRuntimeState, McpSupportService, McpTransport,
-  ProfileTemplate,
+  ProfileTemplate, Prompt,
 } from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
@@ -194,6 +194,9 @@ export function toProfileTemplate(api: ApiProfileTemplate): ProfileTemplate {
     id: api.id,
     name: api.name,
     description: api.description ?? '',
+    // a blueprint from before categories existed reads as the default rather than as
+    // a blank chip of its own; saving it files it there for real
+    category: api.category || 'general',
     provider: api.provider ?? '',
     model: api.model ?? '',
     baseUrl: api.baseUrl ?? '',
@@ -206,6 +209,21 @@ export function toProfileTemplate(api: ApiProfileTemplate): ProfileTemplate {
       enabled: m.enabled !== false,
     })),
     secrets: (api.secrets ?? []).map(s => ({ key: s.key, set: !!s.set, recoverable: !!s.recoverable })),
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
+}
+
+/** A prompt's optional columns are null on the wire and '' / [] in the model, so a
+ *  template never has to ask which of the two an empty note is. */
+export function toPrompt(api: ApiPrompt): Prompt {
+  return {
+    id: api.id,
+    title: api.title,
+    body: api.body ?? '',
+    category: api.category || 'general',
+    notes: api.notes ?? '',
+    tags: api.tags ?? [],
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };

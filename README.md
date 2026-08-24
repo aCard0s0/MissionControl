@@ -57,7 +57,7 @@ The frontend always talks to the backend — run both, and `npm start` proxies `
 
 ## Status
 
-Working today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, a persisted MCP server catalog with managed Compose services and external endpoints, a persisted ops board, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP connections, integrations, and sessions. Scheduled jobs and inbound webhooks drive hermes' own `cron` and `webhook`
+Working today: Docker hosts (local socket + remote `tcp://`), container inventory/stats/logs/lifecycle, a persisted MCP server catalog with managed Compose services and external endpoints, a persisted ops board, a prompt library, and Hermes profile introspection/editing for SOUL, config, setup, skills, MCP connections, integrations, and sessions. Scheduled jobs and inbound webhooks drive hermes' own `cron` and `webhook`
 commands — Mission Control manages them but never carries webhook traffic itself, so a route
 stays unreachable from outside the docker network until an operator exposes the agent's
 listener deliberately.

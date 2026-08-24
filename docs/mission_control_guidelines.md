@@ -52,10 +52,11 @@ The dashboard treats both uniformly: select a container → see its profiles.
    - Messaging integrations and connectivity checks (Slack, WhatsApp, Discord, Telegram, Signal, Email)
    - Scheduled jobs owned by the agent
    - Recent sessions and minimal logs
-4. **Ops Board** — Kanban-style execution view of agent tasks (queued / running / review / done).
-5. **Calendar** — scheduled cron jobs across the container; create, pause, edit prompt, reassign to another agent.
-6. **Webhooks** — manage inbound webhooks per agent (URL, secret, event filters, recent deliveries).
-7. **CLI Reference** — the hermes command surface, searchable and scoped to a chosen profile, with each line insertable into the web terminal. Reading only: the dashboard never runs one of these on its own.
+4. **Prompts** — a library of reusable prompt text (category, notes, tags), readable compact or expanded, copied out to wherever it is needed.
+5. **Ops Board** — Kanban-style execution view of agent tasks (queued / running / review / done).
+6. **Calendar** — scheduled cron jobs across the container; create, pause, edit prompt, reassign to another agent.
+7. **Webhooks** — manage inbound webhooks per agent (URL, secret, event filters, recent deliveries).
+8. **CLI Reference** — the hermes command surface, searchable and scoped to a chosen profile, with each line insertable into the web terminal. Reading only: the dashboard never runs one of these on its own.
 
 ---
 

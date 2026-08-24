@@ -25,6 +25,7 @@ import io.hermes.missioncontrol.agents.api.SkillDto;
 import io.hermes.missioncontrol.agents.templates.McpServerSpec;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.board.BoardTask;
+import io.hermes.missioncontrol.prompts.Prompt;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.ImageTagDto;
 import io.hermes.missioncontrol.docker.ImageTagsDto;
@@ -139,6 +140,8 @@ class ApiContractTest {
     CONTRACT.put("OllamaModel", OllamaModelDto.class);
     // board
     CONTRACT.put("ApiBoardTask", BoardTask.class);
+    // prompt library
+    CONTRACT.put("ApiPrompt", Prompt.class);
   }
 
   /**

@@ -12,6 +12,8 @@
 }
 
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+// name + description + category: the description earns the extra width
+.row.three { grid-template-columns: 1fr 1.4fr 0.8fr; }
 
 textarea.code { resize: vertical; line-height: 1.5; white-space: pre; }
 
@@ -122,7 +124,7 @@ textarea.code { resize: vertical; line-height: 1.5; white-space: pre; }
 }
 
 @media (max-width: 760px) {
-  .row { grid-template-columns: 1fr; }
+  .row, .row.three { grid-template-columns: 1fr; }
   .add-mcp { grid-template-columns: 1fr; }
   .catalog-mcp { grid-template-columns: 1fr; }
   .line { flex-wrap: wrap; .key-inp { width: 100%; } }

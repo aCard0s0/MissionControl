@@ -7,7 +7,7 @@
     <button class="btn ghost sm" (click)="closed.emit()">✕</button>
   </div>
   <div class="editor-b">
-    <div class="row">
+    <div class="row three">
       <div class="field">
         <label>name</label>
         <input class="input" [(ngModel)]="form.name" placeholder="ops-sre" />
@@ -15,6 +15,14 @@
       <div class="field">
         <label>description</label>
         <input class="input" [(ngModel)]="form.description" placeholder="what this agent does" />
+      </div>
+      <div class="field">
+        <label>category</label>
+        <input class="input" [(ngModel)]="form.category" list="mc-blueprint-categories"
+               placeholder="general" />
+        <datalist id="mc-blueprint-categories">
+          @for (c of templateCategories(); track c) { <option [value]="c"></option> }
+        </datalist>
       </div>
     </div>
 

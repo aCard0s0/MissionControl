@@ -8,6 +8,7 @@ public record ProfileTemplateDto(
     String id,
     String name,
     String description,
+    String category,
     String provider,
     String model,
     String baseUrl,

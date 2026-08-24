@@ -55,6 +55,7 @@ const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
   },
   templates: {
     templates: signal(templates),
+    categories: signal([...new Set(templates.map(x => x.category).filter(Boolean))].sort()),
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
     save: vi.fn().mockResolvedValue('pt-new'),
     remove: vi.fn().mockResolvedValue(undefined),
@@ -326,5 +327,165 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
     press(fixture, '+ create one');
 
     expect(el(fixture).querySelector('.editor')).not.toBeNull();
+  });
+});
+
+// ── finding one in a library that outgrew the screen ────────────────────────
+describe('AgentProfilesPage search and filters', () => {
+  /** A named blueprint with only the fields these tests filter on. */
+  const bp = (id: string, patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
+    buildTemplate(id, { name: id, ...patch });
+
+  /** The chip row carrying this label — the facets are told apart by their label,
+   *  the way an operator reads them, not by position. */
+  const facet = (fixture: TestFixture, label: string): HTMLElement => {
+    const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.facet'))
+      .find(f => (f.querySelector('.lbl')?.textContent ?? '').trim() === label);
+    if (!match) throw new Error(`no facet labelled "${label}"`);
+    return match;
+  };
+
+  const facetLabels = (fixture: TestFixture): string[] =>
+    Array.from(el(fixture).querySelectorAll<HTMLElement>('.facet .lbl'))
+      .map(l => (l.textContent ?? '').trim());
+
+  const names = (fixture: TestFixture): string[] =>
+    Array.from(el(fixture).querySelectorAll('.tmpl .nm')).map(n => (n.textContent ?? '').trim());
+
+  const search = async (fixture: TestFixture, value: string): Promise<void> => {
+    const input = el(fixture).querySelector<HTMLInputElement>('.filters .find')!;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    await settle(fixture);
+  };
+
+  it('files each blueprint under its category, on the card', () => {
+    const fixture = render(storeStub([bp('ops-sre', { category: 'incident response' })]));
+
+    expect(el(fixture).querySelector('.tmpl .chips')?.textContent).toContain('incident response');
+  });
+
+  it('searches the description, not only the name', async () => {
+    const fixture = render(storeStub([
+      bp('ops-sre', { description: 'Production SRE copilot' }),
+      bp('scribe', { description: 'Writes release notes' }),
+    ]));
+
+    await search(fixture, 'release notes');
+
+    expect(names(fixture)).toEqual(['scribe']);
+  });
+
+  it('searches what a blueprint installs — skills, mcp servers, key names', async () => {
+    const fixture = render(storeStub([
+      bp('ops-sre', { skills: ['daily-briefing'], mcpServers: [], secrets: [] }),
+      bp('gh-bot', {
+        skills: [],
+        mcpServers: [{ name: 'github', transport: 'http', url: 'https://x.test/mcp', enabled: true }],
+        secrets: [{ key: 'GITHUB_TOKEN', set: true, recoverable: true }],
+      }),
+    ]));
+
+    // the operator hunting a blueprint knows the skill or the key, not the name
+    // someone else filed it under
+    await search(fixture, 'daily-briefing');
+    expect(names(fixture)).toEqual(['ops-sre']);
+
+    await search(fixture, 'github');
+    expect(names(fixture)).toEqual(['gh-bot']);
+
+    await search(fixture, 'github_token');
+    expect(names(fixture)).toEqual(['gh-bot']);
+  });
+
+  it('counts what the filters left against the whole library', async () => {
+    const fixture = render(storeStub([bp('ops-sre'), bp('scribe')]));
+    expect(el(fixture).textContent).toContain('2/2 templates');
+
+    await search(fixture, 'scribe');
+
+    expect(el(fixture).textContent).toContain('1/2 templates');
+  });
+
+  it('narrows to one category, and back to the whole library', () => {
+    const fixture = render(storeStub([
+      bp('ops-sre', { category: 'ops' }),
+      bp('scribe', { category: 'writing' }),
+    ]));
+
+    press(fixture, 'writing', facet(fixture, 'category'));
+    expect(names(fixture)).toEqual(['scribe']);
+
+    press(fixture, 'all', facet(fixture, 'category'));
+    expect(names(fixture)).toEqual(['ops-sre', 'scribe']);
+  });
+
+  it('narrows by provider and by model', () => {
+    const fixture = render(storeStub([
+      bp('ops-sre', { provider: 'anthropic', model: 'claude-opus-5' }),
+      bp('local', { provider: 'ollama', model: 'gemma3:4b' }),
+    ]));
+
+    press(fixture, 'ollama', facet(fixture, 'provider'));
+    expect(names(fixture)).toEqual(['local']);
+
+    press(fixture, 'all', facet(fixture, 'provider'));
+    press(fixture, 'claude-opus-5', facet(fixture, 'model'));
+    expect(names(fixture)).toEqual(['ops-sre']);
+  });
+
+  it('offers only the facets there is a choice to make in', () => {
+    // one provider, one model, one category across the library — those chips would
+    // be a filter panel that filters nothing. Both carry a skill, so that row stays.
+    const fixture = render(storeStub([
+      bp('ops-sre', { skills: ['ops'] }), bp('scribe', { skills: ['ops'] }),
+    ]));
+
+    expect(facetLabels(fixture)).toEqual(['carries']);
+  });
+
+  it('drops the carries row when nothing in the library installs anything', () => {
+    const fixture = render(storeStub([bp('bare', { skills: [], mcpServers: [], secrets: [] })]));
+
+    expect(facetLabels(fixture)).toEqual([]);
+  });
+
+  it('narrows on everything a blueprint has to carry at once', () => {
+    const withSkills = bp('skilled', { skills: ['ops'], mcpServers: [], secrets: [] });
+    const withBoth = bp('both', {
+      skills: ['ops'],
+      mcpServers: [{ name: 'gh', transport: 'http', url: 'https://x.test/mcp', enabled: true }],
+      secrets: [],
+    });
+    const fixture = render(storeStub([withSkills, withBoth]));
+
+    press(fixture, 'skills', facet(fixture, 'carries'));
+    expect(names(fixture)).toEqual(['skilled', 'both']);
+
+    // a second toggle narrows further rather than widening
+    press(fixture, 'mcp', facet(fixture, 'carries'));
+    expect(names(fixture)).toEqual(['both']);
+
+    press(fixture, 'mcp', facet(fixture, 'carries'));
+    expect(names(fixture)).toEqual(['skilled', 'both']);
+  });
+
+  it('says so when the filters match nothing, and gives one way back', async () => {
+    const fixture = render(storeStub([bp('ops-sre'), bp('scribe')]));
+
+    await search(fixture, 'nothing like this');
+    expect(el(fixture).textContent).toContain('No blueprint matches these filters');
+
+    press(fixture, 'clear filters');
+
+    expect(names(fixture)).toEqual(['ops-sre', 'scribe']);
+    expect(el(fixture).querySelector('.filters .find')).toHaveProperty('value', '');
+  });
+
+  it('keeps the empty-library state for an empty library, not the no-match one', () => {
+    const fixture = render(storeStub([]));
+
+    expect(el(fixture).textContent).toContain('No blueprints yet');
+    expect(el(fixture).textContent).not.toContain('No blueprint matches');
   });
 });

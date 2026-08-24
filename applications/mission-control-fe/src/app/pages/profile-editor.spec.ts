@@ -52,7 +52,7 @@ const ollama: ModelProvider[] = [{
 }];
 
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 't-1', name: 'ops-sre', description: 'runs the fleet', provider: 'anthropic',
+  id: 't-1', name: 'ops-sre', description: 'runs the fleet', category: 'ops', provider: 'anthropic',
   model: 'claude-opus-5', baseUrl: '', cwd: '', soul: '# SOUL.md\n', memory: '# MEMORY.md\n',
   skills: ['web-research'], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2, ...patch,
 });
@@ -69,13 +69,18 @@ describe('Agent Profile draft', () => {
     expect(fresh.soul).toContain('# SOUL.md');
     expect(fresh.memory).toContain('# MEMORY.md');
     expect(fresh.skills).toEqual([]);
+    // blank, not 'general': the backend owns the default, so an operator who never
+    // touches the field cannot end up filing one blueprint under a literal 'general'
+    // while another carries whatever the frontend guessed
+    expect(fresh.category).toBe('');
   });
 
   it('loads a stored template under the option its provider resolves to', () => {
     const loaded = profileDraftFrom(stored({ provider: 'ollama' }), 'ollama: workstation');
 
     expect(loaded).toMatchObject({
-      id: 't-1', name: 'ops-sre', provider: 'ollama: workstation', model: 'claude-opus-5',
+      id: 't-1', name: 'ops-sre', category: 'ops', provider: 'ollama: workstation',
+      model: 'claude-opus-5',
     });
     // a template saved before cwd existed still opens on the default
     expect(loaded.cwd).toBe('/opt/data');
@@ -135,12 +140,14 @@ describe('Agent Profile draft validation', () => {
 describe('Agent Profile save request', () => {
   it('trims what the operator typed and sends the files verbatim', () => {
     const input = profileDraftToInput(draft({
-      description: ' runs the fleet ', model: ' claude-opus-5 ', cwd: ' /opt/data ',
+      description: ' runs the fleet ', category: ' Incident Response ',
+      model: ' claude-opus-5 ', cwd: ' /opt/data ',
       soul: '  leading space is content  ',
     }), ollama);
 
     expect(input).toMatchObject({
-      name: 'ops-sre', description: 'runs the fleet', model: 'claude-opus-5', cwd: '/opt/data',
+      name: 'ops-sre', description: 'runs the fleet', category: 'Incident Response',
+      model: 'claude-opus-5', cwd: '/opt/data',
       soul: '  leading space is content  ',
     });
   });

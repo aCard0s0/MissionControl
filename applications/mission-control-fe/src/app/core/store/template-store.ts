@@ -1,4 +1,4 @@
-import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ProfileTemplate, ProfileTemplateInput } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
@@ -9,6 +9,10 @@ import { toProfileTemplate } from './wire-mappers';
 @Injectable({ providedIn: 'root' })
 export class TemplateStore {
   readonly templates: WritableSignal<ProfileTemplate[]>;
+
+  /** Every category in use, for the page's filter chips. */
+  readonly categories = computed(() =>
+    [...new Set(this.templates().map(t => t.category).filter(Boolean))].sort());
 
   private readonly ctx = inject(StoreContext);
   private readonly containers = inject(ContainerStore);

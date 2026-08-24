@@ -32,7 +32,7 @@ class ProfileTemplateRepositoryTest {
   }
 
   private static ProfileTemplate template(String id, String name) {
-    return new ProfileTemplate(id, name, "a description", "anthropic", "claude-opus-5",
+    return new ProfileTemplate(id, name, "a description", "ops", "anthropic", "claude-opus-5",
         "https://api.anthropic.com", "/work", "you are helpful", "remembers things",
         List.of("skill-a", "skill-b"),
         List.of(new McpServerSpec("files", "stdio", null, "npx", "-y @modelcontextprotocol/files", true)),
@@ -48,6 +48,7 @@ class ProfileTemplateRepositoryTest {
     assertEquals("pt-1", found.id());
     assertEquals("researcher", found.name());
     assertEquals("a description", found.description());
+    assertEquals("ops", found.category());
     assertEquals("anthropic", found.provider());
     assertEquals("claude-opus-5", found.model());
     assertEquals("https://api.anthropic.com", found.baseUrl());
@@ -73,7 +74,7 @@ class ProfileTemplateRepositoryTest {
 
   @Test
   void emptyListColumnsRoundTripAsEmptyNotNull() {
-    repository.insert(new ProfileTemplate("pt-1", "bare", null, null, null, null, null, null, null,
+    repository.insert(new ProfileTemplate("pt-1", "bare", null, null, null, null, null, null, null, null,
         List.of(), List.of(), List.of(), 1L, 1L));
 
     ProfileTemplate found = repository.findById("pt-1").orElseThrow();
@@ -86,13 +87,14 @@ class ProfileTemplateRepositoryTest {
   void updateReplacesScalarsAndJsonColumns() {
     repository.insert(template("pt-1", "researcher"));
 
-    repository.update(new ProfileTemplate("pt-1", "renamed", "new description", "openai", "gpt-5.2",
+    repository.update(new ProfileTemplate("pt-1", "renamed", "new description", "review", "openai", "gpt-5.2",
         null, "/other", "different soul", "different memory",
         List.of("skill-c"), List.of(), List.of(new StoredSecret("OPENAI_API_KEY", "enc:v1:xyz")),
         1_700_000_000_000L, 1_700_000_009_000L));
 
     ProfileTemplate found = repository.findById("pt-1").orElseThrow();
     assertEquals("renamed", found.name());
+    assertEquals("review", found.category());
     assertEquals("openai", found.provider());
     assertEquals(List.of("skill-c"), found.skills());
     assertTrue(found.mcpServers().isEmpty());
@@ -102,9 +104,9 @@ class ProfileTemplateRepositoryTest {
 
   @Test
   void findAllOrdersByMostRecentlyUpdated() {
-    repository.insert(new ProfileTemplate("pt-old", "old", null, null, null, null, null, null, null,
+    repository.insert(new ProfileTemplate("pt-old", "old", null, null, null, null, null, null, null, null,
         List.of(), List.of(), List.of(), 1L, 100L));
-    repository.insert(new ProfileTemplate("pt-new", "new", null, null, null, null, null, null, null,
+    repository.insert(new ProfileTemplate("pt-new", "new", null, null, null, null, null, null, null, null,
         List.of(), List.of(), List.of(), 1L, 200L));
 
     assertEquals(List.of("pt-new", "pt-old"),

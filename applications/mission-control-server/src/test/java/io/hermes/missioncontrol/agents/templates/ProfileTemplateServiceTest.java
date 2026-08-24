@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -45,14 +46,14 @@ class ProfileTemplateServiceTest {
 
   private static UpsertProfileTemplateRequest request(String name, List<SecretInput> secrets) {
     return new UpsertProfileTemplateRequest(
-        name, "desc", "anthropic", "claude-opus-4-8", "", "/opt/data",
+        name, "desc", "ops", "anthropic", "claude-opus-4-8", "", "/opt/data",
         "soul", "memory", List.of(), List.of(), secrets);
   }
 
   @Test
   void updateRejectsRenameOntoAnExistingName() {
     ProfileTemplate existing = new ProfileTemplate(
-        "pt-1", "old", "", "anthropic", "m", "", "", "", "",
+        "pt-1", "old", "", "ops", "anthropic", "m", "", "", "", "",
         List.of(), List.of(), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(existing));
     when(repository.existsByNameExcept("taken", "pt-1")).thenReturn(true);
@@ -66,7 +67,7 @@ class ProfileTemplateServiceTest {
   @Test
   void updateKeepingItsOwnNameProceeds() {
     ProfileTemplate existing = new ProfileTemplate(
-        "pt-1", "ops", "", "anthropic", "m", "", "", "", "",
+        "pt-1", "ops", "", "ops", "anthropic", "m", "", "", "", "",
         List.of(), List.of(), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(existing));
     when(repository.existsByNameExcept("ops", "pt-1")).thenReturn(false);
@@ -98,7 +99,7 @@ class ProfileTemplateServiceTest {
     ProfileTemplateService ownedService =
         TemplatesWiring.service(repository, cipher, profiles, setup);
     ProfileTemplate template = new ProfileTemplate(
-        "pt-1", "ops", "", "anthropic", "model", "", "", "soul", "",
+        "pt-1", "ops", "", "ops", "anthropic", "model", "", "", "soul", "",
         List.of(), List.of(), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(template));
     ProfileSpec create = new ProfileSpec(
@@ -129,7 +130,7 @@ class ProfileTemplateServiceTest {
     ProfileTemplateService catalogService =
         TemplatesWiring.service(repository, cipher, null, null, registry);
     UpsertProfileTemplateRequest input = new UpsertProfileTemplateRequest(
-        "ops", "", "nous", "model", "", "/opt/data", "", "", List.of(),
+        "ops", "", "ops", "nous", "model", "", "/opt/data", "", "", List.of(),
         List.of(new McpServerSpec(
             "tools", null, null, null, null, true, "mcp-1", null, null)),
         List.of());
@@ -156,14 +157,14 @@ class ProfileTemplateServiceTest {
         "tools", "http", "https://tools.example.test/mcp", null, null, true, null,
         List.of(), List.of(new TemplateMcpConfigValue("Authorization", encrypted)));
     ProfileTemplate existing = new ProfileTemplate(
-        "pt-1", "ops", "", "nous", "model", "", "/opt/data", "", "",
+        "pt-1", "ops", "", "ops", "nous", "model", "", "/opt/data", "", "",
         List.of(), List.of(snapshot), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(existing));
     when(repository.existsByNameExcept("ops", "pt-1")).thenReturn(false);
     ProfileTemplateService catalogService =
         TemplatesWiring.service(repository, cipher, null, null, registry);
     UpsertProfileTemplateRequest input = new UpsertProfileTemplateRequest(
-        "ops", "updated", "nous", "model", "", "/opt/data", "", "", List.of(),
+        "ops", "updated", "ops", "nous", "model", "", "/opt/data", "", "", List.of(),
         List.of(new McpServerSpec(
             "tools", "http", "https://tools.example.test/mcp", null, null, true)),
         List.of());
@@ -191,7 +192,7 @@ class ProfileTemplateServiceTest {
         List.of(new TemplateMcpConfigValue("npm_config_token", cipher.encrypt("stdio-token"))),
         List.of());
     ProfileTemplate template = new ProfileTemplate(
-        "pt-1", "ops", "", "nous", "model", "", "/opt/data", "", "",
+        "pt-1", "ops", "", "ops", "nous", "model", "", "/opt/data", "", "",
         List.of(), List.of(network, stdio), List.of(), 1L, 1L);
     when(repository.findById("pt-1")).thenReturn(Optional.of(template));
     ProfileTemplateService runtimeService =
@@ -212,7 +213,7 @@ class ProfileTemplateServiceTest {
 
   @Test
   void theCrudPathsReadWriteAndDeleteThroughTheRepository() {
-    ProfileTemplate stored = new ProfileTemplate("pt-1", "ops", "", "anthropic", "m", "", "",
+    ProfileTemplate stored = new ProfileTemplate("pt-1", "ops", "", "ops", "anthropic", "m", "", "",
         "", "", List.of(), List.of(), List.of(), 1L, 1L);
     when(repository.findAll()).thenReturn(List.of(stored));
     when(repository.findById("pt-1")).thenReturn(Optional.of(stored));
@@ -231,6 +232,41 @@ class ProfileTemplateServiceTest {
     assertThrows(NoSuchElementException.class, () -> service.update("pt-nope", request("ops", List.of())));
     assertThrows(NoSuchElementException.class,
         () -> service.deploy("pt-nope", HOST, "c1", "scout"));
+  }
+
+  @Test
+  void aBlankCategoryBecomesGeneralAndOneTypedInAnyCaseIsFolded() {
+    when(repository.existsByName(any())).thenReturn(false);
+
+    service.create(new UpsertProfileTemplateRequest(
+        "ops", "desc", "  ", "anthropic", "m", "", "/opt/data", "", "",
+        List.of(), List.of(), List.of()));
+    service.create(new UpsertProfileTemplateRequest(
+        "sre", "desc", " Incident Response ", "anthropic", "m", "", "/opt/data", "", "",
+        List.of(), List.of(), List.of()));
+
+    ArgumentCaptor<ProfileTemplate> written = ArgumentCaptor.forClass(ProfileTemplate.class);
+    verify(repository, times(2)).insert(written.capture());
+    // the page builds its filter chips from these, so 'Ops' and 'ops' must not be two chips
+    assertEquals(List.of("general", "incident response"),
+        written.getAllValues().stream().map(ProfileTemplate::category).toList());
+  }
+
+  @Test
+  void editingAnExistingBlueprintRefilesItUnderTheCategoryTheEditorSent() {
+    ProfileTemplate existing = new ProfileTemplate(
+        "pt-1", "ops", "", "general", "anthropic", "m", "", "", "", "",
+        List.of(), List.of(), List.of(), 1L, 1L);
+    when(repository.findById("pt-1")).thenReturn(Optional.of(existing));
+    when(repository.existsByNameExcept("ops", "pt-1")).thenReturn(false);
+
+    service.update("pt-1", new UpsertProfileTemplateRequest(
+        "ops", "desc", "Review", "anthropic", "m", "", "/opt/data", "", "",
+        List.of(), List.of(), List.of()));
+
+    ArgumentCaptor<ProfileTemplate> written = ArgumentCaptor.forClass(ProfileTemplate.class);
+    verify(repository).update(written.capture());
+    assertEquals("review", written.getValue().category());
   }
 
   @Test

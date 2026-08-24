@@ -331,6 +331,7 @@ export interface ProfileTemplate {
   id: string;
   name: string;
   description: string;
+  category: string;               // lower-cased by the backend, so filters cannot split
   provider: string;
   model: string;
   baseUrl: string;
@@ -349,6 +350,7 @@ export interface ProfileTemplate {
 export interface ProfileTemplateInput {
   name: string;
   description: string;
+  category: string;
   provider: string;
   model: string;
   baseUrl: string;
@@ -393,6 +395,31 @@ export interface BoardTask {
   priority: 'low' | 'med' | 'high';
   tags: string[];
   createdAt: number;
+}
+
+/**
+ * One entry in the prompt library — like a board task, dashboard-owned state with no
+ * Hermes home: nothing inside a container reads it. It is text an operator keeps so it
+ * can be found again and pasted where it is needed (a session, a cron job, a webhook).
+ */
+export interface Prompt {
+  id: string;
+  title: string;
+  body: string;
+  category: string;               // lower-cased by the backend, so filters cannot split
+  notes: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Editor payload sent to the backend on save — a create has no id, an edit is a PUT. */
+export interface PromptInput {
+  title: string;
+  body: string;
+  category: string;
+  notes: string;
+  tags: string[];
 }
 
 /**

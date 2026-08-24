@@ -35,6 +35,7 @@ public class ProfileTemplateRepository {
         rs.getString("id"),
         rs.getString("name"),
         rs.getString("description"),
+        rs.getString("category"),
         rs.getString("provider"),
         rs.getString("model"),
         rs.getString("base_url"),
@@ -79,20 +80,20 @@ public class ProfileTemplateRepository {
   public void insert(ProfileTemplate t) {
     jdbc.update(
         "INSERT INTO profile_templates "
-            + "(id, name, description, provider, model, base_url, cwd, soul, memory, "
+            + "(id, name, description, category, provider, model, base_url, cwd, soul, memory, "
             + "skills, mcp_servers, secrets, created_at, updated_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        t.id(), t.name(), t.description(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        t.id(), t.name(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
         t.soul(), t.memory(), writeJson(t.skills()), writeJson(t.mcpServers()), writeJson(t.secrets()),
         t.createdAt(), t.updatedAt());
   }
 
   public void update(ProfileTemplate t) {
     jdbc.update(
-        "UPDATE profile_templates SET name = ?, description = ?, provider = ?, model = ?, "
-            + "base_url = ?, cwd = ?, soul = ?, memory = ?, skills = ?, mcp_servers = ?, "
+        "UPDATE profile_templates SET name = ?, description = ?, category = ?, provider = ?, "
+            + "model = ?, base_url = ?, cwd = ?, soul = ?, memory = ?, skills = ?, mcp_servers = ?, "
             + "secrets = ?, updated_at = ? WHERE id = ?",
-        t.name(), t.description(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
+        t.name(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
         t.soul(), t.memory(), writeJson(t.skills()), writeJson(t.mcpServers()), writeJson(t.secrets()),
         t.updatedAt(), t.id());
   }

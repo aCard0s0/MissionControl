@@ -54,6 +54,10 @@ export class ProfileEditorPanel {
   protected readonly providerChoices = computed(() =>
     providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()));
 
+  /** Categories already in use, offered as a datalist so the library stays tidy
+   *  without turning the field into a fixed list. */
+  protected readonly templateCategories = computed(() => this.templates.categories());
+
   // add-row scratch fields
   protected newSkill = '';
   /** custom-definition form — templates most often carry a stdio command */
