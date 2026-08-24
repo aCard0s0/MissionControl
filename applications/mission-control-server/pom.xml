@@ -45,6 +45,16 @@
       <artifactId>spring-boot-starter-websocket</artifactId>
     </dependency>
 
+    <!-- JVM heap/GC/thread gauges and per-endpoint request timings, on their own
+         loopback-only port (see `management` in application.yml). This dashboard
+         polls the Docker daemon on a timer, so the question "which endpoint is
+         costing what, and is anything growing" needs an answer that is measured
+         rather than reasoned about. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
     <!-- dashboard-owned state only (host registry, board tasks) — Hermes
          containers/profiles remain the source of truth and are read through -->
     <dependency>

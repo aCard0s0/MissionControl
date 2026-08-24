@@ -72,15 +72,23 @@ public class DockerClients {
     this.factory = factory;
   }
 
-  /** For request/response commands — inspect, list, create, start, stop, rename, remove. */
+  /**
+   * For request/response commands — inspect, list, create, start, stop, rename, remove, and
+   * the one-shot {@code stats?stream=false} in {@link ContainerStatsReader}, which despite
+   * the endpoint's name does end on its own.
+   */
   public DockerClient forUrl(String url) {
     return unary.computeIfAbsent(url, u -> factory.create(u, UNARY_RESPONSE_TIMEOUT));
   }
 
   /**
    * For endpoints that stream or long-poll: exec attach, {@code /wait}, log tails, image
-   * pulls, stats and the web terminal. These carry no socket timeout, so the caller's own
-   * bound — {@code awaitCompletion(timeout)}, an idle-session reaper — is the real limit.
+   * pulls, the web terminal, and the held-open {@code stats} streams in
+   * {@link ContainerStatsStreams}. These carry no socket timeout, so the caller's own bound —
+   * {@code awaitCompletion(timeout)}, an idle-session reaper — is the real limit.
+   *
+   * <p>The split is by how the response behaves, not by which endpoint it came from: the two
+   * stats readers sit on either side of it for exactly that reason.
    */
   public DockerClient streamingForUrl(String url) {
     return streaming.computeIfAbsent(url, u -> factory.create(u, null));

@@ -50,6 +50,10 @@ export class LiveSync {
 
   private started = false;
 
+  /** Every registered poll, so a tab returning to the foreground can catch up the
+   *  ones that came due while it was hidden. */
+  private readonly polls: { run: () => void; periodMs: number; lastRun: number }[] = [];
+
   private readonly ctx = inject(StoreContext);
   private readonly hosts = inject(HostStore);
   private readonly containers = inject(ContainerStore);
@@ -88,14 +92,51 @@ export class LiveSync {
     void this.images.refreshAll();
     void this.jobs.refresh();      // needs the profile list
     void this.webhooks.refresh();
-    setInterval(() => this.containers.refresh(), POLL.containers);
-    setInterval(() => this.agents.refresh(), POLL.agents);
-    setInterval(() => this.jobs.refresh(), POLL.jobs);
-    setInterval(() => this.webhooks.refresh(), POLL.jobs);
-    setInterval(() => this.images.refreshAll(), POLL.imageCatalogs);
-    setInterval(() => this.containers.pollStats(), POLL.stats);
-    setInterval(() => this.logs.poll(), POLL.logs);
+    this.schedule(() => this.containers.refresh(), POLL.containers);
+    this.schedule(() => this.agents.refresh(), POLL.agents);
+    this.schedule(() => this.jobs.refresh(), POLL.jobs);
+    this.schedule(() => this.webhooks.refresh(), POLL.jobs);
+    this.schedule(() => this.images.refreshAll(), POLL.imageCatalogs);
+    this.schedule(() => this.containers.pollStats(), POLL.stats);
+    this.schedule(() => this.logs.poll(), POLL.logs);
+    document.addEventListener('visibilitychange', () => this.catchUp());
     void this.containers.pollStats();
     void this.logs.poll();
+  }
+
+  /**
+   * Registers a poll that runs on its own period while the tab is in the foreground.
+   *
+   * <p>A hidden tab polls nothing. Every period here ends at a Docker daemon, so a
+   * dashboard left open in a background tab otherwise keeps that daemon — and a
+   * laptop battery — busy answering questions nobody is reading. Stats alone is a
+   * request per running container every 3 seconds.
+   */
+  private schedule(run: () => void, periodMs: number): void {
+    const poll = { run, periodMs, lastRun: Date.now() };
+    this.polls.push(poll);
+    setInterval(() => {
+      if (document.hidden) return;
+      poll.lastRun = Date.now();
+      run();
+    }, periodMs);
+  }
+
+  /**
+   * Runs the polls that came due while the tab was hidden, so the first paint after
+   * a tab switch is fresh rather than as stale as the last foreground tick left it.
+   *
+   * <p>Only the ones actually due: waking all seven on every visibility change would
+   * turn alt-tabbing into a burst of daemon calls, which is the cost this is here to
+   * avoid in the first place.
+   */
+  private catchUp(): void {
+    if (document.hidden) return;
+    const now = Date.now();
+    for (const poll of this.polls) {
+      if (now - poll.lastRun < poll.periodMs) continue;
+      poll.lastRun = now;
+      poll.run();
+    }
   }
 }

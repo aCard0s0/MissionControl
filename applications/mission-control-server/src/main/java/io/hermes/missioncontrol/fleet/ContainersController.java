@@ -72,17 +72,48 @@ public class ContainersController {
   // reported as a 503 before the container is touched. They used to take the host row's url
   // unprobed, which left the same outage surfacing as a 502 'docker daemon error' — the
   // failure ImagesController's comment already said every such endpoint should avoid.
+  /**
+   * The newest sample for every named container on one host, in one request.
+   *
+   * <p>The fleet view asks about every running container three seconds apart. Asking per
+   * container meant a request each, every one of them blocked for the second or two the
+   * daemon spends taking the two samples a CPU delta needs — so the cost grew with both the
+   * container count and the number of open dashboards, and past six containers the fan-out no
+   * longer fitted inside its own period. This answers all of them from the live streams
+   * {@link io.hermes.missioncontrol.docker.ContainerStatsStreams} holds, which makes it a
+   * memory read.
+   *
+   * <p>The caller names the containers rather than having this list the daemon: it has just
+   * listed them, and repeating that here would put the most expensive call on the fleet view's
+   * fastest timer. A container with no sample yet is absent from the map rather than zeroed.
+   */
+  @GetMapping("/{hostId}/stats")
+  public Map<String, StatsDto> stats(
+      @PathVariable String hostId,
+      @RequestParam List<String> ids) {
+    return docker.stats(hosts.requireConnected(hostId), ids);
+  }
+
+  /** Retained for a single container; the fleet view uses the batched form above. */
   @GetMapping("/{hostId}/{id}/stats")
   public StatsDto stats(@PathVariable String hostId, @PathVariable String id) {
     return docker.stats(hosts.requireConnected(hostId), id);
   }
 
+  /**
+   * The tail, or — with {@code since} — only what has arrived after it.
+   *
+   * <p>{@code since} is an epoch-millisecond cursor the caller took from the newest line it
+   * already holds. Docker resolves it to whole seconds, so the reply can repeat that line;
+   * the caller drops what it recognises.
+   */
   @GetMapping("/{hostId}/{id}/logs")
   public List<LogLineDto> logs(
       @PathVariable String hostId,
       @PathVariable String id,
-      @RequestParam(defaultValue = "100") int tail) {
-    return docker.logs(hosts.requireConnected(hostId), id, tail);
+      @RequestParam(defaultValue = "100") int tail,
+      @RequestParam(required = false) Long since) {
+    return docker.logs(hosts.requireConnected(hostId), id, tail, since);
   }
 
   @PostMapping

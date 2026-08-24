@@ -48,7 +48,7 @@ class McpLogReader {
     for (String serviceName : serviceNames) {
       String containerId = compose.serviceContainerId(row.hostId(), serviceName);
       if (containerId == null) continue;
-      for (LogLineDto line : docker.logs(host, containerId, Math.min(Math.max(tail, 1), 500))) {
+      for (LogLineDto line : docker.logs(host, containerId, Math.min(Math.max(tail, 1), 500), null)) {
         result.add(new LogLineDto(line.ts(), line.level(), serviceName, line.msg()));
       }
     }

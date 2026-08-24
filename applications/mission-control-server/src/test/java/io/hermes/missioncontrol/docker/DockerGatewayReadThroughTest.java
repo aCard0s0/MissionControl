@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -57,6 +59,9 @@ class DockerGatewayReadThroughTest {
   @BeforeEach
   void setUp() {
     when(clients.forUrl("unix:///sock")).thenReturn(client);
+    // log tails and held-open stats read through the streaming client, which is the one
+    // without a socket timeout — see DockerClients
+    when(clients.streamingForUrl("unix:///sock")).thenReturn(client);
   }
 
   // ── daemon probing ───────────────────────────────────────────────────────
@@ -128,7 +133,7 @@ class DockerGatewayReadThroughTest {
         frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z INFO gateway ready\n"),
         frame(StreamType.STDOUT, "2026-08-14T10:00:01.000000000Z ERROR registry unreachable\n"));
 
-    List<LogLineDto> lines = gateway.logs(HOST, "cid", 100);
+    List<LogLineDto> lines = gateway.logs(HOST, "cid", 100, null);
 
     assertEquals(2, lines.size());
     assertEquals(List.of("INFO gateway ready", "ERROR registry unreachable"),
@@ -142,9 +147,9 @@ class DockerGatewayReadThroughTest {
   void theRequestedTailIsClampedToTheDocumentedRange() {
     LogContainerCmd logs = stubLogStream("cid");
 
-    gateway.logs(HOST, "cid", 0);
-    gateway.logs(HOST, "cid", 100);
-    gateway.logs(HOST, "cid", 9999);
+    gateway.logs(HOST, "cid", 0, null);
+    gateway.logs(HOST, "cid", 100, null);
+    gateway.logs(HOST, "cid", 9999, null);
 
     ArgumentCaptor<Integer> tail = ArgumentCaptor.forClass(Integer.class);
     verify(logs, times(3)).withTail(tail.capture());
@@ -154,10 +159,23 @@ class DockerGatewayReadThroughTest {
   }
 
   @Test
+  void aCursorReplacesTheTailRatherThanNarrowingIt() {
+    LogContainerCmd logs = stubLogStream("cid");
+
+    gateway.logs(HOST, "cid", 100, 1_786_701_601_500L);
+
+    // docker takes whole seconds, so the millisecond cursor floors
+    verify(logs).withSince(1_786_701_601);
+    // asking for both would cap a quiet container's catch-up at `tail` lines even though
+    // the cursor already says exactly what the caller is missing
+    verify(logs, never()).withTail(anyInt());
+  }
+
+  @Test
   void theReturnedLogListIsImmutableSoALateFrameCannotMutateIt() {
     stubLogStream("cid", frame(StreamType.STDOUT, "2026-08-14T10:00:00.000000000Z INFO gateway ready\n"));
 
-    List<LogLineDto> lines = gateway.logs(HOST, "cid", 100);
+    List<LogLineDto> lines = gateway.logs(HOST, "cid", 100, null);
 
     // close() does not join the reader thread, so it can still append after the 8s wait
     // expires. Handing back the live ArrayList would let it mutate mid-serialization.

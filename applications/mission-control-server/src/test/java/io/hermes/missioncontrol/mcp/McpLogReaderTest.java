@@ -68,10 +68,10 @@ class McpLogReaderTest {
     when(configs.read(any())).thenReturn(config("db"));
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
     when(compose.serviceContainerId("dh-local", SUPPORT)).thenReturn("cid-db");
-    when(docker.logs(HOST_REF, "cid-server", 100)).thenReturn(List.of(
+    when(docker.logs(HOST_REF, "cid-server", 100, null)).thenReturn(List.of(
         new LogLineDto(30, "INFO", "cid-server", "listening on 1100"),
         new LogLineDto(10, "INFO", "cid-server", "starting")));
-    when(docker.logs(HOST_REF, "cid-db", 100)).thenReturn(List.of(
+    when(docker.logs(HOST_REF, "cid-db", 100, null)).thenReturn(List.of(
         new LogLineDto(20, "INFO", "cid-db", "database system is ready")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);
@@ -89,20 +89,20 @@ class McpLogReaderTest {
     when(configs.read(any())).thenReturn(config("db"));
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
     when(compose.serviceContainerId("dh-local", SUPPORT)).thenReturn(null);
-    when(docker.logs(HOST_REF, "cid-server", 100))
+    when(docker.logs(HOST_REF, "cid-server", 100, null))
         .thenReturn(List.of(new LogLineDto(10, "INFO", "cid-server", "starting")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);
 
     assertEquals(1, lines.size());
-    verify(docker, never()).logs(HOST_REF, null, 100);
+    verify(docker, never()).logs(HOST_REF, null, 100, null);
   }
 
   @Test
   void theRequestedTailIsClampedToAUsableRange() {
     when(configs.read(any())).thenReturn(config());
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
-    when(docker.logs(any(), anyString(), anyInt())).thenReturn(List.of());
+    when(docker.logs(any(), anyString(), anyInt(), any())).thenReturn(List.of());
 
     reader.logs(row("managed"), 0);
     reader.logs(row("managed"), -5);
@@ -111,16 +111,16 @@ class McpLogReaderTest {
 
     // 0 and negatives would ask the daemon for everything it has; 5000 lines is a response
     // nobody reads and a stream the dashboard has to hold in memory
-    verify(docker, times(2)).logs(HOST_REF, "cid-server", 1);
-    verify(docker).logs(HOST_REF, "cid-server", 500);
-    verify(docker).logs(HOST_REF, "cid-server", 250);
+    verify(docker, times(2)).logs(HOST_REF, "cid-server", 1, null);
+    verify(docker).logs(HOST_REF, "cid-server", 500, null);
+    verify(docker).logs(HOST_REF, "cid-server", 250, null);
   }
 
   @Test
   void aServerWithNoSupportServicesReadsOnlyItsOwnContainer() {
     when(configs.read(any())).thenReturn(config());
     when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
-    when(docker.logs(HOST_REF, "cid-server", 100))
+    when(docker.logs(HOST_REF, "cid-server", 100, null))
         .thenReturn(List.of(new LogLineDto(10, "INFO", "cid-server", "starting")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);

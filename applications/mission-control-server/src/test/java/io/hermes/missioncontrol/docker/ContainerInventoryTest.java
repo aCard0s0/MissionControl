@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Level;
@@ -20,6 +22,7 @@ import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import io.hermes.missioncontrol.config.AppProperties;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
+import org.mockito.stubbing.OngoingStubbing;
 import org.slf4j.LoggerFactory;
 
 class ContainerInventoryTest {
@@ -226,6 +230,92 @@ class ContainerInventoryTest {
   }
 
   @Test
+  void containerSizesAreReusedBetweenPollsRatherThanRewalkingEveryLayer() {
+    Container sized = container("aaaaaaa1111", "/sized", "hermes/image:v1");
+    when(sized.getSizeRootFs()).thenReturn(1_073_741_824L);
+    // the same container as the daemon answers for it when the listing did not ask for size
+    Container unpriced = container("aaaaaaa1111", "/sized", "hermes/image:v1");
+    when(unpriced.getSizeRootFs()).thenReturn(null);
+    ListContainersCmd list = stubListings(List.of(sized), List.of(unpriced));
+
+    Double first = byName(subject.listContainers(HOST, false)).get("sized").sizeRootFsGb();
+    Double second = byName(subject.listContainers(HOST, false)).get("sized").sizeRootFsGb();
+
+    assertEquals(1.0, first, 1e-9);
+    // the layer walk is ~90% of the cost of this listing and the answer moves on the order of
+    // hours, so the second poll must skip it and still report — from the cache, not the daemon
+    verify(list).withShowSize(true);
+    verify(list).withShowSize(false);
+    assertEquals(1.0, second, 1e-9);
+  }
+
+  @Test
+  void aContainerTheSizeCacheNeverCoveredRearmsTheListingThatCanPriceIt() {
+    Container known = container("aaaaaaa1111", "/known", "hermes/image:v1");
+    when(known.getSizeRootFs()).thenReturn(1_073_741_824L);
+    Container fresh = container("bbbbbbb2222", "/fresh", "hermes/image:v1");
+    when(fresh.getSizeRootFs()).thenReturn(2_147_483_648L);
+    ListContainersCmd list = stubListings(
+        List.of(known), List.of(known, fresh), List.of(known, fresh));
+
+    subject.listContainers(HOST, false);          // prices what is there
+    subject.listContainers(HOST, false);          // a deploy lands mid-period, unpriced
+    Map<String, ContainerDto> third = byName(subject.listContainers(HOST, false));
+
+    // an Agent deployed inside the TTL must not read 0 GB until the period runs out
+    verify(list, times(2)).withShowSize(true);
+    assertEquals(2.0, third.get("fresh").sizeRootFsGb(), 1e-9);
+  }
+
+  @Test
+  void uptimeIsReadOncePerStatusLineRatherThanOncePerPoll() {
+    Container running = containerInState("aaaaaaa1111", "/live", "running", "Up 3 minutes");
+    stubListings(List.of(running), List.of(running));
+    stubStartedAt("aaaaaaa1111", "2026-08-24T07:00:00.000000000Z");
+
+    Long first = subject.listContainers(HOST, false).get(0).startedAt();
+    Long second = subject.listContainers(HOST, false).get(0).startedAt();
+
+    assertEquals(first, second);
+    // it cannot move while the container keeps running, so paying an inspect per poll for it
+    // buys nothing
+    verify(client, times(1)).inspectContainerCmd("aaaaaaa1111");
+  }
+
+  @Test
+  void aRestartedContainerGetsAFreshUptimeEvenThoughItKeptItsId() {
+    Container before = containerInState("aaaaaaa1111", "/live", "running", "Up 3 hours");
+    Container after = containerInState("aaaaaaa1111", "/live", "running", "Up 2 seconds");
+    stubListings(List.of(before), List.of(after));
+    stubStartedAt("aaaaaaa1111",
+        "2026-08-24T07:00:00.000000000Z", "2026-08-24T10:00:00.000000000Z");
+
+    Long first = subject.listContainers(HOST, false).get(0).startedAt();
+    Long second = subject.listContainers(HOST, false).get(0).startedAt();
+
+    // a restart keeps the container id, so the daemon's own status line is the only thing
+    // that gives it away — and reusing the cached answer past it would report a wrong uptime
+    assertNotEquals(first, second);
+    assertEquals(Instant.parse("2026-08-24T10:00:00.000000000Z").toEpochMilli(), second);
+  }
+
+  @Test
+  void anUptimeIsForgottenWithTheContainerThatOwnedIt() {
+    Container live = containerInState("aaaaaaa1111", "/live", "running", "Up 3 minutes");
+    Container other = container("bbbbbbb2222", "/other", "hermes/image:v1");
+    stubListings(List.of(live), List.of(other), List.of(live));
+    stubStartedAt("aaaaaaa1111",
+        "2026-08-24T07:00:00.000000000Z", "2026-08-24T10:00:00.000000000Z");
+
+    subject.listContainers(HOST, false);
+    subject.listContainers(HOST, false);        // gone — nothing can ask about it again
+    Long readAgain = subject.listContainers(HOST, false).get(0).startedAt();
+
+    // recreated under the same id and the same status line, it must not inherit the old answer
+    assertEquals(Instant.parse("2026-08-24T10:00:00.000000000Z").toEpochMilli(), readAgain);
+  }
+
+  @Test
   void anAgentWeDeployedStaysInTheFleetAfterItsImageReferenceStopsResolving() {
     Container agent = container("aaaaaaa1111", "/demo", BARE_IMAGE_ID);
     when(agent.getLabels()).thenReturn(Map.of("mc.managed", "true"));
@@ -364,19 +454,29 @@ class ContainerInventoryTest {
   }
 
   private void stubListing(Container... containers) {
-    ListContainersCmd list = mock(ListContainersCmd.class, Answers.RETURNS_SELF);
-    when(client.listContainersCmd()).thenReturn(list);
-    when(list.exec()).thenReturn(List.of(containers));
+    stubListings(List.of(containers));
   }
 
-  private void stubStartedAt(String id, String iso) {
+  /** Successive listings, for the caches that only show up across more than one poll. */
+  @SafeVarargs
+  private ListContainersCmd stubListings(List<Container>... listings) {
+    ListContainersCmd list = mock(ListContainersCmd.class, Answers.RETURNS_SELF);
+    when(client.listContainersCmd()).thenReturn(list);
+    OngoingStubbing<List<Container>> stub = when(list.exec()).thenReturn(listings[0]);
+    for (int i = 1; i < listings.length; i++) stub = stub.thenReturn(listings[i]);
+    return list;
+  }
+
+  /** Successive inspects of one container — a second value is what a restart looks like. */
+  private void stubStartedAt(String id, String... isos) {
     InspectContainerCmd inspect = mock(InspectContainerCmd.class);
     InspectContainerResponse inspected = mock(InspectContainerResponse.class);
     ContainerState state = mock(ContainerState.class);
     when(client.inspectContainerCmd(id)).thenReturn(inspect);
     when(inspect.exec()).thenReturn(inspected);
     when(inspected.getState()).thenReturn(state);
-    when(state.getStartedAt()).thenReturn(iso);
+    OngoingStubbing<String> stub = when(state.getStartedAt()).thenReturn(isos[0]);
+    for (int i = 1; i < isos.length; i++) stub = stub.thenReturn(isos[i]);
   }
 
   private void stubMissingOnInspect(String id) {

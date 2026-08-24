@@ -60,11 +60,17 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - mission-control-data:/data
     # Bound the blast radius of a runaway (e.g. leaked terminal exec threads):
-    # cpus caps CPU, mem_limit pairs with -XX:MaxRAMPercentage=75 (~768m heap),
+    # cpus caps CPU, mem_limit pairs with -XX:MaxRAMPercentage=50 (~256m heap),
     # and pids_limit turns a thread leak into a contained failure instead of a
     # host-starving spin. cgroup-level — unaffected by the shared tailscale netns.
+    #
+    # 512m, down from 1g: measured live, this process holds ~41 MB of heap and
+    # ~98 MB of non-heap under a dashboard and five open stats streams, for
+    # ~227 MiB resident. The heap ceiling is what the limit really buys, and at
+    # 256m that is still six times what it has ever been seen to use. Raise both
+    # this and the Dockerfile's percentage together — see the note beside it.
     cpus: "2.0"
-    mem_limit: 1g
+    mem_limit: 512m
     pids_limit: 512
     restart: unless-stopped
 

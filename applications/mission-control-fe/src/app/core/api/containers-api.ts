@@ -14,8 +14,18 @@ export class ContainersApi {
     return this.http.get(`/api/containers/${seg(hostId)}/${seg(id)}/stats`);
   }
 
-  logs(hostId: string, id: string, tail = 100): Promise<ApiLogLine[]> {
-    return this.http.get(`/api/containers/${seg(hostId)}/${seg(id)}/logs?tail=${tail}`);
+  /** Every named container's newest sample in one request, keyed by container id.
+   *  A container the server has no live sample for is simply absent. */
+  statsBatch(hostId: string, ids: string[]): Promise<Record<string, ApiStats>> {
+    const query = ids.map(id => seg(id)).join(',');
+    return this.http.get(`/api/containers/${seg(hostId)}/stats?ids=${query}`);
+  }
+
+  /** `since` is an epoch-ms cursor: the reply carries only lines after it, plus
+   *  possibly the one it was taken from, since docker resolves it to whole seconds. */
+  logs(hostId: string, id: string, tail = 100, since?: number): Promise<ApiLogLine[]> {
+    const cursor = since === undefined ? '' : `&since=${since}`;
+    return this.http.get(`/api/containers/${seg(hostId)}/${seg(id)}/logs?tail=${tail}${cursor}`);
   }
 
   deploy(hostId: string, name: string, version: string, profiles: string[]): Promise<{ id: string }> {

@@ -36,8 +36,16 @@ EXPOSE 8080
 # RAM — the container shares the tailscale netns and would otherwise see host
 # totals. CPU pool sizing is left to the cgroup CPU quota (compose `cpus`); do
 # not pin -XX:ActiveProcessorCount. Fail fast on OOM so restart policy recovers.
+#
+# MaxRAMPercentage governs the heap alone, and everything else this process needs
+# sits on top of it: metaspace, code cache, thread stacks, GC structures and the
+# transport's buffers measured together at ~188 MiB. That figure is close to
+# fixed, so the share left to it has to grow as the limit shrinks — 75% of the
+# old 1g and 50% of today's 512m both leave it the same ~68 MiB of headroom.
+# Move this and compose's `mem_limit` together, or the two disagree about how
+# much of the cgroup the heap may claim and the first full heap is an OOM kill.
 # --enable-native-access: sqlite-jdbc loads its native library through
 # System::load, which on Java 24 prints a four-line unformatted warning to stderr
 # in the middle of startup. Granting it up front is the documented way to silence
 # that, and it is required rather than merely tidy once JEP 472 blocks the call.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50.0", "-XX:+ExitOnOutOfMemoryError", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]
