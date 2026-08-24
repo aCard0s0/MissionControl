@@ -2,7 +2,7 @@ import { inject, Injectable, signal } from '@angular/core';
 import { LlmProvider, ModelProvider, OllamaModel, PullState } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
-import { toLlmProvider, toPullState } from './wire-mappers';
+import { toLlmProvider, toModelProvider, toOllamaModel, toPullState } from './wire-mappers';
 
 /**
  * Two provider registries the UI keeps side by side:
@@ -30,7 +30,7 @@ export class ProviderStore {
 
   async refresh(): Promise<void> {
     try {
-      this.ollamaProviders.set(await this.ctx.api.providers.list());
+      this.ollamaProviders.set((await this.ctx.api.providers.list()).map(toModelProvider));
     } catch { /* transient backend hiccup — keep last known state */ }
   }
 
@@ -49,7 +49,8 @@ export class ProviderStore {
   check(id: string): void {
     this.ollamaProviders.update(ps => ps.map(p => p.id === id ? { ...p, status: 'unknown' as const } : p));
     this.ctx.api.providers.check(id)
-      .then(provider => this.ollamaProviders.update(ps => ps.map(p => p.id === id ? provider : p)))
+      .then(provider => this.ollamaProviders.update(
+        ps => ps.map(p => p.id === id ? toModelProvider(provider) : p)))
       .catch(e => {
         this.ctx.toastFailure('provider check', e);
         this.refresh();
@@ -57,10 +58,12 @@ export class ProviderStore {
   }
 
   models(id: string): Promise<OllamaModel[]> {
-    return this.ctx.api.providers.models(id).catch(e => {
-      this.ctx.toastFailure('model list', e);
-      return [];
-    });
+    return this.ctx.api.providers.models(id)
+      .then(list => list.map(toOllamaModel))
+      .catch(e => {
+        this.ctx.toastFailure('model list', e);
+        return [];
+      });
   }
 
   pullModel(id: string, name: string): Promise<void> {

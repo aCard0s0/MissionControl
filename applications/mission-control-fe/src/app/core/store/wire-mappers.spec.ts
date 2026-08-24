@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer, ApiModelProvider,
-  ApiProfileTemplate,
+  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer,
+  ApiModelProvider, ApiOllamaProvider, ApiProfileTemplate, ApiSession,
 } from '../hermes-api';
 import {
-  toAgentProfile, toAgentSetup, toImageCatalog, toLlmProvider, toLogEntry, toMcpCatalogServer,
-  toMcpRetainedResource, toProfileTemplate, toPullState, toServerInfo,
+  toAgentProfile, toAgentSetup, toChatMessage, toDockerHost, toImageCatalog, toLlmProvider,
+  toLogEntry, toMcpCatalogServer, toMcpRetainedResource, toModelProvider, toOllamaModel,
+  toProfileTemplate, toPullState, toServerInfo, toSessionInfo,
 } from './wire-mappers';
 
 /**
@@ -337,5 +338,77 @@ describe('toLogEntry', () => {
 
     expect(toLogEntry(line, 'a-atlas').agentId).toBe('a-atlas');
     expect(toLogEntry(line, null).agentId).toBeNull();
+  });
+});
+
+describe('toDockerHost', () => {
+  // a host that has never answered a probe reports none of this, and the sidebar chip, the
+  // containers page and the deploy modal all render it
+  it('fills in everything a host that has not answered omits', () => {
+    expect(toDockerHost({ id: 'dh-edge' })).toEqual({
+      id: 'dh-edge', name: 'dh-edge', url: '', kind: 'remote', status: 'disconnected',
+      engine: null, apiVersion: null, latencyMs: null, note: null,
+    });
+  });
+
+  // the sidebar summary is worst-of, so a state we cannot interpret must not read as reachable
+  it('reads a status it does not know as disconnected, never as connected', () => {
+    expect(toDockerHost({ id: 'dh-1', status: 'reconciling' }).status).toBe('disconnected');
+  });
+
+  it('matches the backend\'s casing, which is not always ours', () => {
+    expect(toDockerHost({ id: 'dh-1', status: 'CONNECTED' }).status).toBe('connected');
+  });
+
+  it('treats anything not named local as remote', () => {
+    expect(toDockerHost({ id: 'dh-1', kind: 'local' }).kind).toBe('local');
+    expect(toDockerHost({ id: 'dh-1' }).kind).toBe('remote');
+  });
+});
+
+describe('toModelProvider', () => {
+  // nothing has failed yet, so an unprobed endpoint is unknown rather than an error
+  it('reads an unprobed endpoint as unknown', () => {
+    expect(toModelProvider({ id: 'mp-1', name: 'workstation' })).toEqual({
+      id: 'mp-1', name: 'workstation', url: '', kind: 'ollama',
+      status: 'unknown', version: null, detail: null,
+    });
+  });
+
+  it('is always an ollama endpoint, whatever the row says', () => {
+    expect(toModelProvider({ id: 'mp-1', kind: 'vllm' } as ApiOllamaProvider).kind).toBe('ollama');
+  });
+});
+
+describe('toOllamaModel', () => {
+  // ollama's own fields — a model pulled from a bare digest reports no family or size
+  it('renders a model that reports only its name', () => {
+    expect(toOllamaModel({ name: 'gemma3:4b' })).toEqual({
+      name: 'gemma3:4b', sizeBytes: 0, family: '', parameterSize: '', modifiedAt: 0,
+    });
+  });
+});
+
+describe('toChatMessage', () => {
+  it('names the fields a plain turn carries none of', () => {
+    expect(toChatMessage({ role: 'user', content: 'status?', ts: 1 })).toEqual({
+      role: 'user', content: 'status?', ts: 1,
+      toolName: null, toolCalls: null, reasoning: null,
+    });
+  });
+
+  // a tool turn legitimately carries no content; the viewer renders the call instead
+  it('keeps a tool turn with no content of its own', () => {
+    expect(toChatMessage({ role: 'tool', toolName: 'grep', ts: 2 }))
+      .toMatchObject({ content: '', toolName: 'grep' });
+  });
+});
+
+describe('toSessionInfo', () => {
+  // a status this build cannot read is not evidence a session is still live
+  it('counts only an explicit open as open', () => {
+    expect(toSessionInfo({ status: 'open' } as ApiSession).status).toBe('open');
+    expect(toSessionInfo({ status: 'suspended' } as ApiSession).status).toBe('closed');
+    expect(toSessionInfo({} as ApiSession).status).toBe('closed');
   });
 });

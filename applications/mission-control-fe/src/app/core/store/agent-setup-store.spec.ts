@@ -201,11 +201,16 @@ describe('AgentSetupStore sessions', () => {
     expect(ctx.liveError()).toBe('sessions load failed: no session dir');
   });
 
-  it('reads one session\'s messages, and reports a failure to read them', async () => {
+  // a plain user turn carries no tool call and no reasoning; the viewer binds those fields
+  // either way, so the mapper names them rather than leaving them off the object
+  it('reads one session\'s messages, filling in the turns a plain one omits', async () => {
     const messages = [{ role: 'user', content: 'status?', ts: 1 }];
     const { store } = await loaded({ sessionMessages: vi.fn().mockResolvedValue(messages) });
 
-    expect(await store.sessionMessages('a-atlas', 'sess-1')).toEqual(messages);
+    expect(await store.sessionMessages('a-atlas', 'sess-1')).toEqual([{
+      role: 'user', content: 'status?', ts: 1,
+      toolName: null, toolCalls: null, reasoning: null,
+    }]);
   });
 
   it('surfaces why a session could not be read', async () => {

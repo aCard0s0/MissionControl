@@ -3,7 +3,7 @@ import { AgentSetup, AuthProvider, ChatMessage, SessionInfo } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
-import { toAgentSetup, toAuthProvider } from './wire-mappers';
+import { toAgentSetup, toAuthProvider, toChatMessage, toSessionInfo } from './wire-mappers';
 
 /**
  * A profile's credentials (its `.env`) and its recorded chat sessions — the two
@@ -110,11 +110,7 @@ export class AgentSetupStore {
     const resolved = this.agents.resolve(agentId);
     if (!resolved) return Promise.resolve(null);
     return this.ctx.api.agents.sessions(resolved.ref)
-      .then(list => list.map(s => ({
-        id: s.id, title: s.title, platform: s.platform,
-        startedAt: s.startedAt, messages: s.messages,
-        status: s.status === 'open' ? 'open' as const : 'closed' as const,
-      })))
+      .then(list => list.map(toSessionInfo))
       .catch(e => { this.ctx.toastFailure('sessions load', e); return null; });
   }
 
@@ -126,6 +122,7 @@ export class AgentSetupStore {
       return Promise.resolve(null);
     }
     return this.ctx.api.agents.sessionMessages(resolved.ref, sessionId)
+      .then(list => list.map(toChatMessage))
       .catch(e => { this.ctx.toastFailure('session load', e); return null; });
   }
 

@@ -1,14 +1,16 @@
 import {
-  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer, ApiMcpConfigEntry,
-  ApiMcpHealthcheck, ApiMcpRetainedResource, ApiMcpSupportService, ApiModelProvider,
-  ApiLogLine, ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSetupApiKey,
+  ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
+  ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
+  ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiOllamaModel, ApiOllamaProvider,
+  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
-  AgentProfile, AgentSetup, AuthProvider, ImageCatalog, LlmProvider, McpCatalogKind,
-  McpCatalogServer, McpCheckStatus, McpConfigEntry, McpHealthcheck, McpRetainedResource,
-  LogEntry, McpRuntimeState, McpSupportService, McpTransport, ProfileTemplate, Prompt, PullState,
-  ServerInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
+  AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus,
+  ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
+  McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
+  McpTransport, ModelProvider, ModelProviderStatus, OllamaModel, ProfileTemplate, Prompt,
+  PullState, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
 } from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
@@ -328,5 +330,83 @@ export function toLogEntry(api: ApiLogLine, agentId: string | null): LogEntry {
     source: api.source ?? '',
     agentId,
     msg: api.msg ?? '',
+  };
+}
+
+const HOST_STATUSES: DockerHostStatus[] = ['connected', 'connecting', 'error', 'disconnected'];
+const PROVIDER_STATUSES: ModelProviderStatus[] = ['connected', 'error', 'unknown'];
+
+/**
+ * A docker daemon.
+ *
+ * <p>Everything past the id defaults, because a host that has never answered a probe has no
+ * engine, version or latency to report — and the sidebar chip, the containers page and the
+ * deploy modal all render this. A status the backend names that this build does not know reads
+ * as `disconnected` rather than as connected: the summary chip is worst-of, and a state we
+ * cannot interpret is not evidence a daemon is reachable.
+ */
+export function toDockerHost(api: ApiDockerHost): DockerHost {
+  return {
+    id: api.id,
+    name: api.name ?? api.id,
+    url: api.url ?? '',
+    kind: api.kind === 'local' ? 'local' : 'remote',
+    status: oneOf(api.status, HOST_STATUSES, 'disconnected'),
+    engine: api.engine ?? null,
+    apiVersion: api.apiVersion ?? null,
+    latencyMs: api.latencyMs ?? null,
+    note: api.note ?? null,
+  };
+}
+
+/** A registered ollama endpoint. An unprobed one reports no status, which is `unknown` — not
+ *  an error, because nothing has failed yet. */
+export function toModelProvider(api: ApiOllamaProvider): ModelProvider {
+  return {
+    id: api.id,
+    name: api.name ?? api.id,
+    url: api.url ?? '',
+    kind: 'ollama',
+    status: oneOf(api.status, PROVIDER_STATUSES, 'unknown'),
+    version: api.version ?? null,
+    detail: api.detail ?? null,
+  };
+}
+
+/** One model on an ollama endpoint. The optional fields are ollama's own — a model pulled from
+ *  a bare digest reports no family or parameter size, and the row still has to render. */
+export function toOllamaModel(api: ApiOllamaModel): OllamaModel {
+  return {
+    name: api.name,
+    sizeBytes: api.sizeBytes ?? 0,
+    family: api.family ?? '',
+    parameterSize: api.parameterSize ?? '',
+    modifiedAt: api.modifiedAt ?? 0,
+  };
+}
+
+/** One turn of a recorded session. `content` defaults to empty rather than staying absent: a
+ *  tool turn legitimately carries none, and the viewer renders the tool call instead. */
+export function toChatMessage(api: ApiChatMessage): ChatMessage {
+  return {
+    role: api.role ?? '',
+    content: api.content ?? '',
+    toolName: api.toolName ?? null,
+    toolCalls: api.toolCalls ?? null,
+    reasoning: api.reasoning ?? null,
+    ts: api.ts ?? 0,
+  };
+}
+
+/** One recorded session. Only `open` counts as open: the backend spells this from the agent's
+ *  own state, and a status this build cannot read is not evidence a session is still live. */
+export function toSessionInfo(api: ApiSession): SessionInfo {
+  return {
+    id: api.id,
+    title: api.title ?? '',
+    platform: api.platform ?? '',
+    startedAt: api.startedAt ?? 0,
+    messages: api.messages ?? 0,
+    status: api.status === 'open' ? 'open' : 'closed',
   };
 }
