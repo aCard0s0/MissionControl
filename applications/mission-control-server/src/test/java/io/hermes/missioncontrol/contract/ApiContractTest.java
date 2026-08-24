@@ -96,7 +96,7 @@ class ApiContractTest {
     CONTRACT.put("ApiLogLine", LogLineDto.class);
     CONTRACT.put("ApiImageTag", ImageTagDto.class);
     CONTRACT.put("ApiImageTags", ImageTagsDto.class);
-    CONTRACT.put("DockerHost", DockerHostDto.class);
+    CONTRACT.put("ApiDockerHost", DockerHostDto.class);
     // agents
     CONTRACT.put("ApiAgentProfile", AgentProfileDto.class);
     CONTRACT.put("ApiSkillRef", SkillDto.class);
@@ -136,8 +136,8 @@ class ApiContractTest {
     // models / providers
     CONTRACT.put("ApiModelCatalog", ModelCatalogDto.class);
     CONTRACT.put("ApiPullState", PullStatusDto.class);
-    CONTRACT.put("ModelProvider", ModelProviderDto.class);
-    CONTRACT.put("OllamaModel", OllamaModelDto.class);
+    CONTRACT.put("ApiOllamaProvider", ModelProviderDto.class);
+    CONTRACT.put("ApiOllamaModel", OllamaModelDto.class);
     // board
     CONTRACT.put("ApiBoardTask", BoardTask.class);
     // prompt library
@@ -236,8 +236,10 @@ class ApiContractTest {
       String type = aliases.getOrDefault(m.group(1), m.group(1));
       responseTypes.add(type);
     }
-    // not payload shapes: a bare value, nothing, or the python-built chat history
-    responseTypes.removeAll(Set.of("T", "void", "boolean", "string", "number", "ChatMessage"));
+    // not payload shapes: a bare value, nothing, or the chat history, which hermes builds
+    // inside the container and this service only relays — there is no record here to pin
+    responseTypes.removeAll(
+        Set.of("T", "void", "boolean", "string", "number", "ApiChatMessage"));
 
     Set<String> uncovered = new TreeSet<>(responseTypes);
     uncovered.removeAll(CONTRACT.keySet());
