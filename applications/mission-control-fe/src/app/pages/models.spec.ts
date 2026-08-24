@@ -3,8 +3,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProviderStore } from '../core/store/provider-store';
-import { ApiPullState } from '../core/hermes-api';
-import { ModelProvider, OllamaModel } from '../core/models';
+import { ModelProvider, OllamaModel, PullState } from '../core/models';
 import { ModelsPage } from './models';
 import { el, press, settle, type } from '../testing/dom';
 
@@ -26,7 +25,7 @@ const storeStub = (providers: ModelProvider[] = [provider('mp-1', 'workstation')
     models: vi.fn().mockResolvedValue([model('gemma3:4b')]),
     pullModel: vi.fn().mockResolvedValue(undefined),
     deleteModel: vi.fn().mockResolvedValue(undefined),
-    pullStatus: vi.fn().mockResolvedValue([] as ApiPullState[]),
+    pullStatus: vi.fn().mockResolvedValue([] as PullState[]),
   },
 });
 

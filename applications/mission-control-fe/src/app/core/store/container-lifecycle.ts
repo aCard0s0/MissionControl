@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { isFloatingTag } from '../image-tags';
+import { isFloatingTag } from '../image-policy';
 import { ContainerStatus } from '../models';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';

@@ -1,19 +1,19 @@
-import { DockerHost } from '../models';
+import { ApiDockerHost } from './api-types';
 import { ApiHttp, seg } from './http';
 
 /** `/api/hosts` — the docker daemons Mission Control drives. */
 export class HostsApi {
   constructor(private readonly http: ApiHttp) {}
 
-  list(): Promise<DockerHost[]> {
+  list(): Promise<ApiDockerHost[]> {
     return this.http.get('/api/hosts');
   }
 
-  add(name: string, url: string): Promise<DockerHost> {
+  add(name: string, url: string): Promise<ApiDockerHost> {
     return this.http.post('/api/hosts', { name, url });
   }
 
-  check(id: string): Promise<DockerHost> {
+  check(id: string): Promise<ApiDockerHost> {
     return this.http.post(`/api/hosts/${seg(id)}/check`);
   }
 

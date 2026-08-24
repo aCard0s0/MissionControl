@@ -1,8 +1,8 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { ApiModelProvider, ApiPullState } from '../hermes-api';
-import { ModelProvider, OllamaModel } from '../models';
+import { LlmProvider, ModelProvider, OllamaModel, PullState } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
+import { toLlmProvider, toModelProvider, toOllamaModel, toPullState } from './wire-mappers';
 
 /**
  * Two provider registries the UI keeps side by side:
@@ -14,7 +14,7 @@ import { StoreContext } from './store-context';
 export class ProviderStore {
   /** LLM provider registry for the create-agent / template pickers. Seeded with
    *  the bootstrap mirror, refreshed from the backend in live mode. */
-  readonly llmProviders = signal<ApiModelProvider[]>(DEFAULT_LLM_PROVIDERS);
+  readonly llmProviders = signal<LlmProvider[]>(DEFAULT_LLM_PROVIDERS);
 
   readonly ollamaProviders = signal<ModelProvider[]>([]);
 
@@ -24,13 +24,13 @@ export class ProviderStore {
   async refreshRegistry(): Promise<void> {
     try {
       const list = await this.ctx.api.providers.registry();
-      if (list.length) this.llmProviders.set(list);
+      if (list.length) this.llmProviders.set(list.map(toLlmProvider));
     } catch { /* keep DEFAULT_LLM_PROVIDERS */ }
   }
 
   async refresh(): Promise<void> {
     try {
-      this.ollamaProviders.set(await this.ctx.api.providers.list());
+      this.ollamaProviders.set((await this.ctx.api.providers.list()).map(toModelProvider));
     } catch { /* transient backend hiccup — keep last known state */ }
   }
 
@@ -49,7 +49,8 @@ export class ProviderStore {
   check(id: string): void {
     this.ollamaProviders.update(ps => ps.map(p => p.id === id ? { ...p, status: 'unknown' as const } : p));
     this.ctx.api.providers.check(id)
-      .then(provider => this.ollamaProviders.update(ps => ps.map(p => p.id === id ? provider : p)))
+      .then(provider => this.ollamaProviders.update(
+        ps => ps.map(p => p.id === id ? toModelProvider(provider) : p)))
       .catch(e => {
         this.ctx.toastFailure('provider check', e);
         this.refresh();
@@ -57,10 +58,12 @@ export class ProviderStore {
   }
 
   models(id: string): Promise<OllamaModel[]> {
-    return this.ctx.api.providers.models(id).catch(e => {
-      this.ctx.toastFailure('model list', e);
-      return [];
-    });
+    return this.ctx.api.providers.models(id)
+      .then(list => list.map(toOllamaModel))
+      .catch(e => {
+        this.ctx.toastFailure('model list', e);
+        return [];
+      });
   }
 
   pullModel(id: string, name: string): Promise<void> {
@@ -73,8 +76,10 @@ export class ProviderStore {
       .catch(e => this.ctx.toastFailure('model delete', e));
   }
 
-  pullStatus(id: string): Promise<ApiPullState[]> {
-    return this.ctx.api.providers.pullStatus(id).catch(() => []);
+  pullStatus(id: string): Promise<PullState[]> {
+    return this.ctx.api.providers.pullStatus(id)
+      .then(list => list.map(toPullState))
+      .catch(() => []);
   }
 
   /** Models a provider key can serve, from the backend's configured catalog. */

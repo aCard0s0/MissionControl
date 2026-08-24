@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiProfileTemplate } from '../hermes-api';
 import {
-  toAgentProfile, toImageCatalog, toMcpCatalogServer, toMcpRetainedResource, toProfileTemplate,
+  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer,
+  ApiModelProvider, ApiOllamaProvider, ApiProfileTemplate, ApiSession,
+} from '../hermes-api';
+import {
+  toAgentProfile, toAgentSetup, toChatMessage, toDockerHost, toImageCatalog, toLlmProvider,
+  toLogEntry, toMcpCatalogServer, toMcpRetainedResource, toModelProvider, toOllamaModel,
+  toProfileTemplate, toPullState, toServerInfo, toSessionInfo,
 } from './wire-mappers';
 
 /**
@@ -251,5 +256,159 @@ describe('toProfileTemplate', () => {
       { key: 'A', set: false, recoverable: false },
       { key: 'B', set: true, recoverable: true },
     ]);
+  });
+});
+
+describe('toAgentSetup', () => {
+  // hermes reports these sections; a version that does not know one omits it, and the Setup
+  // tab has to render "nothing set up" rather than fail on a binding to undefined
+  it('fills in every section a sparse payload leaves out', () => {
+    const setup = toAgentSetup({ envPath: '/opt/data/.env', envExists: true } as ApiAgentSetup);
+
+    expect(setup.apiKeys).toEqual([]);
+    expect(setup.authProviders).toEqual([]);
+    expect(setup.apiKeyProviders).toEqual([]);
+    expect(setup.messaging).toEqual([]);
+  });
+
+  it('treats a missing flag as not-set rather than as undefined', () => {
+    const setup = toAgentSetup({
+      apiKeys: [{ label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY' }],
+      authProviders: [{ label: 'Nous Portal', status: 'not logged in' }],
+      messaging: [{ label: 'Discord', status: 'off', tokenVar: 'DISCORD_TOKEN' }],
+    } as unknown as ApiAgentSetup);
+
+    expect(setup.envExists).toBe(false);
+    expect(setup.apiKeys[0]).toEqual({
+      label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', set: false, masked: null,
+    });
+    expect(setup.authProviders[0].ok).toBe(false);
+    expect(setup.messaging[0]).toMatchObject({ ok: false, homeVar: null, homeChannel: null });
+  });
+
+  it('keeps a field it does not know about out of the model', () => {
+    const setup = toAgentSetup(
+      { envPath: '/e', envExists: true, quotaGb: 12 } as unknown as ApiAgentSetup);
+
+    expect('quotaGb' in setup).toBe(false);
+  });
+});
+
+describe('toLlmProvider', () => {
+  // the picker asks for a key it may not need rather than omitting one it does
+  it('treats an incompletely described provider as the most demanding case', () => {
+    expect(toLlmProvider({ key: 'newvendor' } as ApiModelProvider)).toEqual({
+      key: 'newvendor', label: 'newvendor', needsKey: true,
+      oauth: false, hasCatalog: false, envVar: null,
+    });
+  });
+
+  it('keeps a keyless OAuth provider keyless', () => {
+    expect(toLlmProvider({
+      key: 'nous', label: 'Nous (account)', needsKey: false,
+      oauth: true, hasCatalog: true, envVar: null,
+    })).toMatchObject({ needsKey: false, oauth: true });
+  });
+});
+
+describe('toPullState', () => {
+  it('carries a status it knows', () => {
+    expect(toPullState({ model: 'gemma3:4b', status: 'pulling', detail: null }))
+      .toEqual({ model: 'gemma3:4b', status: 'pulling', detail: null });
+  });
+
+  // a pull this build cannot name is one it cannot promise is still running, and a row stuck
+  // on 'pulling' never clears on its own
+  it('reads an unrecognised status as an error rather than as in-flight', () => {
+    expect(toPullState({ model: 'm', status: 'cancelled', detail: null } as never).status)
+      .toBe('error');
+  });
+});
+
+describe('toServerInfo', () => {
+  it('answers something renderable for a payload that names nothing', () => {
+    expect(toServerInfo({} as never)).toEqual({ version: '', retained: 0, startedAt: 0 });
+  });
+});
+
+describe('toLogEntry', () => {
+  // the same wire shape arrives from four tails; only the caller knows whose it is
+  it('attributes a line to the caller\'s subject, not to the payload', () => {
+    const line = { ts: 5, level: 'warn' as const, source: 'gateway', msg: 'slow' };
+
+    expect(toLogEntry(line, 'a-atlas').agentId).toBe('a-atlas');
+    expect(toLogEntry(line, null).agentId).toBeNull();
+  });
+});
+
+describe('toDockerHost', () => {
+  // a host that has never answered a probe reports none of this, and the sidebar chip, the
+  // containers page and the deploy modal all render it
+  it('fills in everything a host that has not answered omits', () => {
+    expect(toDockerHost({ id: 'dh-edge' })).toEqual({
+      id: 'dh-edge', name: 'dh-edge', url: '', kind: 'remote', status: 'disconnected',
+      engine: null, apiVersion: null, latencyMs: null, note: null,
+    });
+  });
+
+  // the sidebar summary is worst-of, so a state we cannot interpret must not read as reachable
+  it('reads a status it does not know as disconnected, never as connected', () => {
+    expect(toDockerHost({ id: 'dh-1', status: 'reconciling' }).status).toBe('disconnected');
+  });
+
+  it('matches the backend\'s casing, which is not always ours', () => {
+    expect(toDockerHost({ id: 'dh-1', status: 'CONNECTED' }).status).toBe('connected');
+  });
+
+  it('treats anything not named local as remote', () => {
+    expect(toDockerHost({ id: 'dh-1', kind: 'local' }).kind).toBe('local');
+    expect(toDockerHost({ id: 'dh-1' }).kind).toBe('remote');
+  });
+});
+
+describe('toModelProvider', () => {
+  // nothing has failed yet, so an unprobed endpoint is unknown rather than an error
+  it('reads an unprobed endpoint as unknown', () => {
+    expect(toModelProvider({ id: 'mp-1', name: 'workstation' })).toEqual({
+      id: 'mp-1', name: 'workstation', url: '', kind: 'ollama',
+      status: 'unknown', version: null, detail: null,
+    });
+  });
+
+  it('is always an ollama endpoint, whatever the row says', () => {
+    expect(toModelProvider({ id: 'mp-1', kind: 'vllm' } as ApiOllamaProvider).kind).toBe('ollama');
+  });
+});
+
+describe('toOllamaModel', () => {
+  // ollama's own fields — a model pulled from a bare digest reports no family or size
+  it('renders a model that reports only its name', () => {
+    expect(toOllamaModel({ name: 'gemma3:4b' })).toEqual({
+      name: 'gemma3:4b', sizeBytes: 0, family: '', parameterSize: '', modifiedAt: 0,
+    });
+  });
+});
+
+describe('toChatMessage', () => {
+  it('names the fields a plain turn carries none of', () => {
+    expect(toChatMessage({ role: 'user', content: 'status?', ts: 1 })).toEqual({
+      role: 'user', content: 'status?', ts: 1,
+      toolName: null, toolCalls: null, reasoning: null,
+    });
+  });
+
+  // a tool turn legitimately carries no content; the viewer renders the call instead
+  it('keeps a tool turn with no content of its own', () => {
+    expect(toChatMessage({ role: 'tool', toolName: 'grep', ts: 2 }))
+      .toMatchObject({ content: '', toolName: 'grep' });
+  });
+});
+
+describe('toSessionInfo', () => {
+  // a status this build cannot read is not evidence a session is still live
+  it('counts only an explicit open as open', () => {
+    expect(toSessionInfo({ status: 'open' } as ApiSession).status).toBe('open');
+    expect(toSessionInfo({ status: 'suspended' } as ApiSession).status).toBe('closed');
+    expect(toSessionInfo({} as ApiSession).status).toBe('closed');
   });
 });

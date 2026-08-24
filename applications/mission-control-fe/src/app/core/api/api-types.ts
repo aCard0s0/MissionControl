@@ -4,6 +4,52 @@ import { BoardColumn, TemplateMcp } from '../models';
 // accepts is declared here; the clients under this folder only compose URLs and
 // the store maps these onto the domain models in ../models.
 
+/** A docker daemon, as the backend describes it. Every field past the id is optional on the
+ *  wire: a host that has never answered a probe has no engine, version or latency to report. */
+export interface ApiDockerHost {
+  id: string;
+  name?: string;
+  url?: string;
+  kind?: 'local' | 'remote' | string;
+  status?: 'connected' | 'connecting' | 'error' | 'disconnected' | string;
+  engine?: string | null;
+  apiVersion?: string | null;
+  latencyMs?: number | null;
+  note?: string | null;
+}
+
+/** A registered ollama endpoint. `status` is the last probe's answer, and a provider that has
+ *  not been probed yet reports none. */
+export interface ApiOllamaProvider {
+  id: string;
+  name?: string;
+  url?: string;
+  kind?: 'ollama' | string;
+  status?: 'connected' | 'error' | 'unknown' | string;
+  version?: string | null;
+  detail?: string | null;
+}
+
+/** One model on an ollama endpoint, relayed from `GET {url}/api/tags`. Its optional fields are
+ *  ollama's own: a model pulled from a bare digest reports no family or parameter size. */
+export interface ApiOllamaModel {
+  name: string;
+  sizeBytes?: number;
+  family?: string;
+  parameterSize?: string;
+  modifiedAt?: number;
+}
+
+/** One turn of a recorded session, read out of the agent's own state.db. */
+export interface ApiChatMessage {
+  role?: string;
+  content?: string;
+  toolName?: string | null;
+  toolCalls?: string | null;
+  reasoning?: string | null;
+  ts?: number;
+}
+
 export interface ApiContainer {
   id: string;
   shortId: string;

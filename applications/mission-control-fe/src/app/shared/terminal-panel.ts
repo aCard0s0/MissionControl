@@ -73,7 +73,10 @@ export class TerminalPanel {
   protected readonly ctx = inject(StoreContext);
   protected readonly hosts = inject(HostStore);
   protected readonly terminal = inject(TerminalRequestStore);
-  private readonly apiBase = this.ctx.config.apiBaseUrl || location.origin;
+  /** Bound once: which backend a pane connects to is the api layer's answer, not the
+   *  panel's — it only decides which container each pane is pointed at. */
+  private readonly socketUrl = (hostId: string, containerId: string): string =>
+    this.ctx.api.terminalSocketUrl(hostId, containerId);
   private readonly injector = inject(Injector);
 
   protected readonly open = signal(false);
@@ -400,7 +403,7 @@ export class TerminalPanel {
       return null;
     }
     const beside = split ? this.focusedId() : null;   // read before the new tab takes focus
-    const s = new TerminalSession(target, this.apiBase);
+    const s = new TerminalSession(target, this.socketUrl);
     this.sessions.update(list => [...list, s]);
     this.focusedId.set(s.id);
     // with the panel closed there is no dock yet; mounting picks the session up
@@ -537,7 +540,7 @@ export class TerminalPanel {
         {
           hostId: t.hostId, containerId: t.containerId, label: t.label ?? '',
           agentKey: t.agentKey, command: t.command,
-        }, this.apiBase, t.id);
+        }, this.socketUrl, t.id);
       return session;
     }));
     this.focusedId.set(activeId);

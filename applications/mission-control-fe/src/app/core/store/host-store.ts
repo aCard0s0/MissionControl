@@ -1,6 +1,7 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { DockerHost } from '../models';
 import { StoreContext } from './store-context';
+import { toDockerHost } from './wire-mappers';
 
 /**
  * The docker daemons Mission Control deploys to, and their reachability. Every
@@ -35,7 +36,7 @@ export class HostStore {
 
   async refresh(): Promise<void> {
     try {
-      this.hosts.set(await this.ctx.api.hosts.list());
+      this.hosts.set((await this.ctx.api.hosts.list()).map(toDockerHost));
     } catch { /* transient backend hiccup — keep last known state */ }
   }
 
@@ -60,7 +61,7 @@ export class HostStore {
   check(id: string): void {
     this.hosts.update(hs => hs.map(h => h.id === id ? { ...h, status: 'connecting' as const } : h));
     this.ctx.api.hosts.check(id)
-      .then(host => this.hosts.update(hs => hs.map(h => h.id === id ? host : h)))
+      .then(host => this.hosts.update(hs => hs.map(h => h.id === id ? toDockerHost(host) : h)))
       .catch(e => {
         this.ctx.toastFailure('host check', e);
         this.refresh();

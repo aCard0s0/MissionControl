@@ -1,5 +1,6 @@
-import { ModelProvider, OllamaModel } from '../models';
-import { ApiModelCatalog, ApiModelProvider, ApiPullState } from './api-types';
+import {
+  ApiModelCatalog, ApiModelProvider, ApiOllamaModel, ApiOllamaProvider, ApiPullState,
+} from './api-types';
 import { ApiHttp, seg } from './http';
 
 /**
@@ -26,11 +27,11 @@ export class ProvidersApi {
     return this.http.post(`/api/models/${seg(provider)}`, { apiKey });
   }
 
-  list(): Promise<ModelProvider[]> {
+  list(): Promise<ApiOllamaProvider[]> {
     return this.http.get('/api/model-providers');
   }
 
-  add(name: string, url: string): Promise<ModelProvider> {
+  add(name: string, url: string): Promise<ApiOllamaProvider> {
     return this.http.post('/api/model-providers', { name, url });
   }
 
@@ -38,11 +39,11 @@ export class ProvidersApi {
     return this.http.delete(`/api/model-providers/${seg(id)}`);
   }
 
-  check(id: string): Promise<ModelProvider> {
+  check(id: string): Promise<ApiOllamaProvider> {
     return this.http.post(`/api/model-providers/${seg(id)}/check`);
   }
 
-  models(id: string): Promise<OllamaModel[]> {
+  models(id: string): Promise<ApiOllamaModel[]> {
     return this.http.get(`/api/model-providers/${seg(id)}/models`);
   }
 

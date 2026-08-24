@@ -3,6 +3,7 @@ import { errorMessage } from '../errors';
 import { LogEntry } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
+import { toLogEntry } from './wire-mappers';
 
 /**
  * Docker log tails, cached per container so switching back to one shows its last
@@ -53,7 +54,7 @@ export class LogStore {
       const lines = await this.ctx.api.containers.logs(c.hostId, c.id, 100);
       this.byContainer.update(m => ({
         ...m,
-        [c.id]: lines.map(l => ({ ...l, agentId: null })),
+        [c.id]: lines.map(l => toLogEntry(l, null)),
       }));
       if (this.isSelected(c.id)) this.updatedAt.set(Date.now());
     } catch (e) {

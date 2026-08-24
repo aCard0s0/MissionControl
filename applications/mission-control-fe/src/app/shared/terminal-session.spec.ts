@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Terminal } from '@xterm/xterm';
+import { terminalSocketUrl } from '../core/api/terminal-socket';
 import { TerminalSession } from './terminal-session';
 
 /** Minimal stand-in for the browser WebSocket — records what the tab sends. */
@@ -38,6 +39,11 @@ class FakeSocket {
   }
 }
 
+/** The real URL builder, bound to a test backend — so these tests exercise the same address
+ *  a pane gets in the app rather than a string shaped like one. */
+const socketUrl = (hostId: string, containerId: string): string =>
+  terminalSocketUrl('http://mc.test', hostId, containerId);
+
 const target = (command?: string) => ({
   hostId: 'dh-local', containerId: 'c-prod', label: 'ops-bot',
   agentKey: 'c-prod--ops-bot', command,
@@ -57,7 +63,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('holds the command until the shell answers — the backend drops stdin sent on open', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
 
@@ -69,7 +75,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('sends the command once, however much output follows', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
 
@@ -82,7 +88,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('falls back to a timer for a shell that prints no prompt', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
 
@@ -93,7 +99,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('sends nothing for a tab with no command', () => {
-    const s = new TerminalSession(target(), 'http://mc.test');
+    const s = new TerminalSession(target(), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
 
@@ -105,7 +111,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('drops a queued command when the socket closes before the shell replies', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
 
@@ -117,7 +123,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('drops the command when the tab is re-pointed at another container', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.connect();
 
     s.repoint({ hostId: 'dh-local', containerId: 'c-staging', label: 'staging' });
@@ -132,7 +138,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('re-runs the command on reconnect — every reconnect is a fresh exec', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.connect();
     FakeSocket.last!.onopen!();
     FakeSocket.last!.emit('$ ');
@@ -146,7 +152,7 @@ describe('TerminalSession startup command', () => {
   });
 
   it('round-trips the agent fields through the persisted shape', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test', 't-1');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl, 't-1');
 
     expect(s.toJSON()).toEqual({
       id: 't-1', hostId: 'dh-local', containerId: 'c-prod', label: 'ops-bot',
@@ -169,7 +175,7 @@ describe('TerminalSession.type — a line put at the prompt, not run', () => {
   });
 
   it('sends no newline, so the operator is the one who runs it', () => {
-    const s = new TerminalSession(target(), 'http://mc.test');
+    const s = new TerminalSession(target(), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
     ws.onopen!();
@@ -182,7 +188,7 @@ describe('TerminalSession.type — a line put at the prompt, not run', () => {
   it('holds the line for a shell that is still coming up', () => {
     // the drawer can insert into a tab the panel created a tick ago; the backend drops stdin
     // until the exec is registered, so an eager send would vanish
-    const s = new TerminalSession(target(), 'http://mc.test');
+    const s = new TerminalSession(target(), socketUrl);
     s.type('hermes status');
     s.connect();
     const ws = FakeSocket.last!;
@@ -195,7 +201,7 @@ describe('TerminalSession.type — a line put at the prompt, not run', () => {
   });
 
   it('is not discarded by the connect of a tab that has no startup command of its own', () => {
-    const s = new TerminalSession(target(), 'http://mc.test');
+    const s = new TerminalSession(target(), socketUrl);
     s.type('hermes doctor');
     s.connect();          // arms nothing — must not clear what is already queued
     const ws = FakeSocket.last!;
@@ -207,7 +213,7 @@ describe('TerminalSession.type — a line put at the prompt, not run', () => {
   });
 
   it('loses to the startup command of an agent tab, which has to run first', () => {
-    const s = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const s = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     s.type('hermes doctor');
     s.connect();
     const ws = FakeSocket.last!;
@@ -219,7 +225,7 @@ describe('TerminalSession.type — a line put at the prompt, not run', () => {
   });
 
   it('sends nothing for an empty line', () => {
-    const s = new TerminalSession(target(), 'http://mc.test');
+    const s = new TerminalSession(target(), socketUrl);
     s.connect();
     const ws = FakeSocket.last!;
     ws.onopen!();
@@ -244,12 +250,12 @@ describe('TerminalSession identity and wiring', () => {
   });
 
   it('takes the id it is restored with, so a saved tab keeps its identity', () => {
-    expect(new TerminalSession(target(), 'http://mc.test', 't-saved').id).toBe('t-saved');
+    expect(new TerminalSession(target(), socketUrl, 't-saved').id).toBe('t-saved');
   });
 
   it('mints distinct ids for new tabs', () => {
-    const first = new TerminalSession(target(), 'http://mc.test');
-    const second = new TerminalSession(target(), 'http://mc.test');
+    const first = new TerminalSession(target(), socketUrl);
+    const second = new TerminalSession(target(), socketUrl);
 
     expect(first.id).not.toBe(second.id);
   });
@@ -259,35 +265,26 @@ describe('TerminalSession identity and wiring', () => {
       get randomUUID(): never { throw new Error('requires a secure context'); },
     });
 
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
 
     expect(session.id).toMatch(/^t-/);
   });
 
-  it('speaks ws to an http backend and wss to an https one', () => {
-    new TerminalSession(target(), 'http://mc.test').connect();
-    expect(FakeSocket.last!.url).toMatch(/^ws:\/\/mc\.test\//);
+  it('opens the socket the api layer addressed for its target', () => {
+    new TerminalSession({ hostId: 'dh/1', containerId: 'c 1', label: 'x' }, socketUrl).connect();
 
-    new TerminalSession(target(), 'https://mc.test').connect();
-    expect(FakeSocket.last!.url).toMatch(/^wss:\/\/mc\.test\//);
-  });
-
-  it('escapes the host and container it addresses', () => {
-    new TerminalSession(
-      { hostId: 'dh/1', containerId: 'c 1', label: 'x' }, 'http://mc.test').connect();
-
-    expect(FakeSocket.last!.url).toContain('hostId=dh%2F1&containerId=c%201');
+    expect(FakeSocket.last!.url).toBe(socketUrl('dh/1', 'c 1'));
   });
 
   it('opens nothing for a tab with no container yet', () => {
-    new TerminalSession({ hostId: '', containerId: '', label: '(choose)' }, 'http://mc.test')
+    new TerminalSession({ hostId: '', containerId: '', label: '(choose)' }, socketUrl)
       .connect();
 
     expect(FakeSocket.last).toBeNull();
   });
 
   it('connects on first attach only, so re-parking the div cannot restart a shell', () => {
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
 
     session.connectOnce();
     const first = FakeSocket.last;
@@ -297,7 +294,7 @@ describe('TerminalSession identity and wiring', () => {
   });
 
   it('reads the binary frames a real exec sends, not just text ones', () => {
-    const session = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const session = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     session.connect();
     const ws = FakeSocket.last!;
 
@@ -308,7 +305,7 @@ describe('TerminalSession identity and wiring', () => {
   });
 
   it('drops frames from a socket that has been superseded', () => {
-    const session = new TerminalSession(target('hermes -p ops-bot'), 'http://mc.test');
+    const session = new TerminalSession(target('hermes -p ops-bot'), socketUrl);
     session.connect();
     const stale = FakeSocket.last!;
     session.connect();
@@ -320,7 +317,7 @@ describe('TerminalSession identity and wiring', () => {
   });
 
   it('releases the exec when the tab is closed or disposed', () => {
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.connect();
     const ws = FakeSocket.last!;
 
@@ -336,7 +333,7 @@ describe('TerminalSession identity and wiring', () => {
     // The dock parks this div in a pane and shows or hides the pane. A session that
     // also set its own visibility would fight that: with panes side by side, more than
     // one is on screen at once, and none of them is "the tab".
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     expect(session.hostEl.style.visibility).toBe('');
 
     session.setVisible(true);
@@ -347,7 +344,7 @@ describe('TerminalSession identity and wiring', () => {
   });
 
   it('reports no size while it is off screen, so a drag fans no resize frames out', () => {
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.connect();
     const ws = FakeSocket.last!;
 
@@ -389,7 +386,7 @@ describe('TerminalSession resize reporting', () => {
       .filter((m): m is { type: string; cols: number; rows: number } => m?.type === 'resize');
 
   it('tells the pty a size once, however many fits land on the same grid', () => {
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.ensureTerm();
     session.setVisible(true);
     session.connect();
@@ -419,7 +416,7 @@ describe('TerminalSession resize reporting', () => {
     // to hang a single fit off. Fitting per frame reflows xterm and the far end repaints
     // its input line on every SIGWINCH that follows — the prompt drawn twice.
     const frame = observedFrames();
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.ensureTerm();
     session.setVisible(true);
 
@@ -438,7 +435,7 @@ describe('TerminalSession resize reporting', () => {
 
   it('holds fits for the length of a drag, and drops one already queued', () => {
     const frame = observedFrames();
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.ensureTerm();
     session.setVisible(true);
 
@@ -461,7 +458,7 @@ describe('TerminalSession resize reporting', () => {
   });
 
   it('reports the size again on a new socket, which has been told nothing', () => {
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.ensureTerm();
     session.setVisible(true);
     session.connect();
@@ -507,7 +504,7 @@ describe('TerminalSession column floor', () => {
    * numbers wins, and that is decided in the session, not by the browser.
    */
   const pane = (cols: number) => {
-    const session = new TerminalSession(target(), 'http://mc.test');
+    const session = new TerminalSession(target(), socketUrl);
     session.ensureTerm();
     session.setVisible(true);
     const box = { cols, rows: 24 };

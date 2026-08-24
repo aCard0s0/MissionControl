@@ -3,6 +3,7 @@ import { BoardApi } from './api/board-api';
 import { ContainersApi } from './api/containers-api';
 import { HostsApi } from './api/hosts-api';
 import { ApiHttp } from './api/http';
+import { terminalSocketUrl } from './api/terminal-socket';
 import { McpCatalogApi } from './api/mcp-catalog-api';
 import { PromptsApi } from './api/prompts-api';
 import { ProvidersApi } from './api/providers-api';
@@ -19,9 +20,12 @@ export type { AgentRef } from './api/agent-ref';
 export type { AgentMcpRequest } from './api/agent-mcp-api';
 export type { CreateAgentRequest } from './api/agents-api';
 export type { McpServerOperation } from './api/mcp-catalog-api';
+export type { TerminalFrame } from './api/terminal-socket';
+export { resizeFrame } from './api/terminal-socket';
 export type { ApiServerInfo } from './api/server-api';
 
 export class HermesApi {
+  private readonly base: string;
   private readonly http: ApiHttp;
 
   readonly hosts: HostsApi;
@@ -37,6 +41,7 @@ export class HermesApi {
   /** `http` is the one seam a test substitutes to answer every resource
    *  client at once; production always builds the real one. */
   constructor(apiBaseUrl: string, http: ApiHttp = new ApiHttp(apiBaseUrl)) {
+    this.base = apiBaseUrl;
     this.http = http;
     this.hosts = new HostsApi(this.http);
     this.containers = new ContainersApi(this.http);
@@ -51,5 +56,12 @@ export class HermesApi {
 
   health(): Promise<{ status: string; version: string; dockerConnected: boolean }> {
     return this.http.get('/health');
+  }
+
+  /** Where a shell in this container connects. Not a request — a URL for the caller to open a
+   *  WebSocket on, since a socket is held open by whoever owns the terminal, not by a client
+   *  that returns a promise. */
+  terminalSocketUrl(hostId: string, containerId: string): string {
+    return terminalSocketUrl(this.base, hostId, containerId);
   }
 }

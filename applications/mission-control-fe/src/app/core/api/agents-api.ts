@@ -1,7 +1,6 @@
-import { ChatMessage } from '../models';
 import {
-  ApiAgentProfile, ApiAgentSetup, ApiAuxiliaryModel, ApiIntegration, ApiLogLine, ApiSession,
-  ApiSetupAuthProvider,
+  ApiAgentProfile, ApiAgentSetup, ApiAuxiliaryModel, ApiChatMessage, ApiIntegration, ApiLogLine,
+  ApiSession, ApiSetupAuthProvider,
 } from './api-types';
 import { AgentCronApi } from './agent-cron-api';
 import { AgentMcpApi } from './agent-mcp-api';
@@ -77,7 +76,7 @@ export class AgentsApi {
     return this.http.get(`${agentPath(ref)}/sessions`);
   }
 
-  sessionMessages(ref: AgentRef, sessionId: string): Promise<ChatMessage[]> {
+  sessionMessages(ref: AgentRef, sessionId: string): Promise<ApiChatMessage[]> {
     return this.http.get(`${agentPath(ref)}/sessions/${seg(sessionId)}`);
   }
 

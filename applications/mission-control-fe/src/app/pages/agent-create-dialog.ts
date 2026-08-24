@@ -6,8 +6,9 @@ import { AgentSetupStore } from '../core/store/agent-setup-store';
 import { AgentStore } from '../core/store/agent-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
-import { ApiAuxiliaryModel, ApiSetupAuthProvider } from '../core/hermes-api';
-import { HermesContainer, ModelProvider } from '../core/models';
+import {
+  AuthProvider, AuxiliaryModel, HermesContainer, ModelProvider,
+} from '../core/models';
 import { ModelPicker } from '../shared/model-picker';
 import {
   OLLAMA_PREFIX, providerOptions, providerOptionFor, resolveProviderOption, templateProvidesKey,
@@ -64,7 +65,7 @@ export class AgentCreateDialog {
 
   // Nous Portal OAuth status for this container — Nous needs an out-of-band
   // `hermes portal` login, so warn when it is missing.
-  private readonly authProviders = signal<ApiSetupAuthProvider[]>([]);
+  private readonly authProviders = signal<AuthProvider[]>([]);
   protected readonly nousAuth = computed(() =>
     this.authProviders().find(p => /nous/i.test(p.label)) ?? null);
 
@@ -170,14 +171,17 @@ export class AgentCreateDialog {
     const auxiliary = this.auxiliaryOverride();
     if (this.auxOverride && !auxiliary) return;   // named an ollama instance that vanished
 
-    const id = await this.agents.create(
-      this.container().id, name, primary.provider, this.main.model,
-      this.apiKey.trim(),
-      this.cloneFrom || undefined,
-      primary.baseUrl,
-      this.fromTemplate || undefined,
+    const id = await this.agents.create({
+      containerId: this.container().id,
+      name,
+      provider: primary.provider,
+      model: this.main.model,
+      apiKey: this.apiKey.trim(),
+      cloneFrom: this.cloneFrom || undefined,
+      baseUrl: primary.baseUrl,
+      fromTemplate: this.fromTemplate || undefined,
       auxiliary,
-    );
+    });
     // the store has already reported why a failed create failed
     if (id) this.created.emit(id);
     else this.closed.emit();
@@ -187,7 +191,7 @@ export class AgentCreateDialog {
    *  model. An override on the main provider sends no provider or endpoint of its
    *  own — the backend then inherits the main ones, so switching only the model
    *  cannot drift the two apart. */
-  private auxiliaryOverride(): ApiAuxiliaryModel | undefined {
+  private auxiliaryOverride(): AuxiliaryModel | undefined {
     if (!this.auxOverride || !this.aux.model.trim()) return undefined;
     if (this.auxProvider === this.provider) return { model: this.aux.model.trim() };
     const resolved = resolveProviderOption(this.auxProvider, this.providers.ollamaProviders());

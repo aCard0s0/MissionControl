@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContainerStore } from '../core/store/container-store';
 import { HostStore } from '../core/store/host-store';
+import { terminalSocketUrl } from '../core/api/terminal-socket';
 import { StoreContext } from '../core/store/store-context';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { HermesContainer } from '../core/models';
@@ -53,6 +54,12 @@ const storeStub = (containers: HermesContainer[] = [], selected: HermesContainer
   },
   ctx: {
     config: { apiBaseUrl: '', dockerSocket: '' },
+    // the panel asks the api layer where a pane connects; the real builder answers, so these
+    // tests still assert on the address a pane actually opens
+    api: {
+      terminalSocketUrl: (hostId: string, containerId: string) =>
+        terminalSocketUrl('', hostId, containerId),
+    },
     toast: vi.fn(),
   },
   hosts: {

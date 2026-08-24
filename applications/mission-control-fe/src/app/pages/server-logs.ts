@@ -5,8 +5,8 @@ import { RouterLink } from '@angular/router';
 import { StoreContext } from '../core/store/store-context';
 import { errorMessage } from '../core/errors';
 import { ago, uptime } from '../core/format';
-import { ApiServerInfo } from '../core/hermes-api';
-import { LogEntry } from '../core/models';
+import { LogEntry, ServerInfo } from '../core/models';
+import { toLogEntry, toServerInfo } from '../core/store/wire-mappers';
 import { LogView } from '../shared/log-view';
 import { Reveal } from '../shared/reveal';
 
@@ -37,7 +37,7 @@ export class ServerLogsPage {
   protected readonly ago = ago;
 
   protected readonly lines = signal<LogEntry[]>([]);
-  protected readonly info = signal<ApiServerInfo | null>(null);
+  protected readonly info = signal<ServerInfo | null>(null);
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly updatedAt = signal<number | null>(null);
@@ -82,7 +82,7 @@ export class ServerLogsPage {
       const lines = await this.ctx.api.server.logs(TAIL);
       // handed over newest-first so the cap keeps the newest lines; LogView orders them
       // for reading, oldest at the top
-      this.lines.set(lines.map(l => ({ ...l, agentId: null })));
+      this.lines.set(lines.map(l => toLogEntry(l, null)));
       this.updatedAt.set(Date.now());
       this.error.set(null);
     } catch (e) {
@@ -94,7 +94,7 @@ export class ServerLogsPage {
 
   private async loadInfo(): Promise<void> {
     try {
-      this.info.set(await this.ctx.api.server.info());
+      this.info.set(toServerInfo(await this.ctx.api.server.info()));
     } catch {
       // the header degrades to '—'; the tail below is the point of the page
     }

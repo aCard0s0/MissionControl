@@ -1,10 +1,10 @@
-import { ApiModelProvider } from '../hermes-api';
+import { LlmProvider } from '../models';
 
 /** Bootstrap mirror of the backend model-provider registry
  *  (ModelProviderRegistry.java) — the picker uses this until the live
  *  `GET /api/providers` resolves. Keep in sync with the Java registry; the
  *  backend is authoritative once it answers. */
-export const DEFAULT_LLM_PROVIDERS: ApiModelProvider[] = [
+export const DEFAULT_LLM_PROVIDERS: LlmProvider[] = [
   { key: 'nous', label: 'Nous (account)', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
   { key: 'openrouter', label: 'OpenRouter', needsKey: true, oauth: false, hasCatalog: true, envVar: 'OPENROUTER_API_KEY' },
   { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true, envVar: 'ANTHROPIC_API_KEY' },

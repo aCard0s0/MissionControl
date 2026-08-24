@@ -6,13 +6,14 @@ import { AgentSetupStore } from '../core/store/agent-setup-store';
 import { AgentStore } from '../core/store/agent-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
-import { ApiModelProvider, ApiSetupAuthProvider } from '../core/hermes-api';
-import { HermesContainer, ModelProvider, ProfileTemplate } from '../core/models';
+import {
+  AuthProvider, HermesContainer, LlmProvider, ModelProvider, NewAgent, ProfileTemplate,
+} from '../core/models';
 import { AgentCreateDialog } from './agent-create-dialog';
 import { TestFixture, choose, el, field, fill, settle } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
 
-const llm: ApiModelProvider[] = [
+const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
   { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
     envVar: 'ANTHROPIC_API_KEY' },
@@ -33,7 +34,7 @@ const template = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
 /** Only what the dialog reaches for on the store, so nothing here touches a backend. */
 const storeStub = (opts: {
   templates?: ProfileTemplate[];
-  auth?: ApiSetupAuthProvider[];
+  auth?: AuthProvider[];
   catalog?: string[];
 } = {}) => {
   const templates = opts.templates ?? [];
@@ -96,6 +97,10 @@ const submit = async (fixture: TestFixture): Promise<void> => {
 const submitButton = (fixture: TestFixture): HTMLButtonElement =>
   el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.primary')!;
 
+/** The NewAgent the dialog assembled and handed to the store. */
+const sent = (store: ReturnType<typeof storeStub>): NewAgent =>
+  store.agents.create.mock.calls[0][0] as NewAgent;
+
 describe('AgentCreateDialog opening', () => {
   it('loads the default provider\'s catalog and this container\'s auth status', async () => {
     const { fixture, store } = await render(storeStub());
@@ -109,7 +114,7 @@ describe('AgentCreateDialog opening', () => {
 
   it('warns when Nous Portal has not been logged in on this container', async () => {
     const { fixture } = await render(storeStub({
-      auth: [{ label: 'Nous Portal', ok: false, status: 'not logged in' }] as ApiSetupAuthProvider[],
+      auth: [{ label: 'Nous Portal', ok: false, status: 'not logged in' }] as AuthProvider[],
     }));
 
     expect(el(fixture).textContent).toContain('Nous Portal not logged in');
@@ -117,7 +122,7 @@ describe('AgentCreateDialog opening', () => {
 
   it('confirms the login rather than asking for a key it does not need', async () => {
     const { fixture } = await render(storeStub({
-      auth: [{ label: 'Nous Portal', ok: true, status: 'ok' }] as ApiSetupAuthProvider[],
+      auth: [{ label: 'Nous Portal', ok: true, status: 'ok' }] as AuthProvider[],
     }));
 
     expect(el(fixture).textContent).toContain('Nous Portal connected on this container');
@@ -223,7 +228,7 @@ describe('AgentCreateDialog auxiliary override', () => {
 
     await submit(fixture);
 
-    expect(store.agents.create.mock.calls[0][8]).toEqual({ model: 'claude-sonnet-5' });
+    expect(sent(store).auxiliary).toEqual({ model: 'claude-sonnet-5' });
   });
 
   it('sends its own provider, endpoint and key when the override switches provider', async () => {
@@ -236,7 +241,7 @@ describe('AgentCreateDialog auxiliary override', () => {
 
     await submit(fixture);
 
-    expect(store.agents.create.mock.calls[0][8]).toEqual({
+    expect(sent(store).auxiliary).toEqual({
       provider: 'anthropic', model: 'claude-sonnet-5', baseUrl: undefined, apiKey: 'sk-aux',
     });
   });
@@ -259,7 +264,7 @@ describe('AgentCreateDialog auxiliary override', () => {
 
     await submit(fixture);
 
-    expect(store.agents.create.mock.calls[0][8]).toBeUndefined();
+    expect(sent(store).auxiliary).toBeUndefined();
   });
 });
 
@@ -270,8 +275,10 @@ describe('AgentCreateDialog create', () => {
     await fill(fixture, 'profile name', '  Ops Bot  ');
     await submit(fixture);
 
-    expect(store.agents.create).toHaveBeenCalledWith(
-      'c-1', 'ops-bot', 'nous', 'claude-opus-5', '', undefined, undefined, undefined, undefined);
+    expect(store.agents.create).toHaveBeenCalledWith({
+      containerId: 'c-1', name: 'ops-bot', provider: 'nous', model: 'claude-opus-5', apiKey: '',
+      cloneFrom: undefined, baseUrl: undefined, fromTemplate: undefined, auxiliary: undefined,
+    });
     expect(host.createdId).toBe('a-new');
     expect(host.closes).toBe(0);
   });
@@ -283,9 +290,10 @@ describe('AgentCreateDialog create', () => {
 
     await submit(fixture);
 
-    expect(store.agents.create.mock.calls[0].slice(2, 5))
-      .toEqual(['ollama', 'gemma3:4b', '']);
-    expect(store.agents.create.mock.calls[0][6]).toBe('http://10.0.0.5:11434/v1');
+    expect(sent(store)).toMatchObject({
+      provider: 'ollama', model: 'gemma3:4b', apiKey: '',
+      baseUrl: 'http://10.0.0.5:11434/v1',
+    });
   });
 
   it('refuses to create with no name, and refuses a needed key that is blank', async () => {
@@ -343,9 +351,7 @@ describe('AgentCreateDialog templates', () => {
     await fill(fixture, 'profile name', 'ops-bot');
     await submit(fixture);
 
-    const [, , provider, model] = store.agents.create.mock.calls[0];
-    expect(provider).toBe('nous');
-    expect(model).toBe('Hermes-4-405B');
+    expect(sent(store)).toMatchObject({ provider: 'nous', model: 'Hermes-4-405B' });
   });
 
   it('keeps a blueprint\'s model even when its provider is no longer registered', async () => {
@@ -356,9 +362,9 @@ describe('AgentCreateDialog templates', () => {
     await fill(fixture, 'profile name', 'ops-bot');
     await submit(fixture);
 
-    expect(store.agents.create).toHaveBeenCalledWith(
-      'c-1', 'ops-bot', expect.anything(), 'claude-opus-5', expect.anything(),
-      undefined, undefined, 't-1', undefined);
+    expect(sent(store)).toMatchObject({
+      containerId: 'c-1', name: 'ops-bot', model: 'claude-opus-5', fromTemplate: 't-1',
+    });
   });
 
   it('sends the blueprint id so the backend seeds the profile from it', async () => {
@@ -369,7 +375,7 @@ describe('AgentCreateDialog templates', () => {
     await fill(fixture, 'profile name', 'ops-bot');
     await submit(fixture);
 
-    expect(store.agents.create.mock.calls[0][7]).toBe('t-1');
+    expect(sent(store).fromTemplate).toBe('t-1');
   });
 });
 
@@ -396,7 +402,7 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
 
     await submit(fixture);
 
-    expect(store.agents.create.mock.calls[0][8]).toEqual({
+    expect(sent(store).auxiliary).toEqual({
       provider: 'ollama', model: 'gemma3:4b',
       // the OpenAI-compatible endpoint, which is what hermes talks to
       baseUrl: 'http://10.0.0.5:11434/v1', apiKey: undefined,

@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { resizeFrame } from '../core/hermes-api';
 
 /** Where a tab's shell connects — a container on a docker host. */
 export interface TermTarget {
@@ -158,7 +159,17 @@ export class TerminalSession {
   private pendingSubmit = true;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(target: TermTarget, private readonly apiBase: string, id?: string) {
+  /**
+   * @param socketUrl how to reach a shell for `target` — see {@link HermesApi.terminalSocketUrl}.
+   *   Taken rather than derived: where the backend is is a question about deployment, and a
+   *   pane that answered it itself would be a second place the app decides what `apiBaseUrl`
+   *   means.
+   */
+  constructor(
+    target: TermTarget,
+    private readonly socketUrl: (hostId: string, containerId: string) => string,
+    id?: string,
+  ) {
     this.id = id ?? newId();
     this.target = signal<TermTarget>(target);
     // styled imperatively: this div is created outside the component template,
@@ -227,9 +238,7 @@ export class TerminalSession {
     this.status.set('connecting');
     this.armCommand(command);
 
-    const url = this.apiBase.replace(/^http/, 'ws')
-      + `/ws/terminal?hostId=${encodeURIComponent(hostId)}&containerId=${encodeURIComponent(containerId)}`;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(this.socketUrl(hostId, containerId));
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
 
@@ -407,7 +416,7 @@ export class TerminalSession {
     this.lastCols = cols;
     this.lastRows = rows;
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      this.ws.send(resizeFrame(cols, rows));
     }
   }
 

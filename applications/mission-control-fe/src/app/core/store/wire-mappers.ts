@@ -1,11 +1,16 @@
 import {
-  ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck,
-  ApiMcpRetainedResource, ApiMcpSupportService, ApiProfileTemplate, ApiPrompt,
+  ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
+  ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
+  ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiOllamaModel, ApiOllamaProvider,
+  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSession, ApiSetupApiKey,
+  ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
-  AgentProfile, ImageCatalog, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
-  McpHealthcheck, McpRetainedResource, McpRuntimeState, McpSupportService, McpTransport,
-  ProfileTemplate, Prompt,
+  AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus,
+  ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
+  McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
+  McpTransport, ModelProvider, ModelProviderStatus, OllamaModel, ProfileTemplate, Prompt,
+  PullState, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
 } from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
@@ -226,5 +231,182 @@ export function toPrompt(api: ApiPrompt): Prompt {
     tags: api.tags ?? [],
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
+  };
+}
+
+function toSetupApiKey(api: ApiSetupApiKey): SetupApiKey {
+  return {
+    label: api.label ?? '',
+    envVar: api.envVar ?? '',
+    set: !!api.set,
+    masked: api.masked ?? null,
+  };
+}
+
+export function toAuthProvider(api: ApiSetupAuthProvider): AuthProvider {
+  return {
+    label: api.label ?? '',
+    ok: !!api.ok,
+    status: api.status ?? '',
+    hint: api.hint ?? null,
+  };
+}
+
+function toSetupKeyProvider(api: ApiSetupKeyProvider): SetupKeyProvider {
+  return { label: api.label ?? '', ok: !!api.ok, status: api.status ?? '' };
+}
+
+function toSetupMessaging(api: ApiSetupMessaging): SetupMessaging {
+  return {
+    label: api.label ?? '',
+    ok: !!api.ok,
+    status: api.status ?? '',
+    tokenVar: api.tokenVar ?? '',
+    homeVar: api.homeVar ?? null,
+    homeChannel: api.homeChannel ?? null,
+  };
+}
+
+/**
+ * A profile's credentials as the Setup tab renders them.
+ *
+ * <p>Every list defaults to empty rather than staying absent. This is read by running
+ * `hermes status` inside a container, so a version of hermes that does not know about one of
+ * these sections omits it — and the tab renders a section that is missing as "nothing set up",
+ * which is true, instead of failing on a template binding to undefined.
+ */
+export function toAgentSetup(api: ApiAgentSetup): AgentSetup {
+  return {
+    envPath: api.envPath ?? '',
+    envExists: !!api.envExists,
+    apiKeys: (api.apiKeys ?? []).map(toSetupApiKey),
+    authProviders: (api.authProviders ?? []).map(toAuthProvider),
+    apiKeyProviders: (api.apiKeyProviders ?? []).map(toSetupKeyProvider),
+    messaging: (api.messaging ?? []).map(toSetupMessaging),
+  };
+}
+
+/** One entry of the model-provider registry. A provider the backend names but describes
+ *  incompletely is treated as the most demanding case — key required, no catalog — so the
+ *  picker asks for a key it may not need rather than omitting one it does. */
+export function toLlmProvider(api: ApiModelProvider): LlmProvider {
+  return {
+    key: api.key,
+    label: api.label || api.key,
+    needsKey: api.needsKey !== false,
+    oauth: !!api.oauth,
+    hasCatalog: !!api.hasCatalog,
+    envVar: api.envVar ?? null,
+  };
+}
+
+/** A pull in flight. An unrecognised status reads as an error: a pull this build cannot name
+ *  is one it cannot promise is still running, and a stuck 'pulling' row never clears. */
+export function toPullState(api: ApiPullState): PullState {
+  const status = api.status === 'pulling' || api.status === 'done' ? api.status : 'error';
+  return { model: api.model ?? '', status, detail: api.detail ?? null };
+}
+
+export function toServerInfo(api: ApiServerInfo): ServerInfo {
+  return {
+    version: api.version ?? '',
+    retained: api.retained ?? 0,
+    startedAt: api.startedAt ?? 0,
+  };
+}
+
+/**
+ * One log line, attributed.
+ *
+ * <p>`agentId` is the whole reason this is a mapping rather than a cast: a docker tail, a
+ * managed MCP service's tail and the dashboard's own log all arrive in the same wire shape and
+ * belong to nobody, while a profile's supervised gateway log carries an authoritative profile
+ * identity. Only the caller knows which it fetched, so only the caller can say.
+ */
+export function toLogEntry(api: ApiLogLine, agentId: string | null): LogEntry {
+  return {
+    ts: api.ts,
+    level: api.level,
+    source: api.source ?? '',
+    agentId,
+    msg: api.msg ?? '',
+  };
+}
+
+const HOST_STATUSES: DockerHostStatus[] = ['connected', 'connecting', 'error', 'disconnected'];
+const PROVIDER_STATUSES: ModelProviderStatus[] = ['connected', 'error', 'unknown'];
+
+/**
+ * A docker daemon.
+ *
+ * <p>Everything past the id defaults, because a host that has never answered a probe has no
+ * engine, version or latency to report — and the sidebar chip, the containers page and the
+ * deploy modal all render this. A status the backend names that this build does not know reads
+ * as `disconnected` rather than as connected: the summary chip is worst-of, and a state we
+ * cannot interpret is not evidence a daemon is reachable.
+ */
+export function toDockerHost(api: ApiDockerHost): DockerHost {
+  return {
+    id: api.id,
+    name: api.name ?? api.id,
+    url: api.url ?? '',
+    kind: api.kind === 'local' ? 'local' : 'remote',
+    status: oneOf(api.status, HOST_STATUSES, 'disconnected'),
+    engine: api.engine ?? null,
+    apiVersion: api.apiVersion ?? null,
+    latencyMs: api.latencyMs ?? null,
+    note: api.note ?? null,
+  };
+}
+
+/** A registered ollama endpoint. An unprobed one reports no status, which is `unknown` — not
+ *  an error, because nothing has failed yet. */
+export function toModelProvider(api: ApiOllamaProvider): ModelProvider {
+  return {
+    id: api.id,
+    name: api.name ?? api.id,
+    url: api.url ?? '',
+    kind: 'ollama',
+    status: oneOf(api.status, PROVIDER_STATUSES, 'unknown'),
+    version: api.version ?? null,
+    detail: api.detail ?? null,
+  };
+}
+
+/** One model on an ollama endpoint. The optional fields are ollama's own — a model pulled from
+ *  a bare digest reports no family or parameter size, and the row still has to render. */
+export function toOllamaModel(api: ApiOllamaModel): OllamaModel {
+  return {
+    name: api.name,
+    sizeBytes: api.sizeBytes ?? 0,
+    family: api.family ?? '',
+    parameterSize: api.parameterSize ?? '',
+    modifiedAt: api.modifiedAt ?? 0,
+  };
+}
+
+/** One turn of a recorded session. `content` defaults to empty rather than staying absent: a
+ *  tool turn legitimately carries none, and the viewer renders the tool call instead. */
+export function toChatMessage(api: ApiChatMessage): ChatMessage {
+  return {
+    role: api.role ?? '',
+    content: api.content ?? '',
+    toolName: api.toolName ?? null,
+    toolCalls: api.toolCalls ?? null,
+    reasoning: api.reasoning ?? null,
+    ts: api.ts ?? 0,
+  };
+}
+
+/** One recorded session. Only `open` counts as open: the backend spells this from the agent's
+ *  own state, and a status this build cannot read is not evidence a session is still live. */
+export function toSessionInfo(api: ApiSession): SessionInfo {
+  return {
+    id: api.id,
+    title: api.title ?? '',
+    platform: api.platform ?? '',
+    startedAt: api.startedAt ?? 0,
+    messages: api.messages ?? 0,
+    status: api.status === 'open' ? 'open' : 'closed',
   };
 }

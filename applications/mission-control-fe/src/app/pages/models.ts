@@ -5,8 +5,7 @@ import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { errorMessage } from '../core/errors';
 import { ago } from '../core/format';
-import { ModelProvider, OllamaModel } from '../core/models';
-import { ApiPullState } from '../core/hermes-api';
+import { ModelProvider, OllamaModel, PullState } from '../core/models';
 
 @Component({
   selector: 'mc-models',
@@ -31,7 +30,7 @@ export class ModelsPage {
   protected readonly modelsError = signal<string | null>(null);
 
   protected pullName = '';
-  protected readonly pulls = signal<ApiPullState[]>([]);
+  protected readonly pulls = signal<PullState[]>([]);
   protected readonly removingModel = signal<string | null>(null);
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
