@@ -7,6 +7,28 @@ server:
     mime-types: application/json,text/plain,text/html
     min-response-size: 1024
 
+# Profiling surface. Deliberately on its own port bound to loopback: the app port
+# is what tailscale serve forwards to the tailnet (deploy/tailscale/serve.json) and
+# what plain mode publishes, and these endpoints are not for either audience.
+# `heapdump` in particular hands over the encryption key and every stored provider
+# credential in cleartext. Reach them from inside the container instead:
+#   docker exec mission-control-mission-control-1 \
+#     wget -qO- http://127.0.0.1:8081/actuator/metrics/jvm.memory.used
+management:
+  server:
+    port: ${MC_ACTUATOR_PORT:8081}
+    address: 127.0.0.1
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,threaddump,heapdump
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: mission-control
+
 spring:
   application:
     name: mission-control-server
