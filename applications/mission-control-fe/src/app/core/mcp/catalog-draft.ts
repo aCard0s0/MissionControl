@@ -1,19 +1,25 @@
 import {
   duplicateCatalogName, httpEndpointValid, mcpConfigEntriesValid, mcpHealthcheckValid,
   mcpPathValid, mcpPortValid, mcpSupportServiceNameValid, mcpVolumeValid,
-} from '../core/mcp/catalog-rules';
+} from './catalog-rules';
 import {
   McpCatalogKind, McpCatalogServer, McpCatalogServerInput, McpConfigEntry, McpHealthcheck,
   McpNamedVolume, McpTransport, McpSupportService,
-} from '../core/models';
+} from '../models';
 
-// The MCP Servers editor, minus the UI: what a draft is, how a stored server
-// becomes one, and what the backend gets on save. Pure functions, so every rule
-// here is testable without rendering the page.
+// A catalog entry as it is being edited: what a draft is, how a stored server becomes one,
+// and what the backend gets on save. Pure functions, so every rule here is testable without
+// rendering anything.
 //
-// What makes an entry legal is not the editor's to decide — those rules live in
-// core/mcp/catalog-rules and are the same ones the store enforces on save. What
-// is left here is which of them apply to which kind.
+// What makes an entry legal is not this module's to decide — those rules live next door in
+// catalog-rules and are the same ones the store enforces on save. What is left here is which
+// of them apply to which kind, which is domain policy rather than a form's business.
+//
+// Here rather than in pages/ for that reason, and for a sharper one: mcpDraftToInput is the
+// outbound half of the wire mapping whose inbound half is toMcpCatalogServer in
+// core/store/wire-mappers. The two used to sit in different layers, which is how the
+// absent-vs-empty rule for a support service's entrypoint and command came to be written
+// down on one side of the round trip and not the other.
 
 /** A config entry being edited. A stored secret arrives with an empty `value`. */
 export interface McpEditorEntry extends McpConfigEntry {

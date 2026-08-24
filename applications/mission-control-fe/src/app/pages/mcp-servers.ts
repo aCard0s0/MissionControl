@@ -7,7 +7,7 @@ import { mcpDisplayEndpoint, mcpEntryBusy, mcpOperationActive } from '../core/mc
 import { McpCatalogKind, McpCatalogServer, McpRetainedResource } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
-import { McpEditorDraft, mcpDraftFromServer, newMcpDraft } from './mcp-editor';
+import { McpEditorDraft, mcpDraftFromServer, newMcpDraft } from '../core/mcp/catalog-draft';
 import { mcpServerGroups } from './mcp-server-groups';
 import { McpServerEditor } from './mcp-server-editor';
 import { McpServerLogs } from './mcp-server-logs';

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { HostStore } from '../core/store/host-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { DockerHost } from '../core/models';
-import { McpEditorDraft, newMcpDraft } from './mcp-editor';
+import { McpEditorDraft, newMcpDraft } from '../core/mcp/catalog-draft';
 import { McpServerEditor } from './mcp-server-editor';
 import { el, press } from '../testing/dom';
 

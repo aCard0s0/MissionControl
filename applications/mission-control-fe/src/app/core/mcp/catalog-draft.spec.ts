@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { McpCatalogServer } from '../core/models';
+import { McpCatalogServer } from '../models';
 import {
   McpEditorDraft, applyMcpKindDefaults, mcpDraftFromServer, mcpDraftToInput, mcpDraftValid,
   newMcpDraft, splitMcpLines,
-} from './mcp-editor';
+} from './catalog-draft';
 
 const draft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
   id: null, hostLocked: false, name: ' Example ', description: ' server ', kind: 'managed',

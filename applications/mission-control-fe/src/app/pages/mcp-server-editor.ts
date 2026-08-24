@@ -6,7 +6,7 @@ import { McpHealthcheck, McpNamedVolume } from '../core/models';
 import {
   McpEditorDraft, McpEditorEntry, applyMcpKindDefaults, blankConfigEntry, blankSupportService,
   blankVolume, defaultHealthcheck, mcpDraftToInput, mcpDraftValid, splitMcpLines,
-} from './mcp-editor';
+} from '../core/mcp/catalog-draft';
 
 /**
  * The modal form behind one catalog entry. The page decides which draft to open
@@ -14,7 +14,7 @@ import {
  * sub-forms, the save, and the busy flag that keeps the scrim from dismissing a
  * save still in flight.
  *
- * The rules live in ./mcp-editor as pure functions, so all that is left here is
+ * The rules live in core/mcp/catalog-draft as pure functions, so all that is left here is
  * the form's own bookkeeping. Every repeating list is edited through the same
  * three row helpers, whether it belongs to the server or to one of its support
  * services.
