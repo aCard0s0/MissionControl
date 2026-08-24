@@ -121,7 +121,14 @@ describe('LiveSync bootstrap', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    setHidden(false);
   });
+
+  /** jsdom always reports a visible tab and exposes no way to change it. */
+  const setHidden = (hidden: boolean) => {
+    Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
 
   it('starts empty and says it is connecting, before any answer arrives', () => {
     backend();
@@ -216,6 +223,35 @@ describe('LiveSync bootstrap', () => {
     // stats run far more often than the inventory
     expect(calls.filter(u => u.includes('/stats')).length).toBeGreaterThan(statsPolls + 1);
     expect(store.ctx.backendStatus()).toBe('connected');
+  });
+
+  it('polls nothing while the tab is hidden', async () => {
+    const calls = backend();
+    booted();
+    await vi.advanceTimersByTimeAsync(0);
+    setHidden(true);
+    const beforeHidden = calls.length;
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    // three inventory periods and ten stats periods, every one of which ends at a Docker
+    // daemon — answering questions a backgrounded tab is not showing anyone
+    expect(calls.length).toBe(beforeHidden);
+  });
+
+  it('catches up the polls that came due while it was hidden', async () => {
+    const calls = backend();
+    booted();
+    await vi.advanceTimersByTimeAsync(0);
+    setHidden(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const whileHidden = calls.length;
+
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // coming back to the tab shows current state, not whatever the last foreground tick left
+    expect(calls.length).toBeGreaterThan(whileHidden);
   });
 
   it('survives a backend that answers health and then falls over', async () => {

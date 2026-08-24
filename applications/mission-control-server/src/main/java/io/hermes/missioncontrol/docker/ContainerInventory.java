@@ -4,6 +4,7 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Version;
 import io.hermes.missioncontrol.config.AppProperties;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,6 +49,44 @@ public class ContainerInventory {
    */
   private final Set<String> reportedExclusions = ConcurrentHashMap.newKeySet();
 
+  /** How long a root-filesystem size is reused before a listing pays to re-read it. */
+  private static final Duration SIZE_TTL = Duration.ofMinutes(5);
+
+  /**
+   * Container sizes per daemon url, and how current they are.
+   *
+   * <p>{@code withShowSize} makes the daemon walk every container's layer diff. Measured
+   * against this project's own daemon that is ~90ms per listing against ~46ms without it —
+   * a ~90% surcharge on the one call the fleet view makes every 10 seconds, for a number
+   * that moves on the order of hours. So the poll asks for size only once per
+   * {@link #SIZE_TTL} and reuses the last answer in between.
+   *
+   * <p>{@code covered} is tracked apart from {@code gbById} because a daemon can list a
+   * container and report no size for it. Without that distinction such a container reads as
+   * permanently uncached and re-arms the expensive listing on every single poll — exactly
+   * the cost this exists to avoid.
+   */
+  private final Map<String, SizeCache> sizesByHost = new ConcurrentHashMap<>();
+
+  private record SizeCache(Map<String, Double> gbById, Set<String> covered, long fetchedAt) { }
+
+  /**
+   * When a running container started, keyed by {@code hostId/containerId}.
+   *
+   * <p>Uptime is the one card field the listing does not carry, so it costs an inspect per
+   * running container per poll — ~7ms each, every 10 seconds, for a value that cannot change
+   * while a container keeps running. What makes reuse safe is the daemon's own status line:
+   * a restart keeps the container id but resets {@code "Up 3 hours"} to {@code "Up 2 seconds"},
+   * so pinning the cached answer to the status it was read under re-inspects exactly when it
+   * must. Steady state falls to one inspect per status change — a minute at first, then an hour.
+   *
+   * <p>Only successful reads are cached. A failed inspect is retried on the next poll rather
+   * than remembered as "no uptime" for as long as the status line happens to hold still.
+   */
+  private final Map<String, StartedAt> startedAtCache = new ConcurrentHashMap<>();
+
+  private record StartedAt(String status, long epochMs) { }
+
   private final DockerClients clients;
   private final AppProperties props;
   private final ImageStore images;
@@ -69,26 +108,74 @@ public class ContainerInventory {
 
   public List<ContainerDto> listContainers(DockerHostRef host, boolean includeAll) {
     DockerClient client = clients.forUrl(host.url());
+    boolean withSize = sizesAreStale(host);
     List<Container> containers = client.listContainersCmd()
         .withShowAll(true)
-        .withShowSize(true)
+        .withShowSize(withSize)
         .exec();
+    Map<String, Double> sizes = withSize ? cacheSizes(host, containers) : cachedSizes(host);
 
     List<ContainerDto> result = new ArrayList<>();
     Set<String> present = new HashSet<>();
+    Set<String> live = new HashSet<>();
     // containers on a host overwhelmingly share a handful of images, so the digest lookup
     // is resolved once per image rather than once per container
     Map<String, String> digests = new HashMap<>();
     for (Container c : containers) {
       present.add(exclusionKey(host.id(), primaryName(c)));
+      live.add(startedAtKey(host.id(), c.getId()));
       if (!includeAll && !isFleetMember(host.id(), c)) continue;
-      result.add(toDto(client, c, host.id(), digests));
+      result.add(toDto(client, c, host.id(), digests, sizes));
     }
     // every call lists the whole daemon (withShowAll), so anything this host reported before
     // and does not report now is gone; other hosts' entries are left alone
     reportedExclusions.removeIf(
         key -> key.startsWith(host.id() + "/") && !present.contains(key));
+    // an uptime nothing can ask for again, for the same reason and on the same terms
+    startedAtCache.keySet().removeIf(
+        key -> key.startsWith(host.id() + "/") && !live.contains(key));
+    expireSizesIfUncovered(host, containers);
     return result;
+  }
+
+  /** Whether the next listing has to pay {@code withShowSize} to answer for this daemon. */
+  private boolean sizesAreStale(DockerHostRef host) {
+    SizeCache cached = sizesByHost.get(host.url());
+    return cached == null
+        || System.currentTimeMillis() - cached.fetchedAt() >= SIZE_TTL.toMillis();
+  }
+
+  private Map<String, Double> cachedSizes(DockerHostRef host) {
+    SizeCache cached = sizesByHost.get(host.url());
+    return cached == null ? Map.of() : cached.gbById();
+  }
+
+  /** Folds a size-carrying listing into the cache and answers what it now holds. */
+  private Map<String, Double> cacheSizes(DockerHostRef host, List<Container> listed) {
+    Map<String, Double> gbById = new HashMap<>();
+    Set<String> covered = new HashSet<>();
+    for (Container c : listed) {
+      covered.add(c.getId());
+      if (c.getSizeRootFs() != null) gbById.put(c.getId(), c.getSizeRootFs() / 1_073_741_824.0);
+    }
+    sizesByHost.put(host.url(),
+        new SizeCache(Map.copyOf(gbById), Set.copyOf(covered), System.currentTimeMillis()));
+    return gbById;
+  }
+
+  /**
+   * Ages out the size cache the moment the daemon lists a container it never covered.
+   *
+   * <p>A container deployed a minute into the TTL would otherwise read 0 GB until the whole
+   * period ran out. Marking the entry stale rather than dropping it means the next poll
+   * re-reads sizes while this one still renders the ones it already knows — dropping it
+   * would blank every card's disk figure for a poll to fix one card's.
+   */
+  private void expireSizesIfUncovered(DockerHostRef host, List<Container> listed) {
+    SizeCache cached = sizesByHost.get(host.url());
+    if (cached == null || cached.fetchedAt() == 0) return;
+    if (listed.stream().allMatch(c -> cached.covered().contains(c.getId()))) return;
+    sizesByHost.put(host.url(), new SizeCache(cached.gbById(), cached.covered(), 0));
   }
 
   /** True the first time a container is excluded, false while that exclusion stands. */
@@ -98,6 +185,34 @@ public class ContainerInventory {
 
   private static String exclusionKey(String hostId, String name) {
     return hostId + "/" + name;
+  }
+
+  private static String startedAtKey(String hostId, String containerId) {
+    return hostId + "/" + containerId;
+  }
+
+  /**
+   * When this container started, from {@link #startedAtCache} unless the daemon's status line
+   * has moved since it was read.
+   *
+   * <p>Inspection is best effort: a container that goes away mid-listing, or a daemon that
+   * drops the call, leaves the card showing '—' for uptime rather than failing the listing.
+   */
+  private Long startedAt(DockerClient client, String hostId, Container c) {
+    String key = startedAtKey(hostId, c.getId());
+    String status = c.getStatus() == null ? "" : c.getStatus();
+    StartedAt cached = startedAtCache.get(key);
+    if (cached != null && cached.status().equals(status)) return cached.epochMs();
+    try {
+      String iso = client.inspectContainerCmd(c.getId()).exec().getState().getStartedAt();
+      if (iso == null) return null;
+      long epochMs = Instant.parse(iso).toEpochMilli();
+      startedAtCache.put(key, new StartedAt(status, epochMs));
+      return epochMs;
+    } catch (Exception ignored) {
+      // the card just shows '—' for uptime, and the next poll tries again
+      return null;
+    }
   }
 
   /** Whether the filtered fleet view shows this container. Every rejection is logged or
@@ -146,7 +261,8 @@ public class ContainerInventory {
   }
 
   private ContainerDto toDto(
-      DockerClient client, Container c, String hostId, Map<String, String> digestCache) {
+      DockerClient client, Container c, String hostId, Map<String, String> digestCache,
+      Map<String, Double> sizes) {
     String name = primaryName(c);
     String[] imageParts = ImageRef.splitImage(c.getImage());
     if (isImageIdReference(c.getImage())) {
@@ -159,15 +275,10 @@ public class ContainerInventory {
 
     Long startedAt = null;
     if ("running".equals(status) || "unhealthy".equals(status)) {
-      try {
-        String iso = client.inspectContainerCmd(c.getId()).exec().getState().getStartedAt();
-        if (iso != null) startedAt = Instant.parse(iso).toEpochMilli();
-      } catch (Exception ignored) {
-        // inspection is best-effort; the card just shows '—' for uptime
-      }
+      startedAt = startedAt(client, hostId, c);
     }
 
-    Double sizeGb = c.getSizeRootFs() != null ? c.getSizeRootFs() / 1_073_741_824.0 : null;
+    Double sizeGb = sizes.get(c.getId());
     Map<String, String> labels = c.getLabels() == null ? Map.of() : c.getLabels();
     List<String> profiles = ManagedContainer.seedProfilesOf(labels);
 
