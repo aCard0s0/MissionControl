@@ -2,6 +2,8 @@ package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -21,12 +23,22 @@ import org.springframework.stereotype.Service;
  * common failure writes nothing at all, which is consistent and retryable; reversing it would
  * buy a benign rare failure at the cost of an inconsistent common one.
  *
- * <p>KNOWN GAP: the rare failure — the link write failing after the container write landed —
- * leaves a link row nothing reaches. {@code enrich} only visits aliases still present on the
- * profile, and for {@link #delete} a retry cannot get past {@code hermes profile delete} on a
- * profile that is already gone. Ordering does not fix that; making the cleanup retried or
- * idempotent does, the way {@code docker/ContainerUpdateService} handles the same class of
- * failure for the rows that reference a replaced container.
+ * <p>The rare failure — the link write failing after the container write landed — is handled
+ * rather than ordered away, because ordering cannot reach it. Three things cover it, and all
+ * three are needed:
+ *
+ * <ul>
+ *   <li>the cleanup is {@linkplain #cleanUp retried once} before it is given up on, since a
+ *       brief write lock on a single-writer database is the realistic cause
+ *   <li>a given-up cleanup does not fail the request, because the container write has already
+ *       landed and reporting failure would say otherwise — the precedent is
+ *       {@code docker/ContainerUpdateService}, which makes the same trade for the rows that
+ *       reference a replaced container
+ *   <li>what is left behind is reachable afterwards: {@link HermesProfiles#delete} tolerates a
+ *       profile that is already gone so the delete can simply be retried, and
+ *       {@link AgentMcpCatalogService#enrich} drops a link whose entry is no longer on the
+ *       profile, so the agents listing heals a stranded one on its next poll
+ * </ul>
  *
  * <p>This is the {@code agents}-side counterpart of {@code mcp/McpServerDeletion} and
  * {@code docker/ContainerUpdateService}: one bean per protocol that spans two modules, so the
@@ -34,6 +46,11 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class AgentLifecycle {
+
+  private static final Logger log = LoggerFactory.getLogger(AgentLifecycle.class);
+
+  /** Long enough for a competing SQLite write to finish, short enough to sit in a request. */
+  private static final long RETRY_DELAY_MS = 200;
 
   private final HermesProfiles profiles;
   private final AgentMcpCatalogService mcpCatalog;
@@ -51,7 +68,8 @@ public class AgentLifecycle {
    */
   public void delete(DockerHostRef host, String containerId, String name) {
     profiles.delete(host, containerId, name);
-    mcpCatalog.deleteAgentLinks(host, containerId, name);
+    cleanUp("catalog links for agent " + name,
+        () -> mcpCatalog.deleteAgentLinks(host, containerId, name));
   }
 
   /**
@@ -67,7 +85,34 @@ public class AgentLifecycle {
   public AgentProfileDto removeMcpServer(
       DockerHostRef host, String containerId, String name, String serverName) {
     AgentProfileDto updated = profiles.removeMcpServer(host, containerId, name, serverName);
-    mcpCatalog.forgetLink(host, containerId, name, serverName);
+    cleanUp("catalog link " + serverName + " on agent " + name,
+        () -> mcpCatalog.forgetLink(host, containerId, name, serverName));
     return mcpCatalog.enrich(host, updated);
+  }
+
+  /**
+   * Runs a dashboard-side cleanup whose container-side half has already landed: once, then
+   * once more, then logged and given up on rather than failing a request for work that
+   * succeeded.
+   */
+  private void cleanUp(String what, Runnable cleanup) {
+    try {
+      cleanup.run();
+      return;
+    } catch (RuntimeException first) {
+      try {
+        Thread.sleep(RETRY_DELAY_MS);
+        cleanup.run();
+        return;
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        log.error("interrupted while removing {}", what, first);
+        return;
+      } catch (RuntimeException retried) {
+        log.error("the agent was updated but {} could not be removed — the agents listing "
+            + "drops a stranded link on its next read, and a repeated delete is safe", what,
+            retried);
+      }
+    }
   }
 }

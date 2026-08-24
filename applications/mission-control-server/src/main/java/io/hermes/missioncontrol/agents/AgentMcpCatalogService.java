@@ -18,7 +18,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,6 +30,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class AgentMcpCatalogService implements McpServerDeletionListener {
+
+  private static final Logger log = LoggerFactory.getLogger(AgentMcpCatalogService.class);
 
   private static final Pattern ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}");
 
@@ -162,6 +167,12 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
    * {@code live}: the only field it needs is the current revision, and refreshing runtime
    * state here meant one {@code docker compose ps} — taken under the host's compose lock, the
    * same one that serializes provision/start/stop — per linked entry per profile per poll.
+   *
+   * <p>It is also where a link outliving what it described is dropped: one whose catalog entry
+   * is gone, and one whose entry is no longer on the profile. Both are stranded rows nothing
+   * else reaches — the second is what a removal leaves if its cleanup could not run, and the
+   * page has no row left to offer an unlink on — and until they are gone {@link #assertCustom}
+   * refuses the alias to whatever is added under it next.
    */
   public AgentProfileDto enrich(DockerHostRef host, AgentProfileDto profile) {
     Map<String, AgentMcpLink> byAlias = new HashMap<>();
@@ -170,7 +181,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     }
     List<AgentMcpServerDto> servers = new ArrayList<>();
     for (AgentMcpServerDto server : profile.mcp()) {
-      AgentMcpLink link = byAlias.get(server.name());
+      AgentMcpLink link = byAlias.remove(server.name());
       if (link == null) {
         servers.add(server);
         continue;
@@ -183,7 +194,29 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
         servers.add(server);
       }
     }
+    dropStrandedLinks(host, profile, byAlias.keySet());
     return copyWithMcp(profile, servers);
+  }
+
+  /**
+   * The links left over once every entry the profile reports has claimed its own.
+   *
+   * <p>Guarded on the profile carrying a {@code config.yaml} at all, because an empty read is
+   * ambiguous: {@code HermesContainerFiles.readFile} cannot tell an unreadable file from an
+   * absent one, and a profile whose config could not be read reports no MCP entries — which
+   * would otherwise look exactly like a profile whose entries were all removed, and strand
+   * nothing while dropping everything.
+   */
+  private void dropStrandedLinks(
+      DockerHostRef host, AgentProfileDto profile, Set<String> aliases) {
+    if (aliases.isEmpty() || profile.configYaml() == null || profile.configYaml().isBlank()) {
+      return;
+    }
+    for (String alias : aliases) {
+      log.info("dropping catalog link {} on agent {}: the entry is no longer in its config",
+          alias, profile.name());
+      links.delete(host.id(), profile.containerId(), profile.name(), alias);
+    }
   }
 
   private McpServerDefinition materialize(

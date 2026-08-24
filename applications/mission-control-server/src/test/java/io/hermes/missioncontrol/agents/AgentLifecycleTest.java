@@ -1,11 +1,16 @@
 package io.hermes.missioncontrol.agents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
@@ -20,6 +25,10 @@ import org.mockito.InOrder;
  *
  * <p>Both used to be asserted through MockMvc, because both were two statements in a
  * controller handler.
+ *
+ * <p>Also what happens when the SQLite half fails after the container half has landed: the
+ * cleanup is retried, a persistent failure does not fail a request for work that succeeded,
+ * and a failure of the container half is still a failure.
  */
 class AgentLifecycleTest {
 
@@ -65,6 +74,55 @@ class AgentLifecycleTest {
     when(mcpCatalog.enrich(eq(HOST), any())).thenReturn(enriched);
 
     assertEquals(enriched, lifecycle.removeMcpServer(HOST, CONTAINER, "scout", "files"));
+  }
+
+  // ── the cleanup that runs after the container write has landed ────────────
+
+  @Test
+  void aCleanupThatLosesOneRaceIsRetriedRatherThanGivenUpOn() {
+    // SQLite here is single-writer with a pool of one, so a brief lock is the realistic cause
+    doThrow(new RuntimeException("database is locked")).doNothing()
+        .when(mcpCatalog).deleteAgentLinks(HOST, CONTAINER, "scout");
+
+    lifecycle.delete(HOST, CONTAINER, "scout");
+
+    verify(mcpCatalog, times(2)).deleteAgentLinks(HOST, CONTAINER, "scout");
+  }
+
+  @Test
+  void aCleanupThatKeepsFailingDoesNotFailARequestWhoseContainerWriteLanded() {
+    // the profile is gone; answering 500 would say it is not. The link row left behind is
+    // reachable afterwards — delete tolerates a profile that is already gone, so a retry
+    // reaches the cleanup, and enrich drops a link whose entry is no longer on the profile
+    doThrow(new RuntimeException("database is locked"))
+        .when(mcpCatalog).deleteAgentLinks(HOST, CONTAINER, "scout");
+
+    lifecycle.delete(HOST, CONTAINER, "scout");
+
+    verify(profiles).delete(HOST, CONTAINER, "scout");
+    verify(mcpCatalog, times(2)).deleteAgentLinks(HOST, CONTAINER, "scout");
+  }
+
+  @Test
+  void theSameHoldsForAnMcpEntryRemoval() {
+    when(profiles.removeMcpServer(HOST, CONTAINER, "scout", "files")).thenReturn(profile());
+    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(call -> call.getArgument(1));
+    doThrow(new RuntimeException("database is locked"))
+        .when(mcpCatalog).forgetLink(HOST, CONTAINER, "scout", "files");
+
+    assertEquals("scout", lifecycle.removeMcpServer(HOST, CONTAINER, "scout", "files").name());
+
+    verify(mcpCatalog, times(2)).forgetLink(HOST, CONTAINER, "scout", "files");
+  }
+
+  @Test
+  void aFailedContainerWriteIsStillAFailedRequest() {
+    // only the cleanup is best-effort: the half this is trading away has already succeeded
+    doThrow(new IllegalStateException("hermes refused")).when(profiles).delete(HOST, CONTAINER, "scout");
+
+    assertThrows(IllegalStateException.class, () -> lifecycle.delete(HOST, CONTAINER, "scout"));
+
+    verifyNoInteractions(mcpCatalog);
   }
 
   private static AgentProfileDto profile() {

@@ -142,6 +142,38 @@ class AgentMcpCatalogServiceTest {
     assertTrue(error.getMessage().contains("cross-host URL"));
   }
 
+  @Test
+  void aLinkWhoseEntryIsNoLongerOnTheProfileIsDroppedDuringEnrichment() {
+    // what a removal leaves behind if its link cleanup could not run. The page has no row left
+    // to offer an unlink on, and until the row is gone assertCustom refuses the alias to
+    // whatever is added under it next — so the listing has to be what clears it.
+    when(links.list("dh-local", "container", "default")).thenReturn(List.of(
+        new AgentMcpLink("dh-local", "container", "default", "gone", "mcp-1", 2, 1, 1)));
+
+    AgentProfileDto result = service.enrich(HOST, profile(List.of(custom("tools"))));
+
+    assertEquals(1, result.mcp().size());
+    assertEquals("custom", result.mcp().getFirst().origin());
+    verify(links).delete("dh-local", "container", "default", "gone");
+    verifyNoInteractions(registry);
+  }
+
+  @Test
+  void aProfileWhoseConfigCouldNotBeReadStrandsNothing() {
+    // readFile cannot tell an unreadable config.yaml from an absent one, so a profile that
+    // could not be read reports no MCP entries — indistinguishable from one whose entries were
+    // all removed. Pruning on that would drop every link the agent has.
+    when(links.list("dh-local", "container", "default")).thenReturn(List.of(
+        new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1)));
+    AgentProfileDto unreadable = new AgentProfileDto(
+        "container:default", "container", "default", "", "idle", "nous", "model", "",
+        "/opt/data", "", "", "", List.of(), List.of(), List.of(), 0);
+
+    service.enrich(HOST, unreadable);
+
+    verify(links, never()).delete(anyString(), anyString(), anyString(), anyString());
+  }
+
   private static AgentProfileDto profile(List<AgentMcpServerDto> mcp) {
     return new AgentProfileDto(
         "container:default", "container", "default", "", "idle", "nous", "model", "",
