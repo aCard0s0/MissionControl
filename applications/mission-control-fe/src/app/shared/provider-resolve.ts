@@ -1,5 +1,4 @@
-import { ApiModelProvider } from '../core/hermes-api';
-import { ModelProvider, ProfileTemplate } from '../core/models';
+import { LlmProvider, ModelProvider, ProfileTemplate } from '../core/models';
 
 // Which provider a profile runs on is picked from a dropdown, but stored as the
 // pair hermes actually needs. Both the create-agent dialog and the profile
@@ -18,7 +17,7 @@ export interface ProviderOption {
 /** Every provider a profile can be pointed at: the LLM registry as the backend
  *  reports it, plus one entry per registered ollama instance. */
 export function providerOptions(
-  llm: readonly ApiModelProvider[],
+  llm: readonly LlmProvider[],
   ollama: readonly ModelProvider[],
 ): ProviderOption[] {
   return [
@@ -98,7 +97,7 @@ export function providerOptionFor(
  */
 export function templateProvidesKey(
   template: Pick<ProfileTemplate, 'secrets'> | null | undefined,
-  provider: Pick<ApiModelProvider, 'envVar'> | null | undefined,
+  provider: Pick<LlmProvider, 'envVar'> | null | undefined,
 ): boolean {
   const envVar = provider?.envVar;
   if (!template || !envVar) return false;

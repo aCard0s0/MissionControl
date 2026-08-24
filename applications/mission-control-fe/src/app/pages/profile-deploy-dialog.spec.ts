@@ -5,13 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContainerStore } from '../core/store/container-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
-import { ApiModelProvider } from '../core/hermes-api';
-import { HermesContainer, ProfileTemplate } from '../core/models';
+import { HermesContainer, LlmProvider, ProfileTemplate } from '../core/models';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
 import { TestFixture, el, settle } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
 
-const llm: ApiModelProvider[] = [
+const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
   { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
     envVar: 'ANTHROPIC_API_KEY' },

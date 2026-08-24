@@ -8,13 +8,12 @@ import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { StoreContext } from '../core/store/store-context';
 import { TemplateStore } from '../core/store/template-store';
-import { ApiModelProvider } from '../core/hermes-api';
-import { ProfileTemplate } from '../core/models';
+import { LlmProvider, ProfileTemplate } from '../core/models';
 import { AgentProfilesPage } from './agent-profiles';
 import { TestFixture, el, field, press, settle, type } from '../testing/dom';
 import { template as buildTemplate } from '../testing/models';
 
-const llm: ApiModelProvider[] = [
+const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
   { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
     envVar: 'ANTHROPIC_API_KEY' },

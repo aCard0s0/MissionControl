@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiModelProvider } from '../core/hermes-api';
-import { ModelProvider, ProfileTemplate } from '../core/models';
+import { LlmProvider, ModelProvider, ProfileTemplate } from '../core/models';
 import {
   OLLAMA_PREFIX, ollamaBaseUrl, ollamaOptionForBaseUrl, providerNameOf, providerOptionFor,
   providerOptions, resolveProviderOption, templateProvidesKey,
@@ -57,7 +56,7 @@ describe('ollamaOptionForBaseUrl', () => {
   });
 });
 
-const llm: ApiModelProvider[] = [
+const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
   { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
     envVar: 'ANTHROPIC_API_KEY' },

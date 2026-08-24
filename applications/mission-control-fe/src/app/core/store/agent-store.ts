@@ -1,9 +1,9 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { AgentRef, ApiAgentProfile, ApiAuxiliaryModel } from '../hermes-api';
-import { AgentProfile, Integration, LogEntry } from '../models';
+import { AgentRef, ApiAgentProfile } from '../hermes-api';
+import { AgentProfile, Integration, LogEntry, NewAgent } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
-import { toAgentProfile } from './wire-mappers';
+import { toAgentProfile, toLogEntry } from './wire-mappers';
 
 /** One profile plus the address every `/api/agents` call needs. */
 interface ResolvedAgent {
@@ -99,18 +99,17 @@ export class AgentStore {
     }
   }
 
-  async create(
-    containerId: string,
-    name: string,
-    provider: string,
-    model: string,
-    apiKey: string,
-    cloneFromId?: string,
-    baseUrl?: string,
-    templateId?: string,
-    auxiliary?: ApiAuxiliaryModel,
-  ): Promise<string> {
-    const container = this.containers.byId(containerId);
+  /**
+   * Creates a profile and folds it in, answering its id — or '' when the create failed, which
+   * it has already reported.
+   *
+   * <p>`cloneFrom` is a profile *id* here and a profile *name* on the wire: an id is what a
+   * picker holds, a name is what the container addresses files by, and resolving one to the
+   * other needs the profile list. That translation is the reason this takes a domain record
+   * rather than handing {@link CreateAgentRequest} straight through.
+   */
+  async create(request: NewAgent): Promise<string> {
+    const container = this.containers.byId(request.containerId);
     if (!container) {
       this.ctx.gone('container');
       return '';
@@ -118,15 +117,15 @@ export class AgentStore {
     try {
       const created = await this.ctx.api.agents.create({
         hostId: container.hostId,
-        containerId,
-        name,
-        provider,
-        model,
-        apiKey,
-        cloneFrom: cloneFromId ? this.byId(cloneFromId)?.name : undefined,
-        baseUrl,
-        fromTemplateId: templateId || undefined,
-        auxiliary,
+        containerId: request.containerId,
+        name: request.name,
+        provider: request.provider,
+        model: request.model,
+        apiKey: request.apiKey,
+        cloneFrom: request.cloneFrom ? this.byId(request.cloneFrom)?.name : undefined,
+        baseUrl: request.baseUrl,
+        fromTemplateId: request.fromTemplate || undefined,
+        auxiliary: request.auxiliary,
       });
       return this.adopt(created);
     } catch (e) {
@@ -184,7 +183,7 @@ export class AgentStore {
     if (!resolved) return [];
     const lines = await this.ctx.api.agents.logs(resolved.ref, tail);
     return lines
-      .map(line => ({ ...line, agentId }))
+      .map(line => toLogEntry(line, agentId))
       .sort((a, b) => b.ts - a.ts);
   }
 

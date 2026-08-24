@@ -38,6 +38,30 @@ export interface ModelProvider {
   detail: string | null;
 }
 
+/**
+ * One entry in the registry of who can serve a model to an Agent.
+ *
+ * <p>Distinct from {@link ModelProvider}, which is a self-hosted ollama endpoint Mission
+ * Control administers. This is a capability description: what to call it in a picker, whether
+ * it wants an API key or an OAuth login, and which env var hermes reads that key from.
+ */
+export interface LlmProvider {
+  key: string;
+  label: string;
+  needsKey: boolean;
+  oauth: boolean;
+  hasCatalog: boolean;
+  /** API-key env var, or null for an OAuth or keyless provider. */
+  envVar: string | null;
+}
+
+/** A model pull in progress on an ollama provider, as its last poll reported it. */
+export interface PullState {
+  model: string;
+  status: 'pulling' | 'done' | 'error';
+  detail: string | null;
+}
+
 /** A model available on an ollama provider (from GET {url}/api/tags). */
 export interface OllamaModel {
   name: string;                // e.g. "gemma3:4b"
@@ -302,6 +326,94 @@ export interface AgentProfile {
   lastActive: number;             // epoch ms
 }
 
+/** An API key hermes reads from a profile's `.env`, and whether it is there. Never the
+ *  value: the backend returns a mask, and only the tail of one. */
+export interface SetupApiKey {
+  label: string;
+  envVar: string;
+  set: boolean;
+  masked: string | null;
+}
+
+/** An OAuth login the container holds (Nous Portal and the like). `hint` is what to tell an
+ *  operator when it is not connected — usually the command that connects it. */
+export interface AuthProvider {
+  label: string;
+  ok: boolean;
+  status: string;
+  hint: string | null;
+}
+
+/** A provider whose key is present in the profile's `.env`, as hermes reports it. */
+export interface SetupKeyProvider {
+  label: string;
+  ok: boolean;
+  status: string;
+}
+
+/** A messaging platform wired to a profile — Discord, Telegram and friends. `homeChannel` is
+ *  where it posts unprompted, which is the setting an operator most often has to check. */
+export interface SetupMessaging {
+  label: string;
+  ok: boolean;
+  status: string;
+  tokenVar: string;
+  homeVar: string | null;
+  homeChannel: string | null;
+}
+
+/**
+ * What a profile's credentials look like from outside the container: which `.env` file
+ * holds them, whether it exists at all, and the state of everything hermes reads out of it.
+ *
+ * <p>Read by running `hermes status` inside the container, which takes seconds — so this is
+ * cached per profile rather than polled.
+ */
+export interface AgentSetup {
+  envPath: string;
+  envExists: boolean;
+  apiKeys: SetupApiKey[];
+  authProviders: AuthProvider[];
+  apiKeyProviders: SetupKeyProvider[];
+  messaging: SetupMessaging[];
+}
+
+/**
+ * The model hermes' side tasks run on — compression, summarization, memory flush — when they
+ * should not follow the main model.
+ *
+ * <p>Absent means "follow the main model", which is the default and the common case. A blank
+ * `provider` means "same provider, different model" and inherits the main endpoint.
+ */
+export interface AuxiliaryModel {
+  provider?: string;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string;
+}
+
+/**
+ * Everything needed to create a profile, as the create dialog assembles it.
+ *
+ * <p>A record rather than a positional argument list: this is nine fields, five of them
+ * optional, and the two orderings that matter — provider before model, cloneFrom before
+ * fromTemplateId — are not ones a reader can recover from a call site. The store resolves
+ * `containerId` to a docker host before this reaches the wire.
+ */
+export interface NewAgent {
+  containerId: string;
+  name: string;
+  provider: string;
+  model: string;
+  apiKey: string;
+  /** id of a profile to copy files from. */
+  cloneFrom?: string;
+  baseUrl?: string;
+  /** id of a blueprint to seed files from. */
+  fromTemplate?: string;
+  auxiliary?: AuxiliaryModel;
+}
+
 /** An MCP server defined in a profile template (no live status — that exists only
  *  once deployed onto an agent). */
 export interface TemplateMcp {
@@ -382,6 +494,14 @@ export interface LogEntry {
   source: string;                 // gateway / scheduler / agent name / mcp
   agentId: string | null;
   msg: string;
+}
+
+/** What Mission Control's own process reports about itself, for the header of its log page. */
+export interface ServerInfo {
+  version: string;
+  /** how many lines the server's in-memory ring holds before the oldest fall out */
+  retained: number;
+  startedAt: number;
 }
 
 export type BoardColumn = 'queued' | 'running' | 'review' | 'done';

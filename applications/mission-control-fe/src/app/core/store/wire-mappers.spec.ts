@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiProfileTemplate } from '../hermes-api';
 import {
-  toAgentProfile, toImageCatalog, toMcpCatalogServer, toMcpRetainedResource, toProfileTemplate,
+  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer, ApiModelProvider,
+  ApiProfileTemplate,
+} from '../hermes-api';
+import {
+  toAgentProfile, toAgentSetup, toImageCatalog, toLlmProvider, toLogEntry, toMcpCatalogServer,
+  toMcpRetainedResource, toProfileTemplate, toPullState, toServerInfo,
 } from './wire-mappers';
 
 /**
@@ -251,5 +255,87 @@ describe('toProfileTemplate', () => {
       { key: 'A', set: false, recoverable: false },
       { key: 'B', set: true, recoverable: true },
     ]);
+  });
+});
+
+describe('toAgentSetup', () => {
+  // hermes reports these sections; a version that does not know one omits it, and the Setup
+  // tab has to render "nothing set up" rather than fail on a binding to undefined
+  it('fills in every section a sparse payload leaves out', () => {
+    const setup = toAgentSetup({ envPath: '/opt/data/.env', envExists: true } as ApiAgentSetup);
+
+    expect(setup.apiKeys).toEqual([]);
+    expect(setup.authProviders).toEqual([]);
+    expect(setup.apiKeyProviders).toEqual([]);
+    expect(setup.messaging).toEqual([]);
+  });
+
+  it('treats a missing flag as not-set rather than as undefined', () => {
+    const setup = toAgentSetup({
+      apiKeys: [{ label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY' }],
+      authProviders: [{ label: 'Nous Portal', status: 'not logged in' }],
+      messaging: [{ label: 'Discord', status: 'off', tokenVar: 'DISCORD_TOKEN' }],
+    } as unknown as ApiAgentSetup);
+
+    expect(setup.envExists).toBe(false);
+    expect(setup.apiKeys[0]).toEqual({
+      label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', set: false, masked: null,
+    });
+    expect(setup.authProviders[0].ok).toBe(false);
+    expect(setup.messaging[0]).toMatchObject({ ok: false, homeVar: null, homeChannel: null });
+  });
+
+  it('keeps a field it does not know about out of the model', () => {
+    const setup = toAgentSetup(
+      { envPath: '/e', envExists: true, quotaGb: 12 } as unknown as ApiAgentSetup);
+
+    expect('quotaGb' in setup).toBe(false);
+  });
+});
+
+describe('toLlmProvider', () => {
+  // the picker asks for a key it may not need rather than omitting one it does
+  it('treats an incompletely described provider as the most demanding case', () => {
+    expect(toLlmProvider({ key: 'newvendor' } as ApiModelProvider)).toEqual({
+      key: 'newvendor', label: 'newvendor', needsKey: true,
+      oauth: false, hasCatalog: false, envVar: null,
+    });
+  });
+
+  it('keeps a keyless OAuth provider keyless', () => {
+    expect(toLlmProvider({
+      key: 'nous', label: 'Nous (account)', needsKey: false,
+      oauth: true, hasCatalog: true, envVar: null,
+    })).toMatchObject({ needsKey: false, oauth: true });
+  });
+});
+
+describe('toPullState', () => {
+  it('carries a status it knows', () => {
+    expect(toPullState({ model: 'gemma3:4b', status: 'pulling', detail: null }))
+      .toEqual({ model: 'gemma3:4b', status: 'pulling', detail: null });
+  });
+
+  // a pull this build cannot name is one it cannot promise is still running, and a row stuck
+  // on 'pulling' never clears on its own
+  it('reads an unrecognised status as an error rather than as in-flight', () => {
+    expect(toPullState({ model: 'm', status: 'cancelled', detail: null } as never).status)
+      .toBe('error');
+  });
+});
+
+describe('toServerInfo', () => {
+  it('answers something renderable for a payload that names nothing', () => {
+    expect(toServerInfo({} as never)).toEqual({ version: '', retained: 0, startedAt: 0 });
+  });
+});
+
+describe('toLogEntry', () => {
+  // the same wire shape arrives from four tails; only the caller knows whose it is
+  it('attributes a line to the caller\'s subject, not to the payload', () => {
+    const line = { ts: 5, level: 'warn' as const, source: 'gateway', msg: 'slow' };
+
+    expect(toLogEntry(line, 'a-atlas').agentId).toBe('a-atlas');
+    expect(toLogEntry(line, null).agentId).toBeNull();
   });
 });

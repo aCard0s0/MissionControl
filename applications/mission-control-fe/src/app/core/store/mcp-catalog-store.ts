@@ -4,7 +4,7 @@ import { McpServerOperation } from '../hermes-api';
 import { duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
 import { LogEntry, McpCatalogServer, McpCatalogServerInput, McpRetainedResource } from '../models';
 import { StoreContext } from './store-context';
-import { toMcpCatalogServer, toMcpRetainedResource } from './wire-mappers';
+import { toLogEntry, toMcpCatalogServer, toMcpRetainedResource } from './wire-mappers';
 
 /** Image pulls (notably Playwright) can take minutes on a cold host, so the
  *  operation poll has to outlast the backend's ten-minute Compose timeout. */
@@ -133,7 +133,7 @@ export class McpCatalogStore {
     const server = this.byId(id);
     if (!server || server.kind !== 'managed') return [];
     const lines = await this.ctx.api.mcp.logs(id, tail);
-    return lines.map(line => ({ ...line, agentId: null })).sort((a, b) => b.ts - a.ts);
+    return lines.map(line => toLogEntry(line, null)).sort((a, b) => b.ts - a.ts);
   }
 
   async purgeRetainedResource(id: string): Promise<boolean> {

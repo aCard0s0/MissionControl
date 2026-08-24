@@ -131,7 +131,9 @@ describe('AgentStore create', () => {
     const create = vi.fn().mockResolvedValue(apiProfile('sre', { id: 'a-sre' }));
     const { agents } = await built({ list: vi.fn().mockResolvedValue([]), create });
 
-    expect(await agents.create('c-1', 'sre', 'anthropic', 'm', 'sk-x')).toBe('a-sre');
+    expect(await agents.create({
+      containerId: 'c-1', name: 'sre', provider: 'anthropic', model: 'm', apiKey: 'sk-x',
+    })).toBe('a-sre');
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       hostId: 'dh-local', containerId: 'c-1', name: 'sre', provider: 'anthropic',
       model: 'm', apiKey: 'sk-x', cloneFrom: undefined, fromTemplateId: undefined,
@@ -146,7 +148,10 @@ describe('AgentStore create', () => {
     });
     await agents.refresh();
 
-    await agents.create('c-1', 'sre', 'anthropic', 'm', '', 'a-atlas');
+    await agents.create({
+      containerId: 'c-1', name: 'sre', provider: 'anthropic', model: 'm', apiKey: '',
+      cloneFrom: 'a-atlas',
+    });
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ cloneFrom: 'atlas' }));
   });
@@ -155,7 +160,9 @@ describe('AgentStore create', () => {
     const create = vi.fn();
     const { agents, ctx } = await built({ list: vi.fn().mockResolvedValue([]), create });
 
-    expect(await agents.create('c-missing', 'sre', 'anthropic', 'm', '')).toBe('');
+    expect(await agents.create({
+      containerId: 'c-missing', name: 'sre', provider: 'anthropic', model: 'm', apiKey: '',
+    })).toBe('');
     expect(create).not.toHaveBeenCalled();
     expect(ctx.liveError()).toBe('container is no longer available');
   });
@@ -166,7 +173,9 @@ describe('AgentStore create', () => {
       create: vi.fn().mockRejectedValue(new Error('profile exists')),
     });
 
-    expect(await agents.create('c-1', 'sre', 'anthropic', 'm', '')).toBe('');
+    expect(await agents.create({
+      containerId: 'c-1', name: 'sre', provider: 'anthropic', model: 'm', apiKey: '',
+    })).toBe('');
     expect(ctx.liveError()).toBe('create profile failed: profile exists');
   });
 

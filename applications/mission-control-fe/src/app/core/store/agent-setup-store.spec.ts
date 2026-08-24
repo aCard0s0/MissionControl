@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiAgentSetup } from '../hermes-api';
+import { AgentSetup } from '../models';
+import { toAgentSetup } from './wire-mappers';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const setup = (patch: Partial<ApiAgentSetup> = {}): ApiAgentSetup => ({
-  envPath: '/opt/data/atlas/.env', envExists: true,
-  keys: [{ key: 'ANTHROPIC_API_KEY', set: true, masked: '…9f2c' }],
+  envPath: '/opt/data/atlas/.env',
+  envExists: true,
+  apiKeys: [{ label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', set: true, masked: '…9f2c' }],
+  authProviders: [],
+  apiKeyProviders: [],
+  messaging: [],
   ...patch,
-} as ApiAgentSetup);
+});
+
+/** What the store answers with for a given payload — the mapped shape, not the payload. */
+const mapped = (patch: Partial<ApiAgentSetup> = {}): AgentSetup => toAgentSetup(setup(patch));
 
 /** One profile in one container, with the `/api/agents` client stubbed. */
 const loaded = async (agentsApi: Record<string, unknown>) => {
@@ -27,10 +36,10 @@ describe('AgentSetupStore credentials', () => {
     const read = vi.fn().mockResolvedValue(setup());
     const { store } = await loaded({ setup: read });
 
-    expect(await store.setup('a-atlas')).toEqual(setup());
-    expect(await store.setup('a-atlas')).toEqual(setup());
+    expect(await store.setup('a-atlas')).toEqual(mapped());
+    expect(await store.setup('a-atlas')).toEqual(mapped());
     expect(read).toHaveBeenCalledTimes(1);
-    expect(store.setupOf('a-atlas')).toEqual(setup());
+    expect(store.setupOf('a-atlas')).toEqual(mapped());
   });
 
   it('re-reads on demand, because the refresh button exists to bypass the cache', async () => {
@@ -40,7 +49,7 @@ describe('AgentSetupStore credentials', () => {
     const { store } = await loaded({ setup: read });
     await store.setup('a-atlas');
 
-    expect(await store.setup('a-atlas', true)).toEqual(setup({ envExists: false }));
+    expect(await store.setup('a-atlas', true)).toEqual(mapped({ envExists: false }));
     expect(read).toHaveBeenCalledTimes(2);
   });
 
@@ -68,7 +77,7 @@ describe('AgentSetupStore credentials', () => {
     await store.setup('a-atlas');
 
     expect(await store.setup('a-atlas', true)).toBeNull();
-    expect(store.setupOf('a-atlas')).toEqual(setup());
+    expect(store.setupOf('a-atlas')).toEqual(mapped());
     expect(ctx.liveError()).toBe('setup load failed: container stopped');
   });
 
@@ -81,11 +90,14 @@ describe('AgentSetupStore credentials', () => {
   });
 
   it('replaces the cache with what a write answered', async () => {
-    const written = setup({ keys: [{ key: 'OPENAI_API_KEY', set: true, masked: '…abcd' }] } as never);
-    const { store } = await loaded({ setEnv: vi.fn().mockResolvedValue(written) });
+    const keys = [{ label: 'OpenAI', envVar: 'OPENAI_API_KEY', set: true, masked: '…abcd' }];
+    const { store } = await loaded({
+      setEnv: vi.fn().mockResolvedValue(setup({ apiKeys: keys })),
+    });
 
-    expect(await store.setEnv('a-atlas', [{ key: 'OPENAI_API_KEY', value: 'sk-x' }])).toEqual(written);
-    expect(store.setupOf('a-atlas')).toEqual(written);
+    expect(await store.setEnv('a-atlas', [{ key: 'OPENAI_API_KEY', value: 'sk-x' }]))
+      .toEqual(mapped({ apiKeys: keys }));
+    expect(store.setupOf('a-atlas')).toEqual(mapped({ apiKeys: keys }));
   });
 
   it('reports a rejected write and leaves the cache alone', async () => {
@@ -96,16 +108,17 @@ describe('AgentSetupStore credentials', () => {
     await store.setup('a-atlas');
 
     expect(await store.setEnv('a-atlas', [{ key: 'K', value: 'v' }])).toBeNull();
-    expect(store.setupOf('a-atlas')).toEqual(setup());
+    expect(store.setupOf('a-atlas')).toEqual(mapped());
     expect(ctx.liveError()).toBe('env save failed: read-only volume');
   });
 
   it('writes the .env template and caches the result', async () => {
-    const created = setup({ envExists: true });
-    const { store } = await loaded({ initEnv: vi.fn().mockResolvedValue(created) });
+    const { store } = await loaded({
+      initEnv: vi.fn().mockResolvedValue(setup({ envExists: true })),
+    });
 
-    expect(await store.initEnv('a-atlas')).toEqual(created);
-    expect(store.setupOf('a-atlas')).toEqual(created);
+    expect(await store.initEnv('a-atlas')).toEqual(mapped({ envExists: true }));
+    expect(store.setupOf('a-atlas')).toEqual(mapped({ envExists: true }));
   });
 
   it('reports a failed .env init', async () => {
@@ -139,7 +152,7 @@ describe('AgentSetupStore credentials', () => {
 
 describe('AgentSetupStore auth providers', () => {
   it('reads container-level auth status before any profile exists', async () => {
-    const providers = [{ key: 'nous', label: 'Nous Portal', status: 'authorized' }];
+    const providers = [{ label: 'Nous Portal', ok: true, status: 'authorized', hint: null }];
     const { store } = await loaded({ authProviders: vi.fn().mockResolvedValue(providers) });
 
     expect(await store.authProviders('c-1')).toEqual(providers);

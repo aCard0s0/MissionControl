@@ -1,11 +1,14 @@
 import {
-  ApiAgentProfile, ApiImageTags, ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck,
-  ApiMcpRetainedResource, ApiMcpSupportService, ApiProfileTemplate, ApiPrompt,
+  ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer, ApiMcpConfigEntry,
+  ApiMcpHealthcheck, ApiMcpRetainedResource, ApiMcpSupportService, ApiModelProvider,
+  ApiLogLine, ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSetupApiKey,
+  ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
-  AgentProfile, ImageCatalog, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
-  McpHealthcheck, McpRetainedResource, McpRuntimeState, McpSupportService, McpTransport,
-  ProfileTemplate, Prompt,
+  AgentProfile, AgentSetup, AuthProvider, ImageCatalog, LlmProvider, McpCatalogKind,
+  McpCatalogServer, McpCheckStatus, McpConfigEntry, McpHealthcheck, McpRetainedResource,
+  LogEntry, McpRuntimeState, McpSupportService, McpTransport, ProfileTemplate, Prompt, PullState,
+  ServerInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
 } from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
@@ -226,5 +229,104 @@ export function toPrompt(api: ApiPrompt): Prompt {
     tags: api.tags ?? [],
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
+  };
+}
+
+function toSetupApiKey(api: ApiSetupApiKey): SetupApiKey {
+  return {
+    label: api.label ?? '',
+    envVar: api.envVar ?? '',
+    set: !!api.set,
+    masked: api.masked ?? null,
+  };
+}
+
+export function toAuthProvider(api: ApiSetupAuthProvider): AuthProvider {
+  return {
+    label: api.label ?? '',
+    ok: !!api.ok,
+    status: api.status ?? '',
+    hint: api.hint ?? null,
+  };
+}
+
+function toSetupKeyProvider(api: ApiSetupKeyProvider): SetupKeyProvider {
+  return { label: api.label ?? '', ok: !!api.ok, status: api.status ?? '' };
+}
+
+function toSetupMessaging(api: ApiSetupMessaging): SetupMessaging {
+  return {
+    label: api.label ?? '',
+    ok: !!api.ok,
+    status: api.status ?? '',
+    tokenVar: api.tokenVar ?? '',
+    homeVar: api.homeVar ?? null,
+    homeChannel: api.homeChannel ?? null,
+  };
+}
+
+/**
+ * A profile's credentials as the Setup tab renders them.
+ *
+ * <p>Every list defaults to empty rather than staying absent. This is read by running
+ * `hermes status` inside a container, so a version of hermes that does not know about one of
+ * these sections omits it — and the tab renders a section that is missing as "nothing set up",
+ * which is true, instead of failing on a template binding to undefined.
+ */
+export function toAgentSetup(api: ApiAgentSetup): AgentSetup {
+  return {
+    envPath: api.envPath ?? '',
+    envExists: !!api.envExists,
+    apiKeys: (api.apiKeys ?? []).map(toSetupApiKey),
+    authProviders: (api.authProviders ?? []).map(toAuthProvider),
+    apiKeyProviders: (api.apiKeyProviders ?? []).map(toSetupKeyProvider),
+    messaging: (api.messaging ?? []).map(toSetupMessaging),
+  };
+}
+
+/** One entry of the model-provider registry. A provider the backend names but describes
+ *  incompletely is treated as the most demanding case — key required, no catalog — so the
+ *  picker asks for a key it may not need rather than omitting one it does. */
+export function toLlmProvider(api: ApiModelProvider): LlmProvider {
+  return {
+    key: api.key,
+    label: api.label || api.key,
+    needsKey: api.needsKey !== false,
+    oauth: !!api.oauth,
+    hasCatalog: !!api.hasCatalog,
+    envVar: api.envVar ?? null,
+  };
+}
+
+/** A pull in flight. An unrecognised status reads as an error: a pull this build cannot name
+ *  is one it cannot promise is still running, and a stuck 'pulling' row never clears. */
+export function toPullState(api: ApiPullState): PullState {
+  const status = api.status === 'pulling' || api.status === 'done' ? api.status : 'error';
+  return { model: api.model ?? '', status, detail: api.detail ?? null };
+}
+
+export function toServerInfo(api: ApiServerInfo): ServerInfo {
+  return {
+    version: api.version ?? '',
+    retained: api.retained ?? 0,
+    startedAt: api.startedAt ?? 0,
+  };
+}
+
+/**
+ * One log line, attributed.
+ *
+ * <p>`agentId` is the whole reason this is a mapping rather than a cast: a docker tail, a
+ * managed MCP service's tail and the dashboard's own log all arrive in the same wire shape and
+ * belong to nobody, while a profile's supervised gateway log carries an authoritative profile
+ * identity. Only the caller knows which it fetched, so only the caller can say.
+ */
+export function toLogEntry(api: ApiLogLine, agentId: string | null): LogEntry {
+  return {
+    ts: api.ts,
+    level: api.level,
+    source: api.source ?? '',
+    agentId,
+    msg: api.msg ?? '',
   };
 }
