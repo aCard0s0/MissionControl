@@ -8,8 +8,9 @@ import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { LogStore } from '../core/store/log-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile, HermesContainer, ImageTag } from '../core/models';
-import { isFloatingTag } from '../core/image-tags';
-import { containerUpdate, displayVersion, targetVersion } from './containers';
+import {
+  containerUpdate, displayVersion, isFloatingTag, targetVersion,
+} from '../core/image-policy';
 import { Sparkline } from '../shared/sparkline';
 import { Gauge } from '../shared/gauge';
 import { StatusDot } from '../shared/status-dot';
