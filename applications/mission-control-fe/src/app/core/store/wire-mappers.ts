@@ -73,7 +73,10 @@ export function toAgentProfile(api: ApiAgentProfile): AgentProfile {
 
 const KINDS: McpCatalogKind[] = ['managed', 'external', 'stdio'];
 const TRANSPORTS: McpTransport[] = ['stdio', 'http', 'sse'];
-const RUNTIME_STATES: McpRuntimeState[] = ['running', 'stopped', 'missing', 'error'];
+// 'unavailable' is what every external and stdio record is created as and never leaves —
+// leaving it out mapped all of them to 'unknown' and nothing failed to say so
+const RUNTIME_STATES: McpRuntimeState[] =
+  ['running', 'stopped', 'missing', 'unavailable', 'error'];
 const CHECK_STATUSES: McpCheckStatus[] = ['checking', 'connected', 'error'];
 
 /** One of `allowed`, matched case-insensitively, or `fallback`. The backend

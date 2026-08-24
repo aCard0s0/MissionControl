@@ -5,11 +5,14 @@ import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -138,7 +141,8 @@ public class McpRegistryService {
     long now = System.currentTimeMillis();
     ServerRow row = new ServerRow(id, validated.name(), validated.description(), validated.kind(),
         validated.hostId(), serviceKey, configs.write(config), "stopped",
-        managed ? "missing" : "unavailable", managed ? "provisioning" : "idle", null, 1,
+        McpRuntimeState.initial(managed).wire(),
+        (managed ? McpOperationState.PROVISIONING : McpOperationState.IDLE).wire(), null, 1,
         managed ? 0 : 1, null, null, null, null, null, now, now);
     repository.insert(row);
     if (managed) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
@@ -159,13 +163,16 @@ public class McpRegistryService {
     if (repository.nameExists(validated.name(), id)) {
       throw new ResourceConflictException("an MCP server named '" + validated.name() + "' already exists");
     }
-    StoredConfig config = configs.store(validated, configs.read(existing));
+    StoredConfig previous = configs.read(existing);
+    ensureSupportServicesNotRenamed(previous, validated);
+    StoredConfig config = configs.store(validated, previous);
     long revision = existing.revision() + 1;
     boolean recreateStopped = "managed".equals(existing.kind())
         && "stopped".equals(existing.desiredState());
     long applied = "managed".equals(existing.kind()) ? existing.appliedRevision() : revision;
     repository.updateDefinition(id, validated.name(), validated.description(), configs.write(config),
-        revision, applied, recreateStopped ? "applying" : "idle");
+        revision, applied,
+        (recreateStopped ? McpOperationState.APPLYING : McpOperationState.IDLE).wire());
     if (recreateStopped) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
     return live(id);
   }
@@ -198,7 +205,7 @@ public class McpRegistryService {
       repository.delete(id);
       return mapper.toDto(row);
     }
-    repository.beginOperation(id, "stopped", "deleting");
+    repository.beginOperation(id, "stopped", McpOperationState.DELETING.wire());
     lifecycle.submit(id, () -> lifecycle.runDelete(id));
     return live(id);
   }
@@ -207,21 +214,21 @@ public class McpRegistryService {
 
   public McpServerDto start(String id) {
     requireManagedIdle(id);
-    repository.beginOperation(id, "running", "starting");
+    repository.beginOperation(id, "running", McpOperationState.STARTING.wire());
     lifecycle.submit(id, () -> lifecycle.runStart(id, false));
     return live(id);
   }
 
   public McpServerDto stop(String id) {
     requireManagedIdle(id);
-    repository.beginOperation(id, "stopped", "stopping");
+    repository.beginOperation(id, "stopped", McpOperationState.STOPPING.wire());
     lifecycle.submit(id, () -> lifecycle.runStop(id));
     return live(id);
   }
 
   public McpServerDto apply(String id) {
     ServerRow row = requireManagedIdle(id);
-    repository.beginOperation(id, row.desiredState(), "applying");
+    repository.beginOperation(id, row.desiredState(), McpOperationState.APPLYING.wire());
     lifecycle.submit(id, () -> lifecycle.reconcile(id));
     return live(id);
   }
@@ -263,8 +270,47 @@ public class McpRegistryService {
     return row;
   }
 
+  /**
+   * A stored support service's name is its Compose identity, so an update may add support
+   * services and it may remove them, but it may not rename one.
+   *
+   * <p>{@link ComposeStackRenderer#supportKey} derives the Compose service name from it. That
+   * name is the hostname the main container reaches the dependency by, the prefix of every
+   * volume the dependency declares, the key its {@code depends_on} entry is written under, and
+   * what {@link McpLogReader} looks its container up by. A renamed support service is therefore
+   * a different service with empty volumes, reachable at an address the main container's own
+   * configuration does not mention.
+   *
+   * <p>Refused here rather than accommodated in {@link McpConfigStore}, which carries stored
+   * secrets forward under this same name and so fails the save today. Giving support services a
+   * stable id and keying the secrets by that would let the save through and make every
+   * consequence above silent, which is worse than refusing it.
+   *
+   * <p>A rename is only detectable as one because it arrives together: a stored name has left
+   * and an unknown name has appeared in its place. Doing the two halves as separate saves is
+   * allowed, and is what the message asks for — it makes replacing the dependency the operator's
+   * decision rather than a side effect of editing a text field. The removal half is reclaimed
+   * properly by {@code McpComposeLifecycle}, which stops the departed container and moves its
+   * volumes to the retained inventory.
+   */
+  private static void ensureSupportServicesNotRenamed(StoredConfig previous, Validated validated) {
+    Set<String> stored = previous.supportServices().stream()
+        .map(StoredSupportService::name).collect(Collectors.toCollection(LinkedHashSet::new));
+    Set<String> submitted = validated.supportServices().stream()
+        .map(SupportServiceRequest::name).collect(Collectors.toCollection(LinkedHashSet::new));
+    List<String> dropped = stored.stream().filter(name -> !submitted.contains(name)).toList();
+    List<String> added = submitted.stream().filter(name -> !stored.contains(name)).toList();
+    if (dropped.isEmpty() || added.isEmpty()) return;
+    throw new IllegalArgumentException(
+        "a support service cannot be renamed: its name is the Compose service name, the hostname"
+            + " the server reaches it by, and the prefix of its volumes. This update drops "
+            + dropped + " and adds " + added + ". Remove and re-add in separate saves if the"
+            + " dependency really is being replaced — a removed one's volumes are kept as"
+            + " retained resources for you to purge, and the new one starts with empty ones.");
+  }
+
   private static void ensureIdle(ServerRow row) {
-    if (!List.of("idle", "error").contains(row.operationState())) {
+    if (!McpOperationState.settled(row.operationState())) {
       throw new ResourceConflictException("an MCP server operation is already in progress");
     }
   }

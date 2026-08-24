@@ -350,6 +350,61 @@ class ComposeStackManagerTest {
     assertNull(manager.serviceContainerId("dh-local", SERVICE));
   }
 
+  // ── reclaiming departed services ────────────────────────────────────────
+
+  @Test
+  void removingADepartedServiceRefusesAContainerThatIsNotOurs() {
+    ComposeStackManager manager =
+        managerReturning(command -> isInspect(command) ? "someone-else" : "cid-1\n");
+
+    IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+        () -> manager.removeServices("dh-local", "mcp-files", List.of("mcp-files-database"),
+            Duration.ofMinutes(2)));
+
+    assertTrue(failure.getMessage().contains("not owned by Mission Control MCP"));
+    assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
+        "a container that is not ours is never removed");
+  }
+
+  @Test
+  void removingADepartedServiceStopsAndRemovesTheContainerItFoundByLabel() {
+    ComposeStackManager manager =
+        managerReturning(command -> isInspect(command) ? ManagedMcpStack.PROJECT : "cid-1\n");
+
+    manager.removeServices("dh-local", "mcp-files", List.of("mcp-files-database"),
+        Duration.ofMinutes(2));
+
+    List<String> lookup = commands.getFirst();
+    assertTrue(lookup.contains("label=" + ManagedMcpStack.SERVER_ID_LABEL + "=mcp-files"));
+    assertTrue(lookup.contains("label=com.docker.compose.service=mcp-files-database"));
+    // --force stops it first; --volumes drops only what the image declared anonymously, never
+    // the named volumes the caller is about to retain
+    assertEquals(List.of("docker", "--host", "unix:///sock", "rm", "--force", "--volumes", "cid-1"),
+        commands.getLast());
+  }
+
+  @Test
+  void removingNoDepartedServicesTouchesTheDaemonNotAtAll() {
+    ComposeStackManager manager = managerReturning(command -> "");
+
+    manager.removeServices("dh-local", "mcp-files", List.of(), Duration.ofMinutes(2));
+
+    assertTrue(commands.isEmpty());
+  }
+
+  @Test
+  void whatARecordStillHasIsReadBackFromItsOwnLabelWithBlankLinesDropped() {
+    ComposeStackManager manager = managerReturning(command -> "mcp-files\n\n mcp-files-database \n");
+
+    assertEquals(List.of("mcp-files", "mcp-files-database"),
+        manager.servicesOf("dh-local", "mcp-files"));
+    assertTrue(commands.getFirst().contains("label=" + ManagedMcpStack.SERVER_ID_LABEL + "=mcp-files"));
+
+    assertEquals(List.of("mcp-files", "mcp-files-database"),
+        manager.volumesOf("dh-local", "mcp-files"));
+    assertTrue(commands.getLast().contains("volume"));
+  }
+
   // ── the CLI runner itself ───────────────────────────────────────────────
   //
   // Everything above substitutes run(). These exercise the real one with /bin/sh instead of

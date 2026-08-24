@@ -7,6 +7,7 @@ const TONE: Record<string, StatusTone> = {
   idle: 'warn', degraded: 'warn', warn: 'warn',
   unhealthy: 'crit', error: 'crit', down: 'crit', fail: 'crit',
   stopped: 'idle', dormant: 'idle', off: 'idle', disabled: 'idle', closed: 'idle', disconnected: 'idle',
+  unavailable: 'idle',
   unknown: 'info', checking: 'info', connecting: 'info',
 };
 

@@ -28,14 +28,16 @@ class RetainedResourceRepository {
     return jdbc.query("SELECT * FROM mcp_retained_resources WHERE id = ?", MAPPER, id).stream().findFirst();
   }
 
-  void retain(String serverId, String serverName, String hostId, String volumeName) {
-    jdbc.update("""
+  /** Records a volume as kept behind. True when this is the first time it was — a volume already
+   *  waiting to be purged is left as it stands, so a caller can tell news from a repeat. */
+  boolean retain(String serverId, String serverName, String hostId, String volumeName) {
+    return jdbc.update("""
         INSERT INTO mcp_retained_resources
           (id, server_id, server_name, host_id, type, name, created_at)
         VALUES (?, ?, ?, ?, 'volume', ?, ?)
         ON CONFLICT(host_id, type, name) DO NOTHING
         """, "mrr-" + UUID.randomUUID().toString().substring(0, 12), serverId, serverName,
-        hostId, volumeName, System.currentTimeMillis());
+        hostId, volumeName, System.currentTimeMillis()) > 0;
   }
 
   RetainedResourceDto require(String id) {

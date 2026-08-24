@@ -1,4 +1,4 @@
-import { McpCatalogServer, McpHealthcheck, McpNamedVolume } from '../models';
+import { McpCatalogServer, McpHealthcheck, McpNamedVolume, McpOperationState } from '../models';
 
 // What is true of a catalog entry no matter who is asking: the editor deciding
 // whether a draft can be saved, the store refusing a name the catalog already
@@ -7,8 +7,16 @@ import { McpCatalogServer, McpHealthcheck, McpNamedVolume } from '../models';
 // which is how the name check ended up written twice and how the editor's
 // validation ended up in the pages package.
 
-/** States the backend reports for an entry that is not doing anything. */
-const SETTLED_OPERATIONS = ['', 'idle', 'none', 'error', 'failed', 'complete', 'completed'];
+/**
+ * The two states that mean no operation is in flight, out of the eight in
+ * {@link McpOperationState}.
+ *
+ * `error` is settled on purpose: a failure the operator can act on is not a run still going.
+ *
+ * This used to carry five more names — '', 'none', 'failed', 'complete', 'completed' — that
+ * nothing on the backend can produce. They read as tolerance and were dead branches.
+ */
+const SETTLED_OPERATIONS: readonly string[] = ['idle', 'error'] satisfies McpOperationState[];
 
 /** A docker volume name, and an absolute mount target that cannot escape upward. */
 const VOLUME_NAME = /^[a-z0-9][a-z0-9_.-]{0,62}$/;
@@ -36,6 +44,29 @@ const HEALTHCHECK_VERBS = ['CMD', 'CMD-SHELL', 'NONE'];
 export function mcpOperationActive(state: string): boolean {
   return !SETTLED_OPERATIONS.includes(state.toLowerCase());
 }
+
+/**
+ * Whether the entry has anything of its own in flight — a lifecycle operation, or a
+ * reachability check. Anything that mutates it has to wait for both.
+ *
+ * The MCP Servers page used to keep a second set of busy ids beside this and OR the two
+ * together, updated in the same tick the store patches the entry it describes. Two answers to
+ * one question, and only the store's survived a refresh.
+ */
+export function mcpEntryBusy(
+  server: Pick<McpCatalogServer, 'operationState' | 'checkStatus'>,
+): boolean {
+  return mcpOperationActive(server.operationState) || server.checkStatus === 'checking';
+}
+
+/** The state the UI shows an entry as while a verb of its own is in flight, before the backend
+ *  has answered with the one it recorded. Named from the vocabulary above rather than spelled
+ *  out again, so a state that stops existing fails here instead of silently never matching. */
+export const IN_FLIGHT_STATE = {
+  start: 'starting',
+  stop: 'stopping',
+  apply: 'applying',
+} as const satisfies Record<'start' | 'stop' | 'apply', McpOperationState>;
 
 /**
  * The entry already answering to `name`, or null when the name is free. Names

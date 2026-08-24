@@ -187,7 +187,15 @@
               <button class="btn sm danger ghost" (click)="removeRow(form.supportServices, serviceIndex)">remove service</button>
             </div>
             <div class="form-grid two">
-              <div class="field"><label>service name</label><input class="input" [(ngModel)]="service.name" placeholder="database" /></div>
+              <div class="field">
+                <label>service name</label>
+                <input class="input" [(ngModel)]="service.name" placeholder="database"
+                       [readonly]="service.stored" />
+                @if (service.stored) {
+                  <small class="faint">Fixed once saved — this is the hostname the server reaches
+                    it by and the prefix of its volumes. Remove and re-add to replace it.</small>
+                }
+              </div>
               <div class="field"><label>image</label><input class="input" [(ngModel)]="service.image" placeholder="postgres:16-alpine" /></div>
               <div class="field"><label>platform — optional</label><input class="input" [(ngModel)]="service.platform" placeholder="linux/amd64" /></div>
             </div>

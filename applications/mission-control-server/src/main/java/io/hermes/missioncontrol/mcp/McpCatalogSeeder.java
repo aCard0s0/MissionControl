@@ -145,7 +145,8 @@ class McpCatalogSeeder {
     long now = System.currentTimeMillis();
     repository.insert(new ServerRow(id, validated.name(), validated.description(), "managed",
         HostService.LOCAL_HOST_ID, serviceKey, configs.write(configs.store(validated, null)),
-        "stopped", "missing", "provisioning", null, 1, 0, seedKey, null, null, null, null, now, now));
+        "stopped", McpRuntimeState.MISSING.wire(), McpOperationState.PROVISIONING.wire(),
+        null, 1, 0, seedKey, null, null, null, null, now, now));
   }
 
   private static String randomPassword() {

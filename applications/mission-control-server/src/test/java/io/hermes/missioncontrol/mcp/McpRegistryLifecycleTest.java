@@ -22,6 +22,7 @@ import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
+import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -135,6 +136,67 @@ class McpRegistryLifecycleTest {
         assertThrows(IllegalArgumentException.class,
             () -> service.update(id, managed("Files", "dh-other"))).getMessage());
     assertEquals(1, row(id).revision(), "a refused update must not bump the revision");
+  }
+
+  @Test
+  void aStoredSupportServiceCannotBeRenamedBecauseItsNameIsItsComposeIdentity() {
+    String id = service.create(managedWith("Files", support("database", "pw"))).id();
+    settle(id);
+    // the rendered Compose service name is derived from it — that name is the hostname the main
+    // container reaches the dependency by, and the prefix of every volume the dependency declares
+    assertEquals(row(id).serviceKey() + "-database",
+        ComposeStackRenderer.supportKey(row(id).serviceKey(), "database"));
+
+    String message = assertThrows(IllegalArgumentException.class,
+        () -> service.update(id, managedWith("Files", support("db", "")))).getMessage();
+
+    assertTrue(message.contains("cannot be renamed"), message);
+    assertTrue(message.contains("database"), message);
+    assertTrue(message.contains("db"), message);
+    assertEquals(1, row(id).revision(), "a refused update must not bump the revision");
+  }
+
+  @Test
+  void aRefusedRenameLeavesTheStoredSupportServiceAndItsSecretUntouched() {
+    String id = service.create(managedWith("Files", support("database", "pw"))).id();
+    settle(id);
+
+    assertThrows(IllegalArgumentException.class,
+        () -> service.update(id, managedWith("Files", support("db", ""))));
+
+    StoredSupportService stored = configOf(id).supportServices().getFirst();
+    assertEquals("database", stored.name());
+    assertEquals(Map.of("POSTGRES_PASSWORD", "pw"), decrypted(stored.environment()));
+  }
+
+  @Test
+  void editingASupportServiceUnderItsOwnNameStillKeepsItsSecret() {
+    // the editor never sends a stored secret back, so the blank submission below is what an
+    // ordinary image bump looks like on the wire
+    String id = service.create(managedWith("Files", support("database", "pw"))).id();
+    settle(id);
+
+    service.update(id, managedWith("Files",
+        new SupportServiceRequest("database", "postgres:17-alpine", null, List.of(), List.of(),
+            List.of(new ConfigValueInput("POSTGRES_PASSWORD", "", true, false)),
+            List.of(new VolumeSpec("data", "/var/lib/postgresql/data")), null)));
+
+    StoredSupportService stored = configOf(id).supportServices().getFirst();
+    assertEquals("postgres:17-alpine", stored.image());
+    assertEquals(Map.of("POSTGRES_PASSWORD", "pw"), decrypted(stored.environment()));
+  }
+
+  @Test
+  void supportServicesCanStillBeAddedAndRemovedJustNotSwappedInOneSave() {
+    String id = service.create(managedWith("Files", support("database", "pw"))).id();
+    settle(id);
+
+    service.update(id, managedWith("Files", support("database", ""), support("cache", "other")));
+    assertEquals(List.of("database", "cache"), supportNames(id));
+
+    settle(id);
+    service.update(id, managedWith("Files"));
+    assertTrue(supportNames(id).isEmpty());
   }
 
   @Test
@@ -401,6 +463,39 @@ class McpRegistryLifecycleTest {
   /** Marks the record's queued operation as finished, without doing it. */
   private void settle(String id) {
     repository.beginOperation(id, row(id).desiredState(), "idle");
+  }
+
+  /** A managed record on {@code dh-local} carrying the given support services. */
+  private static McpServerRequest managedWith(String name, SupportServiceRequest... supports) {
+    return new McpServerRequest(name, "desc", "managed", "dh-local", "http", null,
+        "example/files:1", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
+        List.of(), List.of(), List.of(), null, List.of(supports));
+  }
+
+  /** A dependency with a secret and a volume — the two things a rename would strand. */
+  private static SupportServiceRequest support(String name, String password) {
+    return new SupportServiceRequest(name, "postgres:16-alpine", null, List.of(), List.of(),
+        List.of(new ConfigValueInput("POSTGRES_PASSWORD", password, true, false)),
+        List.of(new VolumeSpec("data", "/var/lib/postgresql/data")), null);
+  }
+
+  private List<String> supportNames(String id) {
+    return configOf(id).supportServices().stream().map(StoredSupportService::name).toList();
+  }
+
+  private StoredConfig configOf(String id) {
+    try {
+      return new ObjectMapper().readValue(row(id).configJson(), StoredConfig.class);
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  /** Its own store, because {@link McpWiring#cipher()} is the key both were sealed under and
+   *  the graph does not expose the one it built. */
+  private static Map<String, String> decrypted(List<StoredValue> values) {
+    return new McpConfigStore(new SecretsAtRest(McpWiring.cipher()), new ObjectMapper())
+        .materialize(values);
   }
 
   private static McpServerRequest managed(String name, String hostId) {

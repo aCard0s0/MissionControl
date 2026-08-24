@@ -44,7 +44,7 @@ public class McpServersController {
   public ResponseEntity<McpServerDto> update(
       @PathVariable String id, @RequestBody McpServerRequest request) {
     McpServerDto updated = registry.update(id, request);
-    return "idle".equals(updated.operationState())
+    return McpOperationState.of(updated.operationState()) == McpOperationState.IDLE
         ? ResponseEntity.ok(updated)
         : ResponseEntity.accepted().body(updated);
   }

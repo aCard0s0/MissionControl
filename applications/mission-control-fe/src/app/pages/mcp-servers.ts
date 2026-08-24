@@ -3,11 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { HostStore } from '../core/store/host-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { clock } from '../core/format';
-import { mcpDisplayEndpoint, mcpOperationActive } from '../core/mcp/catalog-rules';
+import { mcpDisplayEndpoint, mcpEntryBusy, mcpOperationActive } from '../core/mcp/catalog-rules';
 import { McpCatalogKind, McpCatalogServer, McpRetainedResource } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
-import { McpEditorDraft, mcpDraftFromServer, newMcpDraft } from './mcp-editor';
+import { McpEditorDraft, mcpDraftFromServer, newMcpDraft } from '../core/mcp/catalog-draft';
 import { mcpServerGroups } from './mcp-server-groups';
 import { McpServerEditor } from './mcp-server-editor';
 import { McpServerLogs } from './mcp-server-logs';
@@ -37,9 +37,6 @@ export class McpServersPage {
   /** The server the log viewer is open on. */
   protected readonly logServer = signal<McpCatalogServer | null>(null);
 
-  /** Ids with a lifecycle call in flight, on top of what the backend reports. */
-  private readonly actionBusy = signal<Set<string>>(new Set());
-
   protected readonly removing = signal<McpCatalogServer | null>(null);
   protected removeConfirm = '';
   protected readonly removeBusy = signal(false);
@@ -68,27 +65,18 @@ export class McpServersPage {
   }
 
   // ── lifecycle ───────────────────────────────────────────────────────────
-  protected isBusy(server: McpCatalogServer): boolean {
-    return this.actionBusy().has(server.id) || mcpOperationActive(server.operationState);
-  }
+  protected readonly isBusy = mcpEntryBusy;
 
   protected async run(
     server: McpCatalogServer, operation: 'start' | 'stop' | 'apply' | 'check',
   ): Promise<void> {
-    if (this.isBusy(server) || (operation === 'check' && server.checkStatus === 'checking')) return;
-    this.actionBusy.update(ids => new Set(ids).add(server.id));
-    try {
-      if (operation === 'start') await this.catalog.start(server.id);
-      else if (operation === 'stop') await this.catalog.stop(server.id);
-      else if (operation === 'apply') await this.catalog.apply(server.id);
-      else await this.catalog.check(server.id);
-    } finally {
-      this.actionBusy.update(ids => {
-        const next = new Set(ids);
-        next.delete(server.id);
-        return next;
-      });
-    }
+    // the store patches the entry before its first await, so the guard reads the same flag the
+    // template disables on — there is no window between them to track separately
+    if (mcpEntryBusy(server)) return;
+    if (operation === 'start') await this.catalog.start(server.id);
+    else if (operation === 'stop') await this.catalog.stop(server.id);
+    else if (operation === 'apply') await this.catalog.apply(server.id);
+    else await this.catalog.check(server.id);
   }
 
   // ── remove a server ─────────────────────────────────────────────────────

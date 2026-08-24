@@ -95,11 +95,11 @@ class McpStartupReconciler {
     int resumedDeletes = 0;
     for (ServerRow row : repository.findAll()) {
       if (!"managed".equals(row.kind())) continue;
-      if ("deleting".equals(row.operationState())) {
+      if (McpOperationState.of(row.operationState()) == McpOperationState.DELETING) {
         resumedDeletes++;
         lifecycle.submit(row.id(), () -> lifecycle.runDelete(row.id()));
       } else {
-        repository.beginOperation(row.id(), row.desiredState(), "reconciling");
+        repository.beginOperation(row.id(), row.desiredState(), McpOperationState.RECONCILING.wire());
         lifecycle.submit(row.id(), () -> lifecycle.reconcile(row.id()));
       }
       queued++;

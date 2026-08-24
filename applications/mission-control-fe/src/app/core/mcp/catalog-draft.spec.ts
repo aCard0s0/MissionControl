@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { McpCatalogServer } from '../core/models';
+import { McpCatalogServer } from '../models';
 import {
   McpEditorDraft, applyMcpKindDefaults, mcpDraftFromServer, mcpDraftToInput, mcpDraftValid,
   newMcpDraft, splitMcpLines,
-} from './mcp-editor';
+} from './catalog-draft';
 
 const draft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
   id: null, hostLocked: false, name: ' Example ', description: ' server ', kind: 'managed',
@@ -54,7 +54,7 @@ describe('MCP Servers editor', () => {
   it('round-trips safe support services without exposing stored secrets', () => {
     const input = mcpDraftToInput(draft({
       supportServices: [{
-        name: 'database', image: 'postgres:16-alpine', command: ['postgres'],
+        name: 'database', image: 'postgres:16-alpine', command: ['postgres'], stored: true,
         environment: [
           { key: 'POSTGRES_PASSWORD', value: '', secret: true, set: true },
           { key: 'NEW_TOKEN', value: 'new-secret', secret: true, set: false },
@@ -74,6 +74,31 @@ describe('MCP Servers editor', () => {
       healthcheck: { test: ['CMD', 'pg_isready'], interval: '5s', retries: 20 },
     });
     expect(input.supportServices[0].environment?.[0]).not.toHaveProperty('set');
+  });
+
+  it('keeps the editor\'s own stored flag off the wire', () => {
+    const input = mcpDraftToInput(draft({
+      supportServices: [{
+        name: 'database', image: 'postgres:16', platform: null, stored: true,
+        environment: [], volumes: [], healthcheck: null,
+      }],
+    }));
+
+    expect(input.supportServices[0]).not.toHaveProperty('stored');
+  });
+
+  it('leaves a support service\'s entrypoint and command absent when it never named one', () => {
+    // an empty list is a Compose override that clears the image's own, so absent has to stay
+    // absent across the round trip — the same rule toSupportService keeps on the way in
+    const input = mcpDraftToInput(draft({
+      supportServices: [{
+        name: 'database', image: 'postgres:16', platform: null, stored: false,
+        environment: [], volumes: [], healthcheck: null,
+      }],
+    }));
+
+    expect(input.supportServices[0].entrypoint).toBeUndefined();
+    expect(input.supportServices[0].command).toBeUndefined();
   });
 
 });
@@ -181,7 +206,7 @@ describe('MCP Servers draft validation', () => {
   it('requires each support service to be named like a Compose service, once', () => {
     const service = (name: string) => ({
       name, image: 'postgres:16', platform: null, entrypoint: [], command: [],
-      environment: [], volumes: [], healthcheck: null,
+      environment: [], volumes: [], healthcheck: null, stored: false,
     });
     expect(valid({ supportServices: [service('database')] })).toBe(true);
     expect(valid({ supportServices: [service('Database')] })).toBe(false);
@@ -251,6 +276,18 @@ describe('MCP Servers editor drafts', () => {
     });
     // a stored secret is never re-read into the form, only marked as set
     expect(loaded.supportServices[0].environment[0]).toMatchObject({ value: '', set: true });
+  });
+
+  it('marks a loaded support service stored, so the form will not offer a rename', () => {
+    // the name is the Compose service name behind it: the hostname the server reaches the
+    // dependency by, and the prefix of its volumes. A duplicate stores nothing yet, so its
+    // dependencies' names are still the operator's to choose.
+    const server = storedServer({
+      supportServices: [{ name: 'database', image: 'postgres:16' }],
+    });
+
+    expect(mcpDraftFromServer(server).supportServices[0].stored).toBe(true);
+    expect(mcpDraftFromServer(server, true).supportServices[0].stored).toBe(false);
   });
 
   it('strips the stored secrets a duplicate cannot inherit', () => {

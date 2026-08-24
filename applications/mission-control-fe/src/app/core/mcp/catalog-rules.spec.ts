@@ -1,22 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { McpCatalogServer } from '../models';
 import {
-  duplicateCatalogName, httpEndpointValid, mcpConfigEntriesValid, mcpDisplayEndpoint,
+  IN_FLIGHT_STATE, duplicateCatalogName, httpEndpointValid, mcpConfigEntriesValid, mcpDisplayEndpoint,
   mcpHealthcheckValid, mcpOperationActive, mcpPathValid, mcpPortValid,
   mcpSupportServiceNameValid, mcpVolumeValid,
 } from './catalog-rules';
 import { catalogServer as server } from '../../testing/models';
 
 describe('mcpOperationActive', () => {
-  it('treats every non-terminal state the backend can report as active', () => {
-    for (const state of ['pulling', 'starting', 'stopping', 'applying', 'deleting']) {
+  it('treats every state the backend runs an operation in as active', () => {
+    for (const state of
+      ['provisioning', 'reconciling', 'starting', 'stopping', 'applying', 'deleting']) {
       expect(mcpOperationActive(state)).toBe(true);
     }
   });
 
-  it('treats settled states as idle, however the backend spells them', () => {
-    for (const state of ['', 'idle', 'none', 'error', 'failed', 'complete', 'completed', 'IDLE']) {
+  it('treats only idle and error as settled, in whatever case they arrive', () => {
+    // error is settled on purpose: a failure the operator can act on is not a run still going
+    for (const state of ['idle', 'error', 'IDLE', 'Error']) {
       expect(mcpOperationActive(state)).toBe(false);
+    }
+  });
+
+  it('counts a state this build does not know as active, so the controls stay locked', () => {
+    // the backend names the states; guessing that a new one is settled would hand an entry
+    // back to the operator in the middle of an operation
+    for (const state of ['', 'pulling', 'migrating']) {
+      expect(mcpOperationActive(state)).toBe(true);
+    }
+  });
+
+  it('reports the states the store patches in optimistically as active', () => {
+    for (const state of Object.values(IN_FLIGHT_STATE)) {
+      expect(mcpOperationActive(state)).toBe(true);
     }
   });
 });

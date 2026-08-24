@@ -175,15 +175,33 @@ describe('McpCatalogStore lifecycle', () => {
   });
 
   it('waits for a real running state before reporting a start as landed', async () => {
+    // the entry is mid-start, which is what a start answers with; the wait is over once the
+    // backend has both settled the operation and reported the container up
     const list = vi.fn()
-      .mockResolvedValueOnce([catalogServer('browser', { runtimeState: 'stopped' })])
-      .mockResolvedValue([catalogServer('browser', { runtimeState: 'running' })]);
-    const { catalog } = await loaded([catalogServer('browser')], { list });
+      .mockResolvedValueOnce([catalogServer('browser', { operationState: 'starting' })])
+      .mockResolvedValue(
+        [catalogServer('browser', { operationState: 'idle', runtimeState: 'running' })]);
+    const { catalog } = await loaded(
+      [catalogServer('browser', { operationState: 'starting' })], { list });
 
     const waited = catalog.waitUntilRunning('browser');
     await vi.advanceTimersByTimeAsync(2_000);
 
     expect(await waited).toBe(true);
+  });
+
+  it('joins the poll a start already opened rather than reading the catalog twice', async () => {
+    const busy = catalogServer('browser', { operationState: 'starting' });
+    const list = vi.fn().mockResolvedValue([busy]);
+    const { catalog } = await loaded([busy], { list, run: vi.fn().mockResolvedValue(busy) });
+
+    await catalog.start('browser');
+    const before = list.mock.calls.length;
+    void catalog.waitUntilRunning('browser');
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    // one interval, one read: connecting a catalog entry used to run both loops at once
+    expect(list.mock.calls.length).toBe(before + 1);
   });
 
   it('gives up on a start the backend reports as failed', async () => {
