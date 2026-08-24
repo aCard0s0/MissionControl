@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -310,7 +311,8 @@ class McpRegistryLifecycleTest {
   @Test
   void anUnknownIdIsANotFoundOnEveryEndpointThatTakesOne() {
     for (Runnable call : List.of(
-        (Runnable) () -> service.require("mcp-nope"),
+        (Runnable) () -> service.definition("mcp-nope"),
+        () -> service.live("mcp-nope"),
         () -> service.update("mcp-nope", external("Remote docs")),
         () -> service.delete("mcp-nope"),
         () -> service.start("mcp-nope"),
@@ -333,7 +335,7 @@ class McpRegistryLifecycleTest {
     assertEquals(Map.of("TOKEN", "super-secret"), service.materializedEnvironment(id));
     // and never in the row or the DTO
     assertTrue(row(id).configJson().contains("enc:v1:"));
-    assertNull(service.require(id).environment().getFirst().value());
+    assertNull(service.definition(id).environment().getFirst().value());
   }
 
   // ── retained volumes ────────────────────────────────────────────────────
@@ -557,7 +559,25 @@ class McpRegistryLifecycleTest {
     when(compose.serviceContainerId(eq("dh-local"), anyString())).thenReturn(null);
 
     assertTrue(service.list().stream().anyMatch(dto -> id.equals(dto.id())));
-    assertEquals("missing", service.require(id).runtimeState());
-    assertThrows(NoSuchElementException.class, () -> service.require("mcp-nope"));
+    assertEquals("missing", service.live(id).runtimeState());
+    assertThrows(NoSuchElementException.class, () -> service.live("mcp-nope"));
+  }
+
+  /**
+   * The Agent listing reads catalog rows once per linked entry per profile, on a poll. Every
+   * one of those reads used to run the refresh above — a {@code docker compose ps} taken under
+   * the host's compose lock, plus a full container listing — for a revision number.
+   */
+  @Test
+  void readingADefinitionContactsNoDaemonAndWritesNothing() {
+    String id = service.create(managed("Files", "dh-local")).id();
+    operations.runAll();
+    ServerRow before = row(id);
+    clearInvocations(compose);
+
+    assertEquals(id, service.definition(id).id());
+
+    verifyNoInteractions(compose);
+    assertEquals(before, row(id));
   }
 }

@@ -64,6 +64,15 @@ serialized per host and run without a shell. Managed services use the shared
 containers are attached to that network when a catalog entry is connected;
 cross-host connections require an explicit agent-reachable URL.
 
+Reading a catalog record comes in two forms, and which one a call site uses matters
+because Compose operations are serialized per host. `definition` answers from the
+SQLite row alone; `live` first re-reads the managed service's runtime state, which
+costs a `docker compose ps` **under that host's compose lock** plus a container
+listing, and persists what it finds. Only a call about to act on whether the server
+is up — connecting an Agent to it, an explicit check — takes `live`. The Agents page
+enriches every profile with its catalog links on a 12-second poll and needs one
+column, so that path takes `definition`.
+
 Container configuration is allowlisted (image, list-form command, environment,
 ports, support services and named volumes). Host binds, host networking,
 privileged mode, devices, capabilities and Docker-socket mounts are rejected.

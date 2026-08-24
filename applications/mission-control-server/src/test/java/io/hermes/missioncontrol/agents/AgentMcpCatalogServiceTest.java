@@ -59,7 +59,7 @@ class AgentMcpCatalogServiceTest {
     var catalog = mock(McpServerDto.class);
     when(catalog.revision()).thenReturn(3L);
     when(links.list("dh-local", "container", "default")).thenReturn(List.of(link));
-    when(registry.require("mcp-1")).thenReturn(catalog);
+    when(registry.definition("mcp-1")).thenReturn(catalog);
 
     AgentMcpServerDto enriched = service.enrich(HOST, profile).mcp().getFirst();
 
@@ -68,6 +68,10 @@ class AgentMcpCatalogServiceTest {
     assertEquals(2L, enriched.syncedRevision());
     assertEquals(3L, enriched.catalogRevision());
     assertTrue(enriched.updateAvailable());
+    // and it costs a row read, not a daemon round trip: this runs once per profile on every
+    // /api/agents poll, and the live view forks `docker compose ps` under the host's compose
+    // lock — the same lock that serializes provision/start/stop
+    verify(registry, never()).live(anyString());
   }
 
   @Test
@@ -80,7 +84,10 @@ class AgentMcpCatalogServiceTest {
     when(catalog.runtimeState()).thenReturn("running");
     when(catalog.transport()).thenReturn("http");
     when(catalog.revision()).thenReturn(7L);
-    when(registry.require("mcp-1")).thenReturn(catalog);
+    // connect reads the live view (it refuses a server that is not running) and then enriches
+    // the profile it wrote, which reads the stored definition
+    when(registry.live("mcp-1")).thenReturn(catalog);
+    when(registry.definition("mcp-1")).thenReturn(catalog);
     when(registry.sameHostConnectionUrl("mcp-1")).thenReturn("http://mcp-tools:1100/mcp");
     when(registry.materializedHeaders("mcp-1"))
         .thenReturn(Map.of("Authorization", "Bearer secret"));
@@ -125,7 +132,7 @@ class AgentMcpCatalogServiceTest {
     when(catalog.hostId()).thenReturn("dh-remote");
     when(catalog.runtimeState()).thenReturn("running");
     when(catalog.transport()).thenReturn("http");
-    when(registry.require("mcp-1")).thenReturn(catalog);
+    when(registry.live("mcp-1")).thenReturn(catalog);
     when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
 
     IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
@@ -461,7 +468,7 @@ class AgentMcpCatalogServiceTest {
     // and stops being told an update is available
     when(links.list("dh-local", "container", "default"))
         .thenReturn(List.of(link("tools", "container")));
-    when(registry.require("mcp-1")).thenThrow(new NoSuchElementException("unknown MCP server: mcp-1"));
+    when(registry.definition("mcp-1")).thenThrow(new NoSuchElementException("unknown MCP server: mcp-1"));
 
     AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("tools")))).mcp().getFirst();
 
@@ -475,7 +482,7 @@ class AgentMcpCatalogServiceTest {
     when(source.revision()).thenReturn(2L);
     when(links.list("dh-local", "container", "default"))
         .thenReturn(List.of(new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1)));
-    when(registry.require("mcp-1")).thenReturn(source);
+    when(registry.definition("mcp-1")).thenReturn(source);
 
     AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("tools")))).mcp().getFirst();
 
@@ -490,7 +497,8 @@ class AgentMcpCatalogServiceTest {
   }
 
   private void registryHas(McpServerDto source) {
-    when(registry.require("mcp-1")).thenReturn(source);
+    when(registry.live("mcp-1")).thenReturn(source);
+    when(registry.definition("mcp-1")).thenReturn(source);
   }
 
   private void linkExists(String alias, long syncedRevision) {

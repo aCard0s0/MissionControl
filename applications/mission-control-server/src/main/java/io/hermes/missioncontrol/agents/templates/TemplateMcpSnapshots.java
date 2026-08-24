@@ -65,7 +65,9 @@ class TemplateMcpSnapshots {
   /** A detached copy of a catalog server, with its environment or headers captured now. */
   private McpServerSpec fromCatalog(McpServerSpec requested) {
     String sourceId = requested.sourceServerId().trim();
-    McpServerDto source = registry.require(sourceId);
+    // a snapshot copies the stored definition; whether the server is up right now says
+    // nothing about what to capture, so this does not pay for a runtime refresh
+    McpServerDto source = registry.definition(sourceId);
     String alias = requested.name() == null || requested.name().isBlank()
         ? source.name() : requested.name().trim();
     boolean enabled = requested.enabled() == null || requested.enabled();

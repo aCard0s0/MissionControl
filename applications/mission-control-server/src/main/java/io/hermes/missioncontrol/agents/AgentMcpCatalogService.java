@@ -52,7 +52,9 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
   public AgentProfileDto connect(
       DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
     String alias = alias(request.alias());
-    var source = registry.require(request.serverId());
+    // the one call here that acts on whether the server is up, so the one that pays for a
+    // runtime refresh — see McpRegistryService.definition/live
+    var source = registry.live(request.serverId());
     AgentProfileDto current = profiles.get(host, containerId, profile);
     if (current.mcp().stream().anyMatch(server -> alias.equals(server.name()))) {
       throw new ResourceConflictException("an MCP server named '" + alias + "' already exists on this Agent");
@@ -73,7 +75,9 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     String alias = alias(serverAlias);
     AgentMcpLink link = links.find(host.id(), containerId, profile, alias)
         .orElseThrow(() -> new NoSuchElementException("MCP entry is not linked to the catalog: " + alias));
-    var source = registry.require(link.serverId());
+    // re-materializes an existing link from the stored definition; nothing here reads the
+    // server's runtime state, so this does not refresh it
+    var source = registry.definition(link.serverId());
     AgentProfileDto current = profiles.get(host, containerId, profile);
     AgentMcpServerDto existing = current.mcp().stream()
         .filter(server -> alias.equals(server.name()))
@@ -150,6 +154,15 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     }
   }
 
+  /**
+   * Overlays the dashboard-owned catalog link onto each MCP entry the profile reports.
+   *
+   * <p>Runs once per profile on every {@code /api/agents} listing, which the dashboard polls,
+   * so it reads catalog rows through {@link McpRegistryService#definition} and never
+   * {@code live}: the only field it needs is the current revision, and refreshing runtime
+   * state here meant one {@code docker compose ps} — taken under the host's compose lock, the
+   * same one that serializes provision/start/stop — per linked entry per profile per poll.
+   */
   public AgentProfileDto enrich(DockerHostRef host, AgentProfileDto profile) {
     Map<String, AgentMcpLink> byAlias = new HashMap<>();
     for (AgentMcpLink link : links.list(host.id(), profile.containerId(), profile.name())) {
@@ -163,7 +176,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
         continue;
       }
       try {
-        long currentRevision = registry.require(link.serverId()).revision();
+        long currentRevision = registry.definition(link.serverId()).revision();
         servers.add(server.linkedTo(link.serverId(), link.syncedRevision(), currentRevision));
       } catch (NoSuchElementException deletedCatalogEntry) {
         links.delete(host.id(), profile.containerId(), profile.name(), server.name());
