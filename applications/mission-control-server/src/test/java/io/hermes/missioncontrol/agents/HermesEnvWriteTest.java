@@ -97,6 +97,22 @@ class HermesEnvWriteTest {
   }
 
   @Test
+  void theRuleHoldsAtTheWriterSoNoCallerCanReachTheFileWithoutIt() {
+    // putEnv is not the only way into this file: HermesModelConfig writes a provider key
+    // straight off a create-agent request, which carries no pattern of its own. While the
+    // rule lived in putEnv, "sk-real\nANTHROPIC_API_KEY=sk-attacker" in that field wrote a
+    // second, undeletable .env line.
+    assertThrows(IllegalArgumentException.class, () ->
+        envFile.write(HOST, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-real\nXAI_API_KEY=sk-other"));
+    assertThrows(IllegalArgumentException.class, () ->
+        envFile.write(HOST, CONTAINER, PROFILE, "lowercase", "value"));
+    assertThrows(IllegalArgumentException.class, () ->
+        envFile.remove(HOST, CONTAINER, PROFILE, "OPENAI_API_KEY; rm -rf /"));
+
+    verifyNoInteractions(dockerExec);
+  }
+
+  @Test
   void theKeyAndValueAreAlwaysPositionalArgumentsAndNeverInterpolatedIntoTheScript() {
     envFile.write(HOST, CONTAINER, PROFILE, "OPENAI_API_KEY", "sk-secret-value");
 

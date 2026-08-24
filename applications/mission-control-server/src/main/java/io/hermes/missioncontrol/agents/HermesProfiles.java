@@ -169,8 +169,19 @@ public class HermesProfiles {
     }
   }
 
+  /**
+   * Removes the profile from the container. Idempotent: a profile that is already gone is not
+   * asked to be deleted again.
+   *
+   * <p>The guard is what makes retrying a delete useful. {@code hermes profile delete} exits
+   * non-zero on a name it does not know, so without it a delete whose dashboard-side cleanup
+   * failed could never be retried — the retry died here, before reaching the cleanup that was
+   * the only thing left to do.
+   */
   public void delete(DockerHostRef host, String containerId, String name) {
-    files.exec(host, containerId, List.of("hermes", "profile", "delete", name, "--yes"));
+    if (files.dirExists(host, containerId, ProfilePaths.profileDir(name))) {
+      files.exec(host, containerId, List.of("hermes", "profile", "delete", name, "--yes"));
+    }
     mcp.evictProfile(host, containerId, name);
   }
 

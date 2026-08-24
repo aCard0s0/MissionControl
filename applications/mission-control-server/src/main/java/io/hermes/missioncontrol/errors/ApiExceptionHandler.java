@@ -31,25 +31,25 @@ public class ApiExceptionHandler {
 
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
-    return error(HttpStatus.BAD_REQUEST, e.getMessage());
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, e.getMessage());
   }
 
   @ExceptionHandler(NoSuchElementException.class)
   public ResponseEntity<Map<String, String>> notFound(NoSuchElementException e) {
-    return error(HttpStatus.NOT_FOUND, e.getMessage());
+    return ApiErrors.error(HttpStatus.NOT_FOUND, e.getMessage());
   }
 
   @ExceptionHandler(DataIntegrityViolationException.class)
   public ResponseEntity<Map<String, String>> conflict(DataIntegrityViolationException e) {
     // a UNIQUE/constraint violation that slipped past an explicit pre-check (e.g. a
     // concurrent create/rename race) — a clean 409, not an opaque 503
-    log.warn("constraint violation: {}", brief(e.getMessage()));
-    return error(HttpStatus.CONFLICT, "that change conflicts with an existing record");
+    log.warn("constraint violation: {}", ApiErrors.brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.CONFLICT, "that change conflicts with an existing record");
   }
 
   @ExceptionHandler(ResourceConflictException.class)
   public ResponseEntity<Map<String, String>> conflict(ResourceConflictException e) {
-    return error(HttpStatus.CONFLICT, e.getMessage());
+    return ApiErrors.error(HttpStatus.CONFLICT, e.getMessage());
   }
 
   @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
@@ -57,12 +57,12 @@ public class ApiExceptionHandler {
     String detail = e instanceof MethodArgumentTypeMismatchException mismatch
         ? mismatch.getName() + " is not a valid " + expectedType(mismatch)
         : "request body is not readable";
-    return error(HttpStatus.BAD_REQUEST, detail);
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, detail);
   }
 
   @ExceptionHandler(MissingServletRequestParameterException.class)
   public ResponseEntity<Map<String, String>> missingParameter(MissingServletRequestParameterException e) {
-    return error(HttpStatus.BAD_REQUEST, e.getParameterName() + " is required");
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, e.getParameterName() + " is required");
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -74,35 +74,24 @@ public class ApiExceptionHandler {
         .map(field -> field.getField() + " " + field.getDefaultMessage())
         .findFirst()
         .orElse("request body is invalid");
-    return error(HttpStatus.BAD_REQUEST, detail);
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, detail);
   }
 
   @ExceptionHandler(UpstreamUnavailableException.class)
   public ResponseEntity<Map<String, String>> unavailable(UpstreamUnavailableException e) {
     log.warn("upstream unavailable: {}", e.getMessage());
-    return error(HttpStatus.SERVICE_UNAVAILABLE, brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.SERVICE_UNAVAILABLE, ApiErrors.brief(e.getMessage()));
   }
 
   @ExceptionHandler(RuntimeException.class)
   public ResponseEntity<Map<String, String>> unexpected(RuntimeException e) {
     // a genuine defect, not a dependency being down — log the trace, answer 500
     log.error("unexpected failure handling request", e);
-    return error(HttpStatus.INTERNAL_SERVER_ERROR, brief(e.getMessage()));
-  }
-
-  private static ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
-    return ResponseEntity.status(status)
-        .body(Map.of("error", message == null ? "request failed" : message));
+    return ApiErrors.error(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrors.brief(e.getMessage()));
   }
 
   private static String expectedType(MethodArgumentTypeMismatchException e) {
     Class<?> required = e.getRequiredType();
     return required == null ? "value" : required.getSimpleName().toLowerCase(java.util.Locale.ROOT);
-  }
-
-  private static String brief(String message) {
-    if (message == null) return "request failed";
-    String firstLine = message.lines().findFirst().orElse(message);
-    return firstLine.length() > 300 ? firstLine.substring(0, 300) : firstLine;
   }
 }

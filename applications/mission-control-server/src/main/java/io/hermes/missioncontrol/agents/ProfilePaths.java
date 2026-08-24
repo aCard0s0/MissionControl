@@ -18,8 +18,10 @@ final class ProfilePaths {
   static final String PROFILES_DIR = "/opt/data/profiles";
   static final String PLATFORM_CLI = "cli";
 
-  /** Also applied to skill names and ids, which reach us from user-authored templates. */
-  static final Pattern NAME = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_.-]*");
+  /** Also applied to skill names and ids, which reach us from user-authored templates.
+   *  Compiled from {@link ProfileSpec#NAME_PATTERN}, which is where the expression is
+   *  written once for the request records that have to declare it as an annotation. */
+  static final Pattern NAME = Pattern.compile(ProfileSpec.NAME_PATTERN);
 
   private ProfilePaths() {}
 

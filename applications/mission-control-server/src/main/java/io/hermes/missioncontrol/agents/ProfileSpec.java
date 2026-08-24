@@ -41,6 +41,22 @@ public record ProfileSpec(
     String baseUrl,
     AuxiliaryModelSpec auxiliary) {
 
+  /**
+   * What a profile name may look like, for the places that state it as text rather than run
+   * {@link ProfilePaths#isValidName}: this is the expression {@link ProfilePaths#NAME} is
+   * compiled from, and the one the {@code @Pattern} annotations on {@code CreateAgentRequest}
+   * and {@code DeployFromTemplateRequest} declare.
+   *
+   * <p>Here rather than on {@code ProfilePaths} only because bean validation needs a
+   * compile-time constant that {@code agents.templates} can see, and that class is deliberately
+   * package-private — it owns the traversal guard, and the guard is worth exactly one home.
+   *
+   * <p>Two other records carry the same expression and are deliberately <em>not</em> wired to
+   * this one: a template name and a Docker container name are different rules that happen to
+   * coincide today, and joining them would stop either from moving.
+   */
+  public static final String NAME_PATTERN = "[a-zA-Z0-9][a-zA-Z0-9_.-]*";
+
   public ProfileSpec {
     if (containerId == null || containerId.isBlank()) {
       throw new IllegalArgumentException("missing container id");

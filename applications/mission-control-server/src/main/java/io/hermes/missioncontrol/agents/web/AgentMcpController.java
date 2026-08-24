@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.agents.web;
 
+import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.McpServerDefinition;
@@ -31,12 +32,17 @@ class AgentMcpController {
 
   private final HermesProfiles profiles;
   private final AgentMcpCatalogService mcpCatalog;
+  private final AgentLifecycle lifecycle;
   private final AgentEndpoints endpoints;
 
   AgentMcpController(
-      HermesProfiles profiles, AgentMcpCatalogService mcpCatalog, AgentEndpoints endpoints) {
+      HermesProfiles profiles,
+      AgentMcpCatalogService mcpCatalog,
+      AgentLifecycle lifecycle,
+      AgentEndpoints endpoints) {
     this.profiles = profiles;
     this.mcpCatalog = mcpCatalog;
+    this.lifecycle = lifecycle;
     this.endpoints = endpoints;
   }
 
@@ -90,11 +96,7 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    DockerHostRef host = endpoints.host(hostId);
-    AgentProfileDto updated =
-        profiles.removeMcpServer(host, containerId, name, serverName);
-    mcpCatalog.forgetLink(host, containerId, name, serverName);
-    return endpoints.linked(host, updated);
+    return lifecycle.removeMcpServer(endpoints.host(hostId), containerId, name, serverName);
   }
 
   @PostMapping("/catalog")

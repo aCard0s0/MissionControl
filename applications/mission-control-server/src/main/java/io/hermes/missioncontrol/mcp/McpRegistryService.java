@@ -77,8 +77,28 @@ public class McpRegistryService {
         .toList();
   }
 
-  /** Public integration point used by Agent and template services. */
-  public McpServerDto require(String id) {
+  /**
+   * The stored record, exactly as the catalog holds it. No daemon is contacted and nothing is
+   * written, so this is what a caller that only needs the definition — a name, a transport, a
+   * revision, an endpoint — should ask for.
+   *
+   * <p>Split from {@link #live} because there used to be one method and it was the refreshing
+   * one. The Agent read path calls this per linked entry per profile on a 12-second poll, and
+   * each of those calls was forking {@code docker compose ps} under the host's compose lock and
+   * listing every container on the daemon, to reach a {@code revision} column.
+   */
+  public McpServerDto definition(String id) {
+    return mapper.toDto(requireRow(id));
+  }
+
+  /**
+   * The record with its managed runtime state refreshed against the daemon first — for the
+   * callers that are about to act on whether the server is actually up.
+   *
+   * <p>Costs a Compose query and a container listing, and persists the refreshed state, so it
+   * is deliberately not what a listing or an enrichment uses.
+   */
+  public McpServerDto live(String id) {
     return mapper.toDto(lifecycle.refreshRuntime(requireRow(id)));
   }
 
@@ -122,7 +142,7 @@ public class McpRegistryService {
         managed ? 0 : 1, null, null, null, null, null, now, now);
     repository.insert(row);
     if (managed) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
-    return require(id);
+    return live(id);
   }
 
   public McpServerDto update(String id, McpServerRequest request) {
@@ -147,7 +167,7 @@ public class McpRegistryService {
     repository.updateDefinition(id, validated.name(), validated.description(), configs.write(config),
         revision, applied, recreateStopped ? "applying" : "idle");
     if (recreateStopped) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
-    return require(id);
+    return live(id);
   }
 
   /**
@@ -180,7 +200,7 @@ public class McpRegistryService {
     }
     repository.beginOperation(id, "stopped", "deleting");
     lifecycle.submit(id, () -> lifecycle.runDelete(id));
-    return require(id);
+    return live(id);
   }
 
   // ── container lifecycle ────────────────────────────────────────────────────
@@ -189,26 +209,26 @@ public class McpRegistryService {
     requireManagedIdle(id);
     repository.beginOperation(id, "running", "starting");
     lifecycle.submit(id, () -> lifecycle.runStart(id, false));
-    return require(id);
+    return live(id);
   }
 
   public McpServerDto stop(String id) {
     requireManagedIdle(id);
     repository.beginOperation(id, "stopped", "stopping");
     lifecycle.submit(id, () -> lifecycle.runStop(id));
-    return require(id);
+    return live(id);
   }
 
   public McpServerDto apply(String id) {
     ServerRow row = requireManagedIdle(id);
     repository.beginOperation(id, row.desiredState(), "applying");
     lifecycle.submit(id, () -> lifecycle.reconcile(id));
-    return require(id);
+    return live(id);
   }
 
   public McpServerDto check(String id) {
     health.check(requireRow(id));
-    return require(id);
+    return live(id);
   }
 
   // ── retained resources ─────────────────────────────────────────────────────

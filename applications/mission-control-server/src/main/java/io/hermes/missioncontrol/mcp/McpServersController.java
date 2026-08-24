@@ -19,12 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class McpServersController {
 
   private final McpRegistryService registry;
-  private final List<McpServerDeletionListener> deletionListeners;
+  private final McpServerDeletion deletion;
 
-  public McpServersController(
-      McpRegistryService registry, List<McpServerDeletionListener> deletionListeners) {
+  public McpServersController(McpRegistryService registry, McpServerDeletion deletion) {
     this.registry = registry;
-    this.deletionListeners = deletionListeners;
+    this.deletion = deletion;
   }
 
   @GetMapping
@@ -52,14 +51,7 @@ public class McpServersController {
 
   @DeleteMapping("/{id}")
   public ResponseEntity<McpServerDto> delete(@PathVariable String id) {
-    // Unlinking is destructive and irreversible — it disables the server on every Agent
-    // holding it and drops the link rows. Ask the registry whether the deletion can go
-    // ahead at all first, so a refused DELETE leaves the caller's Agents untouched.
-    registry.assertDeletable(id);
-    for (McpServerDeletionListener listener : deletionListeners) {
-      listener.beforeServerDeleted(id);
-    }
-    McpServerDto result = registry.delete(id);
+    McpServerDto result = deletion.delete(id);
     return "managed".equals(result.kind()) ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
   }
 

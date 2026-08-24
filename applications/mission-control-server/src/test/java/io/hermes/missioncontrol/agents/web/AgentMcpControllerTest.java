@@ -24,6 +24,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.McpServerDefinition;
@@ -42,9 +43,12 @@ import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * An agent's MCP endpoints. Two rules carry the weight here: a catalog-linked entry may only
- * change by syncing (so the write paths assert the target is custom first), and the catalog
- * link outlives the profile write it belongs to unless it is explicitly forgotten.
+ * An agent's MCP endpoints. The rule that carries the weight here is that a catalog-linked
+ * entry may only change by syncing, so the write paths assert the target is custom first —
+ * and that every one of them refuses a disconnected host before anything is written.
+ *
+ * <p>What a removal then does on both sides of the container/SQLite split is
+ * {@code AgentLifecycleTest}'s.
  */
 class AgentMcpControllerTest {
 
@@ -58,6 +62,7 @@ class AgentMcpControllerTest {
   private HermesProfiles profiles;
   private HostService hosts;
   private AgentMcpCatalogService mcpCatalog;
+  private AgentLifecycle lifecycle;
   private MockMvc mvc;
 
   @BeforeEach
@@ -65,8 +70,10 @@ class AgentMcpControllerTest {
     profiles = mock(HermesProfiles.class);
     hosts = mock(HostService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
+    lifecycle = mock(AgentLifecycle.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new AgentMcpController(profiles, mcpCatalog, new AgentEndpoints(hosts, mcpCatalog)))
+        .standaloneSetup(new AgentMcpController(
+            profiles, mcpCatalog, lifecycle, new AgentEndpoints(hosts, mcpCatalog)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -106,6 +113,7 @@ class AgentMcpControllerTest {
         .andExpect(status().isBadRequest());
 
     verifyNoInteractions(profiles);
+    verifyNoInteractions(lifecycle);
     verifyNoInteractions(hosts);
   }
 
@@ -133,6 +141,7 @@ class AgentMcpControllerTest {
         .andExpect(status().isBadRequest());
 
     verifyNoInteractions(profiles);
+    verifyNoInteractions(lifecycle);
   }
 
   @Test
@@ -149,18 +158,14 @@ class AgentMcpControllerTest {
   }
 
   @Test
-  void removingAServerForgetsItsCatalogLinkAfterTheProfileWrite() throws Exception {
-    // the order matters: if the link were dropped first and the profile write then failed, the
-    // entry would be left in config.yaml with nothing recording where it came from
+  void removingAServerHandsTheResolvedHostToTheLifecycle() throws Exception {
+    // the profile write and the link drop, and the order between them, are AgentLifecycleTest's
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
-    when(profiles.removeMcpServer(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
+    when(lifecycle.removeMcpServer(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
 
     mvc.perform(delete(MCP + "/" + SERVER)).andExpect(status().isOk());
 
-    InOrder order = inOrder(profiles, mcpCatalog);
-    order.verify(profiles).removeMcpServer(HOST, CONTAINER, PROFILE, SERVER);
-    order.verify(mcpCatalog).forgetLink(HOST, CONTAINER, PROFILE, SERVER);
+    verify(lifecycle).removeMcpServer(HOST, CONTAINER, PROFILE, SERVER);
   }
 
   @Test
@@ -224,6 +229,7 @@ class AgentMcpControllerTest {
     }
 
     verifyNoInteractions(profiles);
+    verifyNoInteractions(lifecycle);
     verify(mcpCatalog, never()).connect(any(), anyString(), anyString(), any());
     verify(mcpCatalog, never()).sync(any(), anyString(), anyString(), anyString());
     verify(mcpCatalog, never()).unlink(any(), anyString(), anyString(), anyString());

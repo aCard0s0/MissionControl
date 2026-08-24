@@ -9,7 +9,6 @@ import io.hermes.missioncontrol.agents.api.MessagingStatusDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.Secrets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,65 +18,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/** Agent setup status: merges the `hermes status` report with the profile .env. */
+/**
+ * Agent setup status: merges the {@code hermes status} report with the profile {@code .env}.
+ *
+ * <p>Two readings of one screen. The {@code .env} is authoritative for whether a credential is
+ * set and what its masked tail is; {@code hermes status} fills in the providers configured
+ * outside it — an OAuth login, a key held elsewhere in the image — and is degraded to nothing
+ * when the command cannot run.
+ *
+ * <p>What a {@code .env} may contain is {@link HermesEnvCatalog}'s, and how one is read and
+ * written is {@link HermesEnvFile}'s. This class held all three, which is why the template it
+ * generated had to be reached from {@code HermesEnvFile} by a static call back into it while
+ * taking that same class as a collaborator.
+ */
 @Service
 public class HermesSetup {
 
   private static final Logger log = LoggerFactory.getLogger(HermesSetup.class);
-
-  /**
-   * Every variable this page can report on. Labels mirror the provider tables in
-   * /opt/hermes/hermes_cli/status.py inside the hermes image, because they are matched against
-   * that command's output; the .env is the source of truth for set/masked, and the status
-   * output only fills in providers configured outside the .env.
-   *
-   * <p>A row for a model provider takes its variable from {@link ModelProviderRegistry} rather
-   * than naming one. The two tables both describe the same {@code .env}, reached from different
-   * screens — {@code HermesEnvFile.maskApiKey} resolves the provider's variable through the
-   * registry for the agent card, this table drives the setup page, and a capture writes a
-   * template's keys from it — so a variable named in only one of them shows a credential as set
-   * on one screen and missing on the other, and captures the wrong one. The labels stay separate
-   * on purpose: these have to match hermes' status output, the registry's are for the UI picker.
-   */
-  static final List<ApiKeySpec> API_KEYS = List.of(
-      ApiKeySpec.forProvider("openrouter", "OpenRouter"),
-      ApiKeySpec.forProvider("openai", "OpenAI"),
-      ApiKeySpec.forProvider("anthropic", "Anthropic", "ANTHROPIC_TOKEN"),
-      ApiKeySpec.forProvider("gemini", "Google / Gemini", "GEMINI_API_KEY"),
-      ApiKeySpec.forProvider("deepseek", "DeepSeek"),
-      ApiKeySpec.forProvider("xai", "xAI / Grok"),
-      ApiKeySpec.forProvider("nvidia", "NVIDIA NIM"),
-      ApiKeySpec.forProvider("zai", "Z.AI / GLM"),
-      ApiKeySpec.forProvider("kimi-coding", "Kimi"),
-      ApiKeySpec.forProvider("stepfun", "StepFun Step Plan"),
-      ApiKeySpec.forProvider("minimax", "MiniMax"),
-      // no registry provider behind these: a regional endpoint and a set of tool credentials,
-      // none of which a profile's model can be pointed at
-      new ApiKeySpec("MiniMax-CN", "MINIMAX_CN_API_KEY", List.of(), false),
-      new ApiKeySpec("Firecrawl", "FIRECRAWL_API_KEY", List.of(), false),
-      new ApiKeySpec("Tavily", "TAVILY_API_KEY", List.of(), false),
-      new ApiKeySpec("Browser Use", "BROWSER_USE_API_KEY", List.of(), true),
-      new ApiKeySpec("Browserbase", "BROWSERBASE_API_KEY", List.of(), true),
-      new ApiKeySpec("FAL", "FAL_KEY", List.of(), false),
-      new ApiKeySpec("ElevenLabs", "ELEVENLABS_API_KEY", List.of(), false),
-      new ApiKeySpec("GitHub", "GITHUB_TOKEN", List.of(), false));
-
-  static final List<MessagingSpec> MESSAGING = List.of(
-      new MessagingSpec("Telegram", "TELEGRAM_BOT_TOKEN", "TELEGRAM_HOME_CHANNEL"),
-      new MessagingSpec("Discord", "DISCORD_BOT_TOKEN", "DISCORD_HOME_CHANNEL"),
-      new MessagingSpec("WhatsApp", "WHATSAPP_ENABLED", null),
-      new MessagingSpec("Signal", "SIGNAL_HTTP_URL", "SIGNAL_HOME_CHANNEL"),
-      new MessagingSpec("Slack", "SLACK_BOT_TOKEN", null),
-      new MessagingSpec("Email", "EMAIL_ADDRESS", "EMAIL_HOME_ADDRESS"),
-      new MessagingSpec("SMS", "TWILIO_ACCOUNT_SID", "SMS_HOME_CHANNEL"),
-      new MessagingSpec("DingTalk", "DINGTALK_CLIENT_ID", null),
-      new MessagingSpec("Feishu", "FEISHU_APP_ID", "FEISHU_HOME_CHANNEL"),
-      new MessagingSpec("WeCom", "WECOM_BOT_ID", "WECOM_HOME_CHANNEL"),
-      new MessagingSpec("WeCom Callback", "WECOM_CALLBACK_CORP_ID", null),
-      new MessagingSpec("Weixin", "WEIXIN_ACCOUNT_ID", "WEIXIN_HOME_CHANNEL"),
-      new MessagingSpec("BlueBubbles", "BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_HOME_CHANNEL"),
-      new MessagingSpec("QQBot", "QQ_APP_ID", "QQ_HOME_CHANNEL"),
-      new MessagingSpec("Yuanbao", "YUANBAO_APP_ID", "YUANBAO_HOME_CHANNEL"));
 
   private static final String SECTION_API_KEYS = "API Keys";
   private static final String SECTION_AUTH_PROVIDERS = "Auth Providers";
@@ -88,7 +45,6 @@ public class HermesSetup {
   private static final char CROSS = '✗';
   private static final String SECTION_MARK = "◆";
 
-  private static final Pattern ENV_KEY = Pattern.compile(EnvEntry.KEY_PATTERN);
   private static final Pattern RUN_HINT = Pattern.compile("run:\\s*([^)]+)");
   private static final Pattern ANSI = Pattern.compile("\u001B\\[[;\\d]*m");
 
@@ -103,11 +59,11 @@ public class HermesSetup {
   public AgentSetupDto setup(DockerHostRef host, String containerId, String name) {
     String envPath = ProfilePaths.profileDir(name) + "/.env";
     boolean envExists = files.fileExists(host, containerId, envPath);
-    Map<String, String> env = parseEnv(files.readFile(host, containerId, envPath));
+    Map<String, String> env = HermesEnvFile.parse(files.readFile(host, containerId, envPath));
     StatusReport report = runStatus(host, containerId, name);
 
     List<ApiKeyStatusDto> apiKeys = new ArrayList<>();
-    for (ApiKeySpec spec : API_KEYS) {
+    for (HermesEnvCatalog.ApiKeySpec spec : HermesEnvCatalog.API_KEYS) {
       String value = envValue(env, spec);
       if (value != null) {
         apiKeys.add(new ApiKeyStatusDto(spec.label(), spec.envVar(), true, mask(value)));
@@ -129,7 +85,7 @@ public class HermesSetup {
     }
 
     List<MessagingStatusDto> messaging = new ArrayList<>();
-    for (MessagingSpec spec : MESSAGING) {
+    for (HermesEnvCatalog.MessagingSpec spec : HermesEnvCatalog.MESSAGING) {
       StatusRow row = report == null ? null : report.row(SECTION_MESSAGING, spec.label());
       boolean tokenSet = isSet(env.get(spec.tokenVar()));
       boolean ok = row != null ? row.ok() : tokenSet;
@@ -141,21 +97,16 @@ public class HermesSetup {
     return new AgentSetupDto(envPath, envExists, apiKeys, authProviders, apiKeyProviders, messaging);
   }
 
+  /**
+   * Applies a set of variables, blank meaning "remove". Both halves of every entry are checked
+   * up front by {@link HermesEnvFile#assertWritable} so a partly-applied batch cannot be the
+   * first thing an invalid key or value is discovered by.
+   */
   public AgentSetupDto putEnv(DockerHostRef host, String containerId, String name, List<EnvEntry> entries) {
     List<EnvEntry> toApply = entries == null ? List.of() : entries;
     for (EnvEntry entry : toApply) {
-      if (entry == null || entry.key() == null || !ENV_KEY.matcher(entry.key()).matches()) {
-        throw new IllegalArgumentException("invalid env key: " + (entry == null ? null : entry.key()));
-      }
-      // The value is written as a whole `.env` line. A newline in it appends further
-      // lines that removeEnvVar can never match and therefore never delete — including a
-      // second definition of a key this request appears not to touch.
-      String value = entry.value();
-      if (value != null
-          && (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\0') >= 0)) {
-        throw new IllegalArgumentException(
-            "env values must not contain NUL or line breaks: " + entry.key());
-      }
+      if (entry == null) throw new IllegalArgumentException("invalid env key: null");
+      HermesEnvFile.assertWritable(entry.key(), entry.value());
     }
     for (EnvEntry entry : toApply) {
       if (entry.value() == null || entry.value().isBlank()) {
@@ -170,36 +121,6 @@ public class HermesSetup {
   public AgentSetupDto initEnv(DockerHostRef host, String containerId, String name) {
     envFile.seedIfMissing(host, containerId, name);
     return setup(host, containerId, name);
-  }
-
-  /** Commented-out .env template documenting every supported variable. */
-  static String envTemplate() {
-    StringBuilder sb = new StringBuilder();
-    sb.append("# hermes profile environment\n");
-    sb.append("# Uncomment a variable and fill in its value to enable it.\n");
-    sb.append("# OAuth providers are not configured here — run 'hermes portal'\n");
-    sb.append("# (auth) or 'hermes model' (model selection) from the web terminal.\n");
-    sb.append("\n");
-    sb.append("# ── model & tool API keys\n");
-    for (ApiKeySpec spec : API_KEYS) {
-      sb.append("# ").append(spec.envVar()).append("=  # ").append(spec.label());
-      if (!spec.altVars().isEmpty()) {
-        sb.append(" (alt: ").append(String.join(", ", spec.altVars())).append(")");
-      }
-      if (spec.optional()) {
-        sb.append(" (optional)");
-      }
-      sb.append("\n");
-    }
-    sb.append("\n");
-    sb.append("# ── messaging platforms\n");
-    for (MessagingSpec spec : MESSAGING) {
-      sb.append("# ").append(spec.tokenVar()).append("=  # ").append(spec.label()).append("\n");
-      if (spec.homeVar() != null) {
-        sb.append("# ").append(spec.homeVar()).append("=  # ").append(spec.label()).append(" home channel\n");
-      }
-    }
-    return sb.toString();
   }
 
   /** Degrades to null when `hermes status` cannot run — callers then report
@@ -240,20 +161,7 @@ public class HermesSetup {
     return new StatusReport(sections);
   }
 
-  private Map<String, String> parseEnv(String env) {
-    Map<String, String> values = new HashMap<>();
-    if (env == null || env.isBlank()) return values;
-    for (String line : env.split("\\R")) {
-      String trimmed = line.trim();
-      if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-      int eq = trimmed.indexOf('=');
-      if (eq <= 0) continue;
-      values.put(trimmed.substring(0, eq).trim(), trimmed.substring(eq + 1).trim());
-    }
-    return values;
-  }
-
-  private String envValue(Map<String, String> env, ApiKeySpec spec) {
+  private String envValue(Map<String, String> env, HermesEnvCatalog.ApiKeySpec spec) {
     String value = env.get(spec.envVar());
     if (isSet(value)) return value;
     for (String alt : spec.altVars()) {
@@ -293,26 +201,6 @@ public class HermesSetup {
     }
     return -1;
   }
-
-  record ApiKeySpec(String label, String envVar, List<String> altVars, boolean optional) {
-
-    /**
-     * A row for a provider {@link ModelProviderRegistry} already owns, which is therefore the
-     * one place its API-key variable is named. A provider key with no variable there — an OAuth
-     * provider, or a typo — is a wiring mistake and fails at class load rather than reporting
-     * every key for that provider as unset.
-     */
-    static ApiKeySpec forProvider(String providerKey, String label, String... altVars) {
-      String envVar = ModelProviderRegistry.envVar(providerKey);
-      if (envVar == null) {
-        throw new IllegalStateException(
-            "no API-key variable for model provider '" + providerKey + "'");
-      }
-      return new ApiKeySpec(label, envVar, List.of(altVars), false);
-    }
-  }
-
-  record MessagingSpec(String label, String tokenVar, String homeVar) {}
 
   record StatusRow(String label, boolean ok, String status) {}
 

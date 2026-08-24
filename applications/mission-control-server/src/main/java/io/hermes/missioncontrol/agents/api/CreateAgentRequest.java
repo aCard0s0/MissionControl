@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.agents.api;
 
+import io.hermes.missioncontrol.agents.ProfileSpec;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
@@ -7,7 +8,7 @@ public record CreateAgentRequest(
     @NotBlank String hostId,
     @NotBlank String containerId,
     @NotBlank @Pattern(
-        regexp = "[a-zA-Z0-9][a-zA-Z0-9_.-]*",
+        regexp = ProfileSpec.NAME_PATTERN,
         message = "invalid profile name")
     String name,
     @NotBlank String provider,

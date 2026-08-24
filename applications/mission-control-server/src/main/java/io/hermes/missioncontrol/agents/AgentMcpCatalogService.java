@@ -18,7 +18,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,6 +30,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class AgentMcpCatalogService implements McpServerDeletionListener {
+
+  private static final Logger log = LoggerFactory.getLogger(AgentMcpCatalogService.class);
 
   private static final Pattern ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}");
 
@@ -52,7 +57,9 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
   public AgentProfileDto connect(
       DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
     String alias = alias(request.alias());
-    var source = registry.require(request.serverId());
+    // the one call here that acts on whether the server is up, so the one that pays for a
+    // runtime refresh — see McpRegistryService.definition/live
+    var source = registry.live(request.serverId());
     AgentProfileDto current = profiles.get(host, containerId, profile);
     if (current.mcp().stream().anyMatch(server -> alias.equals(server.name()))) {
       throw new ResourceConflictException("an MCP server named '" + alias + "' already exists on this Agent");
@@ -73,7 +80,9 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     String alias = alias(serverAlias);
     AgentMcpLink link = links.find(host.id(), containerId, profile, alias)
         .orElseThrow(() -> new NoSuchElementException("MCP entry is not linked to the catalog: " + alias));
-    var source = registry.require(link.serverId());
+    // re-materializes an existing link from the stored definition; nothing here reads the
+    // server's runtime state, so this does not refresh it
+    var source = registry.definition(link.serverId());
     AgentProfileDto current = profiles.get(host, containerId, profile);
     AgentMcpServerDto existing = current.mcp().stream()
         .filter(server -> alias.equals(server.name()))
@@ -150,6 +159,21 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     }
   }
 
+  /**
+   * Overlays the dashboard-owned catalog link onto each MCP entry the profile reports.
+   *
+   * <p>Runs once per profile on every {@code /api/agents} listing, which the dashboard polls,
+   * so it reads catalog rows through {@link McpRegistryService#definition} and never
+   * {@code live}: the only field it needs is the current revision, and refreshing runtime
+   * state here meant one {@code docker compose ps} — taken under the host's compose lock, the
+   * same one that serializes provision/start/stop — per linked entry per profile per poll.
+   *
+   * <p>It is also where a link outliving what it described is dropped: one whose catalog entry
+   * is gone, and one whose entry is no longer on the profile. Both are stranded rows nothing
+   * else reaches — the second is what a removal leaves if its cleanup could not run, and the
+   * page has no row left to offer an unlink on — and until they are gone {@link #assertCustom}
+   * refuses the alias to whatever is added under it next.
+   */
   public AgentProfileDto enrich(DockerHostRef host, AgentProfileDto profile) {
     Map<String, AgentMcpLink> byAlias = new HashMap<>();
     for (AgentMcpLink link : links.list(host.id(), profile.containerId(), profile.name())) {
@@ -157,20 +181,42 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     }
     List<AgentMcpServerDto> servers = new ArrayList<>();
     for (AgentMcpServerDto server : profile.mcp()) {
-      AgentMcpLink link = byAlias.get(server.name());
+      AgentMcpLink link = byAlias.remove(server.name());
       if (link == null) {
         servers.add(server);
         continue;
       }
       try {
-        long currentRevision = registry.require(link.serverId()).revision();
+        long currentRevision = registry.definition(link.serverId()).revision();
         servers.add(server.linkedTo(link.serverId(), link.syncedRevision(), currentRevision));
       } catch (NoSuchElementException deletedCatalogEntry) {
         links.delete(host.id(), profile.containerId(), profile.name(), server.name());
         servers.add(server);
       }
     }
+    dropStrandedLinks(host, profile, byAlias.keySet());
     return copyWithMcp(profile, servers);
+  }
+
+  /**
+   * The links left over once every entry the profile reports has claimed its own.
+   *
+   * <p>Guarded on the profile carrying a {@code config.yaml} at all, because an empty read is
+   * ambiguous: {@code HermesContainerFiles.readFile} cannot tell an unreadable file from an
+   * absent one, and a profile whose config could not be read reports no MCP entries — which
+   * would otherwise look exactly like a profile whose entries were all removed, and strand
+   * nothing while dropping everything.
+   */
+  private void dropStrandedLinks(
+      DockerHostRef host, AgentProfileDto profile, Set<String> aliases) {
+    if (aliases.isEmpty() || profile.configYaml() == null || profile.configYaml().isBlank()) {
+      return;
+    }
+    for (String alias : aliases) {
+      log.info("dropping catalog link {} on agent {}: the entry is no longer in its config",
+          alias, profile.name());
+      links.delete(host.id(), profile.containerId(), profile.name(), alias);
+    }
   }
 
   private McpServerDefinition materialize(

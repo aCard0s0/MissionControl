@@ -31,23 +31,25 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * The MCP catalog endpoints. Two things live only at this layer: the 202-vs-200 split that
- * tells the UI whether to start polling, and the ordering between "disable this server on
- * every agent" and "delete it from the catalog" — a destructive step and the check that is
- * allowed to refuse it.
+ * The MCP catalog endpoints. What lives only at this layer is the 202-vs-200 split that tells
+ * the UI whether to start polling, and the routing — notably that
+ * {@code /retained-resources/{id}} does not fall through to the catalog-entry routes.
+ *
+ * <p>The deletion protocol itself is {@link McpServerDeletionTest}'s: it used to be written
+ * here because it was written in the controller.
  */
 class McpServersControllerTest {
 
   private McpRegistryService registry;
-  private McpServerDeletionListener deletionListener;
+  private McpServerDeletion deletion;
   private MockMvc mvc;
 
   @BeforeEach
   void setUp() {
     registry = mock(McpRegistryService.class);
-    deletionListener = mock(McpServerDeletionListener.class);
+    deletion = mock(McpServerDeletion.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new McpServersController(registry, List.of(deletionListener)))
+        .standaloneSetup(new McpServersController(registry, deletion))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -63,40 +65,18 @@ class McpServersControllerTest {
       {"name":"files","kind":"external","transport":"http","url":"https://files.internal/mcp"}
       """;
 
-  // --- the delete ordering ------------------------------------------------------------
+  // --- status codes ------------------------------------------------------------------
 
   @Test
-  void deleteDoesNotUnlinkAgentCopiesWhenTheRegistryRefusesTheDeletion() throws Exception {
-    // a server mid-operation cannot be deleted
+  void aRefusedDeletionIsReportedWithItsOwnReason() throws Exception {
     org.mockito.Mockito.doThrow(
             new ResourceConflictException("an MCP server operation is already in progress"))
-        .when(registry).assertDeletable("mcp-1");
+        .when(deletion).delete("mcp-1");
 
     mvc.perform(delete("/api/mcp-servers/mcp-1"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.error").value("an MCP server operation is already in progress"));
-
-    // the unlink rewrites config.yaml on every agent holding this server
-    // and drops the link rows, and nothing puts them back. Running it before the refusal
-    // is ruled out means a rejected request still destroyed the caller's setup.
-    verifyNoInteractions(deletionListener);
-    verify(registry, never()).delete(anyString());
   }
-
-  @Test
-  void deleteUnlinksAgentCopiesOnlyAfterTheRegistryHasAuthorisedIt() throws Exception {
-    when(registry.delete("mcp-1")).thenReturn(server("mcp-1", "managed", "deleting"));
-
-    mvc.perform(delete("/api/mcp-servers/mcp-1")).andExpect(status().isAccepted());
-
-    InOrder order = inOrder(registry, deletionListener);
-    // the authorisation check has to run first, then the unlink, then the delete
-    order.verify(registry).assertDeletable("mcp-1");
-    order.verify(deletionListener).beforeServerDeleted("mcp-1");
-    order.verify(registry).delete("mcp-1");
-  }
-
-  // --- status codes ------------------------------------------------------------------
 
   @Test
   void creatingAManagedServerIsAcceptedAndAnExternalOneIsCreated() throws Exception {
@@ -132,10 +112,10 @@ class McpServersControllerTest {
 
   @Test
   void deletingAManagedServerIsAcceptedAndAnExternalOneIsOk() throws Exception {
-    when(registry.delete("mcp-1")).thenReturn(server("mcp-1", "managed", "deleting"));
+    when(deletion.delete("mcp-1")).thenReturn(server("mcp-1", "managed", "deleting"));
     mvc.perform(delete("/api/mcp-servers/mcp-1")).andExpect(status().isAccepted());
 
-    when(registry.delete("mcp-2")).thenReturn(server("mcp-2", "external", "idle"));
+    when(deletion.delete("mcp-2")).thenReturn(server("mcp-2", "external", "idle"));
     mvc.perform(delete("/api/mcp-servers/mcp-2")).andExpect(status().isOk());
   }
 
@@ -195,8 +175,7 @@ class McpServersControllerTest {
     // DELETE /retained-resources/{id} and DELETE /{id} differ by one path segment, and
     // one of them deletes a catalog entry rather than a leftover volume record
     verify(registry).purgeRetainedResource("rr-1");
-    verify(registry, never()).delete(anyString());
-    verifyNoInteractions(deletionListener);
+    verifyNoInteractions(deletion);
   }
 
   @Test

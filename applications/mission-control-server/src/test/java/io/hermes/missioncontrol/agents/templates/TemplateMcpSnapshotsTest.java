@@ -207,7 +207,7 @@ class TemplateMcpSnapshotsTest {
 
     snapshots.materialize(List.of(fromCatalog("  mcp-1  ", "tools")), null);
 
-    verify(registry).require("mcp-1");
+    verify(registry).definition("mcp-1");
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ class TemplateMcpSnapshotsTest {
   }
 
   private void catalogIs(McpServerDto source) {
-    when(registry.require("mcp-1")).thenReturn(source);
+    when(registry.definition("mcp-1")).thenReturn(source);
   }
 
   private static McpServerDto external(String name, String transport, String url) {

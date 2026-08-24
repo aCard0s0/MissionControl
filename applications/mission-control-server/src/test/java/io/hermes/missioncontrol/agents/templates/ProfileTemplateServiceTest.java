@@ -123,7 +123,7 @@ class ProfileTemplateServiceTest {
     when(catalog.kind()).thenReturn("external");
     when(catalog.transport()).thenReturn("http");
     when(catalog.connectionUrl()).thenReturn("https://tools.example.test/mcp");
-    when(registry.require("mcp-1")).thenReturn(catalog);
+    when(registry.definition("mcp-1")).thenReturn(catalog);
     when(registry.materializedHeaders("mcp-1"))
         .thenReturn(Map.of("Authorization", "Bearer raw-catalog-secret"));
     when(repository.existsByName("ops")).thenReturn(false);
