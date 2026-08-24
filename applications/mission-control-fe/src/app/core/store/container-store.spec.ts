@@ -105,8 +105,8 @@ describe('ContainerStore telemetry', () => {
   });
 
   it('folds a sample into the sparkline history', async () => {
-    const stats = vi.fn().mockResolvedValue(sample());
-    const { store } = await loaded([apiContainer()], { stats });
+    const statsBatch = vi.fn().mockResolvedValue({ 'c-1': sample() });
+    const { store } = await loaded([apiContainer()], { statsBatch });
 
     await store.pollStats();
 
@@ -116,8 +116,8 @@ describe('ContainerStore telemetry', () => {
   });
 
   it('reports no throughput on the first sample, having nothing to compare against', async () => {
-    const stats = vi.fn().mockResolvedValue(sample());
-    const { store } = await loaded([apiContainer()], { stats });
+    const statsBatch = vi.fn().mockResolvedValue({ 'c-1': sample() });
+    const { store } = await loaded([apiContainer()], { statsBatch });
 
     await store.pollStats();
 
@@ -125,10 +125,12 @@ describe('ContainerStore telemetry', () => {
   });
 
   it('turns two byte counters into a rate over the elapsed time', async () => {
-    const stats = vi.fn()
-      .mockResolvedValueOnce(sample())
-      .mockResolvedValue(sample({ rxBytes: 1_000 + 2_048, txBytes: 2_000 + 1_024, sampledAt: 3_000 }));
-    const { store } = await loaded([apiContainer()], { stats });
+    const statsBatch = vi.fn()
+      .mockResolvedValueOnce({ 'c-1': sample() })
+      .mockResolvedValue({
+        'c-1': sample({ rxBytes: 1_000 + 2_048, txBytes: 2_000 + 1_024, sampledAt: 3_000 }),
+      });
+    const { store } = await loaded([apiContainer()], { statsBatch });
     await store.pollStats();
 
     await store.pollStats();
@@ -138,10 +140,10 @@ describe('ContainerStore telemetry', () => {
   });
 
   it('reads a counter that went backwards as no traffic, not as negative', async () => {
-    const stats = vi.fn()
-      .mockResolvedValueOnce(sample({ rxBytes: 10_000 }))
-      .mockResolvedValue(sample({ rxBytes: 10, sampledAt: 3_000 }));
-    const { store } = await loaded([apiContainer()], { stats });
+    const statsBatch = vi.fn()
+      .mockResolvedValueOnce({ 'c-1': sample({ rxBytes: 10_000 }) })
+      .mockResolvedValue({ 'c-1': sample({ rxBytes: 10, sampledAt: 3_000 }) });
+    const { store } = await loaded([apiContainer()], { statsBatch });
     await store.pollStats();
 
     await store.pollStats();
@@ -149,31 +151,70 @@ describe('ContainerStore telemetry', () => {
     expect(store.byId('c-1')?.netIn).toBe(0);
   });
 
-  it('samples only containers that are actually running', async () => {
-    const stats = vi.fn().mockResolvedValue(sample());
+  it('asks about only the containers that are actually running', async () => {
+    const statsBatch = vi.fn().mockResolvedValue({});
     const { store } = await loaded([
       apiContainer(), apiContainer({ id: 'c-2', status: 'stopped' }),
       apiContainer({ id: 'c-3', status: 'unhealthy' }),
-    ], { stats });
+    ], { statsBatch });
 
     await store.pollStats();
 
-    expect(stats.mock.calls.map(c => c[1])).toEqual(['c-1', 'c-3']);
+    expect(statsBatch.mock.calls[0][1]).toEqual(['c-1', 'c-3']);
+  });
+
+  it('costs one request per host however large the fleet is', async () => {
+    const statsBatch = vi.fn().mockResolvedValue({});
+    const many = Array.from({ length: 20 }, (_, i) => apiContainer({ id: `c-${i}` }));
+    const { store } = await loaded(many, { statsBatch });
+
+    await store.pollStats();
+
+    // the budget this poller is held to: a request per tick, not a request per container.
+    // Per container it blocked on a ~2s daemon call each, and past six of them the fan-out
+    // stopped fitting inside the 3s period and ticks were silently dropped.
+    expect(statsBatch).toHaveBeenCalledTimes(1);
+    expect(statsBatch.mock.calls[0][1]).toHaveLength(20);
+  });
+
+  it('splits the request by host, since each names its own daemon', async () => {
+    const statsBatch = vi.fn().mockResolvedValue({});
+    const { store } = await loaded([
+      apiContainer(), apiContainer({ id: 'c-9', hostId: 'dh-remote' }),
+    ], { statsBatch });
+
+    await store.pollStats();
+
+    expect(statsBatch.mock.calls.map(c => c[0]).sort()).toEqual(['dh-local', 'dh-remote']);
+  });
+
+  it('leaves a container the server has no sample for alone', async () => {
+    // the first read after a stream opens lands before the daemon has sent anything;
+    // a card that already shows a figure must keep it rather than blink to zero
+    const statsBatch = vi.fn()
+      .mockResolvedValueOnce({ 'c-1': sample() })
+      .mockResolvedValue({});
+    const { store } = await loaded([apiContainer()], { statsBatch });
+    await store.pollStats();
+
+    await store.pollStats();
+
+    expect(store.byId('c-1')?.cpu).toBe(12);
   });
 
   it('skips a tick rather than overlapping two fan-outs', async () => {
-    const stats = vi.fn().mockReturnValue(new Promise(() => { /* never settles */ }));
-    const { store } = await loaded([apiContainer()], { stats });
+    const statsBatch = vi.fn().mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { store } = await loaded([apiContainer()], { statsBatch });
 
     void store.pollStats();
     await store.pollStats();
 
-    expect(stats).toHaveBeenCalledTimes(1);
+    expect(statsBatch).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores a container that stopped between polls', async () => {
-    const stats = vi.fn().mockRejectedValue(new Error('no such container'));
-    const { store } = await loaded([apiContainer()], { stats });
+  it('ignores a host that stopped answering between polls', async () => {
+    const statsBatch = vi.fn().mockRejectedValue(new Error('daemon unreachable'));
+    const { store } = await loaded([apiContainer()], { statsBatch });
 
     await store.pollStats();
 

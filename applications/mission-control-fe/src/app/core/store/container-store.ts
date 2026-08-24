@@ -1,4 +1,5 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { ApiStats } from '../api/api-types';
 import { ContainerStatus, HermesContainer } from '../models';
 import { StoreContext } from './store-context';
 
@@ -69,6 +70,10 @@ export class ContainerStore {
           };
         });
       });
+      // the network baseline is keyed by container id and read only to derive a rate
+      // from the previous sample, so an id the daemon no longer lists is dead weight
+      const listed = new Set(list.map(c => c.id));
+      for (const id of [...this.netMeta.keys()]) if (!listed.has(id)) this.netMeta.delete(id);
       // the selected id can also go stale — an updated container is recreated
       // under a new id, and out-of-band removals happen too. Never clear on a
       // transient empty inventory.
@@ -78,31 +83,46 @@ export class ContainerStore {
     } catch { /* keep last inventory */ }
   }
 
-  /** Per-container CPU/RAM/network sample, folded into the sparkline history. */
+  /**
+   * Per-container CPU/RAM/network samples, folded into the sparkline history.
+   *
+   * <p>One request per host, not per container. Asking per container meant a request each,
+   * every one of them blocked for the second or two the daemon spends taking the two samples
+   * a CPU delta needs — so a tick cost grew with the fleet, and past six containers the pool
+   * could no longer finish inside the three-second period and ticks were quietly dropped. The
+   * server holds the streams now and answers all of them from memory.
+   */
   async pollStats(): Promise<void> {
     if (this.statsInFlight) return;   // skip a tick rather than overlap fan-outs
     this.statsInFlight = true;
     try {
       const running = this.containers().filter(c => c.status === 'running' || c.status === 'unhealthy');
-      await this.ctx.mapPool(running, 6, async c => {
+      const byHost = new Map<string, string[]>();
+      for (const c of running) byHost.set(c.hostId, [...(byHost.get(c.hostId) ?? []), c.id]);
+      await this.ctx.mapPool([...byHost], 4, async ([hostId, ids]) => {
         try {
-          const s = await this.ctx.api.containers.stats(c.hostId, c.id);
-          const prev = this.netMeta.get(c.id);
-          this.netMeta.set(c.id, { rx: s.rxBytes, tx: s.txBytes, at: s.sampledAt });
-          const dt = prev ? (s.sampledAt - prev.at) / 1000 : 0;
-          const netIn = prev && dt > 0 ? Math.max(0, (s.rxBytes - prev.rx) / dt / 1024) : 0;
-          const netOut = prev && dt > 0 ? Math.max(0, (s.txBytes - prev.tx) / dt / 1024) : 0;
-          this.patch(c.id, x => ({
-            ...x, cpu: s.cpuPercent, ram: s.ramMb, ramTotal: s.ramTotalMb, netIn, netOut,
-            cpuHist: pushSample(x.cpuHist, s.cpuPercent),
-            ramHist: pushSample(x.ramHist, s.ramMb),
-            netHist: pushSample(x.netHist, netIn + netOut),
-          }));
-        } catch { /* container may have stopped between polls */ }
+          const samples = await this.ctx.api.containers.statsBatch(hostId, ids);
+          for (const [id, s] of Object.entries(samples)) this.applySample(id, s);
+        } catch { /* host may have gone away between polls */ }
       });
     } finally {
       this.statsInFlight = false;
     }
+  }
+
+  /** Folds one sample in, deriving network rates from the previous one. */
+  private applySample(id: string, s: ApiStats): void {
+    const prev = this.netMeta.get(id);
+    this.netMeta.set(id, { rx: s.rxBytes, tx: s.txBytes, at: s.sampledAt });
+    const dt = prev ? (s.sampledAt - prev.at) / 1000 : 0;
+    const netIn = prev && dt > 0 ? Math.max(0, (s.rxBytes - prev.rx) / dt / 1024) : 0;
+    const netOut = prev && dt > 0 ? Math.max(0, (s.txBytes - prev.tx) / dt / 1024) : 0;
+    this.patch(id, x => ({
+      ...x, cpu: s.cpuPercent, ram: s.ramMb, ramTotal: s.ramTotalMb, netIn, netOut,
+      cpuHist: pushSample(x.cpuHist, s.cpuPercent),
+      ramHist: pushSample(x.ramHist, s.ramMb),
+      netHist: pushSample(x.netHist, netIn + netOut),
+    }));
   }
 
   /** Rewrites one container in place; a no-op if it is already gone. */

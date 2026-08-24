@@ -90,9 +90,11 @@ describe('LiveSync bootstrap', () => {
       '/api/mcp-servers': [],
       '/api/mcp-servers/retained-resources': [],
       '/api/agents': [PROFILE],
-      '/api/containers/dh-remote/c-live/stats': {
-        cpuPercent: 12, ramMb: 512, ramTotalMb: 4096, rxBytes: 1_024_000, txBytes: 512_000,
-        sampledAt: 1_000,
+      '/api/containers/dh-remote/stats': {
+        'c-live': {
+          cpuPercent: 12, ramMb: 512, ramTotalMb: 4096, rxBytes: 1_024_000, txBytes: 512_000,
+          sampledAt: 1_000,
+        },
       },
       '/api/containers/dh-remote/c-live/logs': [{ ts: 5, level: 'info', source: 'system', msg: 'ready' }],
       '/api/images/tags': { repository: 'nousresearch/hermes-agent', tags: ['v2026.8.3'], registryStatus: 'ok' },
@@ -295,9 +297,10 @@ describe('LiveSync pollers', () => {
       { cpuPercent: 20, ramMb: 500, ramTotalMb: 4096, rxBytes: 1_024_000, txBytes: 512_000, sampledAt: 2_000 },
     ];
     const idle = { cpuPercent: 1, ramMb: 1, ramTotalMb: 2, rxBytes: 0, txBytes: 0, sampledAt: 1_000 };
-    const stats = vi.fn((_hostId: string, id: string) =>
-      Promise.resolve(id === target.id ? queued.shift() ?? idle : idle));
-    stubBackend(store.ctx, { containers: { stats } });
+    const statsBatch = vi.fn((_hostId: string, ids: string[]) =>
+      Promise.resolve(Object.fromEntries(ids.map(id =>
+        [id, id === target.id ? queued.shift() ?? idle : idle]))));
+    stubBackend(store.ctx, { containers: { statsBatch } });
     const pollStats = () => store.containers.pollStats();
 
     // the first sample has nothing to compare against, so the rate reads zero
@@ -318,12 +321,13 @@ describe('LiveSync pollers', () => {
     // a restarted container reports counters below the last sample
     const counters = [5_000_000, 0];
     let tick = 0;
-    const stats = vi.fn(() => Promise.resolve({
-      cpuPercent: 5, ramMb: 1, ramTotalMb: 2,
-      rxBytes: counters[Math.min(tick, 1)], txBytes: counters[Math.min(tick, 1)],
-      sampledAt: 1_000 + tick * 1_000,
-    }));
-    stubBackend(store.ctx, { containers: { stats } });
+    const statsBatch = vi.fn((_hostId: string, ids: string[]) =>
+      Promise.resolve(Object.fromEntries(ids.map(id => [id, {
+        cpuPercent: 5, ramMb: 1, ramTotalMb: 2,
+        rxBytes: counters[Math.min(tick, 1)], txBytes: counters[Math.min(tick, 1)],
+        sampledAt: 1_000 + tick * 1_000,
+      }]))));
+    stubBackend(store.ctx, { containers: { statsBatch } });
     const pollStats = () => store.containers.pollStats();
 
     await pollStats();

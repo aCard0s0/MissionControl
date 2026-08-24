@@ -25,6 +25,7 @@ import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -126,7 +127,7 @@ class ContainersControllerTest {
   void statsAndLogsResolveTheHostUrlBeforeReachingTheDaemon() throws Exception {
     when(hosts.requireConnected("dh-local")).thenReturn(HOST);
     when(docker.stats(HOST, "abc123")).thenReturn(new StatsDto(12.5, 256, 2048, 1, 2, 99L));
-    when(docker.logs(HOST, "abc123", 100)).thenReturn(List.of(new LogLineDto(1L, "info", "stdout", "up")));
+    when(docker.logs(HOST, "abc123", 100, null)).thenReturn(List.of(new LogLineDto(1L, "info", "stdout", "up")));
 
     mvc.perform(get("/api/containers/dh-local/abc123/stats"))
         .andExpect(status().isOk())
@@ -138,18 +139,43 @@ class ContainersControllerTest {
         .andExpect(jsonPath("$.length()").value(1));
 
     verify(docker).stats(HOST, "abc123");
-    verify(docker).logs(HOST, "abc123", 100);
+    verify(docker).logs(HOST, "abc123", 100, null);
+  }
+
+  @Test
+  void theBatchedStatsEndpointAnswersAMapKeyedByContainerId() throws Exception {
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    when(docker.stats(HOST, List.of("abc123", "def456")))
+        .thenReturn(Map.of("abc123", new StatsDto(12.5, 256, 2048, 1, 2, 99L)));
+
+    mvc.perform(get("/api/containers/dh-local/stats").param("ids", "abc123,def456"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.abc123.cpuPercent").value(12.5))
+        // def456's stream has not delivered yet, so it is absent rather than reported as
+        // zero — a card already showing a figure keeps it instead of blinking to 0%
+        .andExpect(jsonPath("$.def456").doesNotExist());
+  }
+
+  @Test
+  void aLogCursorIsForwardedSoAPollNeedNotRereadTheWholeTail() throws Exception {
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    when(docker.logs(any(), anyString(), anyInt(), any())).thenReturn(List.of());
+
+    mvc.perform(get("/api/containers/dh-local/abc123/logs").param("since", "1786701601500"))
+        .andExpect(status().isOk());
+
+    verify(docker).logs(HOST, "abc123", 100, 1_786_701_601_500L);
   }
 
   @Test
   void anExplicitTailIsForwardedToTheGateway() throws Exception {
     when(hosts.requireConnected("dh-local")).thenReturn(HOST);
-    when(docker.logs(any(), anyString(), anyInt())).thenReturn(List.of());
+    when(docker.logs(any(), anyString(), anyInt(), any())).thenReturn(List.of());
 
     mvc.perform(get("/api/containers/dh-local/abc123/logs").param("tail", "500"))
         .andExpect(status().isOk());
 
-    verify(docker).logs(HOST, "abc123", 500);
+    verify(docker).logs(HOST, "abc123", 500, null);
   }
 
   @Test

@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.docker;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
@@ -34,6 +35,7 @@ public class DockerGateway {
 
   private final ContainerInventory inventory;
   private final ContainerStatsReader statsReader;
+  private final ContainerStatsStreams statsStreams;
   private final ContainerLogReader logReader;
   private final DockerNetworks networks;
   private final ImageStore images;
@@ -44,6 +46,7 @@ public class DockerGateway {
   public DockerGateway(
       ContainerInventory inventory,
       ContainerStatsReader statsReader,
+      ContainerStatsStreams statsStreams,
       ContainerLogReader logReader,
       DockerNetworks networks,
       ImageStore images,
@@ -52,6 +55,7 @@ public class DockerGateway {
       ContainerLifecycle lifecycle) {
     this.inventory = inventory;
     this.statsReader = statsReader;
+    this.statsStreams = statsStreams;
     this.logReader = logReader;
     this.networks = networks;
     this.images = images;
@@ -83,8 +87,13 @@ public class DockerGateway {
     return statsReader.stats(host, containerId);
   }
 
-  public List<LogLineDto> logs(DockerHostRef host, String containerId, int tail) {
-    return logReader.logs(host, containerId, tail);
+  /** The newest sample for each named container, from {@link ContainerStatsStreams}. */
+  public Map<String, StatsDto> stats(DockerHostRef host, List<String> containerIds) {
+    return statsStreams.samples(host, containerIds);
+  }
+
+  public List<LogLineDto> logs(DockerHostRef host, String containerId, int tail, Long since) {
+    return logReader.logs(host, containerId, tail, since);
   }
 
   // ── networks ─────────────────────────────────────────────────────────────

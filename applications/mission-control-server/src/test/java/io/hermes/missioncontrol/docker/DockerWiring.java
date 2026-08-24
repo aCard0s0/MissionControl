@@ -35,6 +35,7 @@ final class DockerWiring {
     return new DockerGateway(
         new ContainerInventory(clients, props, images),
         new ContainerStatsReader(clients),
+        new ContainerStatsStreams(clients),
         new ContainerLogReader(clients),
         networks,
         images,
