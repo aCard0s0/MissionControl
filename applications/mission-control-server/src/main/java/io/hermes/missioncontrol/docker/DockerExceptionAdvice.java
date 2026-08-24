@@ -7,6 +7,7 @@ import com.github.dockerjava.api.exception.NotAcceptableException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.exception.UnauthorizedException;
+import io.hermes.missioncontrol.errors.ApiErrors;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +31,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * import docker-java, and this is where their statuses belong.
  *
  * <p>Answers the same {@code {"error": …}} body shape as {@code ApiExceptionHandler}, because
- * a client cannot tell which advice handled its request and should not have to.
+ * a client cannot tell which advice handled its request and should not have to — through
+ * {@link ApiErrors}, which is that shape, rather than through a second copy of it.
  *
  * <p>{@link Order} is load-bearing. {@code ApiExceptionHandler} has a
  * {@code RuntimeException} catch-all, and every exception here extends {@code RuntimeException}:
@@ -47,24 +49,24 @@ public class DockerExceptionAdvice {
 
   @ExceptionHandler(NotFoundException.class)
   public ResponseEntity<Map<String, String>> notFound(NotFoundException e) {
-    return error(HttpStatus.NOT_FOUND, e.getMessage());
+    return ApiErrors.error(HttpStatus.NOT_FOUND, e.getMessage());
   }
 
   @ExceptionHandler(DockerException.class)
   public ResponseEntity<Map<String, String>> dockerFailure(DockerException e) {
     log.warn("docker call failed: {}", e.getMessage());
-    return error(HttpStatus.BAD_GATEWAY, "docker daemon error: " + brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.BAD_GATEWAY, "docker daemon error: " + ApiErrors.brief(e.getMessage()));
   }
 
   @ExceptionHandler({ConflictException.class, NotModifiedException.class})
   public ResponseEntity<Map<String, String>> dockerConflict(DockerException e) {
-    return error(HttpStatus.CONFLICT, brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.CONFLICT, ApiErrors.brief(e.getMessage()));
   }
 
   /** The exec seam's translation of the daemon's 409 for a stopped container. */
   @ExceptionHandler(ContainerNotRunningException.class)
   public ResponseEntity<Map<String, String>> containerNotRunning(ContainerNotRunningException e) {
-    return error(HttpStatus.CONFLICT, brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.CONFLICT, ApiErrors.brief(e.getMessage()));
   }
 
   /**
@@ -76,7 +78,7 @@ public class DockerExceptionAdvice {
   @ExceptionHandler(ContainerCommandFailedException.class)
   public ResponseEntity<Map<String, String>> containerCommandFailed(
       ContainerCommandFailedException e) {
-    return error(HttpStatus.BAD_REQUEST, brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, ApiErrors.brief(e.getMessage()));
   }
 
   /**
@@ -87,25 +89,14 @@ public class DockerExceptionAdvice {
    */
   @ExceptionHandler({BadRequestException.class, NotAcceptableException.class})
   public ResponseEntity<Map<String, String>> dockerRejectedRequest(DockerException e) {
-    return error(HttpStatus.BAD_REQUEST, brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, ApiErrors.brief(e.getMessage()));
   }
 
   /** A registry refusing our credentials — a configuration problem, not a bad request. */
   @ExceptionHandler(UnauthorizedException.class)
   public ResponseEntity<Map<String, String>> dockerUnauthorized(UnauthorizedException e) {
     log.warn("docker registry rejected our credentials: {}", e.getMessage());
-    return error(HttpStatus.BAD_GATEWAY,
-        "registry credentials were rejected: " + brief(e.getMessage()));
-  }
-
-  private static ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
-    return ResponseEntity.status(status)
-        .body(Map.of("error", message == null ? "request failed" : message));
-  }
-
-  private static String brief(String message) {
-    if (message == null) return "request failed";
-    String firstLine = message.lines().findFirst().orElse(message);
-    return firstLine.length() > 300 ? firstLine.substring(0, 300) : firstLine;
+    return ApiErrors.error(HttpStatus.BAD_GATEWAY,
+        "registry credentials were rejected: " + ApiErrors.brief(e.getMessage()));
   }
 }
