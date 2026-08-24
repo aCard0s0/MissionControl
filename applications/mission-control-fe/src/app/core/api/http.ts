@@ -9,7 +9,7 @@ export class ApiHttp {
   private readonly base: string;
 
   constructor(apiBaseUrl: string) {
-    this.base = apiBaseUrl.replace(/\/+$/, '');
+    this.base = normalizeBase(apiBaseUrl);
   }
 
   async req<T>(path: string, init?: RequestInit, timeoutMs = 15_000): Promise<T> {
@@ -60,6 +60,11 @@ export class ApiHttp {
 function bodyInit(body: unknown): RequestInit {
   return body === undefined ? {} : { body: JSON.stringify(body) };
 }
+
+/** Drops trailing slashes, so a configured base written with one and one written without
+ *  address the same endpoint. Shared with {@link terminalSocketUrl}: the WebSocket endpoint
+ *  hangs off the same base, and the two must not disagree about what it is. */
+export const normalizeBase = (apiBaseUrl: string): string => apiBaseUrl.replace(/\/+$/, '');
 
 /** Percent-encodes one path segment. Ids and profile names are operator input,
  *  so an unescaped `/` or `..` would address a different endpoint. */
