@@ -257,7 +257,13 @@ describe('McpServersPage lifecycle verbs', () => {
 
   it('will not start the same server twice while the first start is in flight', async () => {
     const store = storeStub([server('browser')]);
-    store.catalog.start.mockReturnValue(new Promise(() => { /* never settles */ }));
+    // the real store patches the entry into its in-flight state before its first await, and
+    // that is what makes the button unavailable — the page keeps no busy set of its own
+    store.catalog.start.mockImplementation(() => {
+      store.catalog.servers.update(servers =>
+        servers.map(entry => ({ ...entry, operationState: 'starting' })));
+      return new Promise(() => { /* never settles */ });
+    });
     const { fixture } = render(store);
 
     press(fixture, 'start', '.server-actions');

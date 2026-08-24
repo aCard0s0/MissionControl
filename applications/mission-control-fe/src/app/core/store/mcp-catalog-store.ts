@@ -6,13 +6,18 @@ import { LogEntry, McpCatalogServer, McpCatalogServerInput, McpRetainedResource 
 import { StoreContext } from './store-context';
 import { toLogEntry, toMcpCatalogServer, toMcpRetainedResource } from './wire-mappers';
 
-/** Image pulls (notably Playwright) can take minutes on a cold host, so the
- *  operation poll has to outlast the backend's ten-minute Compose timeout. */
+/**
+ * Image pulls (notably Playwright) can take minutes on a cold host, so the poll has to outlast
+ * the backend's own ten-minute Compose timeout — by one interval, so a run that fails on that
+ * timeout is reported with the reason the backend recorded rather than as one that never
+ * answered.
+ *
+ * There were two of these: 420 attempts at 1.5s here, and a separate ten-minute deadline in
+ * waitUntilRunning that did not outlast the backend at all.
+ */
 const OPERATION_POLL_INTERVAL = 1_500;
-const OPERATION_POLL_ATTEMPTS = 420;
-
-/** How long {@link McpCatalogStore.waitUntilRunning} gives a start to land. */
-const START_TIMEOUT = 10 * 60_000;
+const COMPOSE_TIMEOUT = 10 * 60_000;
+const OPERATION_TIMEOUT = COMPOSE_TIMEOUT + OPERATION_POLL_INTERVAL;
 
 /**
  * The global MCP definitions — external endpoints, reusable stdio commands, and
@@ -25,7 +30,8 @@ export class McpCatalogStore {
   readonly loading = signal(false);
   readonly retainedResources = signal<McpRetainedResource[]>([]);
 
-  private readonly operationPolls = new Set<string>();
+  /** One poll per entry, shared by everyone waiting on it. */
+  private readonly operationPolls = new Map<string, Promise<McpCatalogServer | null>>();
 
   private readonly ctx = inject(StoreContext);
 
@@ -67,7 +73,7 @@ export class McpCatalogStore {
         : await this.ctx.api.mcp.create(input);
       const server = toMcpCatalogServer(saved);
       this.upsert(server);
-      if (mcpOperationActive(server.operationState)) void this.pollOperation(server.id);
+      if (mcpOperationActive(server.operationState)) void this.awaitSettled(server.id);
       return server.id;
     } catch (e) {
       this.ctx.toastFailure('MCP server save', e);
@@ -81,7 +87,8 @@ export class McpCatalogStore {
       const response = await this.ctx.api.mcp.remove(id);
       if (response) this.upsert(toMcpCatalogServer(response));
       await this.refresh(true);
-      void this.pollOperation(id, true);
+      // the volumes a delete leaves behind only exist once the teardown has finished
+      void this.awaitSettled(id).then(() => this.refreshRetainedResources());
       return true;
     } catch (e) {
       this.ctx.toastFailure('MCP server delete', e);
@@ -108,21 +115,21 @@ export class McpCatalogStore {
   /**
    * Waits for a managed entry to actually reach `running` after a start, so no
    * Agent configuration is written against a server that never came up.
+   *
+   * Joins the entry's existing poll rather than opening a second one: `start` already began
+   * one, and connecting a catalog entry used to run both at once — two full catalog reads
+   * every 1.5 seconds, for up to ten minutes.
    */
   async waitUntilRunning(id: string): Promise<boolean> {
-    const deadline = Date.now() + START_TIMEOUT;
-    while (Date.now() < deadline) {
-      await this.refresh(true);
-      const server = this.byId(id);
-      if (!server) return false;
-      if (server.runtimeState === 'running') return true;
-      if (server.runtimeState === 'error' || server.operationState === 'error' || server.operationError) {
-        this.ctx.toast(`MCP server start failed: ${server.operationError ?? server.runtimeState}`);
-        return false;
-      }
-      await new Promise(resolve => setTimeout(resolve, OPERATION_POLL_INTERVAL));
+    const server = await this.awaitSettled(id);
+    if (!server) return this.ctx.gone('MCP server');
+    if (server.runtimeState === 'running') return true;
+    if (mcpOperationActive(server.operationState)) {
+      this.ctx.toast(`MCP server start timed out: ${server.name}`);
+      return false;
     }
-    this.ctx.toast(`MCP server start timed out: ${this.byId(id)?.name}`);
+    this.ctx.toast(
+      `MCP server start failed: ${server.operationError ?? server.runtimeState}`);
     return false;
   }
 
@@ -169,7 +176,7 @@ export class McpCatalogStore {
       const response = await this.ctx.api.mcp.run(id, operation);
       if (response) this.upsert(toMcpCatalogServer(response));
       else await this.refresh(true);
-      if (operation !== 'check') void this.pollOperation(id);
+      if (operation !== 'check') void this.awaitSettled(id);
       return operation !== 'check' || this.byId(id)?.checkStatus === 'connected';
     } catch (e) {
       const message = errorMessage(e);
@@ -186,21 +193,34 @@ export class McpCatalogStore {
     }
   }
 
-  /** Polls only while a lifecycle operation is active. Delete polling stops
-   *  once the entry disappears from the catalog. */
-  private async pollOperation(id: string, deleting = false): Promise<void> {
-    if (this.operationPolls.has(id)) return;
-    this.operationPolls.add(id);
+  /**
+   * Refreshes until nothing is in flight for `id`, and answers with the entry as it settled:
+   * null once it is gone, and still-active only when the wait ran out.
+   *
+   * Single-flighted per entry, and every caller that cares joins the same poll.
+   */
+  private async awaitSettled(id: string): Promise<McpCatalogServer | null> {
+    const running = this.operationPolls.get(id);
+    if (running) return running;
+    const poll = this.pollUntilSettled(id);
+    this.operationPolls.set(id, poll);
     try {
-      for (let attempt = 0; attempt < OPERATION_POLL_ATTEMPTS; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, OPERATION_POLL_INTERVAL));
-        await this.refresh(true);
-        const server = this.byId(id);
-        if (!server || !mcpOperationActive(server.operationState)) break;
-      }
-      if (deleting) await this.refreshRetainedResources();
+      return await poll;
     } finally {
       this.operationPolls.delete(id);
     }
+  }
+
+  private async pollUntilSettled(id: string): Promise<McpCatalogServer | null> {
+    const deadline = Date.now() + OPERATION_TIMEOUT;
+    // what the entry already says first: a lifecycle call answers with the state the backend
+    // recorded, so an operation that is already over costs no interval and no extra read
+    let server = this.byId(id);
+    while (server && mcpOperationActive(server.operationState) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, OPERATION_POLL_INTERVAL));
+      await this.refresh(true);
+      server = this.byId(id);
+    }
+    return server ?? null;
   }
 }
