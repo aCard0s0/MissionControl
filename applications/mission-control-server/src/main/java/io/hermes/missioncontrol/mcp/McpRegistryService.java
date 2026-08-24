@@ -141,7 +141,8 @@ public class McpRegistryService {
     long now = System.currentTimeMillis();
     ServerRow row = new ServerRow(id, validated.name(), validated.description(), validated.kind(),
         validated.hostId(), serviceKey, configs.write(config), "stopped",
-        managed ? "missing" : "unavailable", managed ? "provisioning" : "idle", null, 1,
+        McpRuntimeState.initial(managed).wire(),
+        (managed ? McpOperationState.PROVISIONING : McpOperationState.IDLE).wire(), null, 1,
         managed ? 0 : 1, null, null, null, null, null, now, now);
     repository.insert(row);
     if (managed) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
@@ -170,7 +171,8 @@ public class McpRegistryService {
         && "stopped".equals(existing.desiredState());
     long applied = "managed".equals(existing.kind()) ? existing.appliedRevision() : revision;
     repository.updateDefinition(id, validated.name(), validated.description(), configs.write(config),
-        revision, applied, recreateStopped ? "applying" : "idle");
+        revision, applied,
+        (recreateStopped ? McpOperationState.APPLYING : McpOperationState.IDLE).wire());
     if (recreateStopped) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
     return live(id);
   }
@@ -203,7 +205,7 @@ public class McpRegistryService {
       repository.delete(id);
       return mapper.toDto(row);
     }
-    repository.beginOperation(id, "stopped", "deleting");
+    repository.beginOperation(id, "stopped", McpOperationState.DELETING.wire());
     lifecycle.submit(id, () -> lifecycle.runDelete(id));
     return live(id);
   }
@@ -212,21 +214,21 @@ public class McpRegistryService {
 
   public McpServerDto start(String id) {
     requireManagedIdle(id);
-    repository.beginOperation(id, "running", "starting");
+    repository.beginOperation(id, "running", McpOperationState.STARTING.wire());
     lifecycle.submit(id, () -> lifecycle.runStart(id, false));
     return live(id);
   }
 
   public McpServerDto stop(String id) {
     requireManagedIdle(id);
-    repository.beginOperation(id, "stopped", "stopping");
+    repository.beginOperation(id, "stopped", McpOperationState.STOPPING.wire());
     lifecycle.submit(id, () -> lifecycle.runStop(id));
     return live(id);
   }
 
   public McpServerDto apply(String id) {
     ServerRow row = requireManagedIdle(id);
-    repository.beginOperation(id, row.desiredState(), "applying");
+    repository.beginOperation(id, row.desiredState(), McpOperationState.APPLYING.wire());
     lifecycle.submit(id, () -> lifecycle.reconcile(id));
     return live(id);
   }
@@ -308,7 +310,7 @@ public class McpRegistryService {
   }
 
   private static void ensureIdle(ServerRow row) {
-    if (!List.of("idle", "error").contains(row.operationState())) {
+    if (!McpOperationState.settled(row.operationState())) {
       throw new ResourceConflictException("an MCP server operation is already in progress");
     }
   }

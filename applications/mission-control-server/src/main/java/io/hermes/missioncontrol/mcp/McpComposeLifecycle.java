@@ -241,21 +241,21 @@ class McpComposeLifecycle {
    * writing its state, and a read must not race it.
    */
   ServerRow refreshRuntime(ServerRow row) {
-    if (!"managed".equals(row.kind()) || !List.of("idle", "error").contains(row.operationState())) {
+    if (!"managed".equals(row.kind()) || !McpOperationState.settled(row.operationState())) {
       return row;
     }
     try {
       String containerId = compose.serviceContainerId(row.hostId(), row.serviceKey());
-      String runtime = "missing";
+      McpRuntimeState runtime = McpRuntimeState.MISSING;
       if (containerId != null) {
-        runtime = docker.listContainers(hosts.ref(row.hostId()), true).stream()
-            .filter(container -> container.id().equals(containerId))
-            .map(ContainerDto::status)
-            .findFirst().orElse("unknown");
-        if ("unhealthy".equals(runtime)) runtime = "error";
+        runtime = McpRuntimeState.fromContainerStatus(
+            docker.listContainers(hosts.ref(row.hostId()), true).stream()
+                .filter(container -> container.id().equals(containerId))
+                .map(ContainerDto::status)
+                .findFirst().orElse(null));
       }
-      if (!runtime.equals(row.runtimeState())) {
-        repository.updateRuntime(row.id(), runtime);
+      if (!runtime.wire().equals(row.runtimeState())) {
+        repository.updateRuntime(row.id(), runtime.wire());
         return requireRow(row.id());
       }
     } catch (RuntimeException e) {

@@ -152,7 +152,20 @@ export interface McpServer {
 export type McpCatalogKind = 'managed' | 'external' | 'stdio';
 export type McpTransport = 'stdio' | 'http' | 'sse';
 export type McpDesiredState = 'running' | 'stopped';
-export type McpRuntimeState = 'running' | 'stopped' | 'missing' | 'unknown' | 'error';
+/**
+ * Every value `operationState` can hold. The backend's McpOperationState enum is the single
+ * source of it; this is the same eight names, and what the field is checked against.
+ *
+ * The field itself stays a plain `string` rather than this union, deliberately: an
+ * unrecognised state has to count as an operation still running, and narrowing it in the
+ * mapper would collapse one to a fallback that reads as settled and unfreeze the controls.
+ */
+export type McpOperationState =
+  | 'provisioning' | 'reconciling' | 'starting' | 'stopping' | 'applying' | 'deleting'
+  | 'idle' | 'error';
+
+export type McpRuntimeState =
+  'running' | 'stopped' | 'missing' | 'unavailable' | 'unknown' | 'error';
 export type McpCheckStatus = 'unknown' | 'checking' | 'connected' | 'error';
 
 /** A redacted environment variable or HTTP header. The backend never returns

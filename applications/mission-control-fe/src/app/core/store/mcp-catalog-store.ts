@@ -1,7 +1,7 @@
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { errorMessage } from '../errors';
 import { McpServerOperation } from '../hermes-api';
-import { duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
+import { IN_FLIGHT_STATE, duplicateCatalogName, mcpOperationActive } from '../mcp/catalog-rules';
 import { LogEntry, McpCatalogServer, McpCatalogServerInput, McpRetainedResource } from '../models';
 import { StoreContext } from './store-context';
 import { toLogEntry, toMcpCatalogServer, toMcpRetainedResource } from './wire-mappers';
@@ -13,9 +13,6 @@ const OPERATION_POLL_ATTEMPTS = 420;
 
 /** How long {@link McpCatalogStore.waitUntilRunning} gives a start to land. */
 const START_TIMEOUT = 10 * 60_000;
-
-/** The state a lifecycle verb moves an entry into while it is in flight. */
-const IN_FLIGHT_STATE = { start: 'starting', stop: 'stopping', apply: 'applying' } as const;
 
 /**
  * The global MCP definitions — external endpoints, reusable stdio commands, and
