@@ -226,12 +226,12 @@ class HermesSetupTest {
 
   @Test
   void theEnvTemplateDocumentsEveryKnownVariable() {
-    String template = HermesSetup.envTemplate();
+    String template = HermesEnvCatalog.template();
 
-    for (HermesSetup.ApiKeySpec spec : HermesSetup.API_KEYS) {
+    for (HermesEnvCatalog.ApiKeySpec spec : HermesEnvCatalog.API_KEYS) {
       assertTrue(template.contains(spec.envVar()), "template is missing " + spec.envVar());
     }
-    for (HermesSetup.MessagingSpec spec : HermesSetup.MESSAGING) {
+    for (HermesEnvCatalog.MessagingSpec spec : HermesEnvCatalog.MESSAGING) {
       assertTrue(template.contains(spec.tokenVar()), "template is missing " + spec.tokenVar());
     }
     // every line is commented out, so seeding a profile with it enables nothing

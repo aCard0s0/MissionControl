@@ -80,13 +80,13 @@ class ModelProviderRegistryTest {
   @Test
   void everyKeyBasedProviderIsReportableOnTheSetupPageUnderTheSameVariable() {
     // Two tables describe one .env from different screens: this registry resolves a provider's
-    // variable for the agent card and for the write into .env, HermesSetup.API_KEYS drives the
+    // variable for the agent card and for the write into .env, HermesEnvCatalog.API_KEYS drives the
     // setup page, and a template capture records which of those keys were set. A variable named
     // in only one of them shows a credential as set on one screen and missing on the other, and
     // captures the wrong key. API_KEYS now derives its provider rows from here, so this asserts
     // that nothing was left behind.
-    Set<String> reportedOnTheSetupPage = HermesSetup.API_KEYS.stream()
-        .map(HermesSetup.ApiKeySpec::envVar)
+    Set<String> reportedOnTheSetupPage = HermesEnvCatalog.API_KEYS.stream()
+        .map(HermesEnvCatalog.ApiKeySpec::envVar)
         .collect(Collectors.toSet());
 
     for (Provider p : ModelProviderRegistry.PROVIDERS) {
@@ -103,9 +103,9 @@ class ModelProviderRegistryTest {
     // unknown provider yields no variable at all, and silently accepting that would report
     // every key for it as unset with nothing to explain why.
     assertThrows(IllegalStateException.class,
-        () -> HermesSetup.ApiKeySpec.forProvider("nous", "Nous"));
+        () -> HermesEnvCatalog.ApiKeySpec.forProvider("nous", "Nous"));
     assertThrows(IllegalStateException.class,
-        () -> HermesSetup.ApiKeySpec.forProvider("mystery", "Mystery"));
+        () -> HermesEnvCatalog.ApiKeySpec.forProvider("mystery", "Mystery"));
   }
 
   @Test
