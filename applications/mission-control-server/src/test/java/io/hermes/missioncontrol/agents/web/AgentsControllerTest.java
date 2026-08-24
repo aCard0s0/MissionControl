@@ -8,7 +8,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -21,6 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
@@ -31,7 +31,6 @@ import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -42,6 +41,7 @@ class AgentsControllerTest {
   private HostService hosts;
   private ProfileTemplateService templates;
   private AgentMcpCatalogService mcpCatalog;
+  private AgentLifecycle lifecycle;
   private MockMvc mvc;
 
   @BeforeEach
@@ -50,10 +50,11 @@ class AgentsControllerTest {
     hosts = mock(HostService.class);
     templates = mock(ProfileTemplateService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
+    lifecycle = mock(AgentLifecycle.class);
 
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentsController(
-            profiles, templates, mcpCatalog, new AgentEndpoints(hosts, mcpCatalog)))
+            profiles, templates, lifecycle, new AgentEndpoints(hosts, mcpCatalog)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -182,17 +183,15 @@ class AgentsControllerTest {
   }
 
   @Test
-  void deletingAProfileAlsoDropsItsCatalogLinks() throws Exception {
-    // the links are dashboard-owned rows; leaving them behind would resurrect MCP entries on a
-    // later profile that happens to reuse the name
+  void deletingAProfileHandsTheResolvedHostToTheLifecycle() throws Exception {
+    // what the delete then does on both sides of the container/SQLite split, and in which
+    // order, is AgentLifecycleTest's
     hostIsConnected();
 
     mvc.perform(delete("/api/agents/" + HOST.id() + "/" + CONTAINER + "/scout"))
         .andExpect(status().isOk());
 
-    InOrder order = inOrder(profiles, mcpCatalog);
-    order.verify(profiles).delete(HOST, CONTAINER, "scout");
-    order.verify(mcpCatalog).deleteAgentLinks(HOST, CONTAINER, "scout");
+    verify(lifecycle).delete(HOST, CONTAINER, "scout");
   }
 
   @Test

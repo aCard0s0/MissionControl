@@ -1,6 +1,6 @@
 package io.hermes.missioncontrol.agents.web;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
+import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
@@ -38,17 +38,17 @@ public class AgentsController {
 
   private final HermesProfiles profiles;
   private final ProfileTemplateService templates;
-  private final AgentMcpCatalogService mcpCatalog;
+  private final AgentLifecycle lifecycle;
   private final AgentEndpoints endpoints;
 
   public AgentsController(
       HermesProfiles profiles,
       ProfileTemplateService templates,
-      AgentMcpCatalogService mcpCatalog,
+      AgentLifecycle lifecycle,
       AgentEndpoints endpoints) {
     this.profiles = profiles;
     this.templates = templates;
-    this.mcpCatalog = mcpCatalog;
+    this.lifecycle = lifecycle;
     this.endpoints = endpoints;
   }
 
@@ -76,9 +76,7 @@ public class AgentsController {
   @DeleteMapping("/{hostId}/{containerId}/{name}")
   public void delete(
       @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    DockerHostRef host = endpoints.host(hostId);
-    profiles.delete(host, containerId, name);
-    mcpCatalog.deleteAgentLinks(host, containerId, name);
+    lifecycle.delete(endpoints.host(hostId), containerId, name);
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/soul")
