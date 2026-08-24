@@ -26,6 +26,15 @@ export interface McpEditorEntry extends McpConfigEntry {
 export interface McpEditorSupportService extends Omit<McpSupportService, 'environment' | 'volumes'> {
   environment: McpEditorEntry[];
   volumes: McpNamedVolume[];
+  /**
+   * True for a service the catalog already stores under this name, whose name the
+   * editor must therefore not let anyone change: the backend derives the Compose
+   * service name from it, which is the hostname the server reaches the dependency
+   * by and the prefix of its volumes, so a rename is a different service with
+   * empty volumes. The backend refuses one; this is what keeps the form from
+   * offering it. Never sent — it is a fact about the draft, not a field.
+   */
+  stored: boolean;
 }
 
 /** The form state behind the editor panel — strings where the wire wants lists,
@@ -120,6 +129,9 @@ export function mcpDraftFromServer(server: McpCatalogServer, duplicate = false):
     healthcheck: copyHealthcheck(server.healthcheck),
     supportServices: server.supportServices.map(service => ({
       ...service,
+      // a duplicate is a new entry: nothing is stored behind its dependencies yet,
+      // so their names are still the operator's to choose
+      stored: !duplicate,
       environment: entries(service.environment ?? []),
       volumes: (service.volumes ?? []).map(volume => ({ ...volume })),
       healthcheck: copyHealthcheck(service.healthcheck),
@@ -152,13 +164,23 @@ export function mcpDraftToInput(draft: McpEditorDraft): McpCatalogServerInput {
     environment: external ? [] : configEntries(draft.environment),
     volumes: managed ? namedVolumes(draft.volumes) : [],
     healthcheck: managed ? draft.healthcheck : null,
+    // Every field named rather than spread: `stored` is the editor's own and must not
+    // reach the wire, and `entrypoint`/`command` have to pass through exactly as they
+    // arrived — absent when the service never named one, because an empty list is a
+    // Compose override that clears the image's own. Same rule as `toSupportService`
+    // on the way in.
     supportServices: managed ? draft.supportServices.map(service => ({
-      ...service,
+      name: service.name.trim(),
+      image: service.image.trim(),
+      platform: service.platform,
+      entrypoint: service.entrypoint,
+      command: service.command,
       environment: service.environment.map(entry => ({
         key: entry.key, value: entry.value ?? '', secret: entry.secret,
         clear: entry.clear,
       })),
       volumes: service.volumes.map(volume => ({ ...volume })),
+      healthcheck: service.healthcheck,
     })) : [],
   };
 }
@@ -234,6 +256,6 @@ export function blankVolume(): McpNamedVolume {
 export function blankSupportService(): McpEditorSupportService {
   return {
     name: '', image: '', platform: null, entrypoint: [], command: [],
-    environment: [], volumes: [], healthcheck: null,
+    environment: [], volumes: [], healthcheck: null, stored: false,
   };
 }

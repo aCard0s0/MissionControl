@@ -104,6 +104,7 @@ class McpComposeLifecycle {
       List<String> targets = stack.serviceNames().get(row.id());
       compose.execute(row.hostId(), stack, arguments(
           "up", "--no-start", "--pull", "always", "--force-recreate", targets), COMPOSE_TIMEOUT);
+      reclaimDeparted(row, stack);
       ServerRow fresh = requireRow(id);
       repository.finishOperation(id, "stopped", fresh.revision());
       log.info("provisioned MCP {} ({}) on {} — created, not started",
@@ -122,6 +123,7 @@ class McpComposeLifecycle {
       if (forceRecreate) args.add("--force-recreate");
       args.addAll(stack.serviceNames().get(row.id()));
       compose.execute(row.hostId(), stack, args, COMPOSE_TIMEOUT);
+      reclaimDeparted(row, stack);
       ServerRow fresh = requireRow(id);
       repository.finishOperation(id, "running", fresh.revision());
       log.info("started MCP {} ({}) on {}", row.name(), id, row.hostId());
@@ -161,6 +163,52 @@ class McpComposeLifecycle {
           volumes.isEmpty() ? "" : "; retaining volume(s) " + volumes + " until purged");
     } catch (Exception e) {
       fail(id, e);
+    }
+  }
+
+  /**
+   * Removes and records what this record used to run and no longer declares.
+   *
+   * <p>A support service dropped from the definition leaves the rendered file, and Compose is
+   * only ever asked to bring up the services the file still names — so without this its
+   * container keeps running under a service name nothing references any more, holding a volume
+   * that is no longer part of the stack and that nothing remembers the origin of.
+   *
+   * <p>The named volumes are retained rather than removed, for the same reason {@link #runDelete}
+   * retains them: the operator asked to stop using the dependency, not to lose its data. They
+   * show up in the retained inventory and are purged deliberately.
+   *
+   * <p>Best-effort, and after the operation it follows rather than before: the stack is already
+   * up by this point, and failing the record over a cleanup would report a start that worked as
+   * an error.
+   */
+  private void reclaimDeparted(ServerRow row, ComposeStackRenderer.Rendered stack) {
+    try {
+      List<String> services = stack.serviceNames().getOrDefault(row.id(), List.of());
+      List<String> departed = compose.servicesOf(row.hostId(), row.id()).stream()
+          .filter(service -> !services.contains(service)).toList();
+      compose.removeServices(row.hostId(), row.id(), departed, Duration.ofMinutes(2));
+
+      // a volume stays stranded until it is purged, so every later start finds it again: only
+      // the first sighting is news, and repeating the warning forever teaches people to skip it
+      List<String> declared = stack.volumeNames().getOrDefault(row.id(), List.of());
+      List<String> kept = new ArrayList<>();
+      for (String volume : compose.volumesOf(row.hostId(), row.id())) {
+        if (declared.contains(volume)) continue;
+        if (retained.retain(row.id(), row.name(), row.hostId(), volume)) kept.add(volume);
+      }
+
+      if (!departed.isEmpty() || !kept.isEmpty()) {
+        // say so: a dependency's data surviving its service is the same surprise a delete has
+        log.warn("reclaimed departed dependencies of MCP {} ({}) on {}: removed service(s) {}{}",
+            row.name(), row.id(), row.hostId(), departed,
+            kept.isEmpty() ? "" : "; retaining volume(s) " + kept + " until purged");
+      }
+    } catch (RuntimeException e) {
+      // the operation itself already succeeded; a cleanup that could not run must not report it
+      // as a failure, or an operator retries a start that worked
+      log.warn("could not reclaim departed dependencies of MCP {} ({}): {}",
+          row.name(), row.id(), e.toString());
     }
   }
 

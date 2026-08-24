@@ -81,6 +81,82 @@ class ComposeStackManager {
     }
   }
 
+  /**
+   * The Compose service names this catalog record currently has containers for, running or not.
+   *
+   * <p>Read back from the label {@link ComposeStackRenderer} writes rather than from the file,
+   * because the reason for asking is to find what the file no longer declares.
+   */
+  List<String> servicesOf(String hostId, String serverId) {
+    return labelled(hostId, List.of(
+        "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
+        "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
+        "--format", "{{.Label \"com.docker.compose.service\"}}"));
+  }
+
+  /** The managed volume names this catalog record currently has on the daemon. */
+  List<String> volumesOf(String hostId, String serverId) {
+    return labelled(hostId, List.of(
+        "docker", "--host", hosts.ref(hostId).url(), "volume", "ls",
+        "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
+        "--format", "{{.Name}}"));
+  }
+
+  /**
+   * Stops and removes the containers of services the rendered file no longer declares.
+   *
+   * <p>Not {@code compose rm}: that addresses a service by the name it has <em>in the file</em>,
+   * and a departed one is by definition no longer there. The containers are found by the label
+   * the renderer wrote and removed directly, after the same ownership check every other mutation
+   * here makes.
+   *
+   * <p>{@code --volumes} drops only the anonymous volumes an image declared for itself. The
+   * named ones this stack creates are untouched by it — they outlive the container on purpose,
+   * and the caller records them as retained instead.
+   */
+  void removeServices(String hostId, String serverId, List<String> services, Duration timeout) {
+    if (services.isEmpty()) return;
+    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+    lock.lock();
+    try {
+      String url = hosts.ref(hostId).url();
+      for (String service : services) {
+        for (String id : containerIds(url, serverId, service)) {
+          String owner = inspectOwner(hostId, "container", id);
+          if (!ManagedMcpStack.PROJECT.equals(owner)) {
+            throw new IllegalArgumentException("a container for the departed service '" + service
+                + "' exists but is not owned by Mission Control MCP");
+          }
+          run(List.of("docker", "--host", url, "rm", "--force", "--volumes", id), Map.of(), timeout);
+        }
+      }
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private List<String> containerIds(String url, String serverId, String service) {
+    return lines(run(List.of(
+        "docker", "--host", url, "ps", "--all",
+        "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
+        "--filter", "label=com.docker.compose.service=" + service,
+        "--format", "{{.ID}}"), Map.of(), Duration.ofSeconds(20)));
+  }
+
+  private List<String> labelled(String hostId, List<String> command) {
+    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+    lock.lock();
+    try {
+      return lines(run(command, Map.of(), Duration.ofSeconds(20)));
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private static List<String> lines(String output) {
+    return output.lines().map(String::trim).filter(value -> !value.isEmpty()).distinct().toList();
+  }
+
   void purgeVolume(String hostId, String volumeName) {
     if (volumeName == null || !volumeName.startsWith(ManagedMcpStack.PROJECT + "-")) {
       throw new IllegalArgumentException("refusing to purge a volume not owned by Mission Control MCP");

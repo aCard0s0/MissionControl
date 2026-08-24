@@ -5,11 +5,14 @@ import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -159,7 +162,9 @@ public class McpRegistryService {
     if (repository.nameExists(validated.name(), id)) {
       throw new ResourceConflictException("an MCP server named '" + validated.name() + "' already exists");
     }
-    StoredConfig config = configs.store(validated, configs.read(existing));
+    StoredConfig previous = configs.read(existing);
+    ensureSupportServicesNotRenamed(previous, validated);
+    StoredConfig config = configs.store(validated, previous);
     long revision = existing.revision() + 1;
     boolean recreateStopped = "managed".equals(existing.kind())
         && "stopped".equals(existing.desiredState());
@@ -261,6 +266,45 @@ public class McpRegistryService {
     }
     ensureIdle(row);
     return row;
+  }
+
+  /**
+   * A stored support service's name is its Compose identity, so an update may add support
+   * services and it may remove them, but it may not rename one.
+   *
+   * <p>{@link ComposeStackRenderer#supportKey} derives the Compose service name from it. That
+   * name is the hostname the main container reaches the dependency by, the prefix of every
+   * volume the dependency declares, the key its {@code depends_on} entry is written under, and
+   * what {@link McpLogReader} looks its container up by. A renamed support service is therefore
+   * a different service with empty volumes, reachable at an address the main container's own
+   * configuration does not mention.
+   *
+   * <p>Refused here rather than accommodated in {@link McpConfigStore}, which carries stored
+   * secrets forward under this same name and so fails the save today. Giving support services a
+   * stable id and keying the secrets by that would let the save through and make every
+   * consequence above silent, which is worse than refusing it.
+   *
+   * <p>A rename is only detectable as one because it arrives together: a stored name has left
+   * and an unknown name has appeared in its place. Doing the two halves as separate saves is
+   * allowed, and is what the message asks for — it makes replacing the dependency the operator's
+   * decision rather than a side effect of editing a text field. The removal half is reclaimed
+   * properly by {@code McpComposeLifecycle}, which stops the departed container and moves its
+   * volumes to the retained inventory.
+   */
+  private static void ensureSupportServicesNotRenamed(StoredConfig previous, Validated validated) {
+    Set<String> stored = previous.supportServices().stream()
+        .map(StoredSupportService::name).collect(Collectors.toCollection(LinkedHashSet::new));
+    Set<String> submitted = validated.supportServices().stream()
+        .map(SupportServiceRequest::name).collect(Collectors.toCollection(LinkedHashSet::new));
+    List<String> dropped = stored.stream().filter(name -> !submitted.contains(name)).toList();
+    List<String> added = submitted.stream().filter(name -> !stored.contains(name)).toList();
+    if (dropped.isEmpty() || added.isEmpty()) return;
+    throw new IllegalArgumentException(
+        "a support service cannot be renamed: its name is the Compose service name, the hostname"
+            + " the server reaches it by, and the prefix of its volumes. This update drops "
+            + dropped + " and adds " + added + ". Remove and re-add in separate saves if the"
+            + " dependency really is being replaced — a removed one's volumes are kept as"
+            + " retained resources for you to purge, and the new one starts with empty ones.");
   }
 
   private static void ensureIdle(ServerRow row) {

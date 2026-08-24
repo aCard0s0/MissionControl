@@ -112,6 +112,82 @@ class McpComposeLifecycleTest {
     assertEquals(row(id).revision(), row(id).appliedRevision());
   }
 
+  // ── reclaiming departed dependencies ────────────────────────────────────
+
+  @Test
+  void aDependencyDroppedFromTheDefinitionHasItsContainerRemovedAndItsVolumeRetained() {
+    // the file no longer names the service, so Compose is never asked to bring it down: without
+    // this it keeps running under a service name nothing references, holding data nothing
+    // remembers the origin of
+    String id = insertManaged("Files");
+    String departedVolume = "mission-control-mcp-" + SERVICE + "-database-data";
+    when(compose.servicesOf(HOST, id)).thenReturn(List.of(SERVICE, SERVICE + "-database"));
+    when(compose.volumesOf(HOST, id)).thenReturn(List.of(departedVolume));
+
+    lifecycle.runStart(id, false);
+
+    verify(compose).removeServices(HOST, id, List.of(SERVICE + "-database"), Duration.ofMinutes(2));
+    RetainedResourceDto kept = retained.findAll().getFirst();
+    assertEquals(departedVolume, kept.name());
+    assertEquals("Files", kept.serverName(), "the retained row carries the name the operator knew");
+    assertEquals(HOST, kept.hostId());
+    assertEquals("running", row(id).runtimeState(), "the start itself still succeeded");
+  }
+
+  @Test
+  void aDependencyStillInTheDefinitionIsLeftRunningAndItsVolumeIsNotRetained() {
+    String id = insertManagedWithDatabase("Files");
+    ComposeStackRenderer.Rendered stack = lifecycle.renderHost(HOST);
+    when(compose.servicesOf(HOST, id)).thenReturn(stack.serviceNames().get(id));
+    when(compose.volumesOf(HOST, id)).thenReturn(stack.volumeNames().get(id));
+
+    lifecycle.runStart(id, false);
+
+    verify(compose).removeServices(HOST, id, List.of(), Duration.ofMinutes(2));
+    assertTrue(retained.findAll().isEmpty(), "a declared volume is part of the stack, not stranded");
+  }
+
+  @Test
+  void aVolumeAlreadyWaitingToBePurgedIsNotRetainedTwiceByTheNextStart() {
+    // it stays stranded until the operator purges it, so every later start finds it again
+    String id = insertManaged("Files");
+    String departedVolume = "mission-control-mcp-" + SERVICE + "-database-data";
+    when(compose.volumesOf(HOST, id)).thenReturn(List.of(departedVolume));
+
+    lifecycle.runStart(id, false);
+    lifecycle.runStart(id, false);
+
+    assertEquals(1, retained.findAll().size());
+  }
+
+  @Test
+  void provisioningReclaimsDepartedDependenciesToo() {
+    // an update to a stopped record re-provisions straight away, which is where a dependency
+    // dropped by that same update has to be reclaimed
+    String id = insertManaged("Files");
+    when(compose.servicesOf(HOST, id)).thenReturn(List.of(SERVICE, SERVICE + "-cache"));
+
+    lifecycle.provisionStopped(id);
+
+    verify(compose).removeServices(HOST, id, List.of(SERVICE + "-cache"), Duration.ofMinutes(2));
+  }
+
+  @Test
+  void aReclaimThatCannotRunDoesNotReportAStartThatWorkedAsAFailure() {
+    // the container is already up by then; recording an error would have the operator retry a
+    // start that succeeded
+    String id = insertManaged("Files");
+    when(compose.servicesOf(HOST, id))
+        .thenThrow(new UpstreamUnavailableException("could not start Docker CLI"));
+
+    lifecycle.runStart(id, false);
+
+    ServerRow row = row(id);
+    assertEquals("running", row.runtimeState());
+    assertEquals("idle", row.operationState());
+    assertNull(row.operationError());
+  }
+
   // ── stop ────────────────────────────────────────────────────────────────
 
   @Test
@@ -387,6 +463,18 @@ class McpComposeLifecycleTest {
 
   private String insertManaged(String name, List<VolumeSpec> volumes, List<ConfigValueInput> environment) {
     return insert(name, "managed", HOST, volumes, environment, "provisioning");
+  }
+
+  /** A managed record whose one dependency declares a named volume of its own. */
+  private String insertManagedWithDatabase(String name) {
+    Validated validated = McpRequestValidator.validate(new McpServerRequest(
+        name, null, "managed", HOST, "http", null, "example/files:1", null,
+        List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
+        List.of(), List.of(), List.of(), null,
+        List.of(new SupportServiceRequest("database", "postgres:16-alpine", null,
+            List.of(), List.of(), List.of(), volume(), null))));
+    return insertRow(name, "managed", HOST,
+        configs.write(configs.store(validated, null)), "provisioning");
   }
 
   private String insertIdleManaged(String name) {
