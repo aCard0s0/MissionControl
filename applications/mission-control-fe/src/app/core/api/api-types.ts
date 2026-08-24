@@ -45,6 +45,17 @@ export interface ApiBoardTask {
   createdAt: number;
 }
 
+export interface ApiPrompt {
+  id: string;
+  title: string;
+  body: string;
+  category: string;
+  notes: string | null;
+  tags: string[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ApiImageTag {
   tag: string;
   pulled: boolean;
@@ -321,6 +332,8 @@ export interface ApiProfileTemplate {
   id: string;
   name: string;
   description: string;
+  /** null on a blueprint written before the library had categories */
+  category: string | null;
   provider: string;
   model: string;
   baseUrl: string;

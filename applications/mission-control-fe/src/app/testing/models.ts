@@ -79,7 +79,7 @@ export const externalCatalogServer = (
 });
 
 export const template = (id: string, patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id, name: id, description: '', provider: 'anthropic', model: 'claude-fable-5',
+  id, name: id, description: '', category: 'general', provider: 'anthropic', model: 'claude-fable-5',
   baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
   secrets: [], createdAt: 1, updatedAt: 1, ...patch,
 });

@@ -18,6 +18,7 @@ const NAV = [
   { path: '/profiles', label: 'Blueprints', exact: false },
   { path: '/models', label: 'Models', exact: false },
   { path: '/mcp-servers', label: 'MCP Servers', exact: false },
+  { path: '/prompts', label: 'Prompts', exact: false },
   { path: '/board', label: 'Ops Board', exact: false },
   { path: '/calendar', label: 'Calendar', exact: false },
   { path: '/webhooks', label: 'Webhooks', exact: false },

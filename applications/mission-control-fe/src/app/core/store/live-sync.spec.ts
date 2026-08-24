@@ -561,7 +561,7 @@ describe('live registries', () => {
     const update = vi.fn().mockResolvedValue({ id: 'pt-new', name: 'ops v2', createdAt: 1, updatedAt: 2 });
     stubBackend(store.ctx, { templates: { create, update } });
     const input = {
-      name: 'ops', description: '', provider: 'anthropic', model: 'claude-fable-5',
+      name: 'ops', description: '', category: 'ops', provider: 'anthropic', model: 'claude-fable-5',
       baseUrl: '', cwd: '', soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
     };
 
@@ -581,7 +581,7 @@ describe('live registries', () => {
     stubBackend(store.ctx, { templates: { create: vi.fn().mockRejectedValue(new Error('name taken')) } });
 
     expect(await store.templates.save({
-      name: 'ops', description: '', provider: '', model: '', baseUrl: '', cwd: '',
+      name: 'ops', description: '', category: '', provider: '', model: '', baseUrl: '', cwd: '',
       soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
     })).toBe('');
     expect(store.ctx.liveError()).toBe('save template failed: name taken');

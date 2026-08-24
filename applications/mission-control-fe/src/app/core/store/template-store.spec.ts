@@ -3,7 +3,8 @@ import { ApiProfileTemplate } from '../hermes-api';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const template = (id: string, patch: Partial<ApiProfileTemplate> = {}): ApiProfileTemplate => ({
-  id, name: id, description: 'SRE copilot', provider: 'anthropic', model: 'claude-fable-5',
+  id, name: id, description: 'SRE copilot', category: 'ops', provider: 'anthropic',
+  model: 'claude-fable-5',
   baseUrl: '', cwd: '/opt/data', soul: '# SOUL', memory: '# MEMORY',
   skills: ['ops'], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2, ...patch,
 });
@@ -25,6 +26,24 @@ describe('TemplateStore', () => {
     expect(store.byId('pt-ops')?.name).toBe('pt-ops');
     expect(store.byId('pt-missing')).toBeNull();
     expect(store.byId(null)).toBeNull();
+  });
+
+  it('lists every category in use once, sorted, for the page filter chips', async () => {
+    const { store } = await loaded({}, [
+      template('pt-a', { category: 'writing' }),
+      template('pt-b', { category: 'ops' }),
+      template('pt-c', { category: 'ops' }),
+    ]);
+
+    expect(store.categories()).toEqual(['ops', 'writing']);
+  });
+
+  it('files a blueprint written before categories existed under the default', async () => {
+    const { store } = await loaded({}, [template('pt-old', { category: null })]);
+
+    // the column is null on such a row, and a blank chip is not a category
+    expect(store.byId('pt-old')?.category).toBe('general');
+    expect(store.categories()).toEqual(['general']);
   });
 
   it('keeps the last list when a read fails', async () => {

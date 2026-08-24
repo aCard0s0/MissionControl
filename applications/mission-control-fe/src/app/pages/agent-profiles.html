@@ -4,9 +4,64 @@
     <h2>Blueprints</h2>
   </div>
   <div class="head-stats mono">
-    <span>{{ templates.templates().length }} templates</span>
+    <span>{{ visible().length }}/{{ templates.templates().length }} templates</span>
   </div>
   <button class="btn primary" (click)="newTemplate()">+ new blueprint</button>
+</div>
+
+<div class="panel filters" data-reveal>
+  <div class="panel-b">
+    <div class="find-row">
+      <input class="input find" type="search" aria-label="search blueprints"
+             placeholder="search names, descriptions, skills, mcp servers, keys"
+             [value]="query()" (input)="onSearch($any($event.target).value)" />
+      @if (filtering()) {
+        <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
+      }
+    </div>
+
+    @if (templates.categories().length > 1) {
+      <div class="facet mono">
+        <span class="lbl">category</span>
+        <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
+        @for (c of templates.categories(); track c) {
+          <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
+        }
+      </div>
+    }
+
+    @if (providerNames().length > 1) {
+      <div class="facet mono">
+        <span class="lbl">provider</span>
+        <button class="chip" [class.on]="provider() === null" (click)="provider.set(null)">all</button>
+        @for (p of providerNames(); track p) {
+          <button class="chip" [class.on]="provider() === p" (click)="provider.set(p)">{{ p }}</button>
+        }
+      </div>
+    }
+
+    @if (modelNames().length > 1) {
+      <div class="facet mono">
+        <span class="lbl">model</span>
+        <button class="chip" [class.on]="model() === null" (click)="model.set(null)">all</button>
+        @for (m of modelNames(); track m) {
+          <button class="chip" [class.on]="model() === m" (click)="model.set(m)">{{ m }}</button>
+        }
+      </div>
+    }
+
+    @if (anyCarries()) {
+      <div class="facet mono">
+        <span class="lbl">carries</span>
+        <button class="chip" [class.on]="carries().has('skills')" (click)="toggleCarries('skills')"
+                title="blueprints that install skills">skills</button>
+        <button class="chip" [class.on]="carries().has('mcp')" (click)="toggleCarries('mcp')"
+                title="blueprints that connect MCP servers">mcp</button>
+        <button class="chip" [class.on]="carries().has('keys')" (click)="toggleCarries('keys')"
+                title="blueprints that carry encrypted keys">keys</button>
+      </div>
+    }
+  </div>
 </div>
 
 <div class="layout" data-reveal>
@@ -18,8 +73,13 @@
         <p class="lock-hint">Build a blueprint once, deploy it to any container.</p>
         <button class="btn primary" (click)="newTemplate()">+ create one</button>
       </div>
+    } @else if (visible().length === 0) {
+      <div class="panel empty">
+        <p class="mono dim">No blueprint matches these filters.</p>
+        <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
+      </div>
     }
-    @for (t of templates.templates(); track t.id) {
+    @for (t of visible(); track t.id) {
       <div class="panel tmpl" [class.active]="draft().id === t.id" (click)="edit(t)">
         <div class="panel-h">
           <span class="nm mono">{{ t.name }}</span>
@@ -30,6 +90,7 @@
           <div class="role dim">{{ t.description || '—' }}</div>
           <div class="model mono faint">{{ t.provider || 'auto' }} / {{ t.model || '—' }}</div>
           <div class="chips">
+            <span class="chip info">{{ t.category }}</span>
             <span class="chip">{{ t.skills.length }} skills</span>
             @if (t.mcpServers.length) { <span class="chip info">{{ t.mcpServers.length }} mcp</span> }
             @if (t.secrets.length) { <span class="chip on">{{ t.secrets.length }} keys</span> }

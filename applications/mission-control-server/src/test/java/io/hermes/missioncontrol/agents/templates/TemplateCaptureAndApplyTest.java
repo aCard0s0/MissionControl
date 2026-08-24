@@ -99,6 +99,14 @@ class TemplateCaptureAndApplyTest {
   }
 
   @Test
+  void aCaptureFilesItselfUnderCapturedSoSnapshotsGroupWithoutBeingNamed() {
+    agentIs(agent("scout", List.of(), List.of()));
+    setupIs(List.of());
+
+    assertEquals("captured", service.captureFromAgent(HOST, CONTAINER, "scout", "ops").category());
+  }
+
+  @Test
   void aCaptureIsNamedAfterTheAgentWhenTheOperatorGivesNoName() {
     agentIs(agent("scout", List.of(), List.of()));
     setupIs(List.of());
@@ -396,7 +404,7 @@ class TemplateCaptureAndApplyTest {
   private static ProfileTemplate template(java.util.function.Consumer<Fields> tweak) {
     Fields fields = new Fields();
     tweak.accept(fields);
-    return new ProfileTemplate("pt-1", "ops", "desc", fields.provider, fields.model, fields.baseUrl,
+    return new ProfileTemplate("pt-1", "ops", "desc", "ops", fields.provider, fields.model, fields.baseUrl,
         "/work", fields.soul, fields.memory, fields.skills, fields.mcpServers, fields.secrets, 1L, 1L);
   }
 
@@ -412,7 +420,7 @@ class TemplateCaptureAndApplyTest {
   }
 
   private static UpsertProfileTemplateRequest upsert(List<SecretInput> secrets) {
-    return new UpsertProfileTemplateRequest("ops", "desc", "anthropic", "claude-opus-5", "",
+    return new UpsertProfileTemplateRequest("ops", "desc", "ops", "anthropic", "claude-opus-5", "",
         "/work", "soul", "memory", List.of(), List.of(), secrets);
   }
 }

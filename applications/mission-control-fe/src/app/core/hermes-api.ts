@@ -4,6 +4,7 @@ import { ContainersApi } from './api/containers-api';
 import { HostsApi } from './api/hosts-api';
 import { ApiHttp } from './api/http';
 import { McpCatalogApi } from './api/mcp-catalog-api';
+import { PromptsApi } from './api/prompts-api';
 import { ProvidersApi } from './api/providers-api';
 import { ServerApi } from './api/server-api';
 import { TemplatesApi } from './api/templates-api';
@@ -27,6 +28,7 @@ export class HermesApi {
   readonly containers: ContainersApi;
   readonly agents: AgentsApi;
   readonly mcp: McpCatalogApi;
+  readonly prompts: PromptsApi;
   readonly providers: ProvidersApi;
   readonly templates: TemplatesApi;
   readonly board: BoardApi;
@@ -40,6 +42,7 @@ export class HermesApi {
     this.containers = new ContainersApi(this.http);
     this.agents = new AgentsApi(this.http);
     this.mcp = new McpCatalogApi(this.http);
+    this.prompts = new PromptsApi(this.http);
     this.providers = new ProvidersApi(this.http);
     this.templates = new TemplatesApi(this.http);
     this.board = new BoardApi(this.http);

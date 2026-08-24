@@ -14,7 +14,8 @@ import { TestFixture, el, press, type } from '../testing/dom';
 import { catalogServer as sharedCatalogServer } from '../testing/models';
 
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 't-1', name: 'ops-sre', description: '', provider: 'anthropic', model: 'claude-opus-5',
+  id: 't-1', name: 'ops-sre', description: '', category: 'ops', provider: 'anthropic',
+  model: 'claude-opus-5',
   baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
   secrets: [], createdAt: 1, updatedAt: 1, ...patch,
 });
@@ -34,6 +35,7 @@ const storeStub = (templates: ProfileTemplate[] = [], catalog: McpCatalogServer[
   },
   templates: {
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
+    categories: signal([...new Set(templates.map(t => t.category).filter(Boolean))].sort()),
     save: vi.fn().mockResolvedValue('t-new'),
   },
 });

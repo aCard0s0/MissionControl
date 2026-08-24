@@ -27,6 +27,8 @@ export interface ProfileDraft {
   id: string | null;
   name: string;
   description: string;
+  /** what the Blueprints page files and filters it under; blank means `general` */
+  category: string;
   /** a provider *option* (`ollama: <name>`), flattened on save */
   provider: string;
   model: string;
@@ -74,6 +76,7 @@ export function newProfileDraft(): ProfileDraft {
     id: null,
     name: '',
     description: '',
+    category: '',
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
     baseUrl: '',
@@ -99,6 +102,7 @@ export function profileDraftFrom(template: ProfileTemplate, providerOption: stri
     id: template.id,
     name: template.name,
     description: template.description,
+    category: template.category,
     provider: providerOption,
     model: template.model,
     baseUrl: template.baseUrl,
@@ -125,6 +129,7 @@ export function profileDraftToInput(
   return {
     name: draft.name.trim(),
     description: draft.description.trim(),
+    category: draft.category.trim(),
     provider: providerNameOf(draft.provider),
     model: draft.model.trim(),
     baseUrl: draft.baseUrl.trim() || resolved?.baseUrl || '',

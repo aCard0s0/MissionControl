@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS profile_templates (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL UNIQUE,
   description TEXT,
+  category    TEXT,   -- added after this table shipped; see SchemaUpgrades
   provider    TEXT,
   model       TEXT,
   base_url    TEXT,
@@ -115,3 +116,25 @@ CREATE TABLE IF NOT EXISTS mcp_agent_links (
 );
 
 CREATE INDEX IF NOT EXISTS idx_mcp_agent_links_server ON mcp_agent_links (server_id);
+
+-- The prompt library: dashboard-owned text an operator keeps for later, with a
+-- category, notes and tags. Nothing inside a Hermes container reads it.
+CREATE TABLE IF NOT EXISTS prompts (
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  category   TEXT NOT NULL,
+  notes      TEXT,
+  tags       TEXT,   -- JSON array of strings
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts (category);
+
+-- Records that the sample prompt has already been seeded, so one an operator
+-- deleted does not come back on the next boot.
+CREATE TABLE IF NOT EXISTS prompt_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);

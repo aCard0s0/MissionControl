@@ -15,6 +15,7 @@ import io.hermes.missioncontrol.secrets.StoredSecret;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -42,6 +43,11 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ProfileTemplateService {
+
+  /** Where a blueprint lands when it was not filed by hand. */
+  static final String DEFAULT_CATEGORY = "general";
+  /** Snapshots of a live agent file themselves, so they group without being named. */
+  static final String CAPTURED_CATEGORY = "captured";
 
   /** The one env-key rule, shared with the two other places that check it. */
   private static final Pattern ENV_KEY = Pattern.compile(EnvEntry.KEY_PATTERN);
@@ -165,7 +171,7 @@ public class ProfileTemplateService {
     String name = uniqueName((templateName == null || templateName.isBlank())
         ? agentName + "-template" : templateName);
     ProfileTemplate template = new ProfileTemplate(
-        newId(), name, "Captured from " + agentName,
+        newId(), name, "Captured from " + agentName, CAPTURED_CATEGORY,
         agent.provider(), agent.model(), "", agent.cwd(),
         agent.soul(), agent.memoryMd(), skills, mcp, captured, now, now);
     repository.insert(template);
@@ -174,10 +180,19 @@ public class ProfileTemplateService {
 
   // ── record assembly ────────────────────────────────────────────────────────
 
+  /**
+   * Blank becomes {@link #DEFAULT_CATEGORY}, and the value is folded to lower case — the same
+   * rule the prompt library uses, and for the same reason: the page builds its filter chips
+   * from the stored values, so {@code Ops} and {@code ops} must not become two chips.
+   */
+  private static String category(String raw) {
+    return raw == null || raw.isBlank() ? DEFAULT_CATEGORY : raw.trim().toLowerCase(Locale.ROOT);
+  }
+
   private ProfileTemplate build(
       String id, UpsertProfileTemplateRequest r, ProfileTemplate existing, long created, long updated) {
     return new ProfileTemplate(
-        id, r.name(), nz(r.description()), nz(r.provider()), nz(r.model()),
+        id, r.name(), nz(r.description()), category(r.category()), nz(r.provider()), nz(r.model()),
         nz(r.baseUrl()), nz(r.cwd()), nz(r.soul()), nz(r.memory()),
         nz(r.skills()), snapshots.materialize(r.mcpServers(), existing),
         storedSecrets(r.secrets(), existing), created, updated);
@@ -231,7 +246,7 @@ public class ProfileTemplateService {
         .toList();
     List<McpServerSpec> mcp = t.mcpServers().stream().map(TemplateSecrets::redacted).toList();
     return new ProfileTemplateDto(
-        t.id(), t.name(), t.description(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
+        t.id(), t.name(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
         t.soul(), t.memory(), t.skills(), mcp, refs, t.createdAt(), t.updatedAt());
   }
 

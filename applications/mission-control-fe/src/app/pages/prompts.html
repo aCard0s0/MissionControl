@@ -1,0 +1,120 @@
+<div class="page-head" data-reveal>
+  <div>
+    <div class="crumb mono">GLOBAL LIBRARY</div>
+    <h2>Prompts</h2>
+  </div>
+  <div class="head-stats mono">
+    <span>{{ visible().length }}/{{ prompts.prompts().length }} prompts</span>
+  </div>
+  <div class="view-toggle mono" role="group" aria-label="prompt view">
+    <button class="chip" [class.on]="view() === 'compact'" (click)="setView('compact')"
+            title="one row each, bodies closed">compact</button>
+    <button class="chip" [class.on]="view() === 'expanded'" (click)="setView('expanded')"
+            title="every body open">expanded</button>
+  </div>
+  <button class="btn primary" (click)="newPrompt()">+ new prompt</button>
+</div>
+
+<div class="filter mono" data-reveal>
+  <input class="input find" type="search" placeholder="search titles, bodies, notes, tags"
+         aria-label="search prompts"
+         [value]="query()" (input)="onSearch($any($event.target).value)" />
+  <span class="lbl">category</span>
+  <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
+  @for (c of prompts.categories(); track c) {
+    <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
+  }
+</div>
+
+@if (editorOpen()) {
+  <div class="panel editor" data-reveal>
+    <div class="panel-h">
+      {{ editId() ? 'EDIT PROMPT' : 'NEW PROMPT' }}
+      <span class="spacer"></span>
+      <span class="faint">{{ editId() ?? 'unsaved' }}</span>
+    </div>
+    <div class="panel-b">
+      <div class="row">
+        <div class="field">
+          <label>title</label>
+          <input class="input" [(ngModel)]="fTitle" placeholder="Triage an unhealthy container" />
+        </div>
+        <div class="field">
+          <label>category</label>
+          <input class="input" [(ngModel)]="fCategory" list="mc-prompt-categories" placeholder="general" />
+          <datalist id="mc-prompt-categories">
+            @for (c of prompts.categories(); track c) { <option [value]="c"></option> }
+          </datalist>
+        </div>
+      </div>
+      <div class="field">
+        <label>tags</label>
+        <input class="input" [(ngModel)]="fTags" placeholder="ops, triage" />
+      </div>
+      <div class="field">
+        <label>notes</label>
+        <textarea class="input notes" rows="2" [(ngModel)]="fNotes"
+                  placeholder="when to reach for this, and what to change before you send it"></textarea>
+      </div>
+      <div class="field">
+        <label>prompt</label>
+        <textarea class="input body" rows="12" [(ngModel)]="fBody"
+                  placeholder="the text you want to keep"></textarea>
+      </div>
+      <p class="lock-hint">
+        held by the dashboard only — nothing inside a hermes container reads this library
+      </p>
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button class="btn" (click)="cancel()">cancel</button>
+        <button class="btn primary" [disabled]="!canSave()" (click)="save()">
+          {{ saving() ? 'saving…' : 'save prompt' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<div class="list" data-reveal>
+  @for (p of visible(); track p.id) {
+    <div class="panel prompt" [class.open]="showBody(p)">
+      <div class="panel-h">
+        <button class="disc" (click)="toggleOpen(p)" [attr.aria-expanded]="showBody(p)"
+                [title]="showBody(p) ? 'close this prompt' : 'read this prompt'">
+          {{ showBody(p) ? '▾' : '▸' }}
+        </button>
+        <span class="title">{{ p.title }}</span>
+        <span class="chip info">{{ p.category }}</span>
+        @for (t of p.tags; track t) { <span class="chip off">{{ t }}</span> }
+        <span class="spacer"></span>
+        <span class="stamp faint">{{ ago(p.updatedAt) }}</span>
+        <button class="btn sm ghost" (click)="copy(p)" title="copy the prompt body">
+          {{ copied() === p.id ? 'copied' : 'copy' }}
+        </button>
+        <button class="btn sm ghost" (click)="edit(p)">edit</button>
+        <button class="btn sm danger ghost" (click)="remove(p)">delete</button>
+      </div>
+      @if (showBody(p)) {
+        <div class="panel-b">
+          @if (p.notes) { <p class="notes dim">{{ p.notes }}</p> }
+          <pre class="body mono">{{ p.body }}</pre>
+        </div>
+      } @else {
+        <div class="panel-b preview">
+          <p class="mono faint">{{ preview(p) }}</p>
+        </div>
+      }
+    </div>
+  } @empty {
+    <div class="panel empty">
+      @if (prompts.prompts().length) {
+        <p class="mono dim">No prompt matches this search.</p>
+        <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
+      } @else {
+        <p class="mono dim">The library is empty.</p>
+        <p class="lock-hint">Save a prompt once, find it again by title, category or tag.</p>
+        <button class="btn primary" (click)="newPrompt()">+ create one</button>
+      }
+    </div>
+  }
+</div>

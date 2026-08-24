@@ -16,6 +16,7 @@ import { JobStore } from '../core/store/job-store';
 import { LiveSync } from '../core/store/live-sync';
 import { LogStore } from '../core/store/log-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { PromptStore } from '../core/store/prompt-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { StoreContext } from '../core/store/store-context';
 import { TemplateStore } from '../core/store/template-store';
@@ -118,6 +119,7 @@ export const storeSlices = () => {
     get skills() { return TestBed.inject(AgentSkillStore); },
     get agentMcp() { return TestBed.inject(AgentMcpStore); },
     get catalog() { return TestBed.inject(McpCatalogStore); },
+    get prompts() { return TestBed.inject(PromptStore); },
     get providers() { return TestBed.inject(ProviderStore); },
     get setup() { return TestBed.inject(AgentSetupStore); },
     get templates() { return TestBed.inject(TemplateStore); },

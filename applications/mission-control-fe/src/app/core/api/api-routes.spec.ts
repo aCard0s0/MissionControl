@@ -308,6 +308,20 @@ const cases: Record<string, Case> = {
     body: { hostId: 'dh-local', containerId: 'c-1', name: 'atlas' },
   },
 
+  // ── prompt library ─────────────────────────────────────────────────────
+  'prompts.list': { call: a => a.prompts.list(), method: 'GET', url: '/api/prompts' },
+  'prompts.create': {
+    call: a => a.prompts.create({ title: 'Triage' } as never), method: 'POST',
+    url: '/api/prompts', body: { title: 'Triage' },
+  },
+  'prompts.update': {
+    call: a => a.prompts.update('p 1', { title: 'Triage' } as never), method: 'PUT',
+    url: '/api/prompts/p%201', body: { title: 'Triage' },
+  },
+  'prompts.remove': {
+    call: a => a.prompts.remove('p-1'), method: 'DELETE', url: '/api/prompts/p-1',
+  },
+
   // ── board ──────────────────────────────────────────────────────────────
   'board.tasks': { call: a => a.board.tasks(), method: 'GET', url: '/api/board/tasks' },
   'board.moveTask': {
