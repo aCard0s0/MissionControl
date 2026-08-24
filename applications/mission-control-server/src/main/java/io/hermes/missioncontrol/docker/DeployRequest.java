@@ -13,6 +13,8 @@ import java.util.List;
  */
 public record DeployRequest(
     @NotBlank String hostId,
+    // Docker's rule for a container name, which coincides with the profile-name rule
+    // today and is free to stop doing so — not ProfileSpec.NAME_PATTERN
     @NotBlank @Pattern(regexp = "[a-zA-Z0-9][a-zA-Z0-9_.-]*", message = "invalid container name") String name,
     @Pattern(regexp = "|[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", message = "invalid image tag") String version,
     @Size(max = 50) List<@Pattern(

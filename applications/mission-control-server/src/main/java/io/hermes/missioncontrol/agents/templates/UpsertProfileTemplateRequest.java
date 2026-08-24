@@ -8,6 +8,8 @@ import java.util.List;
 
 /** Create/update body for a profile template. */
 public record UpsertProfileTemplateRequest(
+    // deliberately its own expression, not ProfileSpec.NAME_PATTERN: a template is a
+    // dashboard-owned record and its name never becomes a path inside a container
     @NotBlank @Pattern(
         regexp = "[a-zA-Z0-9][a-zA-Z0-9_.-]*",
         message = "invalid template name")
