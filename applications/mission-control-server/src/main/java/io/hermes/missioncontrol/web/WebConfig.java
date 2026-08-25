@@ -1,6 +1,8 @@
 package io.hermes.missioncontrol.web;
 
 import java.io.IOException;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 import org.springframework.lang.NonNull;
@@ -16,6 +18,12 @@ import org.springframework.web.servlet.resource.PathResourceResolver;
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+
+  private final List<String> corsOrigins;
+
+  public WebConfig(@Value("${mc.cors-origins}") List<String> corsOrigins) {
+    this.corsOrigins = corsOrigins;
+  }
 
   @Override
   public void addResourceHandlers(ResourceHandlerRegistry registry) {
@@ -65,11 +73,28 @@ public class WebConfig implements WebMvcConfigurer {
     return shell.exists() && shell.isReadable() ? shell : null;
   }
 
+  /**
+   * The allowlist is configuration, not a dev-only constant.
+   *
+   * <p>This block used to hardcode the two {@code ng serve} origins on the reasoning that
+   * "the combined image is same-origin, so CORS does not apply in production". That is the
+   * trap. Spring's CORS processor rejects any request carrying an unlisted {@code Origin}
+   * with a bare 403 before the handler runs, and per the Fetch spec a browser attaches
+   * {@code Origin} to every request whose method is not GET or HEAD — <em>including
+   * same-origin ones</em>. So the deployed origin was not exempt, it was simply absent:
+   * navigation and GETs worked, and every POST/PUT/PATCH/DELETE 403'd. The symptom looks
+   * like a broken dashboard, not like a CORS allowlist.
+   *
+   * <p>Note this is the opposite default from {@link
+   * io.hermes.missioncontrol.terminal.TerminalWebSocketConfig#originGuard()}, which compares
+   * Origin against the Host header and so admits same-origin traffic on any deployment
+   * without being told about it. That endpoint hands out a shell, so it fails closed against
+   * a list it does not read; this one is ordinary API surface and is configured instead.
+   */
   @Override
   public void addCorsMappings(CorsRegistry registry) {
-    // dev only: ng serve runs on its own origin; the combined image is same-origin
     registry.addMapping("/**")
-        .allowedOrigins("http://localhost:4200", "http://localhost:4300")
+        .allowedOriginPatterns(corsOrigins.toArray(String[]::new))
         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE");
   }
 }
