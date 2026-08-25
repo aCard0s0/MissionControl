@@ -35,10 +35,12 @@ const storeStub = (containers: HermesContainer[]) => ({
   },
   ctx: {
     config: { apiBaseUrl: '', dockerSocket: '' },
+    toasts: signal<{ id: number; kind: 'ok' | 'error'; message: string; at: number }[]>([]),
     liveError: signal<string | null>(null),
     liveNotice: signal<string | null>(null),
     toast: vi.fn(),
     notify: vi.fn(),
+    dismiss: vi.fn(),
   },
   hosts: {
     overall: signal('connected'),
@@ -147,66 +149,25 @@ describe('App shell', () => {
     expect(el(fixture).querySelector('.ctx-pop')).toBeNull();
   });
 
-  it('shows a live notice and an error banner only while the store has one', () => {
+  it('keeps the standing-condition banner, whose place is the page and not the stack', () => {
     const store = storeStub([container('hermes-prod')]);
     const { fixture } = render(store);
     expect(el(fixture).querySelector('.live-notice')).toBeNull();
 
     store.liveSync.notice.set('reconnecting to the backend');
-    store.ctx.liveError.set('deploy failed: name already in use');
     fixture.detectChanges();
 
     expect(text(fixture)).toContain('reconnecting to the backend');
-    expect(el(fixture).querySelector('.live-notice.crit')?.textContent)
-      .toContain('deploy failed: name already in use');
   });
 
-  it('confirms a success separately from a failure, so neither erases the other', () => {
-    const store = storeStub([container('hermes-prod')]);
-    const { fixture } = render(store);
-
-    store.ctx.liveError.set('start failed: port bound');
-    store.ctx.liveNotice.set('container hermes-lab deployed');
-    fixture.detectChanges();
-
-    expect(el(fixture).querySelector('.live-notice.ok')?.textContent)
-      .toContain('container hermes-lab deployed');
-    expect(el(fixture).querySelector('.live-notice.crit')?.textContent)
-      .toContain('start failed: port bound');
-  });
-
-  it('carries a running operation on the shell, where leaving the page cannot lose it', () => {
+  it('hosts the notification stack, so an operation survives leaving the page', () => {
     const { fixture, activity } = render(storeStub([container('hermes-prod')]));
-    expect(el(fixture).querySelector('.live-notice.activity')).toBeNull();
+    expect(el(fixture).querySelector('mc-notifications .stack')).toBeNull();
 
-    const running = activity.begin('deploying ops-bot');
+    activity.begin('deploying ops-bot');
     fixture.detectChanges();
 
     expect(text(fixture)).toContain('deploying ops-bot');
-
-    activity.end(running);
-    fixture.detectChanges();
-    expect(el(fixture).querySelector('.live-notice.activity')).toBeNull();
-  });
-
-  it('ticks the elapsed time, so a slow deploy does not read as a stalled one', async () => {
-    const { fixture, activity } = render(storeStub([container('hermes-prod')]));
-    activity.begin('deploying ops-bot');
-    fixture.detectChanges();
-    expect(text(fixture)).toContain('deploying ops-bot · 0s');
-
-    await settle(fixture, 5_000);
-
-    expect(text(fixture)).toContain('deploying ops-bot · 5s');
-  });
-
-  it('lists every running operation at once', () => {
-    const { fixture, activity } = render(storeStub([container('hermes-prod')]));
-    activity.begin('deploying ops-bot');
-    activity.begin('starting hermes-lab');
-    fixture.detectChanges();
-
-    expect(el(fixture).querySelectorAll('.live-notice.activity .act').length).toBe(2);
   });
 
   it('opens the sidebar and closes it again from the scrim', () => {

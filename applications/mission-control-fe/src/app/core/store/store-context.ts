@@ -1,9 +1,23 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { MC_CONFIG, McRuntimeConfig } from '../app-config';
 import { errorMessage } from '../errors';
 import { HermesApi } from '../hermes-api';
 
 export type BackendStatus = 'connecting' | 'connected' | 'unreachable';
+
+/** A confirmation or a failure, as the notification stack shows it. */
+export type ToastKind = 'ok' | 'error';
+
+export interface Toast {
+  readonly id: number;
+  readonly kind: ToastKind;
+  readonly message: string;
+  /** When it was raised — the stack orders by this, so a toast keeps its slot. */
+  readonly at: number;
+}
+
+/** How long a toast stays before it withdraws itself. */
+const TOAST_MS = 6_000;
 
 /**
  * What every slice of the store shares: the runtime config, the backend client
@@ -18,34 +32,32 @@ export class StoreContext {
   /** Health of the Mission Control backend API. */
   readonly backendStatus = signal<BackendStatus>('connecting');
 
-  /** Transient error toast for a failed action. */
-  readonly liveError = signal<string | null>(null);
-
   /**
-   * Transient confirmation for an action that succeeded.
+   * Everything currently on the notification stack, oldest first.
    *
-   * <p>Separate from {@link liveError} rather than one channel with a severity,
-   * because the two do not queue against each other: a deploy that succeeds
-   * while an earlier failure is still on screen should not erase the reason the
-   * operator is still reading.
+   * <p>A queue rather than one signal per severity. Actions overlap — a deploy
+   * confirms while an earlier failure is still being read, two probes fail
+   * together — and a single slot per kind meant the newer message silently took
+   * the older one's place, and inherited what was left of its timer.
    */
-  readonly liveNotice = signal<string | null>(null);
+  readonly toasts = signal<readonly Toast[]>([]);
+
+  /** The newest failure still on screen, for callers that want only the words. */
+  readonly liveError = computed(() => this.newest('error'));
+
+  /** The newest confirmation still on screen. */
+  readonly liveNotice = computed(() => this.newest('ok'));
 
   readonly config: McRuntimeConfig = inject(MC_CONFIG);
 
-  private errorTimer: ReturnType<typeof setTimeout> | null = null;
-  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private nextToastId = 1;
 
   constructor() {
     this.api = new HermesApi(this.config.apiBaseUrl);
   }
 
   toast(message: string): void {
-    this.liveError.set(message);
-    // each message gets the full window: without cancelling, a second toast
-    // inherits the first one's remaining time and can vanish almost at once
-    if (this.errorTimer) clearTimeout(this.errorTimer);
-    this.errorTimer = setTimeout(() => this.liveError.set(null), 6_000);
+    this.push('error', message);
   }
 
   /**
@@ -57,9 +69,24 @@ export class StoreContext {
    * long enough to leave their own page confirm through this.
    */
   notify(message: string): void {
-    this.liveNotice.set(message);
-    if (this.noticeTimer) clearTimeout(this.noticeTimer);
-    this.noticeTimer = setTimeout(() => this.liveNotice.set(null), 6_000);
+    this.push('ok', message);
+  }
+
+  /** Takes one toast off the stack — its own timer, or the operator dismissing it. */
+  dismiss(id: number): void {
+    this.toasts.update(list => list.filter(t => t.id !== id));
+  }
+
+  /** Each toast carries its own timer, so a later one never shortens an earlier one. */
+  private push(kind: ToastKind, message: string): void {
+    const id = this.nextToastId++;
+    this.toasts.update(list => [...list, { id, kind, message, at: Date.now() }]);
+    setTimeout(() => this.dismiss(id), TOAST_MS);
+  }
+
+  private newest(kind: ToastKind): string | null {
+    const matching = this.toasts().filter(t => t.kind === kind);
+    return matching.length ? matching[matching.length - 1].message : null;
   }
 
   /**

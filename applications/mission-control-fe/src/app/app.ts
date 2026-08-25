@@ -2,15 +2,15 @@ import {
   ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal,
 } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { ActivityStore } from './core/store/activity-store';
 import { AgentStore } from './core/store/agent-store';
 import { ContainerStore } from './core/store/container-store';
 import { HostStore } from './core/store/host-store';
 import { LiveSync } from './core/store/live-sync';
 import { StoreContext } from './core/store/store-context';
+import { Notifications } from './shared/notifications';
 import { StatusDot } from './shared/status-dot';
 import { TerminalPanel } from './shared/terminal-panel';
-import { elapsed, uptime } from './core/format';
+import { uptime } from './core/format';
 
 const NAV = [
   { path: '/containers', label: 'Containers', exact: false },
@@ -30,13 +30,12 @@ const NAV = [
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusDot, TerminalPanel],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Notifications, StatusDot, TerminalPanel],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: { '[class.side-collapsed]': 'sideCollapsed()' },
 })
 export class App {
-  protected readonly activity = inject(ActivityStore);
   protected readonly agents = inject(AgentStore);
   protected readonly containers = inject(ContainerStore);
   protected readonly ctx = inject(StoreContext);
@@ -48,18 +47,6 @@ export class App {
   protected readonly uptime = uptime;
 
   protected readonly now = signal(new Date());
-
-  /**
-   * Elapsed for a running operation, recomputed off the header clock.
-   *
-   * <p>Reads `now()` so the strip ticks: {@link elapsed} alone is a plain
-   * function of `Date.now()`, which Angular has no reason to re-evaluate, and
-   * the counter would sit on the value it had when the deploy started.
-   */
-  protected elapsed(startedAt: number): string {
-    this.now();
-    return elapsed(startedAt);
-  }
   protected readonly pickerOpen = signal(false);
   /**
    * The narrow-viewport drawer. Transient by design: it closes on navigation, because it

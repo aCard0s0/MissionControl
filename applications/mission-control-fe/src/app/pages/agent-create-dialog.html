@@ -97,7 +97,7 @@
       <p class="lock-hint">equivalent CLI: <code>hermes profile create {{ name || 'my-agent' }}{{ cloneFrom ? ' --clone' : '' }}</code></p>
       @if (busy()) {
         <p class="lock-hint">the profile is created inside the container, not in this window —
-          close it and keep working; progress stays in the bar at the top of the page.</p>
+          close it and keep working; progress follows you in the top right.</p>
       }
       @if (failed()) {
         <p class="lock-hint crit">nothing was created — the reason is in the banner above. Your

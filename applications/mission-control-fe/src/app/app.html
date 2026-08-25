@@ -79,25 +79,14 @@
 </header>
 
 <main>
-  <!-- Runs above the router outlet, so an operation started on one page stays visible
-       from every other one. -->
-  @if (activity.active().length) {
-    <div class="live-notice info mono activity" role="status" aria-live="polite">
-      @for (a of activity.active(); track a.id) {
-        <span class="act"><span class="spin" aria-hidden="true"></span>{{ a.label }} · {{ elapsed(a.startedAt) }}</span>
-      }
-    </div>
-  }
+  <!-- Stays a banner: a backend that has gone away is a standing condition of the page, not
+       an event that happened once. Everything transient is on the notification stack. -->
   @if (liveSync.notice(); as notice) {
     <div class="live-notice mono">{{ notice }}</div>
   }
-  @if (ctx.liveNotice(); as ok) {
-    <div class="live-notice ok mono" role="status" aria-live="polite">{{ ok }}</div>
-  }
-  @if (ctx.liveError(); as err) {
-    <div class="live-notice crit mono" role="alert">{{ err }}</div>
-  }
   <router-outlet />
 </main>
+
+<mc-notifications />
 
 <mc-terminal-panel />

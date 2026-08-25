@@ -172,7 +172,7 @@
         </p>
         @if (deployBusy()) {
           <p class="lock-hint">the image pull and the create run on the host, not in this window —
-            close it and keep working; progress stays in the bar at the top of the page.</p>
+            close it and keep working; progress follows you in the top right.</p>
         }
         @if (deployFailed()) {
           <p class="lock-hint crit">no container was created — the reason is in the banner above.

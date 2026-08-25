@@ -37,7 +37,7 @@ const TEST_CONFIG: McRuntimeConfig = {
   apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
 };
 
-const specConfig = (): McRuntimeConfig =>
+export const specConfig = (): McRuntimeConfig =>
   typeof window !== 'undefined' && window.__MC_CONFIG__ ? runtimeConfig() : TEST_CONFIG;
 
 /** Replaces the backend of a built context. `api` is the one seam every slice
