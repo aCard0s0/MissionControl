@@ -1,8 +1,7 @@
 import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentMcpStore } from '../core/store/agent-mcp-store';
 import { AgentRemoval } from '../core/store/agent-removal';
@@ -87,11 +86,6 @@ const storeStub = (profile: AgentProfile | null) => {
 };
 
 const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas', tab?: string) => {
-  // a live paramMap, so a test can navigate to another profile the way the
-  // router does rather than tearing the page down
-  const route = new BehaviorSubject(convertToParamMap({ id: agentId }));
-  // ?tab= — how the overview links straight at one tab of a profile
-  const queryParams = new BehaviorSubject(convertToParamMap(tab ? { tab } : {}));
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
@@ -106,7 +100,6 @@ const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas', tab?: 
       { provide: McpCatalogStore, useValue: store.catalog },
       { provide: StoreContext, useValue: store.ctx },
       { provide: TemplateStore, useValue: store.templates },
-      { provide: ActivatedRoute, useValue: { paramMap: route, queryParamMap: queryParams } },
     ],
   });
   // the real router, with navigation recorded — RouterLink in these templates
@@ -114,8 +107,12 @@ const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas', tab?: 
   const router = TestBed.inject(Router);
   const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(AgentDetailPage);
+  // the router sets these as inputs (withComponentInputBinding), so a test setting
+  // them is doing exactly what a navigation does
+  fixture.componentRef.setInput('id', agentId);
+  if (tab) fixture.componentRef.setInput('tab', tab);
   fixture.detectChanges();
-  return { fixture, store, navigate, route, queryParams };
+  return { fixture, store, navigate };
 };
 
 const openTab = (fixture: TestFixture, name: string): void => {
@@ -152,10 +149,10 @@ describe('AgentDetailPage', () => {
   });
 
   it('follows a later link to another tab of the same profile', () => {
-    const { fixture, queryParams } = render(storeStub(agent()), 'a-atlas', 'mcp');
+    const { fixture } = render(storeStub(agent()), 'a-atlas', 'mcp');
 
     // the router reuses this component when only the query string changes
-    queryParams.next(convertToParamMap({ tab: 'skills' }));
+    fixture.componentRef.setInput('tab', 'skills');
     fixture.detectChanges();
 
     expect(el(fixture).querySelector('mc-agent-skills-panel')).not.toBeNull();
@@ -652,11 +649,11 @@ describe('AgentDetailPage activity', () => {
 /** Routes the open page at another profile, the way the router would. */
 const navigateTo = (
   store: ReturnType<typeof storeStub>,
-  route: { next(map: ReturnType<typeof convertToParamMap>): void },
+  fixture: { componentRef: { setInput(name: string, value: unknown): void } },
   profile: AgentProfile,
 ): void => {
   store.held.update(all => [...all, profile]);
-  route.next(convertToParamMap({ id: profile.id }));
+  fixture.componentRef.setInput('id', profile.id);
 };
 
 describe('AgentDetailPage against the poll', () => {
@@ -697,11 +694,11 @@ describe('AgentDetailPage against the poll', () => {
 
   it('resets the drafts outright when a different profile loads', async () => {
     const store = storeStub(agent());
-    const { fixture, route } = render(store);
+    const { fixture } = render(store);
     openTab(fixture, 'files');
     await edit(fixture, '# SOUL.md — my unsaved edit\n');
 
-    navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe', soul: '# SOUL.md — scribe\n' }));
+    navigateTo(store, fixture, agent({ id: 'a-scribe', name: 'scribe', soul: '# SOUL.md — scribe\n' }));
     await settle(fixture);
 
     // a different profile is a different file; the edit does not follow it
@@ -711,11 +708,11 @@ describe('AgentDetailPage against the poll', () => {
 
   it('re-reads the sessions of a profile that replaced the one being viewed', async () => {
     const store = storeStub(agent());
-    const { fixture, route } = render(store);
+    const { fixture } = render(store);
     openTab(fixture, 'sessions');
     await settle(fixture);
 
-    navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe' }));
+    navigateTo(store, fixture, agent({ id: 'a-scribe', name: 'scribe' }));
     await settle(fixture);
 
     expect(store.setup.sessions).toHaveBeenCalledWith('a-scribe');
@@ -726,10 +723,10 @@ describe('AgentDetailPage against the poll', () => {
     const store = storeStub(agent());
     store.setup.sessions.mockReturnValueOnce(new Promise(resolve => { land = resolve; }))
       .mockResolvedValue([]);
-    const { fixture, route } = render(store);
+    const { fixture } = render(store);
     openTab(fixture, 'sessions');
 
-    navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe' }));
+    navigateTo(store, fixture, agent({ id: 'a-scribe', name: 'scribe' }));
     await settle(fixture);
     land([session]);
     await settle(fixture);
@@ -784,12 +781,12 @@ describe('AgentDetailPage against the poll', () => {
     let land!: (value: boolean) => void;
     const store = storeStub(agent());
     store.agents.updateSoul.mockReturnValue(new Promise(resolve => { land = resolve; }));
-    const { fixture, route } = render(store);
+    const { fixture } = render(store);
     openTab(fixture, 'files');
     await edit(fixture, '# SOUL.md — edited\n');
     press(fixture, 'save');
 
-    navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe' }));
+    navigateTo(store, fixture, agent({ id: 'a-scribe', name: 'scribe' }));
     await settle(fixture);
     land(true);
     await settle(fixture);
@@ -799,11 +796,11 @@ describe('AgentDetailPage against the poll', () => {
 
   it('keeps polling the gateway log only for the profile still on screen', async () => {
     const store = storeStub(agent());
-    const { fixture, route } = render(store);
+    const { fixture } = render(store);
     openTab(fixture, 'activity');
     await settle(fixture);
 
-    navigateTo(store, route, agent({ id: 'a-scribe', name: 'scribe' }));
+    navigateTo(store, fixture, agent({ id: 'a-scribe', name: 'scribe' }));
     await settle(fixture, 6_000);
 
     const asked = store.agents.logTail.mock.calls.map(c => c[0]);

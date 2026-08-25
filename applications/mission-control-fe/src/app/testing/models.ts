@@ -16,7 +16,7 @@ import {
  */
 
 /** The image the fleet actually runs; update badges compare against it. */
-export const HERMES_IMAGE = 'nousresearch/hermes-agent';
+const HERMES_IMAGE = 'nousresearch/hermes-agent';
 
 export const container = (id: string, patch: Partial<HermesContainer> = {}): HermesContainer => ({
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',

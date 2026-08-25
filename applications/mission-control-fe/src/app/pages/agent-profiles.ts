@@ -175,7 +175,7 @@ export class AgentProfilesPage {
 /** The three things a blueprint can install, as the toggles name them. */
 export type Carries = 'skills' | 'mcp' | 'keys';
 
-export const CARRIES: readonly Carries[] = ['skills', 'mcp', 'keys'];
+const CARRIES: readonly Carries[] = ['skills', 'mcp', 'keys'];
 
 export function carried(t: ProfileTemplate, what: Carries): boolean {
   switch (what) {
@@ -188,7 +188,7 @@ export function carried(t: ProfileTemplate, what: Carries): boolean {
 /** Everything about a blueprint the search box looks through. Deliberately more
  *  than the card shows: an operator hunting the blueprint that carries a given
  *  skill or key knows that word, not the name someone filed it under. */
-export function haystack(t: ProfileTemplate): string {
+function haystack(t: ProfileTemplate): string {
   return [
     t.name, t.description, t.category, t.provider, t.model,
     ...t.skills,

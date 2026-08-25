@@ -1,5 +1,4 @@
 import { Directive, ElementRef, afterNextRender, inject } from '@angular/core';
-import gsap from 'gsap';
 import { reducedMotion } from '../core/motion';
 
 // Stagger index shared by all directives instantiated in the same render pass,
@@ -24,18 +23,24 @@ export class Reveal {
       queueMicrotask(() => { batch = 0; resetQueued = false; });
     }
 
+    // Hidden synchronously, because the element is in the DOM a frame before the
+    // animation below can measure it — without this it flashes at full opacity first.
     this.el.style.visibility = 'hidden';
     afterNextRender(() => {
-      const tween = gsap.fromTo(
-        this.el,
-        { autoAlpha: 0, y: 14 },
+      this.el.style.visibility = '';
+      // `fill: backwards` holds the first keyframe through the stagger delay, which is
+      // what the old library call needed a separate hidden state for. Nothing has to
+      // clear the properties afterwards either: a finished animation stops applying
+      // them on its own, where clearProps had to be asked for.
+      this.el.animate(
+        [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }],
         {
-          autoAlpha: 1, y: 0, duration: 0.5, ease: 'power3.out',
-          delay: index * 0.055, clearProps: 'visibility,opacity,transform',
+          duration: 500,
+          delay: index * 55,
+          easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+          fill: 'backwards',
         },
       );
-      // rAF can be throttled (hidden/embedded tabs) — never leave content invisible
-      setTimeout(() => { if (tween.progress() < 1) tween.progress(1); }, 1400 + index * 55);
     });
   }
 }
