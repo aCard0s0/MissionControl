@@ -91,8 +91,8 @@ class ModelProviderServiceOllamaTest {
 
     assertEquals("error", provider.status());
     assertNull(provider.version());
-    assertEquals("ollama not reachable — check the address and that the server is running",
-        provider.detail());
+    assertEquals("ollama not reachable — check the address and that the server is running "
+        + "(ollama returned HTTP 500)", provider.detail());
   }
 
   @Test
@@ -103,6 +103,9 @@ class ModelProviderServiceOllamaTest {
     List<ModelProviderDto> providers = service.list();
 
     assertEquals("error", providers.getFirst().status());
+    // the detail used to stop at generic advice; it now names why the connect failed
+    assertTrue(providers.getFirst().detail().contains("refused")
+        || providers.getFirst().detail().contains("timed out"), providers.getFirst().detail());
   }
 
   @Test

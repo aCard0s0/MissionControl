@@ -5,6 +5,7 @@ import io.hermes.missioncontrol.docker.DaemonInfo;
 import io.hermes.missioncontrol.docker.DockerClients;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.errors.ConnectionFailure;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostRepository.HostRow;
 import java.util.List;
@@ -157,10 +158,13 @@ public class HostService {
       fresh = new Probe("connected", info.engine(), info.apiVersion(), info.latencyMs(), null,
           System.currentTimeMillis());
     } catch (Exception e) {
-      log.warn("probe of {} ({}) failed: {}", row.id(), row.url(), e.toString());
+      String reason = ConnectionFailure.describe(e);
+      log.warn("probe of {} ({}) failed: {}", row.id(), row.url(), reason);
       String note = "local".equals(row.kind())
-          ? "docker socket not reachable — is /var/run/docker.sock mounted into the container?"
-          : "daemon not reachable — check the address, firewall, and that the API is exposed";
+          ? "docker socket not reachable — is /var/run/docker.sock mounted into the container? ("
+              + reason + ")"
+          : "daemon not reachable — check the address, firewall, and that the API is exposed ("
+              + reason + ")";
       fresh = new Probe("error", null, null, null, note, System.currentTimeMillis());
     }
     probeCache.put(row.id(), fresh);

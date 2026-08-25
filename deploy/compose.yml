@@ -100,6 +100,19 @@ services:
         # Serve must not advertise a backend that cannot answer yet: the first
         # request is what provisions the TLS cert, and it would 502.
         condition: service_healthy
+    # json-file is docker's default driver and it ships with NO size cap and NO
+    # rotation, so every container here grows a log file forever. That is a
+    # problem in proportion to how chatty the process is, and the sidecar is
+    # chatty by design: containerboot polls the daemon every 15s and tailscaled
+    # logs each POST to its local API ("localapi: [POST] /localapi/v0/debug").
+    # That single line is ~5.7k entries a day, permanently, on a container whose
+    # whole point is to stay up. Nothing is wrong when you see it — but nothing
+    # reclaims the disk either.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
       # `tailscale status` exits non-zero when the backend is down or logged
@@ -172,6 +185,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
   ollama:
@@ -186,6 +204,11 @@ services:
       - "${OLLAMA_BIND:-0.0.0.0}:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama-models:/root/.ollama
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ollama", "--version"]
