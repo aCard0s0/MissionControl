@@ -19,9 +19,9 @@ Both ship in **one container**: Spring Boot serves the Angular build and the API
 
 ```bash
 ./mc start --build      # build combined image + deploy behind tailscale (default)
-./mc start --ts=off     # plain docker on loopback — http://127.0.0.1:8080
+./mc start --ts=off     # no tailscale at all — http://127.0.0.1:8080
 ./mc start --local      # tailnet + a loopback port (bypasses the ACL — see the runbook)
-./mc start --ts=off --port=9000          # plain docker on a custom port
+./mc start --ts=off --port=9000          # …on a custom port
 ./mc status             # which flavor is running, where
 ./mc logs -f            # follow app logs
 ./mc ollama up          # optional local model runtime (not started by default)

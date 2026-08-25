@@ -18,7 +18,7 @@ mission-control/
 │   ├── acl.hujson                 the tailnet policy that guards the node
 │   └── tailscale/                 mounted as /config — serve-https.json, serve-funnel.json
 ├── docs/                          this documentation
-├── mc                             manager script — build + deploy (tailscale or plain docker) + ollama
+├── mc                             manager script — build + deploy (tailnet or plain) + ollama
 ├── Dockerfile                     combined image (FE + BE, one container)
 └── pom.xml                        maven aggregator
 ```

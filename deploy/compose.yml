@@ -136,7 +136,7 @@ services:
       # dashboard has no auth and mounts the docker socket, and a wildcard would
       # let any page on any tailnet node drive it from your browser.
       # The loopback entries cover ./mc start --local.
-      MC_CORS_ORIGINS: https://${TS_HOSTNAME:-mission-control}.${TS_TAILNET:?set TS_TAILNET in deploy/.env — your MagicDNS suffix, e.g. tailnet-name.ts.net},http://localhost:${LOCAL_PORT:-8080},http://127.0.0.1:${LOCAL_PORT:-8080}
+      MC_CORS_ORIGINS: https://${TS_HOSTNAME:-mission-control}.${TS_TAILNET:?set TS_TAILNET in deploy/.env — your MagicDNS suffix, e.g. tailnet-name.ts.net},http://localhost:${LOCAL_PORT:-8080},http://127.0.0.1:${LOCAL_PORT:-8080},http://${LOCAL_BIND:-127.0.0.1}:${LOCAL_PORT:-8080}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - mission-control-data:/data

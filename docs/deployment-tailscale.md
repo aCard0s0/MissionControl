@@ -60,13 +60,41 @@ chmod 600 deploy/.env
 
 Subsequent deploys are just `./mc start` (add `--build` to pick up code changes).
 
+### The two flavors are one service
+
+`--ts=off` is not a second deployment. It runs the **same** `mission-control` compose service
+and simply does not start the sidecar, so it inherits the healthcheck, `init`, `cpus`,
+`mem_limit`, `pids_limit` and — importantly — the same data volume.
+
+It used to be a separate `docker run`, and that copy had drifted: a different data volume (so
+switching flavors silently switched you to a different database), and no `mem_limit` at all,
+which matters more than it sounds. The Dockerfile pins `-XX:MaxRAMPercentage=50.0` against
+compose's 512m; with no cgroup limit the JVM reads the host's RAM instead:
+
+```
+compose  (mem_limit 512m)          MaxHeapSize =   256 MiB
+old --ts=off (no limit, 21 GiB host)  MaxHeapSize = 10992 MiB
+```
+
+`deploy/.env` is deliberately not read in this mode — the point of `--ts=off` is that it runs
+with no tailnet, so the file holding the auth key should not be needed or even opened. The
+tailscale-only interpolations get dummy values instead.
+
+`--no-socket` is gone. Compose merges `volumes:` by target path and cannot remove an entry,
+so making the docker socket optional would need its own inverted override file; it was not
+worth one. Use `--ts=off` on a host you trust, or put a restricted socket proxy in front.
+
+> **One-time note:** the old flavor's volume `mission-control-data` still exists on this host
+> with its own database, now unreferenced. Nothing reads it. Remove it when you are sure you
+> do not want it: `docker volume rm mission-control-data`.
+
 ### Flags
 
 | flag | effect |
 |---|---|
 | `--local` / `--no-local` | overrides `LOCAL_PORT_ENABLED`; appends `-f deploy/compose.local.yml` |
 | `--serve=https\|funnel` | overrides `TS_SERVE_MODE` for this invocation |
-| `--ts=off` | the other flavor entirely: plain `docker run` with a published port, no tailscale |
+| `--ts=off` | the same compose service with the sidecar not started, plus a published port — no tailnet needed |
 
 `--local` publishes `LOCAL_BIND:LOCAL_PORT` straight to the app container. That
 path does not pass through Serve, so it is not covered by the tailnet ACL and
@@ -118,7 +146,8 @@ docker compose -p mission-control -f deploy/compose.yml config | grep MC_CORS_OR
 
 A wildcard would let a page on *any* tailnet node make cross-origin calls to a dashboard
 that has no authentication and mounts the host docker socket. The loopback entries are there
-for `./mc start --local`; the plain `--ts=off` flavor gets its own list from `./mc`.
+for `./mc start --local`; `--ts=off` reuses them, passing `PORT`/`BIND_ADDRESS` through as
+`LOCAL_PORT`/`LOCAL_BIND`.
 
 `/ws/terminal` is deliberately not covered by this list — it compares `Origin` against the
 `Host` header instead, so it admits same-origin traffic on any deployment without being
