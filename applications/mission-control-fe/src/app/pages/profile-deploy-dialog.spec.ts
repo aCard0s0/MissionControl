@@ -7,7 +7,7 @@ import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import { HermesContainer, LlmProvider, ProfileTemplate } from '../core/models';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
-import { TestFixture, el, settle } from '../testing/dom';
+import { TestFixture, el, settle, text } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
 
 const llm: LlmProvider[] = [
@@ -100,7 +100,7 @@ describe('ProfileDeployDialog', () => {
     expect(host.deployedId).toBe('a-new');
   });
 
-  it('stays open when the deploy is refused', async () => {
+  it('stays open when the deploy is refused, and says the form is still there', async () => {
     const store = storeStub('c-1');
     store.templates.deploy.mockResolvedValue('');
     const { fixture, host } = render(store);
@@ -111,6 +111,39 @@ describe('ProfileDeployDialog', () => {
 
     expect(host.deployedId).toBeNull();
     expect(host.closes).toBe(0);
+    expect(text(fixture)).toContain('nothing was deployed');
+    expect(submit(fixture).disabled).toBe(false);
+  });
+
+  it('says the deploy runs on without it, and can be closed while it does', async () => {
+    const store = storeStub('c-1');
+    store.templates.deploy.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { fixture, host } = render(store);
+    await settle(fixture);
+
+    submit(fixture).click();
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain('close it and keep working');
+    el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.ghost')!.click();
+    expect(host.closes).toBe(1);
+  });
+
+  it('routes nobody anywhere when the dialog is gone before the deploy lands', async () => {
+    const store = storeStub('c-1');
+    let land = (_: string): void => { /* replaced below */ };
+    store.templates.deploy.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const { fixture, host } = render(store);
+    await settle(fixture);
+
+    submit(fixture).click();
+    fixture.detectChanges();
+
+    fixture.destroy();
+    land('a-new');
+    await Promise.resolve();
+
+    expect(host.deployedId).toBeNull();
   });
 
   it('will not send a second deploy while the first is in flight', async () => {

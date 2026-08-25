@@ -277,6 +277,32 @@ main {
     background: var(--red-soft);
     border-color: var(--red-line);
   }
+
+  &.ok {
+    color: var(--acc);
+    background: var(--acc-soft);
+    border-color: var(--acc-line);
+  }
+
+  &.info {
+    color: var(--cyan);
+    background: var(--cyan-soft);
+    border-color: var(--cyan-line);
+  }
+
+  // several operations can be in flight at once — they wrap rather than
+  // stretching the strip past the viewport
+  &.activity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 20px;
+  }
+
+  .act {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
 }
 
 // ── responsive ──────────────────────────────────────────────────────────────

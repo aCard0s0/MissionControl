@@ -267,6 +267,7 @@ a:hover { text-decoration: underline; }
   code { color: var(--cyan); background: var(--cyan-soft); padding: 1px 5px; border-radius: 3px; }
   &.ok   { color: var(--acc); }
   &.warn { color: var(--amber); }
+  &.crit { color: var(--red); }
 }
 
 // log level colors

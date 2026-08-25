@@ -380,6 +380,43 @@ describe('ContainersPage deploy', () => {
     expect(el(fixture).querySelector('.modal')).not.toBeNull();
     expect(field(fixture, 'container name')
       .querySelector<HTMLInputElement>('.input')!.value).toBe('hermes-staging');
+    expect(text(fixture)).toContain('no container was created');
+  });
+
+  it('can be closed while the deploy runs, which is minutes when the image is pulled', async () => {
+    const store = storeStub([]);
+    store.lifecycle.deploy.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { fixture } = render(store);
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    press(fixture, 'deploy');
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('close it and keep working');
+    press(fixture, 'close');
+
+    expect(el(fixture).querySelector('.modal')).toBeNull();
+  });
+
+  it('does not haul a closed-modal operator onto Overview when the deploy lands', async () => {
+    const store = storeStub([]);
+    let land = (_: string): void => { /* replaced below */ };
+    store.lifecycle.deploy.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const { fixture, router } = render(store);
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    press(fixture, 'deploy');
+    await settle(fixture);
+    press(fixture, 'close');
+
+    land('c-new');
+    await settle(fixture);
+
+    // the container is still adopted as the active one — it is the routing that is not forced
+    expect(store.containers.select).toHaveBeenCalledWith('c-new');
+    expect(router.navigate).not.toHaveBeenCalledWith(['/overview']);
   });
 
   it('will not deploy without a name', async () => {

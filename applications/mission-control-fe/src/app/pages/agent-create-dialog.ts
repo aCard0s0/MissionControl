@@ -1,7 +1,9 @@
 import {
-  ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked,
+  ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal,
+  untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivityStore } from '../core/store/activity-store';
 import { AgentSetupStore } from '../core/store/agent-setup-store';
 import { AgentStore } from '../core/store/agent-store';
 import { ProviderStore } from '../core/store/provider-store';
@@ -42,6 +44,16 @@ export class AgentCreateDialog {
   protected readonly templates = inject(TemplateStore);
   private readonly providers = inject(ProviderStore);
   private readonly setup = inject(AgentSetupStore);
+  private readonly activity = inject(ActivityStore);
+
+  protected readonly busy = signal(false);
+
+  /** Set when a create came back empty. The form stays put — this one collects a
+   *  provider key, and closing on failure made the operator type it again. */
+  protected readonly failed = signal(false);
+
+  /** True once this dialog is closed; the create it started runs on without it. */
+  private gone = false;
 
   /** The LLM registry plus one entry per registered ollama instance. */
   protected readonly providerChoices = computed(() =>
@@ -70,6 +82,7 @@ export class AgentCreateDialog {
     this.authProviders().find(p => /nous/i.test(p.label)) ?? null);
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => { this.gone = true; });
     void this.main.load(this.catalogFor(this.provider));
     // the container arrives with the input, which is bound after construction
     effect(() => {
@@ -163,7 +176,7 @@ export class AgentCreateDialog {
 
   protected async create(): Promise<void> {
     const name = this.name.trim().toLowerCase().replace(/\s+/g, '-');
-    if (!name || !this.main.model) return;
+    if (!name || !this.main.model || this.busy()) return;
     if (this.apiKeyRequired() && !this.apiKey.trim()) return;
     if (this.auxIncomplete()) return;
     const primary = resolveProviderOption(this.provider, this.providers.ollamaProviders());
@@ -171,7 +184,9 @@ export class AgentCreateDialog {
     const auxiliary = this.auxiliaryOverride();
     if (this.auxOverride && !auxiliary) return;   // named an ollama instance that vanished
 
-    const id = await this.agents.create({
+    this.busy.set(true);
+    this.failed.set(false);
+    const id = await this.activity.run(`creating ${name}`, () => this.agents.create({
       containerId: this.container().id,
       name,
       provider: primary.provider,
@@ -181,10 +196,17 @@ export class AgentCreateDialog {
       baseUrl: primary.baseUrl,
       fromTemplate: this.fromTemplate || undefined,
       auxiliary,
-    });
-    // the store has already reported why a failed create failed
+    }));
+
+    // Closed while the create was in flight: it finished on its own and the store has already
+    // said how it went, so there is nothing here left to route or to correct.
+    if (this.gone) return;
+
+    this.busy.set(false);
+    // the store has already reported why a failed create failed; this dialog only has to stay,
+    // because the operator's provider key is in a field that closing would empty
     if (id) this.created.emit(id);
-    else this.closed.emit();
+    else this.failed.set(true);
   }
 
   /** The auxiliary payload, or undefined when side tasks should follow the main

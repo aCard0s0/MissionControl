@@ -54,6 +54,40 @@ describe('ContainerLifecycle deploy', () => {
     expect(await lifecycle.deploy('hermes-lab', 'v1', [], 'dh-local')).toBe('');
     expect(ctx.liveError()).toBe('deploy failed: name already in use');
   });
+
+  it('confirms a deploy that worked — success used to say nothing at all', async () => {
+    const { lifecycle, ctx } = await loaded({ deploy: vi.fn().mockResolvedValue({ id: 'c-2' }) });
+
+    const deployed = lifecycle.deploy('hermes-lab', 'v1', [], 'dh-local');
+    await vi.advanceTimersByTimeAsync(600);
+    await deployed;
+
+    expect(ctx.liveNotice()).toBe('container hermes-lab deployed');
+  });
+
+  it('is visible as running for the whole deploy, including the image pull', async () => {
+    const { lifecycle, activity } = await loaded({
+      deploy: vi.fn().mockResolvedValue({ id: 'c-2' }),
+    });
+
+    const deployed = lifecycle.deploy('hermes-lab', 'v1', [], 'dh-local');
+    expect(activity.active().map(a => a.label)).toEqual(['deploying hermes-lab']);
+
+    await vi.advanceTimersByTimeAsync(600);
+    await deployed;
+
+    expect(activity.active()).toEqual([]);
+  });
+
+  it('stops advertising a deploy that failed', async () => {
+    const { lifecycle, activity } = await loaded({
+      deploy: vi.fn().mockRejectedValue(new Error('name already in use')),
+    });
+
+    await lifecycle.deploy('hermes-lab', 'v1', [], 'dh-local');
+
+    expect(activity.active()).toEqual([]);
+  });
 });
 
 describe('ContainerLifecycle start and stop', () => {
@@ -105,6 +139,43 @@ describe('ContainerLifecycle start and stop', () => {
 
     expect(start).not.toHaveBeenCalled();
     expect(ctx.liveError()).toBe('container is no longer available');
+  });
+
+  it('tracks the start on the shell, so leaving the page does not lose it', async () => {
+    const start = vi.fn().mockResolvedValue(undefined);
+    const { lifecycle, activity, ctx } = await loaded({ start });
+
+    lifecycle.setStatus('c-1', 'running');
+    expect(activity.active().map(a => a.label)).toEqual(['starting hermes-prod']);
+
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(activity.active()).toEqual([]);
+    expect(ctx.liveNotice()).toBe('hermes-prod started');
+  });
+
+  it('names a stop in the words a stop deserves', async () => {
+    const { lifecycle, activity, ctx } = await loaded({
+      stop: vi.fn().mockResolvedValue(undefined),
+    });
+
+    lifecycle.setStatus('c-1', 'stopped');
+    expect(activity.active().map(a => a.label)).toEqual(['stopping hermes-prod']);
+
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(ctx.liveNotice()).toBe('hermes-prod stopped');
+  });
+
+  it('clears the entry when the daemon refuses, rather than showing it forever', async () => {
+    const { lifecycle, activity } = await loaded({
+      start: vi.fn().mockRejectedValue(new Error('port bound')),
+    });
+
+    lifecycle.setStatus('c-1', 'running');
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(activity.active()).toEqual([]);
   });
 });
 

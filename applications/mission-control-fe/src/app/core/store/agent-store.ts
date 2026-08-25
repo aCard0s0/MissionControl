@@ -127,6 +127,7 @@ export class AgentStore {
         fromTemplateId: request.fromTemplate || undefined,
         auxiliary: request.auxiliary,
       });
+      this.ctx.notify(`profile ${request.name} created`);
       return this.adopt(created);
     } catch (e) {
       this.ctx.toastFailure('create profile', e);

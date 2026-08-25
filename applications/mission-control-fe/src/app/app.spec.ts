@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
+import { ActivityStore } from './core/store/activity-store';
 import { AgentStore } from './core/store/agent-store';
 import { ContainerStore } from './core/store/container-store';
 import { HostStore } from './core/store/host-store';
@@ -35,7 +36,9 @@ const storeStub = (containers: HermesContainer[]) => ({
   ctx: {
     config: { apiBaseUrl: '', dockerSocket: '' },
     liveError: signal<string | null>(null),
+    liveNotice: signal<string | null>(null),
     toast: vi.fn(),
+    notify: vi.fn(),
   },
   hosts: {
     overall: signal('connected'),
@@ -55,7 +58,8 @@ const render = (store: ReturnType<typeof storeStub>) => {
   });
   const fixture = TestBed.createComponent(App);
   fixture.detectChanges();
-  return { fixture, store };
+  // the real one: it holds no dependencies, and a stub could not prove the strip ticks
+  return { fixture, store, activity: TestBed.inject(ActivityStore) };
 };
 
 describe('App shell', () => {
@@ -155,6 +159,54 @@ describe('App shell', () => {
     expect(text(fixture)).toContain('reconnecting to the backend');
     expect(el(fixture).querySelector('.live-notice.crit')?.textContent)
       .toContain('deploy failed: name already in use');
+  });
+
+  it('confirms a success separately from a failure, so neither erases the other', () => {
+    const store = storeStub([container('hermes-prod')]);
+    const { fixture } = render(store);
+
+    store.ctx.liveError.set('start failed: port bound');
+    store.ctx.liveNotice.set('container hermes-lab deployed');
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelector('.live-notice.ok')?.textContent)
+      .toContain('container hermes-lab deployed');
+    expect(el(fixture).querySelector('.live-notice.crit')?.textContent)
+      .toContain('start failed: port bound');
+  });
+
+  it('carries a running operation on the shell, where leaving the page cannot lose it', () => {
+    const { fixture, activity } = render(storeStub([container('hermes-prod')]));
+    expect(el(fixture).querySelector('.live-notice.activity')).toBeNull();
+
+    const running = activity.begin('deploying ops-bot');
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain('deploying ops-bot');
+
+    activity.end(running);
+    fixture.detectChanges();
+    expect(el(fixture).querySelector('.live-notice.activity')).toBeNull();
+  });
+
+  it('ticks the elapsed time, so a slow deploy does not read as a stalled one', async () => {
+    const { fixture, activity } = render(storeStub([container('hermes-prod')]));
+    activity.begin('deploying ops-bot');
+    fixture.detectChanges();
+    expect(text(fixture)).toContain('deploying ops-bot · 0s');
+
+    await settle(fixture, 5_000);
+
+    expect(text(fixture)).toContain('deploying ops-bot · 5s');
+  });
+
+  it('lists every running operation at once', () => {
+    const { fixture, activity } = render(storeStub([container('hermes-prod')]));
+    activity.begin('deploying ops-bot');
+    activity.begin('starting hermes-lab');
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelectorAll('.live-notice.activity .act').length).toBe(2);
   });
 
   it('opens the sidebar and closes it again from the scrim', () => {

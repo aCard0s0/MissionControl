@@ -71,6 +71,7 @@ export class TemplateStore {
       const created = await this.ctx.api.templates.deploy(templateId, {
         hostId: container.hostId, containerId, name,
       });
+      this.ctx.notify(`agent ${name} deployed from ${template.name}`);
       return this.agents.adopt(created);
     } catch (e) {
       this.ctx.toastFailure('deploy template', e);

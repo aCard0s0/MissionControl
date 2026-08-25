@@ -21,7 +21,20 @@ export class StoreContext {
   /** Transient error toast for a failed action. */
   readonly liveError = signal<string | null>(null);
 
+  /**
+   * Transient confirmation for an action that succeeded.
+   *
+   * <p>Separate from {@link liveError} rather than one channel with a severity,
+   * because the two do not queue against each other: a deploy that succeeds
+   * while an earlier failure is still on screen should not erase the reason the
+   * operator is still reading.
+   */
+  readonly liveNotice = signal<string | null>(null);
+
   readonly config: McRuntimeConfig = inject(MC_CONFIG);
+
+  private errorTimer: ReturnType<typeof setTimeout> | null = null;
+  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.api = new HermesApi(this.config.apiBaseUrl);
@@ -29,7 +42,24 @@ export class StoreContext {
 
   toast(message: string): void {
     this.liveError.set(message);
-    setTimeout(() => this.liveError.set(null), 6_000);
+    // each message gets the full window: without cancelling, a second toast
+    // inherits the first one's remaining time and can vanish almost at once
+    if (this.errorTimer) clearTimeout(this.errorTimer);
+    this.errorTimer = setTimeout(() => this.liveError.set(null), 6_000);
+  }
+
+  /**
+   * Confirms an action that worked.
+   *
+   * <p>Failure has always spoken here; success used to say nothing, which is
+   * only readable when the result is on screen already. It is not for a deploy
+   * the operator started and then navigated away from — so the actions that run
+   * long enough to leave their own page confirm through this.
+   */
+  notify(message: string): void {
+    this.liveNotice.set(message);
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => this.liveNotice.set(null), 6_000);
   }
 
   /**

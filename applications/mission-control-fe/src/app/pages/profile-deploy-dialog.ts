@@ -1,7 +1,8 @@
 import {
-  ChangeDetectionStrategy, Component, effect, inject, input, output, signal, untracked,
+  ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivityStore } from '../core/store/activity-store';
 import { ContainerStore } from '../core/store/container-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
@@ -32,12 +33,20 @@ export class ProfileDeployDialog {
   protected readonly containers = inject(ContainerStore);
   protected readonly providers = inject(ProviderStore);
   protected readonly templates = inject(TemplateStore);
+  private readonly activity = inject(ActivityStore);
   protected readonly busy = signal(false);
+
+  /** Set when a deploy came back empty, so the form stays and says why it is still here. */
+  protected readonly failed = signal(false);
+
+  /** True once this dialog is closed — the deploy it started runs on without it. */
+  private gone = false;
 
   protected containerId = '';
   protected name = '';
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => { this.gone = true; });
     // the template arrives with the input, which is bound after construction
     effect(() => {
       const template = this.template();
@@ -56,9 +65,17 @@ export class ProfileDeployDialog {
     if (!this.confirmMissingKey(template)) return;
 
     this.busy.set(true);
-    const id = await this.templates.deploy(template.id, this.containerId, name);
+    this.failed.set(false);
+    const id = await this.activity.run(`deploying ${name}`,
+      () => this.templates.deploy(template.id, this.containerId, name));
+
+    // Closed while the deploy was in flight: it finished on its own, the store has already
+    // said how it went, and this component is not on screen to route anyone anywhere.
+    if (this.gone) return;
+
     this.busy.set(false);
     if (id) this.deployed.emit(id);
+    else this.failed.set(true);
   }
 
   /** True to go ahead: either the key is there, or the operator accepted the risk. */

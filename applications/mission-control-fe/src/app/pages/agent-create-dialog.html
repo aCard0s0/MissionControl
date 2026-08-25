@@ -95,11 +95,22 @@
         </select>
       </div>
       <p class="lock-hint">equivalent CLI: <code>hermes profile create {{ name || 'my-agent' }}{{ cloneFrom ? ' --clone' : '' }}</code></p>
+      @if (busy()) {
+        <p class="lock-hint">the profile is created inside the container, not in this window —
+          close it and keep working; progress stays in the bar at the top of the page.</p>
+      }
+      @if (failed()) {
+        <p class="lock-hint crit">nothing was created — the reason is in the banner above. Your
+          entries, including the key, are still here.</p>
+      }
       <div class="modal-actions">
-        <button class="btn ghost" (click)="closed.emit()">cancel</button>
+        <button class="btn ghost" (click)="closed.emit()">{{ busy() ? 'close' : 'cancel' }}</button>
         <button class="btn primary"
-                [disabled]="!name.trim() || !main.model || (apiKeyRequired() && !apiKey.trim()) || auxIncomplete()"
-                (click)="create()">create profile</button>
+                [disabled]="busy() || !name.trim() || !main.model || (apiKeyRequired() && !apiKey.trim()) || auxIncomplete()"
+                (click)="create()">
+          @if (busy()) { <span class="spin" aria-hidden="true"></span> }
+          {{ busy() ? 'creating…' : 'create profile' }}
+        </button>
       </div>
     </div>
   </div>

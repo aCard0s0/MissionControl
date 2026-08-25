@@ -10,6 +10,20 @@ export function uptime(startedAt: number | null): string {
   return `${Math.floor(d / DAY)}d ${Math.floor((d % DAY) / HOUR)}h`;
 }
 
+/**
+ * Second-resolution elapsed, for an operation an operator is actively waiting on.
+ *
+ * Deliberately not {@link uptime}, which starts at minutes: a deploy reads as
+ * '0m' for its whole first minute, which is exactly when the operator is asking
+ * whether anything is happening at all.
+ */
+export function elapsed(since: number): string {
+  const d = Math.max(0, Date.now() - since);
+  return d < MIN
+    ? `${Math.floor(d / 1000)}s`
+    : `${Math.floor(d / MIN)}m ${Math.floor((d % MIN) / 1000)}s`;
+}
+
 export function ago(ts: number | null): string {
   if (!ts) return 'never';
   const d = Date.now() - ts;

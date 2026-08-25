@@ -54,6 +54,9 @@ export class ContainersPage {
   protected readonly tagsError = signal<string | null>(null);
   protected readonly deployBusy = signal(false);
 
+  /** Set when a deploy came back empty, so the modal stays and says why. */
+  protected readonly deployFailed = signal(false);
+
   protected readonly addingHost = signal(false);
   protected hostName = '';
   protected hostUrl = 'tcp://';
@@ -190,6 +193,7 @@ export class ContainersPage {
 
   protected openDeploy(): void {
     // never carry a stale host id into the modal — snap to a connected host
+    this.deployFailed.set(false);
     this.deployHost = this.connectedHosts()[0]?.id ?? '';
     this.deployTags.set([]);
     this.tagsError.set(null);
@@ -213,16 +217,23 @@ export class ContainersPage {
     if (!name || !host || host.status !== 'connected' || !this.deployVersion || this.deployBusy()) return;
     const profiles = normalizeSeedProfiles(this.deployProfiles);
     this.deployBusy.set(true);
+    this.deployFailed.set(false);
     const id = await this.lifecycle.deploy(name, this.deployVersion, profiles, this.deployHost);
     this.deployBusy.set(false);
-    if (id) {
-      this.deployOpen.set(false);
-      this.deployName = '';
-      this.deployProfiles = '';
-      this.deployTags.set([]);
-      this.containers.select(id);
-      this.router.navigate(['/overview']);
+    if (!id) {
+      this.deployFailed.set(true);
+      return;
     }
+    // Following the new container onto Overview is right for an operator who waited on the
+    // modal, and wrong for one who closed it and walked to another page — a pull can take
+    // minutes, and yanking them off whatever they went to do is not a reward for waiting.
+    const waiting = this.deployOpen();
+    this.deployOpen.set(false);
+    this.deployName = '';
+    this.deployProfiles = '';
+    this.deployTags.set([]);
+    this.containers.select(id);
+    if (waiting) this.router.navigate(['/overview']);
   }
 
   protected async confirmRemove(): Promise<void> {

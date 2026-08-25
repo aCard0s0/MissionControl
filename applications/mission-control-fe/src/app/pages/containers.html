@@ -130,7 +130,7 @@
 </p>
 
 @if (deployOpen()) {
-  <div class="scrim" (click)="deployBusy() ? null : deployOpen.set(false)">
+  <div class="scrim" (click)="deployOpen.set(false)">
     <div class="modal" (click)="$event.stopPropagation()">
       <div class="panel-h">DEPLOY HERMES CONTAINER</div>
       <div class="modal-b">
@@ -170,11 +170,22 @@
           The default profile is initialized automatically. Named profiles are created before deployment completes;
           configure their model credentials from the Agents page afterwards.
         </p>
+        @if (deployBusy()) {
+          <p class="lock-hint">the image pull and the create run on the host, not in this window —
+            close it and keep working; progress stays in the bar at the top of the page.</p>
+        }
+        @if (deployFailed()) {
+          <p class="lock-hint crit">no container was created — the reason is in the banner above.
+            Your entries are still here.</p>
+        }
         <div class="modal-actions">
-          <button class="btn ghost" [disabled]="deployBusy()" (click)="deployOpen.set(false)">cancel</button>
+          <button class="btn ghost" (click)="deployOpen.set(false)">{{ deployBusy() ? 'close' : 'cancel' }}</button>
           <button class="btn primary"
                   [disabled]="!deployName.trim() || !deployTags().length || tagsLoading() || deployBusy()"
-                  (click)="deploy()">{{ deployBusy() ? 'deploying…' : 'deploy' }}</button>
+                  (click)="deploy()">
+            @if (deployBusy()) { <span class="spin" aria-hidden="true"></span> }
+            {{ deployBusy() ? 'deploying…' : 'deploy' }}
+          </button>
         </div>
       </div>
     </div>
