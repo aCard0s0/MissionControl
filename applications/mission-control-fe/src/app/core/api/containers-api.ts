@@ -1,4 +1,5 @@
 import { ApiContainer, ApiImageTags, ApiLogLine, ApiStats } from './api-types';
+import { ContainerResources } from '../models';
 import { ApiHttp, seg } from './http';
 
 /** `/api/containers` and `/api/images` — Agent container inventory, telemetry
@@ -28,8 +29,14 @@ export class ContainersApi {
     return this.http.get(`/api/containers/${seg(hostId)}/${seg(id)}/logs?tail=${tail}${cursor}`);
   }
 
-  deploy(hostId: string, name: string, version: string, profiles: string[]): Promise<{ id: string }> {
-    return this.http.post('/api/containers', { hostId, name, version, profiles });
+  deploy(
+    hostId: string, name: string, version: string, profiles: string[],
+    resources: ContainerResources,
+  ): Promise<{ id: string }> {
+    return this.http.post('/api/containers', {
+      hostId, name, version, profiles,
+      memoryMb: resources.memoryMb, cpus: resources.cpus,
+    });
   }
 
   start(hostId: string, id: string): Promise<void> {

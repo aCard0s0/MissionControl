@@ -452,6 +452,17 @@ export interface TemplateSecret {
  * Dashboard-owned and container-independent; applied when deploying an agent.
  * Distinct from {@link AgentProfile}, which is a live agent instance.
  */
+/**
+ * The ceiling a deployed Hermes container runs under.
+ *
+ * <p>Defaults live in {@link HERMES_BASELINE}, which is the vendor's own
+ * recommendation rather than Docker's default of no limit at all.
+ */
+export interface ContainerResources {
+  memoryMb: number;
+  cpus: number;
+}
+
 export interface ProfileTemplate {
   id: string;
   name: string;

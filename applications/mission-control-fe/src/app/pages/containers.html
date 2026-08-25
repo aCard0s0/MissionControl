@@ -170,6 +170,37 @@
           The default profile is initialized automatically. Named profiles are created before deployment completes;
           configure their model credentials from the Agents page afterwards.
         </p>
+
+        <div class="field resources">
+          <label>resources — starts at what Hermes recommends</label>
+
+          <div class="res-row mono">
+            <span class="res-lbl">memory</span>
+            @for (mb of memoryPresets; track mb) {
+              <button class="chip" type="button" [class.on]="deployMemoryMb() === mb"
+                      (click)="deployMemoryMb.set(mb)">{{ formatMemory(mb) }}</button>
+            }
+          </div>
+
+          <div class="res-row mono">
+            <span class="res-lbl">cpu</span>
+            @for (n of cpuPresets; track n) {
+              <button class="chip" type="button" [class.on]="deployCpus() === n"
+                      (click)="deployCpus.set(n)">{{ n }}{{ n === 1 ? ' core' : ' cores' }}</button>
+            }
+          </div>
+
+          <!-- the recommendation is stated, not just applied: an operator raising it should
+               be able to see what they are moving away from -->
+          <p class="lock-hint" [class.warn]="memoryNote(deployMemoryMb())">
+            {{ memoryNote(deployMemoryMb())
+               ?? 'Hermes recommends 2–4 GB and 2 cores; 1 GB and 1 core is its stated minimum.' }}
+          </p>
+          <p class="lock-hint">
+            The data volume is not capped here — a local docker volume has no size of its own
+            and grows into the host filesystem. Hermes suggests keeping 2+ GB free for it.
+          </p>
+        </div>
         @if (deployBusy()) {
           <p class="lock-hint">the image pull and the create run on the host, not in this window —
             close it and keep working; progress follows you in the top right.</p>

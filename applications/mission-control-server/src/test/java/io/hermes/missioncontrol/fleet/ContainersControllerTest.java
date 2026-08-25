@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.docker.ContainerDto;
+import io.hermes.missioncontrol.docker.ContainerResources;
 import io.hermes.missioncontrol.docker.ContainerUpdateService;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -199,7 +200,8 @@ class ContainersControllerTest {
     verifyNoInteractions(docker);
 
     when(hosts.requireConnected("dh-local")).thenReturn(HOST);
-    when(docker.deploy(HOST, "scout", "v1", List.of("default"))).thenReturn("newid123");
+    when(docker.deploy(HOST, "scout", "v1", List.of("default"), ContainerResources.BASELINE))
+        .thenReturn("newid123");
 
     mvc.perform(post("/api/containers")
             .contentType(MediaType.APPLICATION_JSON)

@@ -1,6 +1,7 @@
 import { inject, Injectable } from '@angular/core';
+import { HERMES_BASELINE } from '../container-resources';
 import { isFloatingTag } from '../image-policy';
-import { ContainerStatus } from '../models';
+import { ContainerResources, ContainerStatus } from '../models';
 import { ActivityStore } from './activity-store';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';
@@ -19,10 +20,14 @@ export class ContainerLifecycle {
   private readonly activity = inject(ActivityStore);
 
   /** Deploys a container and resolves only after refreshed inventory contains it. */
-  async deploy(name: string, version: string, profileNames: string[], hostId = 'dh-local'): Promise<string> {
+  async deploy(
+    name: string, version: string, profileNames: string[], hostId = 'dh-local',
+    resources: ContainerResources = HERMES_BASELINE,
+  ): Promise<string> {
     return this.activity.run(`deploying ${name}`, async () => {
       try {
-        const r = await this.ctx.api.containers.deploy(hostId, name, version, profileNames);
+        const r = await this.ctx.api.containers.deploy(
+          hostId, name, version, profileNames, resources);
         await new Promise(resolve => setTimeout(resolve, 600));
         await this.containers.refresh();
         this.containers.select(r.id);

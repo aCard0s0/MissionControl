@@ -139,3 +139,35 @@
   gap: 8px;
   color: var(--acc);
 }
+
+// ── deploy: resource ceiling ────────────────────────────────────────────────
+.resources {
+  .res-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .res-lbl {
+    width: 54px;
+    flex: none;
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  // the presets are a choice, not a status, so they take the filter bar's pressable chip
+  .chip {
+    cursor: pointer;
+    background: var(--panel);
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+
+    &:hover { border-color: var(--faint); }
+    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+  }
+
+  .lock-hint { margin: 4px 0 0; }
+}

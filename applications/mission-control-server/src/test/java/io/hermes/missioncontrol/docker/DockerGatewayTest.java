@@ -115,7 +115,7 @@ class DockerGatewayTest {
     when(inspect.exec()).thenReturn(mock(InspectVolumeResponse.class));
 
     assertThrows(ResourceConflictException.class,
-        () -> gateway.deploy(HOST, "demo", "latest", List.of()));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
   }
 
   @Test
@@ -138,7 +138,7 @@ class DockerGatewayTest {
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
     assertThrows(RuntimeException.class,
-        () -> gateway.deploy(HOST, "demo", "latest", List.of("ops")));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of("ops"), ContainerResources.BASELINE));
     verify(removeVolume).exec();
   }
 
@@ -237,7 +237,7 @@ class DockerGatewayTest {
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
     assertThrows(RuntimeException.class,
-        () -> gateway.deploy(HOST, "demo", "latest", List.of()));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
 
     verify(removeMain).exec();
     verify(removeVolume).exec();
