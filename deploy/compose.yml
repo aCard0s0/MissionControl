@@ -1,9 +1,21 @@
 # Mission Control behind tailscale — reachable only from the tailnet.
 #
-# The mission-control container shares the tailscale container's network
-# namespace (network_mode: service:tailscale), so NO host ports are published:
-# the dashboard is invisible to the LAN and the internet. Tailscale serve
-# forwards tailnet TCP :80 to the app on 127.0.0.1:8080.
+# Shape (see docs/deployment-tailscale.md for the reasoning):
+#
+#   deploy/
+#     compose.yml           <- this file
+#     compose.local.yml     <- opt-in loopback host port, merged on top
+#     .env                  <- compose interpolation ONLY; gitignored
+#     .env.example
+#     acl.hujson            <- the tailnet policy that guards this node
+#     tailscale/            <- mounted as /config; a DIRECTORY, not one file
+#       serve-https.json
+#       serve-funnel.json
+#
+# The app publishes NO host port and has no route off the compose network. The
+# only way in is Tailscale Serve terminating TLS on :443. If the dashboard is
+# reachable any other way, the deployment is wrong — it mounts the host docker
+# socket and has no authentication of its own.
 #
 # An optional ollama service (profile "ollama") provides a local model runtime.
 # It is opt-in: './mc start' leaves it alone, './mc start --ollama=on' or
@@ -20,27 +32,81 @@
 #   ./mc start --build         # build hermes-mission-control:latest + compose up -d
 #   ./mc status                # tailscale health + the exact URL
 #   ./mc ollama pull llama3.2  # manage models in the ollama service
-#   open http://mission-control.<tailnet>.ts.net
+#   open https://mission-control.<tailnet>.ts.net
+
+# ./mc always passes -p mission-control; this is for a bare `docker compose -f`,
+# which would otherwise name the project after this directory ("deploy") and
+# quietly create a second, empty set of volumes.
+name: ${PROJECT_NAME:-mission-control}
 
 services:
   tailscale:
-    image: tailscale/tailscale:latest
-    hostname: mission-control            # becomes the MagicDNS name
+    # Pinned. `latest` moves under you and the sidecar contract (env var names,
+    # serve config schema) has changed across releases. Read what is running
+    # with `./mc status`, or:
+    #   docker compose -p mission-control -f deploy/compose.yml \
+    #     exec tailscale tailscale version
+    image: tailscale/tailscale:${TS_IMAGE_TAG:?set TS_IMAGE_TAG in deploy/.env, e.g. v1.98.4}
+    # Deliberately NO `hostname:` here. The MagicDNS name comes from TS_HOSTNAME
+    # below, which containerboot passes to `tailscale up --hostname`. Setting the
+    # container hostname to the same value ALSO registers it in docker's embedded
+    # DNS, where it collides with the `mission-control` service: the name then
+    # resolves to both containers, and Serve's proxy dials whichever comes back
+    # first. Half the requests hit the sidecar's own :8080, which nothing is
+    # listening on, and Serve answers 502 with no useful log line.
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:?set in .env}
+      # Stated explicitly rather than inherited from `hostname:` — the MagicDNS
+      # name is the user-facing URL and the ACL target.
+      TS_HOSTNAME: ${TS_HOSTNAME:-mission-control}
+      TS_AUTHKEY: ${TS_AUTHKEY:?set in deploy/.env}
+      # Without this the entrypoint re-runs `tailscale up` with the key on EVERY
+      # start. The node already has valid state in the volume, so re-auth can
+      # only ever fail: the day the key is rotated, revoked or expires, a
+      # container that was working stops starting.
+      TS_AUTH_ONCE: "true"
       TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /config/serve.json
-      TS_USERSPACE: "false"              # kernel networking via /dev/net/tun
+      # Userspace, not kernel networking. Kernel mode + network_mode:
+      # service:tailscale is LOOSER, not tighter — the app then listens inside
+      # the tailnet node's own namespace, so every tailnet peer can hit :8080
+      # directly and skip Serve (and any per-request identity it supplies).
+      # Userspace also drops /dev/net/tun, NET_ADMIN and NET_RAW entirely.
+      # Switch back only if the app must make OUTBOUND connections to other
+      # tailnet nodes; it does not.
+      TS_USERSPACE: "true"
+      # Required in userspace mode. Otherwise MagicDNS rewrites
+      # /etc/resolv.conf, the sidecar stops resolving `mission-control` on the
+      # compose network, and Serve fails with an error that looks nothing like
+      # a DNS error.
+      TS_ACCEPT_DNS: "false"
+      # One knob picks the posture — see tailscale/README.md. The directory
+      # mount below is what makes it switchable without editing this file.
+      TS_SERVE_CONFIG: /config/serve-${TS_SERVE_MODE:-https}.json
+      # Unauthenticated /healthz and /metrics on [::]:9002, reachable from the
+      # compose network only — never published.
+      TS_ENABLE_HEALTH_CHECK: "true"
+      # e.g. --advertise-tags=tag:server when the auth key is untagged. The node
+      # deployed today is UNTAGGED, so acl.hujson's tag:server rule does not
+      # match it and its key expires — see docs/deployment-tailscale.md.
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
     volumes:
       - tailscale-state:/var/lib/tailscale
-      - ./serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun
-    cap_add:
-      - NET_ADMIN
+      # A DIRECTORY, not ./tailscale/serve-https.json:/config/serve.json.
+      # Tailscale watches the parent directory for changes; a single-file bind
+      # mount is one inode that never fires an event, so serve edits are
+      # silently ignored until the container is recreated.
+      - ./tailscale:/config:ro
+    depends_on:
+      mission-control:
+        # Serve must not advertise a backend that cannot answer yet: the first
+        # request is what provisions the TLS cert, and it would 502.
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "tailscale", "status"]
+      # `tailscale status` exits non-zero when the backend is down or logged
+      # out, and the binary is guaranteed present. The /healthz endpoint above
+      # is for scrapers — Tailscale warns against driving restarts from it,
+      # since a transient tailnet blip would cycle the node.
+      test: ["CMD", "tailscale", "status", "--peers=false"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -48,21 +114,41 @@ services:
 
   mission-control:
     image: hermes-mission-control:latest
-    network_mode: "service:tailscale"    # shares the tailscale netns — no published ports
-    depends_on:
-      tailscale:
-        condition: service_healthy
+    # Its own network namespace. `expose` is the compose network only — never
+    # `ports:` here, that is the LAN and the tailnet ACL does not guard it. The
+    # opt-in loopback port lives in compose.local.yml.
+    #
+    # 8080 rather than a variable: tailscale/serve-*.json cannot read .env
+    # (containerboot substitutes ${TS_CERT_DOMAIN} and nothing else), so an app
+    # port that varies has to be edited in two files that drift. The knob you
+    # actually want is LOCAL_PORT, which is host-facing.
+    expose:
+      - "8080"
     environment:
       MC_CONTAINER_FILTER: hermes
       MC_SECRET_KEY: ${MC_SECRET_KEY:?set by ./mc}
       MC_SECRET_KEY_PREVIOUS: ${MC_SECRET_KEY_PREVIOUS:-}
+      # The origin this app is SERVED from has to be in its CORS allowlist.
+      # Spring answers 403 to any request with an unlisted Origin before the
+      # handler runs, and browsers attach Origin to every non-GET request —
+      # same-origin included — so leaving this at the dev default makes the page
+      # load and every button 403. Exact origins, not https://*.ts.net: the
+      # dashboard has no auth and mounts the docker socket, and a wildcard would
+      # let any page on any tailnet node drive it from your browser.
+      # The loopback entries cover ./mc start --local.
+      MC_CORS_ORIGINS: https://${TS_HOSTNAME:-mission-control}.${TS_TAILNET:?set TS_TAILNET in deploy/.env — your MagicDNS suffix, e.g. tailnet-name.ts.net},http://localhost:${LOCAL_PORT:-8080},http://127.0.0.1:${LOCAL_PORT:-8080}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - mission-control-data:/data
+    # PID 1 that reaps zombies and forwards SIGTERM. Without it the JVM, which
+    # never installed a SIGTERM handler for PID 1, ignores it outright — the
+    # kernel skips default signal dispositions for PID 1 — and every `down`
+    # waits out the full 10s kill timeout.
+    init: true
     # Bound the blast radius of a runaway (e.g. leaked terminal exec threads):
     # cpus caps CPU, mem_limit pairs with -XX:MaxRAMPercentage=50 (~256m heap),
     # and pids_limit turns a thread leak into a contained failure instead of a
-    # host-starving spin. cgroup-level — unaffected by the shared tailscale netns.
+    # host-starving spin.
     #
     # 512m, down from 1g: measured live, this process holds ~41 MB of heap and
     # ~98 MB of non-heap under a dashboard and five open stats streams, for
@@ -72,13 +158,32 @@ services:
     cpus: "2.0"
     mem_limit: 512m
     pids_limit: 512
+    healthcheck:
+      # Not cosmetic: the sidecar gates on condition: service_healthy, so a
+      # probe that never passes means nothing in the stack comes up — and the
+      # symptom points at tailscale, which is innocent.
+      #
+      # busybox wget ships in the eclipse-temurin alpine base, so this adds no
+      # package. Port 8081 is the actuator management server, bound to 127.0.0.1
+      # inside this container's own namespace (application.yml) — it is not the
+      # port Serve proxies to, and it is deliberately not reachable off-box.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   ollama:
     image: ollama/ollama:latest
-    profiles: ["ollama"]               # opt-in — './mc start' activates it
+    profiles: ["ollama"]               # opt-in — './mc ollama up' activates it
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"  # host port for agent containers outside the stack
+      # Host port for agent containers outside the stack. This is a real second
+      # door and the tailnet ACL does not guard it, so it is stated in full
+      # rather than left to docker's implicit 0.0.0.0. Narrow OLLAMA_BIND to
+      # 127.0.0.1 where agent containers can still reach it — on Docker Desktop
+      # they can via host.docker.internal; on Linux + host-gateway they cannot.
+      - "${OLLAMA_BIND:-0.0.0.0}:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama-models:/root/.ollama
     restart: unless-stopped
@@ -90,6 +195,6 @@ services:
       start_period: 15s
 
 volumes:
-  tailscale-state:
+  tailscale-state:        # node identity — keeping it is why the key is spent once
   mission-control-data:
   ollama-models:

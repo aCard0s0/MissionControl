@@ -1,0 +1,49 @@
+// Tailnet policy for the Mission Control node.
+//
+// This file is NOT read by docker or by ./mc. It ships beside the compose file
+// because it is half of the configuration: the ACL decides which machines may
+// open a connection, and its port MUST match TS_SERVE_MODE in .env.
+//
+//   TS_SERVE_MODE=https   ->  dst "tag:server:443"
+//   TS_SERVE_MODE=funnel  ->  dst "tag:server:443" + the funnel node attribute
+//
+// Getting the pair wrong is the most common self-inflicted outage here, and it
+// fails in the worst direction: you are locked out, assume the ACL is too
+// tight, and loosen it globally. Check both halves every time either changes.
+//
+// Apply it: admin console -> Access Controls -> paste -> Save.
+// https://login.tailscale.com/admin/acls/file
+//
+// PRECONDITION — the node must actually carry tag:server. The node deployed
+// today is UNTAGGED (`tailscale status --json` reports "Tags": null), so every
+// rule below matches nothing and access is whatever your tailnet default policy
+// allows. docs/deployment-tailscale.md has the re-auth sequence that tags it.
+// Apply this file only after the node shows the tag, or you will lock yourself
+// out of a dashboard that mounts the host docker socket.
+{
+  "tagOwners": {
+    "tag:server": ["andre.fmarques.cardoso@gmail.com"],
+  },
+
+  "acls": [
+    // Only the owner, only :443, only the tagged node. Serve terminates TLS
+    // there; nothing else on the node is meant to be reachable.
+    {
+      "action": "accept",
+      "src":    ["andre.fmarques.cardoso@gmail.com"],
+      "dst":    ["tag:server:443"],
+    },
+  ],
+
+  // The dashboard mounts /var/run/docker.sock and has no login of its own, so
+  // this ACL is the entire access control. Keep `src` to named users; do not
+  // widen it to "*" or to autogroup:members.
+  //
+  // Note what an ACL cannot do: it authenticates MACHINES, not people. Serve
+  // does supply a verified, unspoofable Tailscale-User-Login header on every
+  // proxied request (and strips any inbound header of that name), which is what
+  // an app would gate on for per-user authorization and an audit trail —
+  // Mission Control does not read it yet. See docs/deployment-tailscale.md.
+
+  "ssh": [],
+}

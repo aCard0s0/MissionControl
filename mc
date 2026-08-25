@@ -5,7 +5,7 @@
 # time: starting one cleanly stops the other.
 #
 # Usage:
-#   ./mc start                  # deploy behind tailscale (default flavor)
+#   ./mc start                  # deploy behind tailscale (default flavor, HTTPS)
 #   ./mc start --build          # rebuild the image first
 #   ./mc start --ts=off         # plain docker on http://localhost:8080
 #   ./mc start --ollama=on      # also run the optional local model runtime
@@ -24,11 +24,18 @@ OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 
 cd "$(dirname "$0")"
 
-COMPOSE_FILE="deploy/tailscale/docker-compose.yml"
-ENV_FILE="deploy/tailscale/.env"
+COMPOSE_FILE="deploy/compose.yml"
+# Opt-in host port. A separate file because compose has no falsy port spec — an
+# empty ${VAR} in `ports:` is a parse error, not an omission — so the only way
+# to make a published port conditional is to move it out of the base file and
+# decide here whether to append the second -f.
+LOCAL_COMPOSE_FILE="deploy/compose.local.yml"
+ENV_FILE="deploy/.env"
 APP_ENV_FILE=".mission-control.env"
 COMPOSE=(docker compose -p mission-control -f "${COMPOSE_FILE}")
 MC_SECRET_KEY_VALUE=""
+LOCAL_ACTIVE="off"        # resolved from --local/--no-local, else LOCAL_PORT_ENABLED
+SERVE_MODE_OVERRIDE=""    # --serve=MODE, beats TS_SERVE_MODE in deploy/.env
 
 usage() {
   cat <<EOF
@@ -37,9 +44,14 @@ mc — Mission Control manager (combined image: ${IMAGE}:${TAG})
 Usage: ./mc <command> [flags]
 
 Commands:
-  start [--build] [--ts=on|off] [--ollama=on|off] [--port=N] [--no-socket] [--no-keychain]
+  start [--build] [--ts=on|off] [--local|--no-local] [--serve=https|funnel]
+        [--ollama=on|off] [--port=N] [--no-socket] [--no-keychain]
                      deploy — default --ts=on (behind tailscale, tailnet-only);
                      --ts=off runs plain docker with a published port;
+                     --local adds a loopback host port to the tailscale flavor
+                     (overrides LOCAL_PORT_ENABLED in deploy/.env) — it bypasses
+                     the tailnet ACL, so it is off by default;
+                     --serve overrides TS_SERVE_MODE for this invocation;
                      the ollama service is NOT started by default — --ollama=on
                      brings it up on port ${OLLAMA_PORT}, --ollama=off takes it down
   stop               stop whichever flavor is running (incl. the ollama service)
@@ -52,13 +64,16 @@ Commands:
                      './mc ollama logs [-f] [-n N]' shows the service logs
   build              build the image only
   down [--volumes]   stop everything; --volumes also removes the data volumes
+                     (and logs the node out of the tailnet first, so the next
+                     deploy gets its MagicDNS name back instead of -1)
   help               this text
 
 Examples:
-  ./mc start                  # tailscale flavor — http://mission-control.<tailnet>.ts.net
+  ./mc start                  # tailscale flavor — https://mission-control.<tailnet>.ts.net
   ./mc start --build          # rebuild the image, then deploy
   ./mc start --ts=off         # plain docker — http://localhost:${PORT}
   ./mc start --ts=off --port=9000          # plain mode on a custom port
+  ./mc start --local          # tailnet + a loopback port on 127.0.0.1:8080
   ./mc start --ollama=on      # deploy + local model runtime on port ${OLLAMA_PORT}
   ./mc ollama up              # add the ollama service to a running deploy
   ./mc ollama pull llama3.2   # pull a model into the ollama service
@@ -120,12 +135,54 @@ json.dump(cfg, open(sys.argv[2], "w"))' "${src}" "${DOCKER_CONFIG_TEMP}/config.j
   trap '[[ -n "${DOCKER_CONFIG_TEMP}" ]] && rm -rf "${DOCKER_CONFIG_TEMP}"; if [[ -n "${DOCKER_CONFIG_ORIG}" ]]; then export DOCKER_CONFIG="${DOCKER_CONFIG_ORIG}"; else unset DOCKER_CONFIG; fi' EXIT
 }
 
-# read-only compose calls must work without deploy/tailscale/.env — feed the
-# ${TS_AUTHKEY:?} interpolation a dummy value (never used to 'up' the
-# tailscale flavor; the ollama service has no required interpolations)
+# read-only compose calls must work without deploy/.env — feed the required
+# ${VAR:?} interpolations dummy values (never used to 'up' the tailscale flavor;
+# the ollama service has no required interpolations of its own)
 compose_ro() {
   TS_AUTHKEY="${TS_AUTHKEY:-unset}" MC_SECRET_KEY="${MC_SECRET_KEY_VALUE:-unset}" \
+    TS_IMAGE_TAG="${TS_IMAGE_TAG:-unset}" TS_TAILNET="${TS_TAILNET:-unset}" \
     OLLAMA_PORT="${OLLAMA_PORT}" "${COMPOSE[@]}" "$@"
+}
+
+# Read one variable out of deploy/.env without sourcing it — that file holds the
+# tailnet auth key, and sourcing would put it in this shell's environment and
+# then in every child process it spawns.
+env_get() {  # $1 = name, $2 = default
+  local v=""
+  [[ -f "${ENV_FILE}" ]] && v="$(sed -n "s/^$1=//p" "${ENV_FILE}" | tail -n 1)"
+  printf '%s' "${v:-$2}"
+}
+
+# Decide whether the deploy publishes a loopback host port, and rebuild the
+# compose invocation accordingly. An explicit --local/--no-local beats
+# LOCAL_PORT_ENABLED in deploy/.env.
+resolve_local() {  # $1 = "" | "on" | "off"
+  local want="$1"
+  if [[ -z "${want}" ]]; then
+    case "$(env_get LOCAL_PORT_ENABLED false)" in
+      true|1|yes|on) want="on" ;;
+      *)             want="off" ;;
+    esac
+  fi
+  LOCAL_ACTIVE="${want}"
+  COMPOSE=(docker compose -p mission-control -f "${COMPOSE_FILE}")
+  if [[ "${LOCAL_ACTIVE}" == "on" ]]; then
+    COMPOSE+=(-f "${LOCAL_COMPOSE_FILE}")
+  fi
+}
+
+# The effective serve posture for this invocation.
+serve_mode() { printf '%s' "${SERVE_MODE_OVERRIDE:-$(env_get TS_SERVE_MODE https)}"; }
+
+# Publishing an unauthenticated, docker.sock-mounting dashboard to the open
+# internet must never be a quiet side effect of an env var someone edited last
+# month. Serve also sends no identity headers on funnel requests, so there is
+# nothing the app could gate on even once it learns to.
+warn_if_funnel() {
+  [[ "$(serve_mode)" == "funnel" ]] || return 0
+  echo "⚠  TS_SERVE_MODE=funnel — this publishes Mission Control to the PUBLIC INTERNET." >&2
+  echo "   It has no authentication and mounts /var/run/docker.sock (root-equivalent)." >&2
+  echo "   Set TS_SERVE_MODE=https in ${ENV_FILE}, or pass --serve=https." >&2
 }
 
 # Persist one application encryption key across both deployment flavors. The
@@ -191,20 +248,34 @@ socket_note() {
 start_ts() {  # $1 = --build flag value
   if [[ ! -f "${ENV_FILE}" ]]; then
     echo "error: ${ENV_FILE} not found — the tailscale flavor needs an auth key:" >&2
-    echo "  cp deploy/tailscale/.env.example deploy/tailscale/.env" >&2
+    echo "  cp deploy/.env.example deploy/.env" >&2
     echo "  then fill in TS_AUTHKEY (admin console → Settings → Keys → auth key;" >&2
-    echo "  reusable + tag:server recommended)" >&2
+    echo "  reusable + tag:server recommended) and TS_IMAGE_TAG" >&2
     exit 1
   fi
+  local mode; mode="$(serve_mode)"
+  if [[ ! -f "deploy/tailscale/serve-${mode}.json" ]]; then
+    echo "error: TS_SERVE_MODE=${mode} names deploy/tailscale/serve-${mode}.json, which does not exist." >&2
+    echo "  tailscale treats a missing serve config as 'no serve config', not as an" >&2
+    echo "  error — the node would come up healthy and serve nothing. Available:" >&2
+    ls deploy/tailscale/serve-*.json 2>/dev/null | sed 's/^/    /' >&2
+    exit 1
+  fi
+  warn_if_funnel
   ensure_image "$1"
   if plain_exists; then
     echo "→ removing plain container ${NAME} (switching to tailscale flavor)"
     docker rm -f "${NAME}" >/dev/null
   fi
-  echo "→ bringing up the tailscale flavor"
+  echo "→ bringing up the tailscale flavor (serve=${mode}, local port=${LOCAL_ACTIVE})"
   maybe_bypass_keychain
-  "${COMPOSE[@]}" --env-file "${APP_ENV_FILE}" --env-file "${ENV_FILE}" up -d
-  echo "✓ deployed — http://mission-control.<tailnet>.ts.net  (tailnet only, no host ports)"
+  TS_SERVE_MODE="${mode}" \
+    "${COMPOSE[@]}" --env-file "${APP_ENV_FILE}" --env-file "${ENV_FILE}" up -d
+  echo "✓ deployed — https://mission-control.<tailnet>.ts.net  (TLS terminated by tailscale serve)"
+  if [[ "${LOCAL_ACTIVE}" == "on" ]]; then
+    echo "  plus a host port on $(env_get LOCAL_BIND 127.0.0.1):$(env_get LOCAL_PORT 8080) —"
+    echo "  that path bypasses the tailnet ACL and Serve's identity headers"
+  fi
   echo "  find the exact URL with './mc status', or:"
   echo "  docker compose -p mission-control -f ${COMPOSE_FILE} exec tailscale tailscale status"
 }
@@ -224,6 +295,14 @@ start_plain() {  # $1 = --build flag, $2 = --no-socket flag
     echo "→ socket mount disabled — container management will be unavailable"
   fi
 
+  # Same rule as the tailscale flavor: the origin this is served from has to be
+  # in the app's CORS allowlist, or the page loads and every mutation 403s.
+  local cors="http://localhost:${PORT},http://127.0.0.1:${PORT}"
+  case "${BIND_ADDRESS}" in
+    127.0.0.1|localhost|"[::1]") ;;
+    *) cors="${cors},http://${BIND_ADDRESS}:${PORT}" ;;
+  esac
+
   echo "→ replacing container ${NAME}"
   if [[ "${BIND_ADDRESS}" != "127.0.0.1" && "${BIND_ADDRESS}" != "localhost" && "${BIND_ADDRESS}" != "[::1]" ]]; then
     echo "⚠ plain mode is unauthenticated and will be exposed on ${BIND_ADDRESS}:${PORT}" >&2
@@ -235,6 +314,7 @@ start_plain() {  # $1 = --build flag, $2 = --no-socket flag
     -v "${DATA_VOLUME}:/data" \
     --env-file "${APP_ENV_FILE}" \
     -e MC_CONTAINER_FILTER="${MC_CONTAINER_FILTER}" \
+    -e MC_CORS_ORIGINS="${cors}" \
     --restart unless-stopped \
     "${IMAGE}:${TAG}" >/dev/null
 
@@ -279,7 +359,7 @@ stop_ollama() {
 cmd_start() {
   # ollama is opt-in: empty means "leave whatever is there alone", so a plain
   # './mc start' neither deploys nor tears down the local model runtime
-  local ts="on" build="" no_socket="" ollama="" arg
+  local ts="on" build="" no_socket="" ollama="" local_flag="" arg
   for arg in "$@"; do
     case "${arg}" in
       --build)     build=1 ;;
@@ -287,6 +367,9 @@ cmd_start() {
       --ts=off)    ts="off" ;;
       --ollama=on)  ollama="on" ;;
       --ollama=off) ollama="off" ;;
+      --local)     local_flag="on" ;;
+      --no-local)  local_flag="off" ;;
+      --serve=*)   SERVE_MODE_OVERRIDE="${arg#--serve=}" ;;
       --port=*)    PORT="${arg#--port=}" ;;
       --no-socket) no_socket=1 ;;
       --no-keychain) MC_NO_KEYCHAIN=1 ;;
@@ -296,12 +379,16 @@ cmd_start() {
 
   require_docker
   ensure_app_secret
+  resolve_local "${local_flag}"
   if [[ "${ts}" == "on" ]]; then
     if [[ -n "${no_socket}" ]]; then
       echo "→ note: --port/--no-socket only apply to --ts=off — ignored"
     fi
     start_ts "${build}"
   else
+    if [[ -n "${local_flag}" || -n "${SERVE_MODE_OVERRIDE}" ]]; then
+      echo "→ note: --local/--serve only apply to the tailscale flavor — ignored"
+    fi
     start_plain "${build}" "${no_socket}"
   fi
   case "${ollama}" in
@@ -352,9 +439,30 @@ cmd_status() {
       state="$(printf '%s\n' "${ts_json}" | grep -m1 '"BackendState"' | sed 's/.*: *"\([^"]*\)".*/\1/')"
       dns="$(printf '%s\n' "${ts_json}" | grep -m1 '"DNSName"' | sed 's/.*: *"\([^"]*\)".*/\1/; s/\.$//')"
       echo "  tailscale: ${state:-unknown}"
-      if [[ -n "${dns}" ]]; then echo "  url: http://${dns}"; fi
+      if [[ -n "${dns}" ]]; then echo "  url: https://${dns}"; fi
+      # what the daemon actually loaded, not what .env says it should have
+      local serve_out
+      serve_out="$(compose_ro exec -T tailscale tailscale serve status 2>/dev/null || true)"
+      if [[ -z "$(printf '%s' "${serve_out}" | tr -d '[:space:]')" ]]; then
+        echo "  serve: NO CONFIG LOADED — the node is up and serving nothing"
+        echo "         (check TS_SERVE_MODE in ${ENV_FILE} names a file in deploy/tailscale/)"
+      else
+        printf '%s\n' "${serve_out}" | sed 's/^/  serve: /'
+      fi
+      if printf '%s' "${serve_out}" | grep -qi funnel; then
+        echo "  ⚠ funnel is ON — this node is reachable from the public internet"
+      fi
     else
       echo "  tailscale: sidecar not responding (still starting?)"
+    fi
+    local lport
+    lport="$(compose_ro port mission-control 8080 2>/dev/null | head -n1 || true)"
+    # `compose port` prints "invalid IP:0" rather than nothing when the service
+    # publishes no host port, so match a real host:port instead of testing for
+    # empty — otherwise a correctly-closed stack reports itself as exposed, and
+    # a warning that cries wolf is a warning nobody reads.
+    if [[ "${lport}" =~ :[1-9][0-9]*$ ]]; then
+      echo "  ⚠ host port published on ${lport} — bypasses the tailnet ACL and Serve"
     fi
   fi
   if plain_exists; then
@@ -488,6 +596,17 @@ cmd_down() {
       y|Y|yes|YES) ;;
       *) echo "→ aborted"; exit 1 ;;
     esac
+    # Order matters: `tailscale logout` invalidates the node key and removes the
+    # machine entry while the container can still reach the coordination server.
+    # After the state volume is gone the only way to clean up is the admin
+    # console — and until someone does, the dead entry still holds the MagicDNS
+    # name, so the next deploy comes up as mission-control-1 and every URL, ACL
+    # and bookmark points at the corpse. A plain `down` keeps the volume, so the
+    # node returns intact and must NOT be logged out.
+    if ts_running; then
+      echo "→ logging the node out of the tailnet (frees the MagicDNS name)"
+      compose_ro exec -T tailscale tailscale logout >/dev/null 2>&1 || true
+    fi
     echo "→ taking everything down (incl. volumes)"
     compose_ro --profile ollama down --volumes 2>/dev/null || true
     docker rm -f "${NAME}" >/dev/null 2>&1 || true

@@ -1,0 +1,20 @@
+# Opt-in host port. Merged on top of compose.yml, never used alone:
+#
+#   ./mc start --local
+#   docker compose -p mission-control -f deploy/compose.yml -f deploy/compose.local.yml up -d
+#
+# This is a separate file because Compose has no falsy port spec — an empty
+# ${VAR} in a `ports:` entry is a parse error, not an omission — so a host port
+# can be made conditional only by moving it out of the base file. ./mc reads
+# LOCAL_PORT_ENABLED from .env to decide whether to append the second -f.
+#
+# It bypasses Tailscale Serve, and with it the tailnet ACL and the
+# Tailscale-User-Login header. Mission Control has no auth of its own and mounts
+# the host docker socket, so LOCAL_BIND must stay on loopback. 0.0.0.0 puts a
+# root-equivalent dashboard on every LAN the host touches — and if the HOST is
+# itself a tailscale node, on its tailscale0 interface too, where peers reach it
+# without passing the policy you wrote for this sidecar.
+services:
+  mission-control:
+    ports:
+      - "${LOCAL_BIND:-127.0.0.1}:${LOCAL_PORT:-8080}:8080"

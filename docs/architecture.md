@@ -12,7 +12,11 @@ mission-control/
 ├── applications/
 │   ├── mission-control-fe/        Angular 22 dashboard (zoneless, signals, GSAP)
 │   └── mission-control-server/    Spring Boot 3.5 backend (Java 24)
-├── deploy/tailscale/              compose stack — tailscale sidecar + app + optional ollama
+├── deploy/                        compose stack — tailscale sidecar + app + optional ollama
+│   ├── compose.yml                base stack: no host ports, userspace sidecar
+│   ├── compose.local.yml          opt-in loopback port (./mc start --local)
+│   ├── acl.hujson                 the tailnet policy that guards the node
+│   └── tailscale/                 mounted as /config — serve-https.json, serve-funnel.json
 ├── docs/                          this documentation
 ├── mc                             manager script — build + deploy (tailscale or plain docker) + ollama
 ├── Dockerfile                     combined image (FE + BE, one container)
