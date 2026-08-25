@@ -19,7 +19,15 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 @EnableWebSocket
 public class TerminalWebSocketConfig implements WebSocketConfigurer {
 
-  /** dev only — mirrors the CORS allowlist in WebConfig; the combined image is same-origin */
+  /**
+   * The {@code ng serve} origins, and deliberately NOT WebConfig's configurable list.
+   *
+   * <p>These are the only two exemptions from the same-origin check below. WebConfig's
+   * allowlist is deployment configuration and can be widened; this endpoint hands out an
+   * interactive shell, so widening it by editing an env var must not be possible. Everything
+   * else is admitted only by matching the Host header, which covers every real deployment —
+   * including the tailscale serve proxy — without being configured at all.
+   */
   private static final Set<String> DEV_ORIGINS =
       Set.of("http://localhost:4200", "http://localhost:4300");
 

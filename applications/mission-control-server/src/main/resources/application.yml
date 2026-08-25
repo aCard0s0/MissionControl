@@ -50,6 +50,14 @@ spring:
 mc:
   startup-reconcile: ${MC_STARTUP_RECONCILE:true}
   api-base-url: ${MC_API_BASE_URL:}
+  # Origins allowed to call this API. Spring rejects a request whose Origin is not
+  # listed with 403 BEFORE the handler runs — and browsers attach Origin to every
+  # request whose method is not GET or HEAD, same-origin ones included. So this
+  # list must name the origin the app is actually SERVED from, not just the dev
+  # servers. Omit it and plain GETs keep working while every mutation 403s, which
+  # reads as "the dashboard went read-only" and points nowhere near CORS.
+  # deploy/compose.yml builds this from TS_HOSTNAME + TS_TAILNET.
+  cors-origins: ${MC_CORS_ORIGINS:http://localhost:4200,http://localhost:4300}
   docker-socket: ${MC_DOCKER_SOCKET:unix:///var/run/docker.sock}
   hermes-image: ${MC_HERMES_IMAGE:nousresearch/hermes-agent}
   container-filter: ${MC_CONTAINER_FILTER:hermes}

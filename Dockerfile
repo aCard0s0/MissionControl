@@ -33,8 +33,7 @@ ENV MC_API_BASE_URL="" \
 VOLUME /data
 EXPOSE 8080
 # Heap sized from the container's cgroup memory limit (set in compose), not host
-# RAM — the container shares the tailscale netns and would otherwise see host
-# totals. CPU pool sizing is left to the cgroup CPU quota (compose `cpus`); do
+# RAM. CPU pool sizing is left to the cgroup CPU quota (compose `cpus`); do
 # not pin -XX:ActiveProcessorCount. Fail fast on OOM so restart policy recovers.
 #
 # MaxRAMPercentage governs the heap alone, and everything else this process needs

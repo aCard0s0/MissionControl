@@ -19,8 +19,9 @@ Both ship in **one container**: Spring Boot serves the Angular build and the API
 
 ```bash
 ./mc start --build      # build combined image + deploy behind tailscale (default)
-./mc start --ts=off     # plain docker on loopback — http://127.0.0.1:8080
-./mc start --ts=off --port=9000          # plain docker on a custom port
+./mc start --ts=off     # no tailscale at all — http://127.0.0.1:8080
+./mc start --local      # tailnet + a loopback port (bypasses the ACL — see the runbook)
+./mc start --ts=off --port=9000          # …on a custom port
 ./mc status             # which flavor is running, where
 ./mc logs -f            # follow app logs
 ./mc ollama up          # optional local model runtime (not started by default)
@@ -41,7 +42,7 @@ never adopts or changes a pre-existing project named `mcp`.
 
 ## Remote access (tailscale)
 
-The default `./mc start` flavor ([deploy/tailscale](deploy/tailscale)) runs the image behind a tailscale sidecar — reachable from any of your devices at `http://mission-control.<tailnet>.ts.net`, and unreachable from the LAN or internet (no host ports published). Runbook: [docs/deployment-tailscale.md](docs/deployment-tailscale.md).
+The default `./mc start` flavor ([deploy/](deploy)) runs the image behind a tailscale sidecar in userspace mode — reachable from any of your devices at `https://mission-control.<tailnet>.ts.net`, with TLS terminated by Tailscale Serve, and unreachable from the LAN or internet (no host ports published). The dashboard has no login of its own and mounts the host docker socket, so the tailnet ACL in [deploy/acl.hujson](deploy/acl.hujson) is the access control, not a nicety. Runbook: [docs/deployment-tailscale.md](docs/deployment-tailscale.md).
 
 ## Development
 

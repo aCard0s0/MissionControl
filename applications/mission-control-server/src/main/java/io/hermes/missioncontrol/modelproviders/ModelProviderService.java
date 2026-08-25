@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.modelproviders;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.errors.ConnectionFailure;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.modelproviders.ModelProviderRepository.ProviderRow;
 import java.net.URI;
@@ -195,9 +196,10 @@ public class ModelProviderService {
       JsonNode body = objectMapper.readTree(response.body());
       fresh = new Probe("connected", body.path("version").asText(null), null, System.currentTimeMillis());
     } catch (Exception e) {
-      log.warn("probe of {} ({}) failed: {}", row.id(), row.url(), e.toString());
+      String reason = ConnectionFailure.describe(e);
+      log.warn("probe of {} ({}) failed: {}", row.id(), row.url(), reason);
       fresh = new Probe("error", null,
-          "ollama not reachable — check the address and that the server is running",
+          "ollama not reachable — check the address and that the server is running (" + reason + ")",
           System.currentTimeMillis());
     }
     probeCache.put(row.id(), fresh);
@@ -222,7 +224,7 @@ public class ModelProviderService {
       Thread.currentThread().interrupt();
       throw new UpstreamUnavailableException("ollama call interrupted");
     } catch (Exception e) {
-      throw new UpstreamUnavailableException("ollama not reachable: " + brief(e.getMessage()));
+      throw new UpstreamUnavailableException("ollama not reachable: " + ConnectionFailure.describe(e));
     }
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException(
