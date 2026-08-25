@@ -15,7 +15,10 @@ import io.hermes.missioncontrol.agents.api.WebhookPlatformDto;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.agents.api.AuxiliaryModelSpec;
+import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.MessagingStatusDto;
 import io.hermes.missioncontrol.agents.api.ProviderOptionDto;
@@ -104,6 +107,8 @@ class ApiContractTest {
     CONTRACT.put("ApiMcpServer", AgentMcpServerDto.class);
     CONTRACT.put("ApiMcpTestResult", McpTestResult.class);
     CONTRACT.put("ApiIntegration", IntegrationDto.class);
+    CONTRACT.put("ApiGateway", GatewayDto.class);
+    CONTRACT.put("ApiContainerActivity", ContainerActivityDto.class);
     CONTRACT.put("ApiSession", SessionDto.class);
     CONTRACT.put("ApiAuxiliaryModel", AuxiliaryModelSpec.class);
     // agent setup
@@ -122,6 +127,7 @@ class ApiContractTest {
     CONTRACT.put("ApiWebhookSubscription", WebhookSubscriptionDto.class);
     CONTRACT.put("ApiWebhookPlatform", WebhookPlatformDto.class);
     CONTRACT.put("ApiWebhooks", WebhooksDto.class);
+    CONTRACT.put("ApiOutboundWebhook", OutboundWebhookDto.class);
     // templates
     CONTRACT.put("ApiProfileTemplate", ProfileTemplateDto.class);
     CONTRACT.put("ApiTemplateSecret", SecretRef.class);

@@ -67,7 +67,12 @@ export const apiProfile = (name: string, patch: Partial<ApiAgentProfile> = {}): 
   id: `a-${name}`, containerId: 'c-1', name, role: 'Ops', state: 'idle',
   provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…9f2c', cwd: '/opt/data',
   soul: '# SOUL', memoryMd: '# MEMORY', configYaml: 'provider: anthropic',
-  skills: [], mcp: [], integrations: [], lastActive: 20, ...patch,
+  skills: [], mcp: [], integrations: [], lastActive: 20,
+  gateway: {
+    state: 'running', desiredState: 'running', activeAgents: 0, agentVersion: '0.20.5',
+    sessionStore: 'ok', paused: false, pauseReason: null,
+  },
+  ...patch,
 });
 
 /** The api stub shape a slice fixture accepts: the resource clients it reaches. */

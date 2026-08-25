@@ -20,6 +20,27 @@ honest about the versions still in the field. It needs `python3`, for the two JS
 Then read the diff. The script redacts what belongs to the operator rather than to hermes' output
 format — but only you know what is sensitive in your own deployment.
 
+A set is only as complete as the container it came from: the script skips a document the profile
+does not have rather than writing an empty one, so a capture from an untouched container silently
+produces a partial set. Before capturing, give the profile something to record — the fixture test
+states the minimum and fails naming what is missing:
+
+```bash
+hermes config set platforms.webhook.enabled true     # webhook subscribe refuses without this
+hermes webhook subscribe <route> --prompt "…" --events "a,b" --deliver log
+hermes cron create "0 9 * * *"          "…" --name a-cron       # kind: cron
+hermes cron create "every 15 minutes"   "…" --name an-interval  # kind: interval
+hermes cron create "2026-12-24T09:00:00" "…" --name a-once      # kind: once
+```
+
+All three schedule kinds matter: the parser branches on them, and a set carrying only `cron`
+leaves two of those branches untested.
+
+`HermesCronTest` and `HermesWebhooksTest` stay pinned to the v0.16.0 documents on purpose — they
+are rule tests with one fixed input, and re-pointing them at each new capture would mean
+rewriting their assertions for new job and route names. `HermesCliFixtureTest` is what covers
+every set, including the newest.
+
 ## What is redacted, and what is not
 
 | redacted | why |

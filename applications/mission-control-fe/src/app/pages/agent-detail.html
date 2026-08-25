@@ -10,6 +10,10 @@
     </div>
     <div class="head-right">
       <mc-status [status]="a.state" [live]="a.state === 'active'" />
+      @if (a.gateway.paused) { <span class="chip warn mono">paused</span> }
+      @if (a.gateway.activeAgents > 0) {
+        <span class="chip info mono">{{ a.gateway.activeAgents }} in flight</span>
+      }
       <span class="chip info mono">{{ a.provider }} / {{ a.model }}</span>
       <button class="btn sm" (click)="openCapture()">save as template</button>
       <button class="btn sm danger ghost" (click)="removing.set(true)">delete profile</button>
@@ -36,6 +40,41 @@
             <div><span class="k">mcp servers</span><span>{{ a.mcp.length }}</span></div>
             <p class="lock-hint">full edits via <code>hermes -p {{ a.name }} setup</code></p>
           </div>
+        </div>
+
+        <div class="panel" data-reveal>
+          <div class="panel-h">
+            GATEWAY
+            <span class="spacer"></span>
+            @if (a.gateway.paused) {
+              <button class="btn sm" [disabled]="pausing()" (click)="resume()">
+                {{ pausing() ? 'resuming…' : 'resume' }}
+              </button>
+            } @else {
+              <button class="btn sm danger ghost" [disabled]="pausing()" (click)="openPause()">
+                {{ pausing() ? 'pausing…' : 'pause' }}
+              </button>
+            }
+          </div>
+          <div class="panel-b kv mono">
+            <div><span class="k">state</span><span>{{ a.gateway.state || 'unknown' }}</span></div>
+            @if (a.gateway.desiredState && a.gateway.desiredState !== a.gateway.state) {
+              <div><span class="k">draining to</span><span class="bad">{{ a.gateway.desiredState }}</span></div>
+            }
+            <div>
+              <span class="k">turns in flight</span>
+              <span [class.bad]="a.gateway.activeAgents > 0">{{ a.gateway.activeAgents }}</span>
+            </div>
+            <div><span class="k">hermes</span><span>{{ a.gateway.agentVersion || 'unknown' }}</span></div>
+            <div><span class="k">session store</span><span>{{ a.gateway.sessionStore || 'unknown' }}</span></div>
+            @if (a.gateway.paused) {
+              <div><span class="k">paused</span><span>{{ a.gateway.pauseReason || 'no reason given' }}</span></div>
+            }
+          </div>
+          @if (a.gateway.activeAgents > 0) {
+            <p class="lock-hint">{{ a.gateway.activeAgents }} turn(s) running — stopping this
+              container drops them. <code>pause</code> holds new work and lets these finish.</p>
+          }
         </div>
 
         <div class="panel" data-reveal>
@@ -226,6 +265,29 @@
           <div class="modal-actions">
             <button class="btn ghost" (click)="capturing.set(false)">cancel</button>
             <button class="btn primary" [disabled]="capturingBusy()" (click)="confirmCapture()">{{ capturingBusy() ? 'saving…' : 'save template' }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+  @if (pauseOpen()) {
+    <div class="scrim" (click)="pauseOpen.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="panel-h">PAUSE AGENT</div>
+        <div class="modal-b">
+          <p class="dim">Holds <span class="mono">{{ a.name }}</span>'s cron dispatch, kanban
+            dispatch and new gateway turns. In-flight work is never killed
+            @if (a.gateway.activeAgents > 0) {
+              — the <span class="mono">{{ a.gateway.activeAgents }}</span> turn(s) running now
+              will finish
+            }. Lift it with <span class="mono">resume</span>; no restart is involved.</p>
+          <div class="field">
+            <label>reason <span class="faint">— shown to anyone who messages the agent</span></label>
+            <input class="input" [(ngModel)]="pauseReason" placeholder="optional" />
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" (click)="pauseOpen.set(false)">cancel</button>
+            <button class="btn danger" [disabled]="pausing()" (click)="confirmPause()">{{ pausing() ? 'pausing…' : 'pause agent' }}</button>
           </div>
         </div>
       </div>

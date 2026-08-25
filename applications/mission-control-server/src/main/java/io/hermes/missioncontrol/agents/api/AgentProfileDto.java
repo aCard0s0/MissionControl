@@ -18,5 +18,6 @@ public record AgentProfileDto(
     List<SkillDto> skills,
     List<AgentMcpServerDto> mcp,
     List<IntegrationDto> integrations,
+    GatewayDto gateway,
     long lastActive) {
 }

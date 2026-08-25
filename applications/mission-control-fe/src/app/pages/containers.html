@@ -84,8 +84,8 @@
             <button class="btn sm" [disabled]="isUpdating(c.id)"
                     (click)="lifecycle.setStatus(c.id, 'running'); $event.stopPropagation()">start</button>
           } @else {
-            <button class="btn sm" [disabled]="isUpdating(c.id)"
-                    (click)="lifecycle.setStatus(c.id, 'stopped'); $event.stopPropagation()">stop</button>
+            <button class="btn sm" [disabled]="isUpdating(c.id) || stopChecking() === c.id"
+                    (click)="requestStop(c); $event.stopPropagation()">{{ stopChecking() === c.id ? 'checking…' : 'stop' }}</button>
           }
           @if (updates().get(c.id); as target) {
             <button class="btn sm upd" [disabled]="isUpdating(c.id)" [title]="updateHint(c, target)"
@@ -128,6 +128,41 @@
 <p class="lock-hint" data-reveal>
   containers map to <code>docker run nousresearch/hermes-agent</code> — profiles inside map to <code>hermes profile create &lt;name&gt;</code>
 </p>
+
+@if (stopping(); as pending) {
+  <div class="scrim" (click)="stopping.set(null)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="panel-h">STOP <span class="mono">{{ pending.container.name }}</span>?</div>
+      <div class="modal-b">
+        @if (pending.activity.activeAgents > 0) {
+          <p class="dim">
+            <span class="mono">{{ pending.activity.activeAgents }}</span> turn(s) in flight on
+            <span class="mono">{{ pending.activity.busyProfiles.join(', ') }}</span>.
+            Stopping gives the gateway ten seconds and then kills it — that work is lost.
+          </p>
+        }
+        @if (pending.activity.unreadable.length) {
+          <p class="dim">
+            No gateway state from
+            <span class="mono">{{ pending.activity.unreadable.join(', ') }}</span> — that is an
+            absence of evidence, not evidence that nothing is running.
+          </p>
+        }
+        @if (pending.activity.pausedProfiles.length) {
+          <p class="lock-hint">already paused:
+            <span class="mono">{{ pending.activity.pausedProfiles.join(', ') }}</span></p>
+        }
+        <div class="modal-actions">
+          <button class="btn ghost" (click)="stopping.set(null)">cancel</button>
+          @if (pending.activity.busyProfiles.length) {
+            <button class="btn" (click)="pauseInstead()">pause instead — let them finish</button>
+          }
+          <button class="btn danger" (click)="confirmStop()">stop anyway</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
 
 @if (deployOpen()) {
   <div class="scrim" (click)="deployOpen.set(false)">

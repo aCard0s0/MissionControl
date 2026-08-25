@@ -1,5 +1,5 @@
 import {
-  AgentProfile, CronJob, DockerHost, HermesContainer, McpCatalogServer, McpServer,
+  AgentProfile, CronJob, DockerHost, Gateway, HermesContainer, McpCatalogServer, McpServer,
   ProfileTemplate, SkillRef,
 } from '../core/models';
 
@@ -43,10 +43,16 @@ export const mcpServer = (name: string, patch: Partial<McpServer> = {}): McpServ
   url: `https://${name}.example.test/mcp`, ...patch,
 });
 
+export const gateway = (patch: Partial<Gateway> = {}): Gateway => ({
+  state: 'running', desiredState: 'running', activeAgents: 0, agentVersion: '0.20.5',
+  sessionStore: 'ok', paused: false, pauseReason: null, ...patch,
+});
+
 export const agent = (id: string, patch: Partial<AgentProfile> = {}): AgentProfile => ({
   id, containerId: 'c-1', name: id, role: 'ops', state: 'idle',
   provider: 'anthropic', model: 'claude-fable-5', apiKeyMasked: '…key', cwd: '/opt/data',
-  soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [], integrations: [], sessions: [],
+  soul: '', memoryMd: '', configYaml: '', skills: [], mcp: [], integrations: [],
+  gateway: gateway(), sessions: [],
   msgsToday: 0, tokensToday: 0, errorRate: 0, lastActive: 1, ...patch,
 });
 

@@ -270,6 +270,51 @@ export interface ApiIntegration {
   detail: string;
 }
 
+/** What the gateway says about itself: the platforms above come out of the same file, and
+ *  these are the fields beside them — how it is running, and whether `hermes pause` has it
+ *  held. `activeAgents` is the count of turns in flight, which is the difference between
+ *  stopping a container safely and dropping live work. */
+export interface ApiGateway {
+  state: string;
+  desiredState: string;
+  activeAgents: number;
+  agentVersion: string;
+  sessionStore: string;
+  paused: boolean;
+  pauseReason: string | null;
+}
+
+/** What stopping a container would interrupt. `unreadable` is the honest third answer:
+ *  the gateway wrote no state, so nothing-in-flight is an absence of evidence. */
+export interface ApiContainerActivity {
+  activeAgents: number;
+  busyProfiles: string[];
+  pausedProfiles: string[];
+  unreadable: string[];
+}
+
+/** One outbound webhook target, from `hooks.outbound` in the profile's config.yaml. */
+export interface ApiOutboundWebhook {
+  name: string;
+  url: string;
+  events: string[];
+  matcher: string | null;
+  timeout: number | null;
+  secretEnv: string | null;
+  /** True when the config carries an inline `secret:`. Never its value — the dashboard will
+   *  not show one and will not overwrite one. */
+  literalSecret: boolean;
+}
+
+export interface ApiOutboundWebhookRequest {
+  name: string;
+  url: string;
+  events: string[];
+  matcher: string | null;
+  timeout: number | null;
+  secretEnv: string | null;
+}
+
 export interface ApiSession {
   id: string;
   title: string;
@@ -318,6 +363,7 @@ export interface ApiAgentProfile {
   skills: ApiSkillRef[];
   mcp: ApiMcpServer[];
   integrations: ApiIntegration[];
+  gateway: ApiGateway;
   lastActive: number;
 }
 
@@ -461,6 +507,7 @@ export interface ApiWebhookPlatform {
 export interface ApiWebhooks {
   subscriptions: ApiWebhookSubscription[];
   platform: ApiWebhookPlatform;
+  outbound: ApiOutboundWebhook[];
 }
 
 export interface ApiSubscribeWebhookRequest {

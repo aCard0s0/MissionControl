@@ -63,6 +63,15 @@ final class ProfilePaths {
   }
 
   /**
+   * The emergency-stop sentinel {@code hermes pause} writes. Its presence is the pause —
+   * hermes honours a bare {@code touch} — and its body, when there is one, is
+   * {@code {"engaged_at": …, "reason": …}}.
+   */
+  static String estopFile(String profileName) {
+    return profileDir(profileName) + "/ESTOP";
+  }
+
+  /**
    * The argv prefix that scopes a hermes command to one profile. Hermes takes {@code -p}
    * only for named profiles — {@code default} lives at the hermes home and is invoked bare.
    *

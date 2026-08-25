@@ -21,6 +21,7 @@ import {
   containerUpdate, displayVersion, isFloatingTag, targetVersion, updateTargets,
 } from '../core/image-policy';
 import { HermesContainer, ImageTag } from '../core/models';
+import { ApiContainerActivity } from '../core/api/api-types';
 
 export function normalizeSeedProfiles(value: string): string[] {
   return Array.from(new Set(value.split(',')
@@ -72,6 +73,11 @@ export class ContainersPage {
   protected readonly addingHost = signal(false);
   protected hostName = '';
   protected hostUrl = 'tcp://';
+
+  /** The container a stop is waiting on, with what that stop would interrupt. Only set when
+   *  there is something to interrupt — an idle container stops on the click, as before. */
+  protected readonly stopping = signal<{ container: HermesContainer; activity: ApiContainerActivity } | null>(null);
+  protected readonly stopChecking = signal<string | null>(null);
 
   protected readonly removing = signal<HermesContainer | null>(null);
   protected readonly removingBusy = signal(false);
@@ -251,6 +257,61 @@ export class ContainersPage {
     this.deployTags.set([]);
     this.containers.select(id);
     if (waiting) this.router.navigate(['/overview']);
+  }
+
+  /**
+   * Stop, but ask first when the container has turns in flight.
+   *
+   * <p>`docker stop` gives the gateway ten seconds and then kills it, so a running turn is
+   * lost work — and hermes has a `pause` that holds new work while letting those finish. The
+   * check costs one request, and only on the click: an idle container still stops immediately.
+   * A check that itself fails falls through to stopping rather than blocking the operator,
+   * because refusing to stop a container because we could not read it is the worse failure.
+   */
+  protected async requestStop(c: HermesContainer): Promise<void> {
+    if (this.stopChecking()) return;
+    this.stopChecking.set(c.id);
+    try {
+      const activity = await this.ctx.api.agents.activity(c.hostId, c.id);
+      if (activity.activeAgents > 0 || activity.unreadable.length > 0) {
+        this.stopping.set({ container: c, activity });
+        return;
+      }
+    } catch {
+      // fall through: an unreadable container is still one the operator asked to stop
+    } finally {
+      this.stopChecking.set(null);
+    }
+    this.lifecycle.setStatus(c.id, 'stopped');
+  }
+
+  protected confirmStop(): void {
+    const pending = this.stopping();
+    if (!pending) return;
+    this.stopping.set(null);
+    this.lifecycle.setStatus(pending.container.id, 'stopped');
+  }
+
+  /** Holds every busy profile with hermes' own emergency stop, and leaves the container up.
+   *  In-flight turns finish; nothing new starts. */
+  protected async pauseInstead(): Promise<void> {
+    const pending = this.stopping();
+    if (!pending) return;
+    const { container, activity } = pending;
+    this.stopping.set(null);
+    // straight at the API rather than through AgentStore: the Containers page does not
+    // require that container's profiles to be loaded, and an id lookup would miss them
+    try {
+      for (const name of activity.busyProfiles) {
+        await this.ctx.api.agents.pause(
+          { hostId: container.hostId, containerId: container.id, name },
+          'paused from the Containers page');
+      }
+      this.ctx.toast(`paused ${activity.busyProfiles.join(', ')} — in-flight turns will finish`);
+      await this.agents.refresh();
+    } catch (e) {
+      this.ctx.toastFailure('pause', e);
+    }
   }
 
   protected async confirmRemove(): Promise<void> {

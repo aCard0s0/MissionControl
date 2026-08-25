@@ -1,4 +1,4 @@
-import { ApiSubscribeWebhookRequest, ApiWebhooks } from './api-types';
+import { ApiOutboundWebhookRequest, ApiSubscribeWebhookRequest, ApiWebhooks } from './api-types';
 import { AgentRef, agentPath } from './agent-ref';
 import { ApiHttp, seg } from './http';
 
@@ -7,6 +7,10 @@ import { ApiHttp, seg } from './http';
  *
  * Mission Control manages these and never carries webhook traffic itself, so nothing here
  * is an endpoint a provider would call.
+ *
+ * Both directions live behind this one client: inbound routes wake the agent, outbound
+ * targets are where the agent pushes signed lifecycle events. Outbound targets are addressed
+ * by position — hermes gives them no id, and `name` is optional and not unique.
  */
 export class AgentWebhooksApi {
   constructor(private readonly http: ApiHttp) {}
@@ -24,6 +28,20 @@ export class AgentWebhooksApi {
 
   subscribe(ref: AgentRef, request: ApiSubscribeWebhookRequest): Promise<ApiWebhooks> {
     return this.http.post(this.path(ref), request);
+  }
+
+  addOutbound(ref: AgentRef, request: ApiOutboundWebhookRequest): Promise<ApiWebhooks> {
+    return this.http.post(`${this.path(ref)}/outbound`, request);
+  }
+
+  updateOutbound(
+    ref: AgentRef, index: number, request: ApiOutboundWebhookRequest,
+  ): Promise<ApiWebhooks> {
+    return this.http.put(`${this.path(ref)}/outbound/${index}`, request);
+  }
+
+  removeOutbound(ref: AgentRef, index: number): Promise<ApiWebhooks> {
+    return this.http.delete(`${this.path(ref)}/outbound/${index}`);
   }
 
   /** The full HMAC secret, read only when an operator asks to see it. */

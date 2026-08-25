@@ -40,9 +40,30 @@ final class HermesEnvCatalog {
       ApiKeySpec.forProvider("kimi-coding", "Kimi"),
       ApiKeySpec.forProvider("stepfun", "StepFun Step Plan"),
       ApiKeySpec.forProvider("minimax", "MiniMax"),
-      // no registry provider behind these: a regional endpoint and a set of tool credentials,
-      // none of which a profile's model can be pointed at
-      new ApiKeySpec("MiniMax-CN", "MINIMAX_CN_API_KEY", List.of(), false),
+      ApiKeySpec.forProvider("minimax-cn", "MiniMax-CN"),
+      ApiKeySpec.forProvider("deepinfra", "DeepInfra"),
+      // Providers hermes offers in its own picker but does not print a row for in `status`.
+      // The labels below are ours, and will not match anything in that output — which costs
+      // nothing, because the .env is what says whether a key is set. The rows exist so that a
+      // provider the create-agent picker offers has somewhere to put its key.
+      ApiKeySpec.forProvider("fireworks", "Fireworks AI"),
+      ApiKeySpec.forProvider("novita", "NovitaAI"),
+      ApiKeySpec.forProvider("alibaba", "Qwen Cloud"),
+      ApiKeySpec.forProvider("xiaomi", "Xiaomi MiMo"),
+      ApiKeySpec.forProvider("tencent-tokenhub", "Tencent TokenHub"),
+      ApiKeySpec.forProvider("copilot", "GitHub Copilot", "GH_TOKEN"),
+      ApiKeySpec.forProvider("huggingface", "Hugging Face"),
+      ApiKeySpec.forProvider("kimi-coding-cn", "Kimi / Moonshot (China)"),
+      ApiKeySpec.forProvider("ollama-cloud", "Ollama Cloud"),
+      ApiKeySpec.forProvider("arcee", "Arcee AI"),
+      ApiKeySpec.forProvider("gmi", "GMI Cloud"),
+      ApiKeySpec.forProvider("kilocode", "Kilo Code"),
+      ApiKeySpec.forProvider("opencode-zen", "OpenCode Zen"),
+      ApiKeySpec.forProvider("opencode-go", "OpenCode Go"),
+      ApiKeySpec.forProvider("ai-gateway", "Vercel AI Gateway"),
+      ApiKeySpec.forProvider("azure-foundry", "Azure Foundry"),
+      // no registry provider behind these: tool credentials, none of which a profile's model
+      // can be pointed at
       new ApiKeySpec("Firecrawl", "FIRECRAWL_API_KEY", List.of(), false),
       new ApiKeySpec("Tavily", "TAVILY_API_KEY", List.of(), false),
       new ApiKeySpec("Browser Use", "BROWSER_USE_API_KEY", List.of(), true),

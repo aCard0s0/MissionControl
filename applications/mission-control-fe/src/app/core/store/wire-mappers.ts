@@ -6,7 +6,7 @@ import {
   ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
-  AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus,
+  AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
   McpTransport, ModelProvider, ModelProviderStatus, OllamaModel, ProfileTemplate, Prompt,
@@ -59,15 +59,29 @@ export function toAgentProfile(api: ApiAgentProfile): AgentProfile {
       args: m.args ?? undefined,
     })),
     integrations: (api.integrations ?? []).map(i => ({
-      kind: i.kind as AgentProfile['integrations'][number]['kind'],
+      kind: i.kind,
       status: i.status as AgentProfile['integrations'][number]['status'],
       detail: i.detail,
     })),
+    gateway: toGateway(api.gateway),
     sessions: [],
     msgsToday: 0,
     tokensToday: 0,
     errorRate: 0,
     lastActive: api.lastActive,
+  };
+}
+
+/** A profile whose gateway has written nothing yet still needs a shape to render. */
+export function toGateway(api: ApiAgentProfile['gateway'] | null | undefined): Gateway {
+  return {
+    state: api?.state ?? '',
+    desiredState: api?.desiredState ?? '',
+    activeAgents: api?.activeAgents ?? 0,
+    agentVersion: api?.agentVersion ?? '',
+    sessionStore: api?.sessionStore ?? '',
+    paused: !!api?.paused,
+    pauseReason: api?.pauseReason ?? null,
   };
 }
 

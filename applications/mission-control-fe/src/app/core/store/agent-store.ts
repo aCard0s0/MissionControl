@@ -177,6 +177,18 @@ export class AgentStore {
       ref => this.ctx.api.agents.updateConfig(ref, configYaml));
   }
 
+  /**
+   * Hermes' own emergency stop for this profile — not a container stop. Cron dispatch,
+   * kanban dispatch and new gateway turns are held; whatever is mid-turn finishes.
+   */
+  pause(agentId: string, reason?: string): Promise<boolean> {
+    return this.mutate(agentId, 'pause', ref => this.ctx.api.agents.pause(ref, reason));
+  }
+
+  resume(agentId: string): Promise<boolean> {
+    return this.mutate(agentId, 'resume', ref => this.ctx.api.agents.resume(ref));
+  }
+
   /** Profile-scoped supervised gateway log. Unlike Docker logs, these entries
    * have an authoritative agent/profile identity. */
   async logTail(agentId: string, tail = 100): Promise<LogEntry[]> {
@@ -198,7 +210,7 @@ export class AgentStore {
     this.ctx.api.agents.integrations(resolved.ref)
       .then(integrations => this.patch(agentId, {
         integrations: integrations.map(i => ({
-          kind: i.kind as Integration['kind'],
+          kind: i.kind,
           status: i.status as Integration['status'],
           detail: i.detail,
         })),

@@ -87,6 +87,9 @@ export class AgentDetailPage {
   private readonly agentLogsInFlight = new Set<string>();
 
   protected readonly pinging = signal(false);
+  protected readonly pauseOpen = signal(false);
+  protected readonly pausing = signal(false);
+  protected pauseReason = '';
   protected readonly removing = signal(false);
   protected confirmText = '';
 
@@ -268,6 +271,28 @@ export class AgentDetailPage {
     this.pinging.set(true);
     this.agents.pingIntegrations(a.id);
     setTimeout(() => this.pinging.set(false), 1100);
+  }
+
+  protected openPause(): void {
+    this.pauseReason = '';
+    this.pauseOpen.set(true);
+  }
+
+  protected async confirmPause(): Promise<void> {
+    const a = this.agent();
+    if (!a || this.pausing()) return;
+    this.pausing.set(true);
+    const ok = await this.agents.pause(a.id, this.pauseReason.trim() || undefined);
+    this.pausing.set(false);
+    if (ok) this.pauseOpen.set(false);
+  }
+
+  protected async resume(): Promise<void> {
+    const a = this.agent();
+    if (!a || this.pausing()) return;
+    this.pausing.set(true);
+    await this.agents.resume(a.id);
+    this.pausing.set(false);
   }
 
   protected confirmRemove(): void {

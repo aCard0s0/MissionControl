@@ -5,6 +5,8 @@ import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
@@ -32,7 +34,8 @@ import org.springframework.stereotype.Service;
  *   <li>{@link HermesProfileMcp} — the {@code mcp_servers} block and its probe cache
  *   <li>{@link HermesSessions} — the conversation store in {@code state.db}
  *   <li>{@link HermesGatewayLogs} — the per-profile s6 gateway log
- *   <li>{@link HermesIntegrations} — the platforms in {@code gateway_state.json}
+ *   <li>{@link HermesGatewayState} — the platforms and runtime state in
+ *       {@code gateway_state.json}, and the {@code ESTOP} pause sentinel
  *   <li>{@link ProfileInventory} — which profiles the container has at all
  * </ul>
  *
@@ -50,7 +53,7 @@ public class HermesProfiles {
   private final HermesProfileMcp mcp;
   private final HermesSessions sessions;
   private final HermesGatewayLogs gatewayLogs;
-  private final HermesIntegrations integrations;
+  private final HermesGatewayState gatewayState;
   private final ProfileInventory inventory;
 
   public HermesProfiles(
@@ -61,7 +64,7 @@ public class HermesProfiles {
       HermesProfileMcp mcp,
       HermesSessions sessions,
       HermesGatewayLogs gatewayLogs,
-      HermesIntegrations integrations,
+      HermesGatewayState gatewayState,
       ProfileInventory inventory) {
     this.files = files;
     this.env = env;
@@ -70,7 +73,7 @@ public class HermesProfiles {
     this.mcp = mcp;
     this.sessions = sessions;
     this.gatewayLogs = gatewayLogs;
-    this.integrations = integrations;
+    this.gatewayState = gatewayState;
     this.inventory = inventory;
   }
 
@@ -105,7 +108,7 @@ public class HermesProfiles {
     ConfigInfo config = modelConfig.parseConfig(configMap);
     List<SkillDto> skillList = skills.list(host, containerId, name, configMap);
     List<AgentMcpServerDto> mcpList = mcp.list(host, containerId, name, configMap);
-    List<IntegrationDto> integrationList = integrations.list(host, containerId, name);
+    HermesGatewayState.Reading gateway = gatewayState.read(host, containerId, name);
     return new AgentProfileDto(
         ProfilePaths.profileId(containerId, name),
         containerId,
@@ -121,7 +124,8 @@ public class HermesProfiles {
         configYaml,
         skillList,
         mcpList,
-        integrationList,
+        gateway.integrations(),
+        gateway.gateway(),
         System.currentTimeMillis());
   }
 
@@ -276,7 +280,69 @@ public class HermesProfiles {
   // ── observability ──────────────────────────────────────────────────────────
 
   public List<IntegrationDto> integrations(DockerHostRef host, String containerId, String profileName) {
-    return integrations.list(host, containerId, profileName);
+    return gatewayState.integrations(host, containerId, profileName);
+  }
+
+  /**
+   * What stopping this container right now would interrupt, across every profile in it.
+   *
+   * <p>Deliberately not part of the container inventory. That polls every host on a timer,
+   * and answering this means one exec per profile — the cost belongs on the click that is
+   * about to destroy work, not on the fleet view that runs whether anyone is looking.
+   *
+   * <p>A stopped container has nothing in flight and nothing to exec into, so it reports
+   * idle rather than failing: the caller is asking "is this safe", and for a container that
+   * is already down the answer is yes.
+   */
+  public ContainerActivityDto activity(DockerHostRef host, String containerId) {
+    try {
+      int active = 0;
+      List<String> busy = new ArrayList<>();
+      List<String> paused = new ArrayList<>();
+      List<String> unreadable = new ArrayList<>();
+      for (String name : inventory.names(host, containerId)) {
+        GatewayDto gateway = gatewayState.read(host, containerId, name).gateway();
+        if (gateway.paused()) paused.add(name);
+        if (gateway.activeAgents() > 0) {
+          active += gateway.activeAgents();
+          busy.add(name);
+        } else if (gateway.state().isBlank() && !gateway.paused()) {
+          // no gateway_state.json and no sentinel: the gateway has written nothing, so
+          // "nothing is running" is an absence of evidence rather than evidence of absence
+          unreadable.add(name);
+        }
+      }
+      return new ContainerActivityDto(active, List.copyOf(busy), List.copyOf(paused),
+          List.copyOf(unreadable));
+    } catch (ContainerNotRunningException stopped) {
+      return new ContainerActivityDto(0, List.of(), List.of(), List.of());
+    }
+  }
+
+  // ── emergency stop ─────────────────────────────────────────────────────────
+
+  /**
+   * Engages hermes' own emergency stop for this profile: cron dispatch, kanban dispatch and
+   * new gateway turns stop on their next check, and in-flight work is left to finish.
+   *
+   * <p>The reason for going through {@code hermes pause} rather than stopping the container
+   * is the difference between the two — a {@code docker stop} kills the turns that are
+   * running, which is what an operator reaching for a panic button almost never wants.
+   */
+  public AgentProfileDto pause(
+      DockerHostRef host, String containerId, String profileName, String reason) {
+    List<String> command = new ArrayList<>(ProfilePaths.hermesCli(profileName, "pause"));
+    if (reason != null && !reason.isBlank()) {
+      command.addAll(List.of("--reason", reason.trim()));
+    }
+    files.exec(host, containerId, command);
+    return readProfile(host, containerId, profileName);
+  }
+
+  /** Lifts the pause. Dispatch picks up on the next tick; no restart is involved. */
+  public AgentProfileDto resume(DockerHostRef host, String containerId, String profileName) {
+    files.exec(host, containerId, ProfilePaths.hermesCli(profileName, "resume"));
+    return readProfile(host, containerId, profileName);
   }
 
   /** Reads the profile-specific s6 gateway log, including rotated files, rather

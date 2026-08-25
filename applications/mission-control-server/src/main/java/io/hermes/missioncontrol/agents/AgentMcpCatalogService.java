@@ -287,6 +287,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     return new AgentProfileDto(
         value.id(), value.containerId(), value.name(), value.role(), value.state(), value.provider(),
         value.model(), value.apiKeyMasked(), value.cwd(), value.soul(), value.memoryMd(),
-        value.configYaml(), value.skills(), List.copyOf(mcp), value.integrations(), value.lastActive());
+        value.configYaml(), value.skills(), List.copyOf(mcp), value.integrations(), value.gateway(),
+        value.lastActive());
   }
 }

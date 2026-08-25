@@ -1,0 +1,14 @@
+{
+  "grafana": {
+    "description": "Grafana alert relay",
+    "events": [
+      "alert.firing",
+      "alert.resolved"
+    ],
+    "secret": "redacted-by-capture-hermes-fixtures-sh-0000",
+    "prompt": "<redacted>",
+    "skills": [],
+    "deliver": "log",
+    "created_at": "2026-08-25T22:39:10Z"
+  }
+}

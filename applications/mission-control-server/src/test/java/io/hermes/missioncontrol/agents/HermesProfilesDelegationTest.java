@@ -13,6 +13,10 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.docker.ContainerNotRunningException;
+import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
@@ -46,7 +50,7 @@ class HermesProfilesDelegationTest {
   private HermesProfileMcp mcp;
   private HermesSessions sessions;
   private HermesGatewayLogs gatewayLogs;
-  private HermesIntegrations integrations;
+  private HermesGatewayState gatewayState;
   private HermesProfiles profiles;
 
   @BeforeEach
@@ -58,13 +62,15 @@ class HermesProfilesDelegationTest {
     mcp = mock(HermesProfileMcp.class);
     sessions = mock(HermesSessions.class);
     gatewayLogs = mock(HermesGatewayLogs.class);
-    integrations = mock(HermesIntegrations.class);
+    gatewayState = mock(HermesGatewayState.class);
     profiles = new HermesProfiles(files, env, modelConfig, skills, mcp, sessions, gatewayLogs,
-        integrations, new ProfileInventory(files));
+        gatewayState, new ProfileInventory(files));
 
     when(files.requireProfileDir(HOST, CONTAINER, PROFILE)).thenReturn(DIR);
     when(files.readFile(any(), anyString(), anyString())).thenReturn("");
     when(modelConfig.parseConfig(any())).thenReturn(new ConfigInfo("anthropic", "claude-opus-5", "/work"));
+    when(gatewayState.read(any(), anyString(), anyString()))
+        .thenReturn(new HermesGatewayState.Reading(GatewayDto.unknown(), List.of()));
   }
 
   // ── reading ─────────────────────────────────────────────────────────────
@@ -85,7 +91,7 @@ class HermesProfilesDelegationTest {
     assertEquals("remembered", profile.memoryMd());
     verify(skills).list(HOST, CONTAINER, PROFILE, Map.of());
     verify(mcp).list(HOST, CONTAINER, PROFILE, Map.of());
-    verify(integrations).list(HOST, CONTAINER, PROFILE);
+    verify(gatewayState).read(HOST, CONTAINER, PROFILE);
   }
 
   @Test
@@ -205,6 +211,88 @@ class HermesProfilesDelegationTest {
     verify(mcp).remove(HOST, CONTAINER, PROFILE, "files");
   }
 
+  // ── what a stop would interrupt ─────────────────────────────────────────
+
+  @Test
+  void activityAddsUpTurnsInFlightAcrossEveryProfileInTheContainer() {
+    when(files.exec(any(), anyString(), any()))
+        .thenReturn(new ExecResult(0, PROFILE + "\nops\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(2, false, "running"));
+    when(gatewayState.read(HOST, CONTAINER, "ops")).thenReturn(reading(1, false, "running"));
+
+    ContainerActivityDto activity = profiles.activity(HOST, CONTAINER);
+
+    assertEquals(3, activity.activeAgents());
+    assertEquals(List.of(PROFILE, "ops"), activity.busyProfiles());
+    assertEquals(List.of(), activity.unreadable());
+  }
+
+  @Test
+  void anIdleProfileIsNotListedAndAPausedOneIsNamedSeparately() {
+    when(files.exec(any(), anyString(), any()))
+        .thenReturn(new ExecResult(0, PROFILE + "\nops\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(0, false, "running"));
+    when(gatewayState.read(HOST, CONTAINER, "ops")).thenReturn(reading(0, true, "running"));
+
+    ContainerActivityDto activity = profiles.activity(HOST, CONTAINER);
+
+    assertEquals(0, activity.activeAgents());
+    assertEquals(List.of(), activity.busyProfiles());
+    assertEquals(List.of("ops"), activity.pausedProfiles());
+  }
+
+  @Test
+  void aProfileWithNoGatewayStateIsUnreadableRatherThanQuietlyIdle() {
+    // the difference between "nothing is running" and "we could not tell" is the whole point:
+    // reporting the second as the first is how a stop kills work while claiming it was safe
+    when(files.exec(any(), anyString(), any())).thenReturn(new ExecResult(0, PROFILE + "\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(0, false, ""));
+
+    ContainerActivityDto activity = profiles.activity(HOST, CONTAINER);
+
+    assertEquals(List.of(PROFILE), activity.unreadable());
+    assertEquals(0, activity.activeAgents());
+  }
+
+  @Test
+  void aStoppedContainerReportsIdleRatherThanFailingTheCheck() {
+    // the caller is asking "is stopping this safe"; for one already down the answer is yes
+    when(files.exec(any(), anyString(), any()))
+        .thenThrow(new ContainerNotRunningException(CONTAINER, new RuntimeException("stopped")));
+
+    assertEquals(0, profiles.activity(HOST, CONTAINER).activeAgents());
+  }
+
+  private static HermesGatewayState.Reading reading(int active, boolean paused, String state) {
+    return new HermesGatewayState.Reading(
+        new GatewayDto(state, state, active, "0.20.5", "ok", paused, null), List.of());
+  }
+
+  // ── emergency stop ──────────────────────────────────────────────────────
+
+  @Test
+  void pausingRunsHermesOwnEmergencyStopRatherThanTouchingTheContainer() {
+    profiles.pause(HOST, CONTAINER, PROFILE, "rotating credentials");
+
+    verify(files).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "pause", "--reason", "rotating credentials"));
+  }
+
+  @Test
+  void aPauseWithNoReasonGivenPassesNoReasonFlagAtAll() {
+    // hermes stores an empty --reason as the reason, which reads worse than none
+    profiles.pause(HOST, CONTAINER, PROFILE, "   ");
+
+    verify(files).exec(HOST, CONTAINER, List.of("hermes", "-p", PROFILE, "pause"));
+  }
+
+  @Test
+  void resumingLiftsThePauseAndReReadsTheProfile() {
+    assertEquals(PROFILE, profiles.resume(HOST, CONTAINER, PROFILE).name());
+
+    verify(files).exec(HOST, CONTAINER, List.of("hermes", "-p", PROFILE, "resume"));
+  }
+
   // ── reads that pass straight through ────────────────────────────────────
 
   @Test
@@ -222,7 +310,7 @@ class HermesProfilesDelegationTest {
 
     profiles.deleteSession(HOST, CONTAINER, PROFILE, "s-1");
     verify(sessions).delete(HOST, CONTAINER, PROFILE, "s-1");
-    verify(integrations).list(HOST, CONTAINER, PROFILE);
+    verify(gatewayState).integrations(HOST, CONTAINER, PROFILE);
     verify(gatewayLogs).read(HOST, CONTAINER, PROFILE, 50);
   }
 }

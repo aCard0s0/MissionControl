@@ -1,12 +1,12 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { ApiSubscribeWebhookRequest, ApiWebhooks } from '../hermes-api';
-import { WebhookListener, WebhookRoute } from '../models';
+import { ApiOutboundWebhookRequest, ApiSubscribeWebhookRequest, ApiWebhooks } from '../hermes-api';
+import { OutboundWebhook, WebhookListener, WebhookRoute } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
 
 /**
- * Inbound webhook routes, which hermes owns per profile.
+ * Webhooks in both directions, which hermes owns per profile.
  *
  * Two things have to be true before a route fires: the profile's listener is enabled, and a
  * route exists under it. Mission Control manages both and never carries webhook traffic —
@@ -15,11 +15,16 @@ import { StoreContext } from './store-context';
  *
  * Secrets are hermes'. A listing carries only a masked tail; {@link secretOf} asks for the
  * full value, once, when an operator opens it.
+ *
+ * Outbound targets are the other direction — where the agent pushes signed lifecycle events.
+ * They live in `config.yaml` rather than hermes' webhook store, and hermes reads them at
+ * startup, so an edit lands on the next gateway restart.
  */
 @Injectable({ providedIn: 'root' })
 export class WebhookStore {
   readonly routes: WritableSignal<WebhookRoute[]> = signal([]);
   readonly listeners: WritableSignal<WebhookListener[]> = signal([]);
+  readonly outbound: WritableSignal<OutboundWebhook[]> = signal([]);
 
   readonly forSelectedContainer = computed(() => {
     const ids = new Set(this.agents.forSelectedContainer().map(a => a.id));
@@ -52,6 +57,7 @@ export class WebhookStore {
       if (!profiles.length) {
         this.routes.set([]);
         this.listeners.set([]);
+        this.outbound.set([]);
         return;
       }
       const answers = await this.ctx.mapPool(profiles, 6, async profile => {
@@ -69,6 +75,8 @@ export class WebhookStore {
         answer.subscriptions.map(s => toRoute(s, profile.id, profile.containerId))));
       this.listeners.set(found.map(({ profile, answer }) =>
         ({ agentId: profile.id, ...answer.platform })));
+      this.outbound.set(found.flatMap(({ profile, answer }) =>
+        toOutbound(answer, profile.id, profile.containerId)));
     } finally {
       this.refreshInFlight = false;
     }
@@ -91,6 +99,28 @@ export class WebhookStore {
   remove(agentId: string, route: string): Promise<boolean> {
     return this.mutate(agentId, 'remove webhook',
       ref => this.ctx.api.agents.webhooks.remove(ref, route));
+  }
+
+  /**
+   * Outbound targets. Hermes reads `hooks.outbound` at startup, so these land on the next
+   * gateway restart rather than immediately — the page says so rather than implying an edit
+   * took effect the moment it saved.
+   */
+  addOutbound(agentId: string, request: ApiOutboundWebhookRequest): Promise<boolean> {
+    return this.mutate(agentId, 'add outbound webhook',
+      ref => this.ctx.api.agents.webhooks.addOutbound(ref, request));
+  }
+
+  updateOutbound(
+    agentId: string, index: number, request: ApiOutboundWebhookRequest,
+  ): Promise<boolean> {
+    return this.mutate(agentId, 'save outbound webhook',
+      ref => this.ctx.api.agents.webhooks.updateOutbound(ref, index, request));
+  }
+
+  removeOutbound(agentId: string, index: number): Promise<boolean> {
+    return this.mutate(agentId, 'remove outbound webhook',
+      ref => this.ctx.api.agents.webhooks.removeOutbound(ref, index));
   }
 
   /** The full HMAC secret, or null when it could not be read. */
@@ -151,12 +181,34 @@ export class WebhookStore {
         ...ls.filter(l => l.agentId !== agentId),
         { agentId, ...answer.platform },
       ]);
+      this.outbound.update(os => [
+        ...os.filter(o => o.agentId !== agentId),
+        ...toOutbound(answer, agentId, containerId),
+      ]);
       return true;
     } catch (e) {
       this.ctx.toastFailure(label, e);
       return false;
     }
   }
+}
+
+/** Position is the identity, so it is taken from the array rather than from the payload. */
+function toOutbound(
+  answer: ApiWebhooks, agentId: string, containerId: string,
+): OutboundWebhook[] {
+  return (answer.outbound ?? []).map((target, index) => ({
+    index,
+    name: target.name ?? '',
+    url: target.url,
+    events: target.events ?? [],
+    matcher: target.matcher ?? null,
+    timeout: target.timeout ?? null,
+    secretEnv: target.secretEnv ?? null,
+    literalSecret: !!target.literalSecret,
+    agentId,
+    containerId,
+  }));
 }
 
 function toRoute(
