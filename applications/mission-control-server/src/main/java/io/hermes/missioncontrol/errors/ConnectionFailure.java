@@ -1,9 +1,11 @@
 package io.hermes.missioncontrol.errors;
 
+import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.http.HttpConnectTimeoutException;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.UnresolvedAddressException;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +22,8 @@ public final class ConnectionFailure {
 
   /** Long enough for any real chain; a bound rather than a limit, so cycles cannot hang us. */
   private static final int MAX_DEPTH = 16;
+
+  private static final String REFUSED = "connection refused — nothing is listening there";
 
   private ConnectionFailure() {}
 
@@ -41,15 +45,31 @@ public final class ConnectionFailure {
         return "no route to that host";
       }
     }
+
+    // Linux loses the OS error on the client's async connect path: a refused port arrives as a
+    // message-less ConnectException over a ClosedChannelException, where macOS reports
+    // ConnectException("Connection refused"). A dead network or a blackholed address arrives as
+    // HttpConnectTimeoutException instead, matched above — so a channel closed inside a failed
+    // connect is the refusal, and naming it keeps the reason the same on either platform.
+    if (containsType(chain, ConnectException.class)
+        && containsType(chain, ClosedChannelException.class)) {
+      return REFUSED;
+    }
+
     for (Throwable t : chain) {
       String message = firstLineOf(t.getMessage());
       if (message != null) {
-        return "Connection refused".equalsIgnoreCase(message)
-            ? "connection refused — nothing is listening there"
-            : message;
+        return "Connection refused".equalsIgnoreCase(message) ? REFUSED : message;
       }
     }
     return chain.getLast().getClass().getSimpleName();
+  }
+
+  private static boolean containsType(List<Throwable> chain, Class<? extends Throwable> type) {
+    for (Throwable t : chain) {
+      if (type.isInstance(t)) return true;
+    }
+    return false;
   }
 
   /** The chain from {@code failure} down to its root cause, stopping at a repeat. */

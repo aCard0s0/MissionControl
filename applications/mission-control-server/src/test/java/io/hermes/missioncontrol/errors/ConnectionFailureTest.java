@@ -10,6 +10,7 @@ import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,26 @@ class ConnectionFailureTest {
     failure.initCause(new UnresolvedAddressException());
 
     assertEquals("the host name does not resolve", ConnectionFailure.describe(failure));
+  }
+
+  @Test
+  void aRefusedConnectIsNamedWhenLinuxReportsItOnlyAsAClosedChannel() {
+    // the shape linux produces on the client's async connect path, where the OS error is lost:
+    // macOS reports the same failure as ConnectException("Connection refused")
+    ConnectException failure = new ConnectException();
+    failure.initCause(new ClosedChannelException());
+
+    assertEquals("connection refused — nothing is listening there",
+        ConnectionFailure.describe(failure));
+  }
+
+  @Test
+  void aChannelClosedOutsideAConnectIsNotReportedAsARefusal() {
+    // a response cut off mid-stream closes the channel too, and nothing was refused there
+    IOException failure = new IOException();
+    failure.initCause(new ClosedChannelException());
+
+    assertEquals("ClosedChannelException", ConnectionFailure.describe(failure));
   }
 
   @Test
