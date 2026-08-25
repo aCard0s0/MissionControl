@@ -5,6 +5,7 @@ import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
+import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.api.PauseAgentRequest;
 import io.hermes.missioncontrol.agents.api.UpdateConfigRequest;
@@ -98,6 +99,14 @@ public class AgentsController {
     DockerHostRef host = endpoints.host(hostId);
     return endpoints.linked(host, profiles.updateConfig(
         host, containerId, name, request.configYaml()));
+  }
+
+  /** What a stop, restart or replace of this container would interrupt. Read by the
+   *  Containers page on the click, not by its poll — see {@link HermesProfiles#activity}. */
+  @GetMapping("/{hostId}/{containerId}/activity")
+  public ContainerActivityDto activity(
+      @PathVariable String hostId, @PathVariable String containerId) {
+    return profiles.activity(endpoints.host(hostId), containerId);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/integrations")

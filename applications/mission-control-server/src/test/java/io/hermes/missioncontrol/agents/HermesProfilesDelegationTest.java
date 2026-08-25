@@ -13,6 +13,9 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.docker.ContainerNotRunningException;
+import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
+import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
 import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
@@ -206,6 +209,63 @@ class HermesProfilesDelegationTest {
     verify(mcp).update(HOST, CONTAINER, PROFILE, "files", definition);
     verify(mcp).setEnabled(HOST, CONTAINER, PROFILE, "files", false);
     verify(mcp).remove(HOST, CONTAINER, PROFILE, "files");
+  }
+
+  // ── what a stop would interrupt ─────────────────────────────────────────
+
+  @Test
+  void activityAddsUpTurnsInFlightAcrossEveryProfileInTheContainer() {
+    when(files.exec(any(), anyString(), any()))
+        .thenReturn(new ExecResult(0, PROFILE + "\nops\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(2, false, "running"));
+    when(gatewayState.read(HOST, CONTAINER, "ops")).thenReturn(reading(1, false, "running"));
+
+    ContainerActivityDto activity = profiles.activity(HOST, CONTAINER);
+
+    assertEquals(3, activity.activeAgents());
+    assertEquals(List.of(PROFILE, "ops"), activity.busyProfiles());
+    assertEquals(List.of(), activity.unreadable());
+  }
+
+  @Test
+  void anIdleProfileIsNotListedAndAPausedOneIsNamedSeparately() {
+    when(files.exec(any(), anyString(), any()))
+        .thenReturn(new ExecResult(0, PROFILE + "\nops\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(0, false, "running"));
+    when(gatewayState.read(HOST, CONTAINER, "ops")).thenReturn(reading(0, true, "running"));
+
+    ContainerActivityDto activity = profiles.activity(HOST, CONTAINER);
+
+    assertEquals(0, activity.activeAgents());
+    assertEquals(List.of(), activity.busyProfiles());
+    assertEquals(List.of("ops"), activity.pausedProfiles());
+  }
+
+  @Test
+  void aProfileWithNoGatewayStateIsUnreadableRatherThanQuietlyIdle() {
+    // the difference between "nothing is running" and "we could not tell" is the whole point:
+    // reporting the second as the first is how a stop kills work while claiming it was safe
+    when(files.exec(any(), anyString(), any())).thenReturn(new ExecResult(0, PROFILE + "\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(0, false, ""));
+
+    ContainerActivityDto activity = profiles.activity(HOST, CONTAINER);
+
+    assertEquals(List.of(PROFILE), activity.unreadable());
+    assertEquals(0, activity.activeAgents());
+  }
+
+  @Test
+  void aStoppedContainerReportsIdleRatherThanFailingTheCheck() {
+    // the caller is asking "is stopping this safe"; for one already down the answer is yes
+    when(files.exec(any(), anyString(), any()))
+        .thenThrow(new ContainerNotRunningException(CONTAINER, new RuntimeException("stopped")));
+
+    assertEquals(0, profiles.activity(HOST, CONTAINER).activeAgents());
+  }
+
+  private static HermesGatewayState.Reading reading(int active, boolean paused, String state) {
+    return new HermesGatewayState.Reading(
+        new GatewayDto(state, state, active, "0.20.5", "ok", paused, null, null), List.of());
   }
 
   // ── emergency stop ──────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
@@ -279,6 +281,42 @@ public class HermesProfiles {
 
   public List<IntegrationDto> integrations(DockerHostRef host, String containerId, String profileName) {
     return gatewayState.integrations(host, containerId, profileName);
+  }
+
+  /**
+   * What stopping this container right now would interrupt, across every profile in it.
+   *
+   * <p>Deliberately not part of the container inventory. That polls every host on a timer,
+   * and answering this means one exec per profile — the cost belongs on the click that is
+   * about to destroy work, not on the fleet view that runs whether anyone is looking.
+   *
+   * <p>A stopped container has nothing in flight and nothing to exec into, so it reports
+   * idle rather than failing: the caller is asking "is this safe", and for a container that
+   * is already down the answer is yes.
+   */
+  public ContainerActivityDto activity(DockerHostRef host, String containerId) {
+    try {
+      int active = 0;
+      List<String> busy = new ArrayList<>();
+      List<String> paused = new ArrayList<>();
+      List<String> unreadable = new ArrayList<>();
+      for (String name : inventory.names(host, containerId)) {
+        GatewayDto gateway = gatewayState.read(host, containerId, name).gateway();
+        if (gateway.paused()) paused.add(name);
+        if (gateway.activeAgents() > 0) {
+          active += gateway.activeAgents();
+          busy.add(name);
+        } else if (gateway.state().isBlank() && !gateway.paused()) {
+          // no gateway_state.json and no sentinel: the gateway has written nothing, so
+          // "nothing is running" is an absence of evidence rather than evidence of absence
+          unreadable.add(name);
+        }
+      }
+      return new ContainerActivityDto(active, List.copyOf(busy), List.copyOf(paused),
+          List.copyOf(unreadable));
+    } catch (ContainerNotRunningException stopped) {
+      return ContainerActivityDto.idle();
+    }
   }
 
   // ── emergency stop ─────────────────────────────────────────────────────────

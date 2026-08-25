@@ -17,6 +17,7 @@ import {
   TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
 } from '../testing/dom';
 import { container, dockerHost } from '../testing/models';
+import { ApiContainerActivity } from '../core/api/api-types';
 
 describe('normalizeSeedProfiles', () => {
   it('normalizes, deduplicates, and omits the implicit default profile', () => {
@@ -670,6 +671,104 @@ describe('ContainersPage image update', () => {
 
     expect(el(fixture).querySelector('.modal')).toBeNull();
     expect(store.lifecycle.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContainersPage stop', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  /** The store stub plus the two agent endpoints the stop gate reaches for. */
+  const withActivity = (
+    activity: Partial<ApiContainerActivity> | Error,
+    containers = [container('hermes-prod')],
+  ) => {
+    const store = storeStub(containers);
+    const idle = { activeAgents: 0, busyProfiles: [], pausedProfiles: [], unreadable: [] };
+    const agents = {
+      activity: activity instanceof Error
+        ? vi.fn().mockRejectedValue(activity)
+        : vi.fn().mockResolvedValue({ ...idle, ...activity }),
+      pause: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.assign(store.ctx, {
+      api: { agents },
+      toast: vi.fn(),
+      toastFailure: vi.fn(),
+    });
+    Object.assign(store.agents, { refresh: vi.fn().mockResolvedValue(undefined) });
+    return { store, agents };
+  };
+
+  it('stops an idle container on the click, with nothing in the way', async () => {
+    const { store } = withActivity({});
+    const { fixture } = render(store);
+
+    press(fixture, 'stop', '.card');
+    await settle(fixture);
+
+    expect(store.lifecycle.setStatus).toHaveBeenCalledWith('hermes-prod', 'stopped');
+    expect(el(fixture).querySelector('.modal')).toBeNull();
+  });
+
+  it('holds a stop that would kill turns, and names what is running', async () => {
+    const { store } = withActivity({ activeAgents: 2, busyProfiles: ['atlas'] });
+    const { fixture } = render(store);
+
+    press(fixture, 'stop', '.card');
+    await settle(fixture);
+
+    expect(store.lifecycle.setStatus).not.toHaveBeenCalled();
+    expect(text(fixture)).toContain('2');
+    expect(text(fixture)).toContain('atlas');
+
+    press(fixture, 'stop anyway');
+    await settle(fixture);
+    expect(store.lifecycle.setStatus).toHaveBeenCalledWith('hermes-prod', 'stopped');
+  });
+
+  it('offers hermes\u2019 own pause, which leaves the container up', async () => {
+    const { store, agents } = withActivity({ activeAgents: 1, busyProfiles: ['atlas'] });
+    const { fixture } = render(store);
+
+    press(fixture, 'stop', '.card');
+    await settle(fixture);
+    // buttonWith, not press: the label carries the "— let them finish" suffix
+    buttonWith(fixture, 'pause instead').click();
+    fixture.detectChanges();
+    await settle(fixture);
+
+    expect(agents.pause).toHaveBeenCalledWith(
+      { hostId: 'dh-local', containerId: 'hermes-prod', name: 'atlas' },
+      expect.any(String));
+    expect(store.lifecycle.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('asks before stopping when the gateway wrote no state at all', async () => {
+    // an unreadable profile is not a quiet yes — nothing-running is unproven either way
+    const { store } = withActivity({ unreadable: ['atlas'] });
+    const { fixture } = render(store);
+
+    press(fixture, 'stop', '.card');
+    await settle(fixture);
+
+    expect(store.lifecycle.setStatus).not.toHaveBeenCalled();
+    expect(text(fixture)).toContain('absence of evidence');
+  });
+
+  it('stops anyway when the check itself fails', async () => {
+    // refusing to stop a container because we could not read it is the worse failure
+    const { store } = withActivity(new Error('container is not running'));
+    const { fixture } = render(store);
+
+    press(fixture, 'stop', '.card');
+    await settle(fixture);
+
+    expect(store.lifecycle.setStatus).toHaveBeenCalledWith('hermes-prod', 'stopped');
   });
 });
 
