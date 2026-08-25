@@ -9,59 +9,56 @@
   <button class="btn primary" (click)="newTemplate()">+ new blueprint</button>
 </div>
 
-<div class="panel filters" data-reveal>
-  <div class="panel-b">
-    <div class="find-row">
-      <input class="input find" type="search" aria-label="search blueprints"
-             placeholder="search names, descriptions, skills, mcp servers, keys"
-             [value]="query()" (input)="onSearch($any($event.target).value)" />
-      @if (filtering()) {
-        <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
+<div class="filter mono" data-reveal>
+  <input class="input find" type="search" aria-label="search blueprints"
+         placeholder="search names, descriptions, skills, mcp servers, keys"
+         [value]="query()" (input)="onSearch($any($event.target).value)" />
+
+  @if (templates.categories().length > 1) {
+    <div class="facet">
+      <span class="lbl">category</span>
+      <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
+      @for (c of templates.categories(); track c) {
+        <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
       }
     </div>
+  }
 
-    @if (templates.categories().length > 1) {
-      <div class="facet mono">
-        <span class="lbl">category</span>
-        <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
-        @for (c of templates.categories(); track c) {
-          <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
-        }
-      </div>
-    }
+  @if (providerNames().length > 1) {
+    <div class="facet">
+      <span class="lbl">provider</span>
+      <button class="chip" [class.on]="provider() === null" (click)="provider.set(null)">all</button>
+      @for (p of providerNames(); track p) {
+        <button class="chip" [class.on]="provider() === p" (click)="provider.set(p)">{{ p }}</button>
+      }
+    </div>
+  }
 
-    @if (providerNames().length > 1) {
-      <div class="facet mono">
-        <span class="lbl">provider</span>
-        <button class="chip" [class.on]="provider() === null" (click)="provider.set(null)">all</button>
-        @for (p of providerNames(); track p) {
-          <button class="chip" [class.on]="provider() === p" (click)="provider.set(p)">{{ p }}</button>
-        }
-      </div>
-    }
+  @if (modelNames().length > 1) {
+    <div class="facet">
+      <span class="lbl">model</span>
+      <button class="chip" [class.on]="model() === null" (click)="model.set(null)">all</button>
+      @for (m of modelNames(); track m) {
+        <button class="chip" [class.on]="model() === m" (click)="model.set(m)">{{ m }}</button>
+      }
+    </div>
+  }
 
-    @if (modelNames().length > 1) {
-      <div class="facet mono">
-        <span class="lbl">model</span>
-        <button class="chip" [class.on]="model() === null" (click)="model.set(null)">all</button>
-        @for (m of modelNames(); track m) {
-          <button class="chip" [class.on]="model() === m" (click)="model.set(m)">{{ m }}</button>
-        }
-      </div>
-    }
+  @if (anyCarries()) {
+    <div class="facet">
+      <span class="lbl">carries</span>
+      <button class="chip" [class.on]="carries().has('skills')" (click)="toggleCarries('skills')"
+              title="blueprints that install skills">skills</button>
+      <button class="chip" [class.on]="carries().has('mcp')" (click)="toggleCarries('mcp')"
+              title="blueprints that connect MCP servers">mcp</button>
+      <button class="chip" [class.on]="carries().has('keys')" (click)="toggleCarries('keys')"
+              title="blueprints that carry encrypted keys">keys</button>
+    </div>
+  }
 
-    @if (anyCarries()) {
-      <div class="facet mono">
-        <span class="lbl">carries</span>
-        <button class="chip" [class.on]="carries().has('skills')" (click)="toggleCarries('skills')"
-                title="blueprints that install skills">skills</button>
-        <button class="chip" [class.on]="carries().has('mcp')" (click)="toggleCarries('mcp')"
-                title="blueprints that connect MCP servers">mcp</button>
-        <button class="chip" [class.on]="carries().has('keys')" (click)="toggleCarries('keys')"
-                title="blueprints that carry encrypted keys">keys</button>
-      </div>
-    }
-  </div>
+  @if (filtering()) {
+    <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
+  }
 </div>
 
 <div class="layout" data-reveal>

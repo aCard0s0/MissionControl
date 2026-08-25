@@ -21,17 +21,3 @@
   }
 }
 
-.filter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-
-  .lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
-  .faint { font-size: 11px; }
-  .chip { cursor: pointer; background: var(--panel); transition: all .15s;
-    &:hover { border-color: var(--faint); }
-    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
-  }
-}

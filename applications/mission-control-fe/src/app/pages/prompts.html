@@ -19,11 +19,14 @@
   <input class="input find" type="search" placeholder="search titles, bodies, notes, tags"
          aria-label="search prompts"
          [value]="query()" (input)="onSearch($any($event.target).value)" />
-  <span class="lbl">category</span>
-  <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
-  @for (c of prompts.categories(); track c) {
-    <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
-  }
+
+  <div class="facet">
+    <span class="lbl">category</span>
+    <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
+    @for (c of prompts.categories(); track c) {
+      <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
+    }
+  </div>
 </div>
 
 @if (editorOpen()) {

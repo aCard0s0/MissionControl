@@ -12,25 +12,6 @@
 }
 
 .view-toggle .chip,
-.filter .chip {
-  cursor: pointer;
-  background: var(--panel);
-  transition: color .15s ease, border-color .15s ease, background .15s ease;
-  &:hover { border-color: var(--faint); }
-  &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
-}
-
-.filter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-
-  .find { flex: 1; min-width: 220px; max-width: 420px; }
-  .lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
-}
-
 .editor {
   margin-bottom: 14px;
 

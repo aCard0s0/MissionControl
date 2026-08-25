@@ -352,7 +352,7 @@ describe('AgentProfilesPage search and filters', () => {
     Array.from(el(fixture).querySelectorAll('.tmpl .nm')).map(n => (n.textContent ?? '').trim());
 
   const search = async (fixture: TestFixture, value: string): Promise<void> => {
-    const input = el(fixture).querySelector<HTMLInputElement>('.filters .find')!;
+    const input = el(fixture).querySelector<HTMLInputElement>('.filter .find')!;
     input.value = value;
     input.dispatchEvent(new Event('input'));
     await settle(fixture);
@@ -478,7 +478,7 @@ describe('AgentProfilesPage search and filters', () => {
     press(fixture, 'clear filters');
 
     expect(names(fixture)).toEqual(['ops-sre', 'scribe']);
-    expect(el(fixture).querySelector('.filters .find')).toHaveProperty('value', '');
+    expect(el(fixture).querySelector('.filter .find')).toHaveProperty('value', '');
   });
 
   it('keeps the empty-library state for an empty library, not the no-match one', () => {

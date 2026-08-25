@@ -270,6 +270,50 @@ a:hover { text-decoration: underline; }
   &.crit { color: var(--red); }
 }
 
+// ── filter bar ──────────────────────────────────────────────────────────────
+// The control every page that filters a list puts above it. It was copied per
+// page, so the same bar had four looks: Blueprints wore a panel and gave its
+// labels a fixed column, while Prompts, Reference and Webhooks stayed bare.
+// This is the Prompts one, defined once.
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+
+  // the search box takes whatever room the chips leave
+  .find { flex: 1; min-width: 220px; max-width: 420px; }
+
+  .lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .faint { font-size: 11px; }
+
+  // A label and the chips it governs, held together. A page filtering on one
+  // facet does not need it; one filtering on four does, or a group's chips wrap
+  // up against the next group's label and the boundary disappears.
+  .facet {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chip {
+    cursor: pointer;
+    background: var(--panel);
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+
+    &:hover { border-color: var(--faint); }
+    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+  }
+
+  // narrow enough that the search box reserving a column of its own would push
+  // the chips off the row it is meant to share with them
+  @media (max-width: 760px) {
+    .find { min-width: 0; max-width: none; }
+  }
+}
+
 // log level colors
 .lvl-info  { color: var(--cyan); }
 .lvl-warn  { color: var(--amber); }
