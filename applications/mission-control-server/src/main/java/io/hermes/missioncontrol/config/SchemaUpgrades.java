@@ -38,7 +38,9 @@ class SchemaUpgrades {
 
   private static final List<AddedColumn> COLUMNS = List.of(
       // Blueprints gained a category so the page can file and filter them.
-      new AddedColumn("profile_templates", "category", "TEXT"));
+      new AddedColumn("profile_templates", "category", "TEXT"),
+      // …and a glyph, drawn beside the name in the list and the editor.
+      new AddedColumn("profile_templates", "icon", "TEXT"));
 
   private final JdbcTemplate jdbc;
 

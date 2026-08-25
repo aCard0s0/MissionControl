@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
 CREATE TABLE IF NOT EXISTS profile_templates (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL UNIQUE,
+  icon        TEXT,   -- added after this table shipped; see SchemaUpgrades
   description TEXT,
   category    TEXT,   -- added after this table shipped; see SchemaUpgrades
   provider    TEXT,

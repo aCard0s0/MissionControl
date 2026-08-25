@@ -455,6 +455,7 @@ export interface TemplateSecret {
 export interface ProfileTemplate {
   id: string;
   name: string;
+  icon: string;                   // key into the built-in glyph set; '' for the default
   description: string;
   category: string;               // lower-cased by the backend, so filters cannot split
   provider: string;
@@ -474,6 +475,7 @@ export interface ProfileTemplate {
  *  stored secret; non-blank values replace it. */
 export interface ProfileTemplateInput {
   name: string;
+  icon: string;
   description: string;
   category: string;
   provider: string;

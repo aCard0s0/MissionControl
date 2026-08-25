@@ -259,7 +259,7 @@ class TemplateMcpSnapshotsTest {
   }
 
   private static ProfileTemplate templateWith(McpServerSpec... entries) {
-    return new ProfileTemplate("pt-1", "ops", "", "ops", "anthropic", "m", "", "", "", "",
+    return new ProfileTemplate("pt-1", "ops", "", "", "ops", "anthropic", "m", "", "", "", "",
         List.of(), Arrays.asList(entries), List.of(), 1L, 1L);
   }
 }

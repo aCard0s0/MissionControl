@@ -40,18 +40,6 @@
   }
   &.open .panel-h { border-bottom-color: var(--line); }
 
-  .disc {
-    flex: none;
-    width: 18px;
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--faint);
-    font-size: 11px;
-    cursor: pointer;
-    &:hover { color: var(--acc); }
-  }
-
   .title {
     font-family: var(--font-disp);
     font-size: 13px;

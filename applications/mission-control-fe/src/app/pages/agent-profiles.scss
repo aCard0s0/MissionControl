@@ -32,11 +32,23 @@
   &:hover { border-color: var(--line-2); transform: translateY(-1px); }
   &.active { border-color: var(--acc-line); box-shadow: 0 0 0 1px var(--acc-line); }
 
+  .panel-h { gap: 8px; }
   .panel-h .nm { font-size: 12px; letter-spacing: .04em; color: var(--text); text-transform: none; }
+
+  // the glyph reads as part of the name, so it takes the name's colour and the
+  // accent only when the card is the one being edited
+  .ic {
+    display: inline-flex;
+    width: 15px;
+    height: 15px;
+    flex: none;
+    color: var(--dim);
+  }
+  &.active .ic { color: var(--acc); }
+
   .role { font-size: 11.5px; margin-bottom: 2px; }
   .model { font-size: 10px; margin-bottom: 10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .card-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 }
 
 .empty { align-items: center; gap: 8px; padding: 32px 20px; text-align: center; }

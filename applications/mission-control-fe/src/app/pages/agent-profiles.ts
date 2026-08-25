@@ -6,6 +6,7 @@ import { ProfileTemplate } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
 import { providerOptionFor, providerOptions } from '../shared/provider-resolve';
+import { AgentIconView } from '../shared/agent-icon';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
 import { ProfileEditorPanel } from './profile-editor-panel';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
@@ -27,7 +28,7 @@ import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-edito
 @Component({
   selector: 'mc-agent-profiles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Reveal, ProfileEditorPanel, ProfileDeployDialog],
+  imports: [Reveal, AgentIconView, ProfileEditorPanel, ProfileDeployDialog],
   templateUrl: './agent-profiles.html',
   styleUrl: './agent-profiles.scss',
 })
@@ -43,6 +44,13 @@ export class AgentProfilesPage {
   protected readonly open = signal(false);   // editor pane visible (mobile + first load)
 
   protected readonly deployFor = signal<ProfileTemplate | null>(null);
+
+  /**
+   * Cards whose detail is showing. Collapsed to begin with: the list is how an
+   * operator finds a blueprint, and a description plus a model line plus three
+   * chip rows each is more than a name needs to be recognised by.
+   */
+  private readonly openCards = signal<ReadonlySet<string>>(new Set());
 
   // ── finding one again ────────────────────────────────────────────────────
   protected readonly query = signal('');
@@ -139,6 +147,18 @@ export class AgentProfilesPage {
     if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
     await this.templates.remove(t.id);
     if (this.draft().id === t.id) this.closeEditor();
+  }
+
+  protected cardOpen(id: string): boolean {
+    return this.openCards().has(id);
+  }
+
+  protected toggleCard(id: string): void {
+    this.openCards.update(open => {
+      const next = new Set(open);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   }
 
   protected openDeploy(t: ProfileTemplate): void {

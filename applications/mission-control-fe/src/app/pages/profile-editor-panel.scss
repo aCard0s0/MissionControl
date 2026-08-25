@@ -12,8 +12,83 @@
 }
 
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-// name + description + category: the description earns the extra width
-.row.three { grid-template-columns: 1fr 1.4fr 0.8fr; }
+// glyph + name + description + category: the description earns the extra width,
+// and the glyph asks only for the square its button occupies
+.row.identity { grid-template-columns: auto 1fr 1.4fr 0.8fr; }
+
+// ── icon picker ─────────────────────────────────────────────────────────────
+.icon-field { min-width: 0; }
+
+.icon-btn, .icon-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--panel);
+  color: var(--dim);
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+
+  mc-agent-icon { width: 15px; height: 15px; }
+
+  &:hover { color: var(--acc); border-color: var(--faint); }
+}
+
+.icon-btn { color: var(--acc); }
+
+.icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel-2);
+
+  .on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+  .icon-hint { font-size: 10px; margin-left: 4px; }
+}
+
+// ── collapsible groups ──────────────────────────────────────────────────────
+.group {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+
+  &.open { border-color: var(--line-2); }
+}
+
+.group-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { color: var(--text); background: var(--acc-soft); }
+
+  .group-t { font-size: 11px; letter-spacing: .06em; }
+  .group-note { font-size: 10px; }
+  .spacer { flex: 1; }
+}
+
+.group-b {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 11px 12px;
+}
 
 textarea.code { resize: vertical; line-height: 1.5; white-space: pre; }
 
@@ -124,7 +199,7 @@ textarea.code { resize: vertical; line-height: 1.5; white-space: pre; }
 }
 
 @media (max-width: 760px) {
-  .row, .row.three { grid-template-columns: 1fr; }
+  .row, .row.identity { grid-template-columns: 1fr; }
   .add-mcp { grid-template-columns: 1fr; }
   .catalog-mcp { grid-template-columns: 1fr; }
   .line { flex-wrap: wrap; .key-inp { width: 100%; } }

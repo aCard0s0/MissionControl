@@ -7,7 +7,15 @@
     <button class="btn ghost sm" (click)="closed.emit()">✕</button>
   </div>
   <div class="editor-b">
-    <div class="row three">
+    <div class="row identity">
+      <div class="field icon-field">
+        <label>icon</label>
+        <button class="icon-btn" type="button" (click)="iconOpen.set(!iconOpen())"
+                [attr.aria-expanded]="iconOpen()"
+                [title]="form.icon || 'default'">
+          <mc-agent-icon [icon]="form.icon" />
+        </button>
+      </div>
       <div class="field">
         <label>name</label>
         <input class="input" [(ngModel)]="form.name" placeholder="ops-sre" />
@@ -26,6 +34,18 @@
       </div>
     </div>
 
+    @if (iconOpen()) {
+      <div class="icon-grid" role="group" aria-label="blueprint icon">
+        @for (i of icons; track i) {
+          <button class="icon-opt" type="button" [class.on]="form.icon === i"
+                  [title]="i" [attr.aria-pressed]="form.icon === i" (click)="pickIcon(i)">
+            <mc-agent-icon [icon]="i" />
+          </button>
+        }
+        <span class="faint icon-hint">pick again to clear</span>
+      </div>
+    }
+
     <div class="row">
       <div class="field">
         <label>provider</label>
@@ -39,118 +59,181 @@
       </div>
     </div>
 
-    <div class="row">
-      <div class="field">
-        <label>base url — optional (ollama / custom endpoints)</label>
-        <input class="input" [(ngModel)]="form.baseUrl" placeholder="http://host:11434/v1" />
-      </div>
-      <div class="field">
-        <label>working dir</label>
-        <input class="input" [(ngModel)]="form.cwd" placeholder="/opt/data" />
-      </div>
-    </div>
-
-    <div class="field">
-      <label>soul — SOUL.md</label>
-      <textarea class="input mono code" rows="6" [(ngModel)]="form.soul"></textarea>
-    </div>
-
-    <div class="field">
-      <label>memory — MEMORY.md seed</label>
-      <textarea class="input mono code" rows="4" [(ngModel)]="form.memory"></textarea>
-    </div>
-
-    <!-- skills -->
-    <div class="field">
-      <label>skills</label>
-      <div class="chips edit-chips">
-        @for (s of form.skills; track s) {
-          <span class="chip on">{{ s }}<button class="x" type="button" (click)="removeSkill(s)">×</button></span>
-        }
-        @if (!form.skills.length) { <span class="faint mono empty-note">no skills</span> }
-      </div>
-      <div class="add-row">
-        <input class="input" [(ngModel)]="newSkill" placeholder="skill-id e.g. web-research"
-               (keydown.enter)="addSkill()" />
-        <button class="btn sm" type="button" (click)="addSkill()">add</button>
-      </div>
-    </div>
-
-    <!-- mcp servers -->
-    <div class="field">
-      <label>tools — mcp servers</label>
-      @for (m of form.mcpServers; track m.name) {
-        <div class="line mono">
-          <span class="ln-name">{{ m.name }}</span>
-          <span class="chip info">{{ m.transport }}</span>
-          <span class="ln-detail faint">{{ m.command || m.url }}{{ m.args ? ' ' + m.args : '' }}</span>
-          <span class="spacer"></span>
-          <button class="btn ghost sm" type="button" (click)="removeMcp(m.name)">remove</button>
+    <div class="group" [class.open]="groupOpen('endpoint')">
+      <button class="group-h" type="button" (click)="toggleGroup('endpoint')"
+              [attr.aria-expanded]="groupOpen('endpoint')">
+        <span class="disc">{{ groupOpen('endpoint') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">endpoint &amp; working dir</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('endpoint') }}</span>
+      </button>
+      @if (groupOpen('endpoint')) {
+        <div class="group-b">
+          <div class="row">
+            <div class="field">
+              <label>base url — optional (ollama / custom endpoints)</label>
+              <input class="input" [(ngModel)]="form.baseUrl" placeholder="http://host:11434/v1" />
+            </div>
+            <div class="field">
+              <label>working dir</label>
+              <input class="input" [(ngModel)]="form.cwd" placeholder="/opt/data" />
+            </div>
+          </div>
         </div>
       }
-      @if (!form.mcpServers.length) { <span class="faint mono empty-note">no mcp servers</span> }
-
-      <div class="catalog-mcp">
-        <div class="catalog-copy">
-          <span class="mono">add from MCP Servers</span>
-          <span class="faint">Creates a detached snapshot. Later catalog edits will not change this profile.</span>
-        </div>
-        <select class="select" [ngModel]="mcpCatalogId" (ngModelChange)="selectCatalogMcp($event)">
-          <option value="">select a server…</option>
-          @for (server of catalog.servers(); track server.id) {
-            <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
-          }
-        </select>
-        <input class="input" [(ngModel)]="mcpCatalogAlias" placeholder="agent alias" />
-        <button class="btn sm" type="button"
-                [disabled]="!mcpCatalogId || !mcpCatalogAlias.trim()"
-                (click)="addCatalogMcp()">add snapshot</button>
-        @if (catalogServer(); as selected) {
-          @if (selected.kind === 'managed' && !selected.crossHostUrl) {
-            <span class="catalog-warning">Uses the stack-internal URL. It will only work for Agents that can reach the source host's MCP network.</span>
-          }
-        }
-      </div>
-
-      <div class="or mono faint"><span>or add a custom definition</span></div>
-      <div class="add-mcp">
-        <input class="input" [(ngModel)]="mcpForm.name" placeholder="server name" />
-        <select class="select" [(ngModel)]="mcpForm.transport">
-          <option value="stdio">stdio</option>
-          <option value="http">http</option>
-          <option value="sse">sse</option>
-        </select>
-        @if (mcpForm.stdio) {
-          <input class="input" [(ngModel)]="mcpForm.command" placeholder="command" />
-          <input class="input" [(ngModel)]="mcpForm.args" placeholder="args (optional)" />
-        } @else {
-          <input class="input wide" [(ngModel)]="mcpForm.url" placeholder="https://endpoint/mcp" />
-        }
-        <button class="btn sm" type="button" [disabled]="!mcpForm.valid()" (click)="addMcp()">add</button>
-      </div>
     </div>
 
-    <!-- keys -->
-    <div class="field">
-      <label>keys — stored encrypted in the dashboard db</label>
-      @for (s of form.secrets; track s.key) {
-        <div class="line mono">
-          <span class="ln-name">{{ s.key }}</span>
-          <mc-status [status]="s.set ? (s.recoverable ? 'connected' : 'error') : 'off'"
-                     [label]="s.set ? (s.recoverable ? 'set' : 'unreadable') : 'unset'" />
-          @if (s.set && s.recoverable) { <span class="ln-detail faint">leave blank to keep</span> }
-          @if (s.set && !s.recoverable) { <span class="ln-detail faint">unreadable (key changed) · enter to restore</span> }
-          <input class="input key-inp" type="password" [(ngModel)]="s.value"
-                 [placeholder]="s.set ? 'new value (optional)' : 'value'" />
-          <button class="btn ghost sm" type="button" (click)="removeSecret(s.key)">remove</button>
+    <div class="group" [class.open]="groupOpen('soul')">
+      <button class="group-h" type="button" (click)="toggleGroup('soul')"
+              [attr.aria-expanded]="groupOpen('soul')">
+        <span class="disc">{{ groupOpen('soul') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">soul — SOUL.md</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('soul') }}</span>
+      </button>
+      @if (groupOpen('soul')) {
+        <div class="group-b">
+          <textarea class="input mono code" rows="6" [(ngModel)]="form.soul"
+                    aria-label="soul"></textarea>
         </div>
       }
-      @if (!form.secrets.length) { <span class="faint mono empty-note">no keys</span> }
-      <div class="add-row">
-        <input class="input" [(ngModel)]="secretKey" placeholder="ANTHROPIC_API_KEY" />
-        <input class="input" type="password" [(ngModel)]="secretValue" placeholder="value" />
-        <button class="btn sm" type="button" (click)="addSecret()">add</button>
-      </div>
+    </div>
+
+    <div class="group" [class.open]="groupOpen('memory')">
+      <button class="group-h" type="button" (click)="toggleGroup('memory')"
+              [attr.aria-expanded]="groupOpen('memory')">
+        <span class="disc">{{ groupOpen('memory') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">memory — MEMORY.md seed</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('memory') }}</span>
+      </button>
+      @if (groupOpen('memory')) {
+        <div class="group-b">
+          <textarea class="input mono code" rows="4" [(ngModel)]="form.memory"
+                    aria-label="memory"></textarea>
+        </div>
+      }
+    </div>
+
+    <div class="group" [class.open]="groupOpen('skills')">
+      <button class="group-h" type="button" (click)="toggleGroup('skills')"
+              [attr.aria-expanded]="groupOpen('skills')">
+        <span class="disc">{{ groupOpen('skills') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">skills</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('skills') }}</span>
+      </button>
+      @if (groupOpen('skills')) {
+        <div class="group-b">
+          <div class="chips edit-chips">
+            @for (s of form.skills; track s) {
+              <span class="chip on">{{ s }}<button class="x" type="button" (click)="removeSkill(s)">×</button></span>
+            }
+            @if (!form.skills.length) { <span class="faint mono empty-note">no skills</span> }
+          </div>
+          <div class="add-row">
+            <input class="input" [(ngModel)]="newSkill" placeholder="skill-id e.g. web-research"
+                   (keydown.enter)="addSkill()" />
+            <button class="btn sm" type="button" (click)="addSkill()">add</button>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="group" [class.open]="groupOpen('mcp')">
+      <button class="group-h" type="button" (click)="toggleGroup('mcp')"
+              [attr.aria-expanded]="groupOpen('mcp')">
+        <span class="disc">{{ groupOpen('mcp') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">tools — mcp servers</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('mcp') }}</span>
+      </button>
+      @if (groupOpen('mcp')) {
+        <div class="group-b">
+          @for (m of form.mcpServers; track m.name) {
+            <div class="line mono">
+              <span class="ln-name">{{ m.name }}</span>
+              <span class="chip info">{{ m.transport }}</span>
+              <span class="ln-detail faint">{{ m.command || m.url }}{{ m.args ? ' ' + m.args : '' }}</span>
+              <span class="spacer"></span>
+              <button class="btn ghost sm" type="button" (click)="removeMcp(m.name)">remove</button>
+            </div>
+          }
+          @if (!form.mcpServers.length) { <span class="faint mono empty-note">no mcp servers</span> }
+
+          <div class="catalog-mcp">
+            <div class="catalog-copy">
+              <span class="mono">add from MCP Servers</span>
+              <span class="faint">Creates a detached snapshot. Later catalog edits will not change this profile.</span>
+            </div>
+            <select class="select" [ngModel]="mcpCatalogId" (ngModelChange)="selectCatalogMcp($event)">
+              <option value="">select a server…</option>
+              @for (server of catalog.servers(); track server.id) {
+                <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
+              }
+            </select>
+            <input class="input" [(ngModel)]="mcpCatalogAlias" placeholder="agent alias" />
+            <button class="btn sm" type="button"
+                    [disabled]="!mcpCatalogId || !mcpCatalogAlias.trim()"
+                    (click)="addCatalogMcp()">add snapshot</button>
+            @if (catalogServer(); as selected) {
+              @if (selected.kind === 'managed' && !selected.crossHostUrl) {
+                <span class="catalog-warning">Uses the stack-internal URL. It will only work for Agents that can reach the source host's MCP network.</span>
+              }
+            }
+          </div>
+
+          <div class="or mono faint"><span>or add a custom definition</span></div>
+          <div class="add-mcp">
+            <input class="input" [(ngModel)]="mcpForm.name" placeholder="server name" />
+            <select class="select" [(ngModel)]="mcpForm.transport">
+              <option value="stdio">stdio</option>
+              <option value="http">http</option>
+              <option value="sse">sse</option>
+            </select>
+            @if (mcpForm.stdio) {
+              <input class="input" [(ngModel)]="mcpForm.command" placeholder="command" />
+              <input class="input" [(ngModel)]="mcpForm.args" placeholder="args (optional)" />
+            } @else {
+              <input class="input wide" [(ngModel)]="mcpForm.url" placeholder="https://endpoint/mcp" />
+            }
+            <button class="btn sm" type="button" [disabled]="!mcpForm.valid()" (click)="addMcp()">add</button>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="group" [class.open]="groupOpen('keys')">
+      <button class="group-h" type="button" (click)="toggleGroup('keys')"
+              [attr.aria-expanded]="groupOpen('keys')">
+        <span class="disc">{{ groupOpen('keys') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">keys</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('keys') }}</span>
+      </button>
+      @if (groupOpen('keys')) {
+        <div class="group-b">
+          <p class="lock-hint">stored encrypted in the dashboard db</p>
+              @for (s of form.secrets; track s.key) {
+                <div class="line mono">
+                  <span class="ln-name">{{ s.key }}</span>
+                  <mc-status [status]="s.set ? (s.recoverable ? 'connected' : 'error') : 'off'"
+                             [label]="s.set ? (s.recoverable ? 'set' : 'unreadable') : 'unset'" />
+                  @if (s.set && s.recoverable) { <span class="ln-detail faint">leave blank to keep</span> }
+                  @if (s.set && !s.recoverable) { <span class="ln-detail faint">unreadable (key changed) · enter to restore</span> }
+                  <input class="input key-inp" type="password" [(ngModel)]="s.value"
+                         [placeholder]="s.set ? 'new value (optional)' : 'value'" />
+                  <button class="btn ghost sm" type="button" (click)="removeSecret(s.key)">remove</button>
+                </div>
+              }
+              @if (!form.secrets.length) { <span class="faint mono empty-note">no keys</span> }
+              <div class="add-row">
+                <input class="input" [(ngModel)]="secretKey" placeholder="ANTHROPIC_API_KEY" />
+                <input class="input" type="password" [(ngModel)]="secretValue" placeholder="value" />
+                <button class="btn sm" type="button" (click)="addSecret()">add</button>
+              </div>
+        </div>
+      }
     </div>
 
     <p class="lock-hint">deploy with the button below, or from the <a routerLink="/agents">Agents</a> page under "from profile".</p>

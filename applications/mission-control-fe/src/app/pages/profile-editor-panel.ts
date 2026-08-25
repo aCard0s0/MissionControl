@@ -8,6 +8,7 @@ import { ProviderStore } from '../core/store/provider-store';
 import { StoreContext } from '../core/store/store-context';
 import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate, TemplateMcp } from '../core/models';
+import { AGENT_ICONS, AgentIconView } from '../shared/agent-icon';
 import { McpEndpointForm } from '../shared/mcp-endpoint-form';
 import { StatusDot } from '../shared/status-dot';
 import { providerOptions } from '../shared/provider-resolve';
@@ -31,7 +32,7 @@ import {
 @Component({
   selector: 'mc-profile-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, StatusDot],
+  imports: [FormsModule, RouterLink, AgentIconView, StatusDot],
   templateUrl: './profile-editor-panel.html',
   styleUrl: './profile-editor-panel.scss',
 })
@@ -50,6 +51,22 @@ export class ProfileEditorPanel {
   private readonly providers = inject(ProviderStore);
   private readonly templates = inject(TemplateStore);
   protected readonly saving = signal(false);
+
+  protected readonly icons = AGENT_ICONS;
+
+  /** The glyph grid, closed until asked for — twelve buttons above the form would
+   *  outweigh the field they belong to. */
+  protected readonly iconOpen = signal(false);
+
+  /**
+   * Which optional groups are open.
+   *
+   * <p>All closed to begin with. The form carries eleven fields and three
+   * repeating lists, and an operator renaming a blueprint had to scroll past a
+   * SOUL.md textarea to reach the save button. What each group holds is on its
+   * own header instead, so opening one is a decision rather than a search.
+   */
+  private readonly openGroups = signal<ReadonlySet<string>>(new Set());
 
   protected readonly providerChoices = computed(() =>
     providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()));
@@ -72,8 +89,49 @@ export class ProfileEditorPanel {
     // rows from the last one must not carry over
     effect(() => {
       this.draft();
-      untracked(() => this.resetScratch());
+      untracked(() => {
+        this.resetScratch();
+        // the groups close with it — otherwise the next blueprint opens on
+        // whatever the last one happened to have expanded
+        this.openGroups.set(new Set());
+        this.iconOpen.set(false);
+      });
     });
+  }
+
+  // ── icon ────────────────────────────────────────────────────────────────
+  protected pickIcon(icon: string): void {
+    // picking the one already set clears it, so the default is reachable without
+    // a thirteenth button that means "none"
+    this.draft().icon = this.draft().icon === icon ? '' : icon;
+    this.iconOpen.set(false);
+  }
+
+  // ── optional groups ─────────────────────────────────────────────────────
+  protected groupOpen(key: string): boolean {
+    return this.openGroups().has(key);
+  }
+
+  protected toggleGroup(key: string): void {
+    this.openGroups.update(open => {
+      const next = new Set(open);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  /** What a closed group holds, so its header answers whether to open it. */
+  protected groupNote(key: string): string {
+    const form = this.draft();
+    switch (key) {
+      case 'endpoint': return form.baseUrl.trim() || form.cwd.trim() || 'defaults';
+      case 'soul': return form.soul.trim() ? `${lines(form.soul)} lines` : 'empty';
+      case 'memory': return form.memory.trim() ? `${lines(form.memory)} lines` : 'empty';
+      case 'skills': return count(form.skills.length, 'skill');
+      case 'mcp': return count(form.mcpServers.length, 'server');
+      case 'keys': return count(form.secrets.length, 'key');
+      default: return '';
+    }
   }
 
   /** The stored template being edited, or null while a new one is authored. */
@@ -196,4 +254,13 @@ export class ProfileEditorPanel {
     this.mcpCatalogId = this.mcpCatalogAlias = '';
     this.secretKey = this.secretValue = '';
   }
+}
+
+/** `n thing` / `n things`, or the word 'none' — a count of 0 reads badly as '0 skills'. */
+function count(n: number, noun: string): string {
+  return n === 0 ? 'none' : `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+function lines(text: string): number {
+  return text.trim().split('\n').length;
 }

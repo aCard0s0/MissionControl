@@ -52,7 +52,7 @@ const ollama: ModelProvider[] = [{
 }];
 
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 't-1', name: 'ops-sre', description: 'runs the fleet', category: 'ops', provider: 'anthropic',
+  id: 't-1', name: 'ops-sre', icon: '', description: 'runs the fleet', category: 'ops', provider: 'anthropic',
   model: 'claude-opus-5', baseUrl: '', cwd: '', soul: '# SOUL.md\n', memory: '# MEMORY.md\n',
   skills: ['web-research'], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2, ...patch,
 });

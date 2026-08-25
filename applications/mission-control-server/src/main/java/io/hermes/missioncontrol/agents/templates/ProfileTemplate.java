@@ -12,6 +12,8 @@ import java.util.List;
 public record ProfileTemplate(
     String id,
     String name,
+    /** Key of a built-in glyph the UI draws beside the name; blank for the default. */
+    String icon,
     String description,
     String category,
     String provider,

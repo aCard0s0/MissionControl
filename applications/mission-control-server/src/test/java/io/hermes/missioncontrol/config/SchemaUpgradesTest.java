@@ -37,7 +37,7 @@ class SchemaUpgradesTest {
     database.close();
   }
 
-  /** {@code profile_templates} as it stood before blueprints gained a category. */
+  /** {@code profile_templates} as it stood before blueprints gained a category or a glyph. */
   private void rollBackToTheShapeWithoutCategory() {
     database.jdbc().execute("DROP TABLE profile_templates");
     database.jdbc().execute("""
@@ -80,6 +80,17 @@ class SchemaUpgradesTest {
   }
 
   @Test
+  void aDatabaseSeveralReleasesBehindGainsEveryColumnItIsMissing() {
+    rollBackToTheShapeWithoutCategory();
+
+    upgrades().apply();
+
+    // one boot catches a database up, however many releases it skipped
+    assertTrue(columnsOfProfileTemplates().contains("category"));
+    assertTrue(columnsOfProfileTemplates().contains("icon"));
+  }
+
+  @Test
   void anUpgradedDatabaseStillReadsTheRowsItAlreadyHeld() {
     rollBackToTheShapeWithoutCategory();
     database.jdbc().update("""
@@ -96,6 +107,7 @@ class SchemaUpgradesTest {
         .findById("pt-1").orElseThrow();
     assertEquals("ops", found.name());
     assertNull(found.category());
+    assertNull(found.icon());
   }
 
   @Test

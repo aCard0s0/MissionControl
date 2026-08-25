@@ -270,6 +270,23 @@ a:hover { text-decoration: underline; }
   &.crit { color: var(--red); }
 }
 
+// A disclosure triangle: the control that opens a collapsed row. Global because
+// three surfaces now grow one — the prompt list, the blueprint list, and the
+// blueprint editor's optional groups.
+.disc {
+  flex: none;
+  width: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover { color: var(--acc); }
+}
+
 // ── filter bar ──────────────────────────────────────────────────────────────
 // The control every page that filters a list puts above it. It was copied per
 // page, so the same bar had four looks: Blueprints wore a panel and gave its

@@ -86,6 +86,33 @@ const openTemplate = (fixture: TestFixture, name: string): void => {
   if (!card) throw new Error(`no template card named "${name}"`);
   card.click();
   fixture.detectChanges();
+  openEditorGroups(fixture);
+};
+
+/** The editor's optional groups start closed; a spec about their contents opens them. */
+const openEditorGroups = (fixture: TestFixture): void => {
+  for (const header of Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.group-h'))) {
+    if (header.getAttribute('aria-expanded') !== 'true') header.click();
+  }
+  fixture.detectChanges();
+};
+
+/** The body of one of the editor's collapsible groups, named by its header. */
+const group = (fixture: TestFixture, title: string): HTMLElement => {
+  const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.group'))
+    .find(g => (g.querySelector('.group-t')?.textContent ?? '').includes(title));
+  const body = match?.querySelector<HTMLElement>('.group-b');
+  if (!body) throw new Error(`no open group titled "${title}"`);
+  return body;
+};
+
+/** Expands one list card, whose detail is behind a disclosure. */
+const expandCard = (fixture: TestFixture, name: string): void => {
+  const card = Array.from(el(fixture).querySelectorAll<HTMLElement>('.tmpl'))
+    .find(t => (t.querySelector('.nm')?.textContent ?? '').trim() === name);
+  if (!card) throw new Error(`no template card named "${name}"`);
+  card.querySelector<HTMLButtonElement>('.disc')!.click();
+  fixture.detectChanges();
 };
 
 describe('AgentProfilesPage', () => {
@@ -115,7 +142,7 @@ describe('AgentProfilesPage', () => {
     expect(field(fixture, 'name').querySelector<HTMLInputElement>('.input')!.value).toBe('ops-sre');
     expect(field(fixture, 'provider').querySelector<HTMLSelectElement>('.select')!.value)
       .toBe('anthropic');
-    expect(field(fixture, 'soul').querySelector<HTMLTextAreaElement>('.input')!.value)
+    expect(group(fixture, 'soul').querySelector<HTMLTextAreaElement>('.input')!.value)
       .toContain('# SOUL.md');
     // skills as chips, MCP servers and keys as rows
     expect(el(fixture).querySelectorAll('.edit-chips .chip').length).toBe(2);
@@ -130,9 +157,11 @@ describe('AgentProfilesPage', () => {
 
     press(fixture, '+ new blueprint');
     await settle(fixture);
+    openEditorGroups(fixture);
+    await settle(fixture);
 
     expect(el(fixture).textContent).toContain('new profile template');
-    expect(field(fixture, 'soul').querySelector<HTMLTextAreaElement>('.input')!.value)
+    expect(group(fixture, 'soul').querySelector<HTMLTextAreaElement>('.input')!.value)
       .toContain('# SOUL.md');
     expect(el(fixture).textContent).toContain('no skills');
     expect(el(fixture).textContent).toContain('no mcp servers');
@@ -142,6 +171,8 @@ describe('AgentProfilesPage', () => {
   it('refuses to save a blueprint with no name', async () => {
     const fixture = render();
     press(fixture, '+ new blueprint');
+    await settle(fixture);
+    openEditorGroups(fixture);
     await settle(fixture);
 
     const save = () => Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.editor-actions .btn'))
@@ -156,8 +187,10 @@ describe('AgentProfilesPage', () => {
     const fixture = render();
     press(fixture, '+ new blueprint');
     await settle(fixture);
+    openEditorGroups(fixture);
+    await settle(fixture);
 
-    const skills = field(fixture, 'skills');
+    const skills = group(fixture, 'skills');
     const input = skills.querySelector<HTMLInputElement>('.add-row .input')!;
     input.value = 'web-research';
     input.dispatchEvent(new Event('input'));
@@ -176,8 +209,10 @@ describe('AgentProfilesPage', () => {
     const fixture = render();
     press(fixture, '+ new blueprint');
     await settle(fixture);
+    openEditorGroups(fixture);
+    await settle(fixture);
 
-    const skills = field(fixture, 'skills');
+    const skills = group(fixture, 'skills');
     const input = skills.querySelector<HTMLInputElement>('.add-row .input')!;
     input.value = 'web research';
     input.dispatchEvent(new Event('input'));
@@ -192,6 +227,8 @@ describe('AgentProfilesPage', () => {
   it('adds a custom MCP definition and removes it', async () => {
     const fixture = render();
     press(fixture, '+ new blueprint');
+    await settle(fixture);
+    openEditorGroups(fixture);
     await settle(fixture);
 
     const add = el(fixture).querySelector('.add-mcp')!;
@@ -214,8 +251,10 @@ describe('AgentProfilesPage', () => {
     const fixture = render();
     press(fixture, '+ new blueprint');
     await settle(fixture);
+    openEditorGroups(fixture);
+    await settle(fixture);
 
-    const keys = field(fixture, 'keys');
+    const keys = group(fixture, 'keys');
     const rows = keys.querySelectorAll<HTMLInputElement>('.add-row .input');
     rows[0].value = 'not a var';
     rows[0].dispatchEvent(new Event('input'));
@@ -312,7 +351,7 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
   it('deploys straight from a card, without opening the editor first', async () => {
     const fixture = render();
 
-    press(fixture, 'deploy →', '.card-actions');
+    press(fixture, 'deploy →', '.tmpl .panel-h');
     await settle(fixture);
 
     expect(el(fixture).querySelector('mc-profile-deploy-dialog')).not.toBeNull();
@@ -361,7 +400,9 @@ describe('AgentProfilesPage search and filters', () => {
   it('files each blueprint under its category, on the card', () => {
     const fixture = render(storeStub([bp('ops-sre', { category: 'incident response' })]));
 
-    expect(el(fixture).querySelector('.tmpl .chips')?.textContent).toContain('incident response');
+    // in the head, not the body: a collapsed card still has to say what it is
+    expect(el(fixture).querySelector('.tmpl .panel-h')?.textContent)
+      .toContain('incident response');
   });
 
   it('searches the description, not only the name', async () => {
@@ -486,5 +527,61 @@ describe('AgentProfilesPage search and filters', () => {
 
     expect(el(fixture).textContent).toContain('No blueprints yet');
     expect(el(fixture).textContent).not.toContain('No blueprint matches');
+  });
+});
+
+describe('AgentProfilesPage card detail', () => {
+  const bp = (id: string, patch: Partial<ProfileTemplate> = {}): ProfileTemplate =>
+    buildTemplate(id, { name: id, ...patch });
+
+  it('shows a card as its name and the two things you act on', () => {
+    const fixture = render(storeStub([bp('ops-sre', {
+      description: 'Production SRE copilot', skills: ['triage'],
+    })]));
+
+    const head = el(fixture).querySelector('.tmpl .panel-h')!;
+    expect(head.textContent).toContain('ops-sre');
+    expect(head.textContent).toContain('deploy →');
+    // the detail is folded away until asked for
+    expect(el(fixture).querySelector('.tmpl .panel-b')).toBeNull();
+    expect(el(fixture).textContent).not.toContain('Production SRE copilot');
+  });
+
+  it('opens one card without opening the rest', () => {
+    const fixture = render(storeStub([
+      bp('ops-sre', { description: 'Production SRE copilot' }),
+      bp('scribe', { description: 'Writes release notes' }),
+    ]));
+
+    expandCard(fixture, 'ops-sre');
+
+    expect(el(fixture).querySelectorAll('.tmpl .panel-b').length).toBe(1);
+    expect(el(fixture).textContent).toContain('Production SRE copilot');
+    expect(el(fixture).textContent).not.toContain('Writes release notes');
+  });
+
+  it('folds a card again, and does not open the editor doing either', () => {
+    const fixture = render();
+
+    expandCard(fixture, 'ops-sre');
+    expect(el(fixture).querySelector('.tmpl .panel-b')).not.toBeNull();
+
+    expandCard(fixture, 'ops-sre');
+    expect(el(fixture).querySelector('.tmpl .panel-b')).toBeNull();
+    // the disclosure is not the card's own click, which edits
+    expect(el(fixture).querySelector('.editor')).toBeNull();
+  });
+
+  it('draws the glyph beside the name, folded or not', () => {
+    const fixture = render(storeStub([bp('ops-sre', { icon: 'shield' })]));
+
+    expect(el(fixture).querySelector('.tmpl .panel-h mc-agent-icon')).not.toBeNull();
+  });
+
+  it('still draws a glyph for a blueprint saved before the library had them', () => {
+    const fixture = render(storeStub([bp('ops-sre', { icon: '' })]));
+
+    // it falls back rather than leaving a hole the neighbouring names do not line up with
+    expect(el(fixture).querySelector('.tmpl .panel-h mc-agent-icon svg > *')).not.toBeNull();
   });
 });

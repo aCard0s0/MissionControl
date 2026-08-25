@@ -377,6 +377,8 @@ export interface ApiTemplateSecret {
 export interface ApiProfileTemplate {
   id: string;
   name: string;
+  /** null on a blueprint written before the library had glyphs */
+  icon: string | null;
   description: string;
   /** null on a blueprint written before the library had categories */
   category: string | null;

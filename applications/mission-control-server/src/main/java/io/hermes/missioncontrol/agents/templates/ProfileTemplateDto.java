@@ -7,6 +7,7 @@ import java.util.List;
 public record ProfileTemplateDto(
     String id,
     String name,
+    String icon,
     String description,
     String category,
     String provider,

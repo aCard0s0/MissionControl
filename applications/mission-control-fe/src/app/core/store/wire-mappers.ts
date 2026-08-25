@@ -201,6 +201,7 @@ export function toProfileTemplate(api: ApiProfileTemplate): ProfileTemplate {
   return {
     id: api.id,
     name: api.name,
+    icon: api.icon ?? '',
     description: api.description ?? '',
     // a blueprint from before categories existed reads as the default rather than as
     // a blank chip of its own; saving it files it there for real

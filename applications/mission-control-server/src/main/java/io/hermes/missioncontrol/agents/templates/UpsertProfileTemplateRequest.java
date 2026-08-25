@@ -14,6 +14,10 @@ public record UpsertProfileTemplateRequest(
         regexp = "[a-zA-Z0-9][a-zA-Z0-9_.-]*",
         message = "invalid template name")
     String name,
+    // a key into the client's glyph set, never rendered as markup. Bounded and
+    // restricted to a slug so a stored value cannot carry anything else.
+    @Size(max = 32) @Pattern(regexp = "|[a-z0-9-]+", message = "invalid icon")
+    String icon,
     String description,
     @Size(max = 60) String category,
     String provider,
