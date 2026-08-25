@@ -282,7 +282,6 @@ export interface ApiGateway {
   sessionStore: string;
   paused: boolean;
   pauseReason: string | null;
-  pausedAt: string | null;
 }
 
 /** What stopping a container would interrupt. `unreadable` is the honest third answer:

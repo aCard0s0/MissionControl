@@ -9,12 +9,7 @@
  * before an operator can use it, so a target created by hand keeps working and simply shows
  * its event as an unknown chip here.
  */
-export interface HermesHookEventGroup {
-  readonly title: string;
-  readonly events: readonly string[];
-}
-
-export const HERMES_HOOK_EVENTS: readonly HermesHookEventGroup[] = [
+export const HERMES_HOOK_EVENTS: readonly { title: string; events: readonly string[] }[] = [
   {
     title: 'Session',
     events: ['on_session_start', 'on_session_end', 'on_session_finalize', 'on_session_reset'],
@@ -50,15 +45,12 @@ export const HERMES_HOOK_EVENTS: readonly HermesHookEventGroup[] = [
   },
 ];
 
-/** Every event, flattened — for the "is this one hermes knows about?" check. */
-export const HERMES_HOOK_EVENT_NAMES: readonly string[] =
-  HERMES_HOOK_EVENTS.flatMap(g => g.events);
+const ALL_EVENTS = HERMES_HOOK_EVENTS.flatMap(g => g.events);
 
 /** Events where a `matcher` regex does anything at all; hermes ignores it elsewhere. */
-export const MATCHER_EVENTS: readonly string[] = ['pre_tool_call', 'post_tool_call'];
+const MATCHER_EVENTS = ['pre_tool_call', 'post_tool_call'];
 
-export const isKnownHookEvent = (event: string): boolean =>
-  HERMES_HOOK_EVENT_NAMES.includes(event);
+export const isKnownHookEvent = (event: string): boolean => ALL_EVENTS.includes(event);
 
 /** True when a matcher on this selection would be honoured by at least one of its events. */
 export const matcherApplies = (events: readonly string[]): boolean =>

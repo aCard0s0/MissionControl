@@ -70,7 +70,7 @@ export const apiProfile = (name: string, patch: Partial<ApiAgentProfile> = {}): 
   skills: [], mcp: [], integrations: [], lastActive: 20,
   gateway: {
     state: 'running', desiredState: 'running', activeAgents: 0, agentVersion: '0.20.5',
-    sessionStore: 'ok', paused: false, pauseReason: null, pausedAt: null,
+    sessionStore: 'ok', paused: false, pauseReason: null,
   },
   ...patch,
 });

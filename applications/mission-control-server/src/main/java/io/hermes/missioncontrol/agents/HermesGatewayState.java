@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -54,7 +55,9 @@ class HermesGatewayState {
     // presence is the pause; the body is only ever a reason to show, so it is not read
     // on the path where there is no pause to explain
     boolean paused = files.fileExists(host, containerId, estopPath);
-    JsonNode estop = paused ? parse(files.readFile(host, containerId, estopPath)) : null;
+    JsonNode estop = paused
+        ? parse(files.readFile(host, containerId, estopPath))
+        : MissingNode.getInstance();
     return new Reading(gateway(root, estop, paused), integrations(root));
   }
 
@@ -62,22 +65,19 @@ class HermesGatewayState {
     return read(host, containerId, profileName).integrations();
   }
 
+  /** A missing node rather than null, so every reader below is just {@code path().asText()}
+   *  — absent file, unparseable file and absent key all answer with the same defaults. */
   private JsonNode parse(String json) {
-    if (json == null || json.isBlank()) return null;
+    if (json == null || json.isBlank()) return MissingNode.getInstance();
     try {
       return objectMapper.readTree(json);
     } catch (Exception e) {
       log.warn("could not read gateway state: {}", e.toString());
-      return null;
+      return MissingNode.getInstance();
     }
   }
 
   private static GatewayDto gateway(JsonNode root, JsonNode estop, boolean paused) {
-    if (root == null) {
-      return paused
-          ? new GatewayDto("", "", 0, "", "", true, reason(estop), pausedAt(estop))
-          : GatewayDto.unknown();
-    }
     return new GatewayDto(
         root.path("gateway_state").asText(""),
         root.path("desired_state").asText(""),
@@ -85,16 +85,7 @@ class HermesGatewayState {
         root.path("code_version").asText(""),
         root.path("session_store").path("status").asText(""),
         paused,
-        reason(estop),
-        pausedAt(estop));
-  }
-
-  private static String reason(JsonNode estop) {
-    return estop == null ? null : estop.path("reason").asText(null);
-  }
-
-  private static String pausedAt(JsonNode estop) {
-    return estop == null ? null : estop.path("engaged_at").asText(null);
+        estop.path("reason").asText(null));
   }
 
   /**
@@ -107,7 +98,7 @@ class HermesGatewayState {
    * card is still worth a row: the operator can read the name.
    */
   private List<IntegrationDto> integrations(JsonNode root) {
-    if (root == null || !root.path("platforms").isObject()) return List.of();
+    if (!root.path("platforms").isObject()) return List.of();
     List<IntegrationDto> result = new ArrayList<>();
     root.path("platforms").properties().forEach(entry -> {
       String kind = entry.getKey() == null ? "" : entry.getKey().trim();

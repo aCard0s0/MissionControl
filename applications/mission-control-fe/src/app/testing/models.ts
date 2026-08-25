@@ -45,7 +45,7 @@ export const mcpServer = (name: string, patch: Partial<McpServer> = {}): McpServ
 
 export const gateway = (patch: Partial<Gateway> = {}): Gateway => ({
   state: 'running', desiredState: 'running', activeAgents: 0, agentVersion: '0.20.5',
-  sessionStore: 'ok', paused: false, pauseReason: null, pausedAt: null, ...patch,
+  sessionStore: 'ok', paused: false, pauseReason: null, ...patch,
 });
 
 export const agent = (id: string, patch: Partial<AgentProfile> = {}): AgentProfile => ({

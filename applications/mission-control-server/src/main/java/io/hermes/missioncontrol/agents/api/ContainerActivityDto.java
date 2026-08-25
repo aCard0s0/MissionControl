@@ -20,9 +20,4 @@ public record ContainerActivityDto(
     List<String> busyProfiles,
     List<String> pausedProfiles,
     List<String> unreadable) {
-
-  /** Nothing running, nothing to warn about — also what a stopped container reports. */
-  public static ContainerActivityDto idle() {
-    return new ContainerActivityDto(0, List.of(), List.of(), List.of());
-  }
 }

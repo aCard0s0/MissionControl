@@ -12,7 +12,6 @@ package io.hermes.missioncontrol.agents.api;
  * @param sessionStore health of the session store, {@code ok} when it opened cleanly
  * @param paused whether {@code hermes pause} has engaged the emergency stop
  * @param pauseReason the reason given to {@code hermes pause --reason}, or null
- * @param pausedAt when it was engaged, ISO-8601, or null
  */
 public record GatewayDto(
     String state,
@@ -21,11 +20,11 @@ public record GatewayDto(
     String agentVersion,
     String sessionStore,
     boolean paused,
-    String pauseReason,
-    String pausedAt) {
+    String pauseReason) {
 
-  /** The reading for a profile whose gateway has written nothing yet. */
+  /** A profile whose gateway has written nothing yet — and the fixture every test that
+   *  builds an {@link AgentProfileDto} without caring about the gateway reaches for. */
   public static GatewayDto unknown() {
-    return new GatewayDto("", "", 0, "", "", false, null, null);
+    return new GatewayDto("", "", 0, "", "", false, null);
   }
 }

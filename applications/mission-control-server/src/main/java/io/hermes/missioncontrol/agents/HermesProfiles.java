@@ -315,7 +315,7 @@ public class HermesProfiles {
       return new ContainerActivityDto(active, List.copyOf(busy), List.copyOf(paused),
           List.copyOf(unreadable));
     } catch (ContainerNotRunningException stopped) {
-      return ContainerActivityDto.idle();
+      return new ContainerActivityDto(0, List.of(), List.of(), List.of());
     }
   }
 

@@ -82,7 +82,6 @@ export function toGateway(api: ApiAgentProfile['gateway'] | null | undefined): G
     sessionStore: api?.sessionStore ?? '',
     paused: !!api?.paused,
     pauseReason: api?.pauseReason ?? null,
-    pausedAt: api?.pausedAt ?? null,
   };
 }
 

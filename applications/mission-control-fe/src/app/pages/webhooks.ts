@@ -61,12 +61,10 @@ export class WebhooksPage {
   /** Literal braces, kept out of the template so Angular does not read them as ICU. */
   protected readonly promptExample = 'Alert {alert.name} is {status}';
 
-  protected oAgent = '';
-  protected oName = '';
-  protected oUrl = '';
-  protected oMatcher = '';
-  protected oTimeout = '';
-  protected oSecretEnv = '';
+  /** The outbound form. One object because every field is set and cleared together —
+   *  `startOutbound` is one assignment rather than seven. `events` stays a signal: the
+   *  chips toggle it, and the matcher hint recomputes off it. */
+  protected oForm = emptyOutboundForm();
   protected readonly oEvents = signal<string[]>([]);
 
   protected fName = '';
@@ -155,33 +153,36 @@ export class WebhooksPage {
 
   protected startOutbound(target?: OutboundWebhook): void {
     this.editingOutbound.set(target ?? 'new');
-    this.oAgent = target?.agentId ?? (this.agentFilter() !== 'all'
-      ? this.agentFilter()
-      : this.agents.forSelectedContainer()[0]?.id ?? '');
-    this.oName = target?.name ?? '';
-    this.oUrl = target?.url ?? '';
-    this.oMatcher = target?.matcher ?? '';
-    this.oTimeout = target?.timeout != null ? String(target.timeout) : '';
-    this.oSecretEnv = target?.secretEnv ?? '';
+    this.oForm = {
+      agent: target?.agentId ?? (this.agentFilter() !== 'all'
+        ? this.agentFilter()
+        : this.agents.forSelectedContainer()[0]?.id ?? ''),
+      name: target?.name ?? '',
+      url: target?.url ?? '',
+      matcher: target?.matcher ?? '',
+      timeout: target?.timeout === null ? '' : String(target?.timeout ?? ''),
+      secretEnv: target?.secretEnv ?? '',
+    };
     this.oEvents.set([...(target?.events ?? [])]);
   }
 
   protected async saveOutbound(): Promise<void> {
     const editing = this.editingOutbound();
-    const url = this.oUrl.trim();
-    if (!editing || !this.oAgent || !url || !this.oEvents().length || this.busy()) return;
-    const timeout = this.oTimeout.trim() ? Number(this.oTimeout) : null;
+    const form = this.oForm;
+    const url = form.url.trim();
+    if (!editing || !form.agent || !url || !this.oEvents().length || this.busy()) return;
+    const timeout = form.timeout.trim() ? Number(form.timeout) : null;
     const request = {
-      name: this.oName.trim(),
+      name: form.name.trim(),
       url,
       events: this.oEvents(),
-      matcher: this.oMatcher.trim() || null,
+      matcher: form.matcher.trim() || null,
       timeout: Number.isFinite(timeout) ? timeout : null,
-      secretEnv: this.oSecretEnv.trim().toUpperCase() || null,
+      secretEnv: form.secretEnv.trim().toUpperCase() || null,
     };
     this.busy.set(true);
     const saved = editing === 'new'
-      ? await this.webhooks.addOutbound(this.oAgent, request)
+      ? await this.webhooks.addOutbound(form.agent, request)
       : await this.webhooks.updateOutbound(editing.agentId, editing.index, request);
     this.busy.set(false);
     if (saved) this.editingOutbound.set(null);
@@ -220,6 +221,10 @@ export class WebhooksPage {
       this.tested.update(all => ({ ...all, [route.name]: output.trim() || 'no output' }));
     }
   }
+}
+
+function emptyOutboundForm() {
+  return { agent: '', name: '', url: '', matcher: '', timeout: '', secretEnv: '' };
 }
 
 /** Comma-separated input, blank entries dropped. */

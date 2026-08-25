@@ -142,7 +142,7 @@ class HermesGatewayStateTest {
   // ── the pause ──────────────────────────────────────────────────────────────
 
   @Test
-  void theSentinelBodyCarriesTheReasonAndWhenItWasEngaged() {
+  void theSentinelBodyCarriesTheReasonForThePause() {
     GatewayDto gateway = gateway(new FakeContainer()
         .file(STATE, "{\"gateway_state\":\"running\"}")
         .file(ESTOP, """
@@ -151,7 +151,6 @@ class HermesGatewayStateTest {
 
     assertTrue(gateway.paused());
     assertEquals("rotating credentials", gateway.pauseReason());
-    assertEquals("2026-08-25T19:27:56+00:00", gateway.pausedAt());
   }
 
   @Test

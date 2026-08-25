@@ -164,18 +164,18 @@
         @if (editing === 'new') {
           <div class="field">
             <label>agent</label>
-            <select class="select" [(ngModel)]="oAgent">
+            <select class="select" [(ngModel)]="oForm.agent">
               @for (a of agents.forSelectedContainer(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
             </select>
           </div>
         }
         <div class="field">
           <label>url</label>
-          <input class="input" [(ngModel)]="oUrl" placeholder="https://ci.example.com/hermes-events" />
+          <input class="input" [(ngModel)]="oForm.url" placeholder="https://ci.example.com/hermes-events" />
         </div>
         <div class="field">
           <label>name <span class="faint">— optional, shown in hermes' logs</span></label>
-          <input class="input" [(ngModel)]="oName" placeholder="ci-notify" />
+          <input class="input" [(ngModel)]="oForm.name" placeholder="ci-notify" />
         </div>
         <div class="field">
           <label>events</label>
@@ -194,8 +194,8 @@
         </div>
         <div class="field">
           <label>matcher <span class="faint">— regex over the tool name</span></label>
-          <input class="input" [(ngModel)]="oMatcher" placeholder="terminal|delegate_task" />
-          @if (oMatcher && !matcherApplies()) {
+          <input class="input" [(ngModel)]="oForm.matcher" placeholder="terminal|delegate_task" />
+          @if (oForm.matcher && !matcherApplies()) {
             <p class="lock-hint warn">
               Hermes honours a matcher for <code>pre_tool_call</code> and
               <code>post_tool_call</code> only — with the events selected above it will be
@@ -205,11 +205,11 @@
         </div>
         <div class="field">
           <label>timeout <span class="faint">— seconds per attempt, 1–60</span></label>
-          <input class="input" type="number" min="1" max="60" [(ngModel)]="oTimeout" placeholder="10" />
+          <input class="input" type="number" min="1" max="60" [(ngModel)]="oForm.timeout" placeholder="10" />
         </div>
         <div class="field">
           <label>signing secret <span class="faint">— the env var holding it, not the value</span></label>
-          <input class="input" [(ngModel)]="oSecretEnv" placeholder="HERMES_OUTBOUND_WEBHOOK_SECRET" />
+          <input class="input" [(ngModel)]="oForm.secretEnv" placeholder="HERMES_OUTBOUND_WEBHOOK_SECRET" />
           <p class="lock-hint">
             Hermes signs each POST <code>X-Hermes-Signature-256</code> when a secret is set.
             Set the variable's value on the agent's Setup page — a key typed here would be
@@ -218,7 +218,7 @@
         </div>
         <div class="modal-actions">
           <button class="btn ghost" (click)="editingOutbound.set(null)">cancel</button>
-          <button class="btn primary" [disabled]="busy() || !oUrl || !oEvents().length"
+          <button class="btn primary" [disabled]="busy() || !oForm.url || !oEvents().length"
                   (click)="saveOutbound()">{{ busy() ? 'saving…' : 'save target' }}</button>
         </div>
       </div>

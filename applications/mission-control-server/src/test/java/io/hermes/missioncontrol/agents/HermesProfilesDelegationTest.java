@@ -265,7 +265,7 @@ class HermesProfilesDelegationTest {
 
   private static HermesGatewayState.Reading reading(int active, boolean paused, String state) {
     return new HermesGatewayState.Reading(
-        new GatewayDto(state, state, active, "0.20.5", "ok", paused, null, null), List.of());
+        new GatewayDto(state, state, active, "0.20.5", "ok", paused, null), List.of());
   }
 
   // ── emergency stop ──────────────────────────────────────────────────────

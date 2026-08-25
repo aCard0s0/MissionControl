@@ -314,7 +314,6 @@ export interface Gateway {
   sessionStore: string;
   paused: boolean;
   pauseReason: string | null;
-  pausedAt: string | null;
 }
 
 export interface SessionInfo {
