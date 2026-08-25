@@ -9,7 +9,7 @@
  *
  * Kept in step with `docs/hermes-cli.md` — the same catalog for someone reading the repo —
  * by hermes-commands.spec.ts, which fails when a command exists in one and not the other.
- * Captured against Hermes Agent v0.16.0; the container is the authority when they disagree,
+ * Captured against Hermes Agent v0.20.5; the container is the authority when they disagree,
  * which is why every row carries its docs anchor rather than a copy of the full flag list.
  */
 export const HERMES_DOCS = 'https://hermes-agent.nousresearch.com/docs/reference/cli-commands';
@@ -52,7 +52,8 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
       { cmd: 'insights', summary: 'Token, cost and activity analytics', flags: '--days, --source', anchor: 'hermes-insights' },
       { cmd: 'prompt-size', summary: 'System-prompt budget breakdown', flags: '--platform, --json', anchor: 'hermes-prompt-size' },
       { cmd: 'debug share', summary: 'Upload logs for support', flags: '--lines, --nous, --local', anchor: 'hermes-debug' },
-      { cmd: 'version', summary: 'Version information (--version prints the banner line)', anchor: 'hermes-version' },
+      { cmd: 'debug delete', summary: 'Delete a paste an earlier debug share uploaded', anchor: 'hermes-debug' },
+      { cmd: 'monitoring', summary: 'Gateway health metrics and redacted diagnostics over OTLP', flags: 'status' },
     ],
   },
   {
@@ -64,6 +65,7 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
       { cmd: 'moa', summary: 'Mixture-of-Agents presets', flags: 'list, configure, delete', anchor: 'hermes-moa' },
       { cmd: 'fallback', summary: 'Fallback providers, in order', flags: 'list, add, remove, clear', anchor: 'hermes-fallback' },
       { cmd: 'auth', summary: 'Credential pools and OAuth logins', flags: 'add, list, remove, reset, status, logout', anchor: 'hermes-auth' },
+      { cmd: 'logout', summary: 'Clear stored credentials for one provider', flags: '--provider nous|openai-codex|xai-oauth|spotify' },
       { cmd: 'portal', summary: 'Nous Portal status and Tool Gateway', flags: 'status, open, tools', anchor: 'hermes-portal' },
       { cmd: 'proxy', summary: 'Local OpenAI-compatible proxy with OAuth', flags: 'start, status, providers', anchor: 'hermes-proxy' },
     ],
@@ -75,7 +77,8 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
       { cmd: 'config', summary: 'Show, edit and query this profile’s config.yaml', flags: 'show, edit, get <key>, set <key> <value>, path', anchor: 'hermes-config' },
       { cmd: 'setup', summary: 'Interactive setup wizard', flags: '--quick, --portal, --reset, --non-interactive', anchor: 'hermes-setup' },
       { cmd: 'profile', summary: 'Isolated instances, one home directory each', flags: 'list, use, create, delete, export', anchor: 'hermes-profile' },
-      { cmd: 'sessions', summary: 'Browse, export and prune conversation sessions', flags: 'list, browse, export, prune, archive', anchor: 'hermes-sessions' },
+      { cmd: 'sessions', summary: 'Browse, export, repair and prune conversation sessions', flags: 'list, browse, export, rename, pin, stats, delete, prune, archive, optimize, repair, recover, import', anchor: 'hermes-sessions' },
+      { cmd: 'skin', summary: 'List, switch and recolour the active skin', flags: 'list, use, set' },
       { cmd: 'checkpoints', summary: 'Inspect or prune the trajectory cache', flags: 'status, prune, clear', anchor: 'hermes-checkpoints' },
       { cmd: 'backup', summary: 'Back up the hermes home directory', flags: '-o, -q, -l', anchor: 'hermes-backup' },
       { cmd: 'import', summary: 'Restore a backup zip', flags: '-f', anchor: 'hermes-import' },
@@ -89,6 +92,8 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
       { cmd: 'cron', summary: 'Scheduled jobs — the Calendar page’s own backend', flags: 'list, create <schedule> [prompt], edit, pause, resume, run, remove, status', anchor: 'hermes-cron' },
       { cmd: 'webhook', summary: 'Event-driven activation on an inbound POST', flags: 'subscribe <route>, list, remove, test', anchor: 'hermes-webhook' },
       { cmd: 'hooks', summary: 'Shell-script hooks around agent events', flags: 'list, test, revoke, doctor', anchor: 'hermes-hooks' },
+      { cmd: 'pause', summary: 'Emergency stop — holds cron, kanban and new gateway turns; in-flight work finishes', flags: '--reason' },
+      { cmd: 'resume', summary: 'Lift the emergency stop; dispatch picks up on the next tick' },
       { cmd: 'kanban', summary: 'Multi-profile collaboration board', flags: 'init, create, list, assign, complete', anchor: 'hermes-kanban' },
       { cmd: 'project', summary: 'Named multi-folder workspaces', flags: 'create, list, add-folder, bind-board', anchor: 'hermes-project' },
     ],
@@ -100,6 +105,7 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
       { cmd: 'skills', summary: 'Browse, install and publish skills', flags: 'browse, install <id> (--force), list, update, config', anchor: 'hermes-skills' },
       { cmd: 'bundles', summary: 'Group skills behind one slash command', flags: 'list, create, delete, show', anchor: 'hermes-bundles' },
       { cmd: 'curator', summary: 'Background skill maintenance', flags: 'status, run, backup, rollback, pause', anchor: 'hermes-curator' },
+      { cmd: 'sync', summary: 'Skill Sync across your devices, and with an organisation', flags: 'status, pull, push, now, enable, disable, device, propose' },
       { cmd: 'mcp', summary: 'MCP servers connected to this profile', flags: 'picker, install, serve, add, list, test', anchor: 'hermes-mcp' },
       { cmd: 'plugins', summary: 'General, memory and context plugins', flags: 'install, search, update, list, doctor', anchor: 'hermes-plugins' },
       { cmd: 'tools', summary: 'Which tools are enabled per platform', flags: '--summary', anchor: 'hermes-tools' },
@@ -131,6 +137,7 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
       { cmd: 'dashboard', summary: 'Launch hermes’ own web UI', flags: '--port, --no-open, --skip-build', anchor: 'hermes-dashboard' },
       { cmd: 'desktop', summary: 'Build or launch the Electron app (alias: gui)' },
       { cmd: 'acp', summary: 'Run as an ACP stdio server', anchor: 'hermes-acp' },
+      { cmd: 'console', summary: 'A curated Hermes command REPL — not a raw shell' },
       { cmd: 'completion', summary: 'Print shell completion scripts', flags: 'bash, zsh, fish', anchor: 'hermes-completion' },
     ],
   },
@@ -140,8 +147,10 @@ export const HERMES_COMMAND_GROUPS: readonly HermesCommandGroup[] = [
     commands: [
       { cmd: 'security audit', summary: 'Supply-chain vulnerability scan', flags: '--json, --fail-on, --skip-venv', anchor: 'hermes-security' },
       { cmd: 'egress', summary: 'Outbound credential-injection firewall', flags: 'install, setup, start, stop, status', anchor: 'hermes-egress' },
-      { cmd: 'secrets', summary: 'External secret managers', flags: 'bitwarden, bw', anchor: 'hermes-secrets' },
-      { cmd: 'approvals', summary: 'Approval-prompt tooling' },
+      { cmd: 'secrets', summary: 'External secret managers, read at startup instead of .env', flags: 'bitwarden|bw, onepassword|op', anchor: 'hermes-secrets' },
+      { cmd: 'approvals', summary: 'Mine past approvals into allowlist proposals, or dry-run one verdict', flags: 'suggest, test' },
+      { cmd: 'verify', summary: 'Detect a project\u2019s build/test/start recipe and smoke-test it', flags: '--detect-only, --save, --phase, --json' },
+      { cmd: 'worktree', summary: 'Audit and reclaim the worktrees `hermes -w` sessions leave behind', flags: 'list, audit, prune' },
       { cmd: 'update', summary: 'Pull the latest code and reinstall dependencies', flags: '--check, --backup, --gateway', anchor: 'hermes-update', install: true },
       { cmd: 'claw', summary: 'OpenClaw migration helpers', flags: 'migrate, --dry-run, --preset', anchor: 'hermes-claw', install: true },
       { cmd: 'import-agent', summary: 'Import a Claude Code or Codex setup', flags: '--source, --dry-run, --overwrite', anchor: 'hermes-import-agent' },

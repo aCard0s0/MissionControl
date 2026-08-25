@@ -20,6 +20,12 @@ honest about the versions still in the field. It needs `python3`, for the two JS
 Then read the diff. The script redacts what belongs to the operator rather than to hermes' output
 format — but only you know what is sensitive in your own deployment.
 
+A set is only as complete as the container it came from: the script skips a document the profile
+does not have rather than writing an empty one. `hermes-0.20.5/` is missing `cron-jobs.json` and
+`webhook-subscriptions.json` for that reason, so `HermesCronTest` and `HermesWebhooksTest` still
+read the v0.16.0 documents. Capturing from a container that has at least one cron job and one
+webhook route closes it.
+
 ## What is redacted, and what is not
 
 | redacted | why |

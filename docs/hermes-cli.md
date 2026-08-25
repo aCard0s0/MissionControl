@@ -6,8 +6,10 @@ does is shell out to these commands, and the other half is read files they write
 looks wrong, the fastest check is running the same command by hand.
 
 Upstream reference: **[docs/reference/cli-commands](https://hermes-agent.nousresearch.com/docs/reference/cli-commands)**.
-Every row below links to its section there. Captured against **Hermes Agent v0.16.0**; if a flag
-here disagrees with the container, the container is right — run `hermes <cmd> --help`.
+Every row below links to its section there. Captured against **Hermes Agent v0.20.5**; if a flag
+here disagrees with the container, the container is right — run `hermes <cmd> --help`. Upstream
+moves faster than its own reference page, so a handful of rows below carry no docs anchor: they
+exist in the binary and are documented only by `--help`.
 
 The same catalog is in the dashboard: the **CLI Reference** page (`/reference`) scopes every line
 to a chosen profile, and the terminal panel's **cmds** drawer puts one at the prompt without
@@ -52,7 +54,8 @@ default profile takes no flag at all.
 | `hermes insights` | Token, cost and activity analytics — `--days`, `--source` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-insights) |
 | `hermes prompt-size` | System-prompt budget breakdown — `--platform`, `--json` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-prompt-size) |
 | `hermes debug share` | Upload logs for support — `--lines`, `--nous`, `--local` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-debug) |
-| `hermes version` | Version information (`hermes --version` prints the banner line) | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-version) |
+| `hermes debug delete` | Delete a paste an earlier `debug share` uploaded | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-debug) |
+| `hermes monitoring` | Gateway health metrics and redacted diagnostics over OTLP — `status`, config under `monitoring.*` | — |
 
 ## Chat, models, credentials
 
@@ -63,6 +66,7 @@ default profile takes no flag at all.
 | `hermes moa` | Mixture-of-Agents presets — `list`, `configure`, `delete` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-moa) |
 | `hermes fallback` | Fallback providers — `list`, `add`, `remove`, `clear` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-fallback) |
 | `hermes auth` | Credential pools — `add`, `list`, `remove`, `reset`, `status`, `logout` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-auth) |
+| `hermes logout` | Clear stored credentials — `--provider nous\|openai-codex\|xai-oauth\|spotify` | — |
 | `hermes portal` | Nous Portal status and Tool Gateway — `status`, `open`, `tools` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-portal) |
 | `hermes proxy` | Local OpenAI-compatible proxy with OAuth — `start`, `status`, `providers` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-proxy) |
 
@@ -73,7 +77,8 @@ default profile takes no flag at all.
 | `hermes config` | `show`, `edit`, `get <key>`, `set <key> <value>`, `path` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-config) |
 | `hermes setup` | Interactive wizard — `--quick`, `--portal`, `--reset`, `--non-interactive` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-setup) |
 | `hermes profile` | Isolated instances — `list`, `use`, `create`, `delete`, `export` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-profile) |
-| `hermes sessions` | `list`, `browse`, `export`, `prune`, `archive` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-sessions) |
+| `hermes sessions` | `list`, `browse`, `export`, `rename`, `pin`, `stats`, `delete`, `prune`, `archive`, `optimize`, `repair`, `recover`, `import` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-sessions) |
+| `hermes skin` | Skins — `list`, `use`, `set <token> <colour>` | — |
 | `hermes checkpoints` | Trajectory cache — `status`, `prune`, `clear` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-checkpoints) |
 | `hermes backup` | Back up the hermes home directory — `-o`, `-q`, `-l` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-backup) |
 | `hermes import` | Restore a backup zip — `-f` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-import) |
@@ -86,6 +91,8 @@ default profile takes no flag at all.
 | `hermes cron` | Scheduled jobs — `list`, `create <schedule> [prompt]`, `edit`, `pause`, `resume`, `run`, `remove`, `status` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-cron) |
 | `hermes webhook` | Event-driven activation — `subscribe <route>`, `list`, `remove`, `test` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-webhook) |
 | `hermes hooks` | Shell-script hooks — `list`, `test`, `revoke`, `doctor` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-hooks) |
+| `hermes pause` | **Emergency stop.** Holds cron dispatch, kanban dispatch and new gateway turns — `--reason` | — |
+| `hermes resume` | Lift the pause; dispatch picks up on the next tick, no restart | — |
 | `hermes kanban` | Multi-profile board — `init`, `create`, `list`, `assign`, `complete` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-kanban) |
 | `hermes project` | Named multi-folder workspaces — `create`, `list`, `add-folder`, `bind-board` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-project) |
 
@@ -101,6 +108,7 @@ default profile takes no flag at all.
 | `hermes skills` | `browse`, `install <id>` (`--force`), `list`, `update`, `config` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-skills) |
 | `hermes bundles` | Group skills behind one slash command — `list`, `create`, `delete`, `show` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-bundles) |
 | `hermes curator` | Background skill maintenance — `status`, `run`, `backup`, `rollback`, `pause` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-curator) |
+| `hermes sync` | Skill Sync across devices and with an org — `status`, `pull`, `push`, `now`, `enable`, `disable`, `device`, `propose` | — |
 | `hermes mcp` | MCP servers — `picker`, `install`, `serve`, `add`, `list`, `test` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-mcp) |
 | `hermes plugins` | General / memory / context plugins — `install`, `search`, `update`, `list`, `doctor` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-plugins) |
 | `hermes tools` | Enabled tools per platform — `--summary` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-tools) |
@@ -133,6 +141,7 @@ container over `hermes gateway stop` — s6 will bring it straight back.
 | `hermes dashboard` | Hermes' own web UI — `--port`, `--no-open`, `--skip-build` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-dashboard) |
 | `hermes desktop` | Build / launch the Electron app (alias: `gui`) | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) |
 | `hermes acp` | Run as an ACP stdio server | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-acp) |
+| `hermes console` | A curated Hermes command REPL — not a raw shell, and not the full CLI | — |
 | `hermes completion` | Shell completion scripts — `bash`, `zsh`, `fish` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-completion) |
 
 ## Security and lifecycle
@@ -141,8 +150,10 @@ container over `hermes gateway stop` — s6 will bring it straight back.
 |---|---|---|
 | `hermes security audit` | Supply-chain vulnerability scan — `--json`, `--fail-on`, `--skip-venv` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-security) |
 | `hermes egress` | Outbound credential-injection firewall — `install`, `setup`, `start`, `stop`, `status` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-egress) |
-| `hermes secrets` | External secret managers — `bitwarden` / `bw` subcommands | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-secrets) |
-| `hermes approvals` | Approval-prompt tooling | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) |
+| `hermes secrets` | External secret managers, read at startup instead of `.env` — `bitwarden`/`bw`, `onepassword`/`op` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-secrets) |
+| `hermes approvals` | `suggest` mines past approvals into `command_allowlist` entries; `test` dry-runs one verdict | — |
+| `hermes verify` | Detect a project's build/test/start recipe and smoke-test it — `--detect-only`, `--save`, `--phase`, `--json` | — |
+| `hermes worktree` | Audit and reclaim the trees `hermes -w` sessions leave behind — `list`, `audit`, `prune` | — |
 | `hermes update` | Pull latest code, reinstall deps — `--check`, `--backup`, `--gateway` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-update) |
 | `hermes claw` | OpenClaw migration — `migrate`, `--dry-run`, `--preset` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-claw) |
 | `hermes import-agent` | Import a Claude Code / Codex setup — `--source`, `--dry-run`, `--overwrite` | [↗](https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-import-agent) |
@@ -159,12 +170,24 @@ Before the subcommand, on every command
 | Flag | Meaning |
 |---|---|
 | `--version`, `-V` | Print version and exit |
-| `--profile <name>`, `-p <name>` | Select a profile |
+| `--profile <name>`, `-p <name>` | Select a profile. **No longer listed in `--help`** as of v0.20.5, but still honoured — it is how every Mission Control exec is scoped |
+| `-z <prompt>`, `--oneshot` | Send one prompt, print only the final response. No banner, no spinner; approvals auto-bypassed |
+| `--usage-file <path>` | One-shot only: write a JSON cost/token/api_calls report, *even when the run fails* |
+| `-m <model>`, `--model` | Model override for this invocation |
+| `--provider <name>` | Provider override for this invocation |
+| `--reasoning <level>` | Reasoning effort: `none`, `minimal`, … through the top tiers |
+| `-t <sets>`, `--toolsets` | Toolsets for this invocation |
+| `-s <skills>`, `--skills` | Preload skills for the session (repeatable) |
 | `--resume <session>`, `-r` | Resume a session by id or title |
 | `--continue [name]`, `-c` | Resume the most recent session |
+| `--no-restore-cwd` | Do not cd into a resumed session's recorded directory |
 | `--in <dir>` | Change directory before starting |
 | `--worktree`, `-w` | Start in an isolated git worktree |
+| `--accept-hooks` | Auto-approve unseen shell hooks |
 | `--yolo` | Bypass dangerous-command prompts |
+| `--pass-session-id` | Put the session id in the agent's system prompt |
+| `--ignore-user-config` / `--ignore-rules` | Skip `config.yaml` / skip AGENTS.md + SOUL.md injection |
+| `--safe-mode` | Troubleshooting: disable all customizations |
 | `--tui` / `--cli` | Terminal UI / classic REPL |
 | `--dev` | Run the TypeScript sources directly |
 
@@ -180,7 +203,8 @@ them by hand is for when a page disagrees with the container.
 | Webhook routes | `webhook subscribe\|remove\|test` |
 | Skill install | `skills install <id> --force` |
 | Profiles | `profile create [--clone --clone-from <name>]`, `profile delete <name> --yes` |
-| Version and health | `--version`, `status` |
+| Version and health | `--version`, `status`, plus `code_version` straight out of `gateway_state.json` |
+| Emergency stop | `pause [--reason …]`, `resume` |
 
 Everything else it *reads* rather than runs, straight off the container filesystem:
 
@@ -189,6 +213,8 @@ Everything else it *reads* rather than runs, straight off the container filesyst
 | Cron jobs | `/opt/data/cron/jobs.json` |
 | Webhook routes | `/opt/data/webhook_subscriptions.json` |
 | Gateway log | `/opt/data/logs/gateways/<profile>/current` |
+| Gateway state, turns in flight, running version | `/opt/data/gateway_state.json` |
+| Whether `hermes pause` is engaged | `/opt/data/ESTOP` — presence is the pause; the body is `{"engaged_at", "reason"}` |
 | Skills | `/opt/data/skills/`, manifest at `.bundled_manifest` |
 
 Non-default profiles live under `/opt/data/profiles/<name>/`; the default profile *is*
@@ -202,6 +228,12 @@ quietly wrong dashboard:
 ```bash
 ./tools/capture-hermes-fixtures.sh <container> [profile]
 ```
+
+The v0.20.5 set was captured from a container with no cron jobs and no webhook routes, so
+`cron-jobs.json` and `webhook-subscriptions.json` are absent from it and the parsers for those
+two still test against the v0.16.0 documents. Re-run the capture against a container that has
+both to close that gap — the script skips what it cannot find rather than writing an empty
+fixture.
 
 ## Related references
 

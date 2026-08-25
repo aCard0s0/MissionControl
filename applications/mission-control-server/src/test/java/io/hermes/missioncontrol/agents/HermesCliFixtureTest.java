@@ -126,12 +126,19 @@ class HermesCliFixtureTest {
     assertFalse(report.messaging().isEmpty(), version + ": no messaging platforms parsed");
 
     // hermes marks each row with ✓ or ✗; a row that parsed but carries neither means the mark
-    // moved and every badge is now guesswork
-    assertTrue(report.authProviders().stream().anyMatch(AuthProviderDto::ok),
-            version + ": the captured report has a logged-in provider, so one row must read ok")
-        ;
-    assertTrue(report.authProviders().stream().anyMatch(provider -> !provider.ok()),
-        version + ": and one must read not-ok");
+    // moved and every badge is now guesswork. Which marks to expect comes from the captured
+    // text rather than from a fixed rule: whether a provider happens to be logged in is the
+    // operator's state on capture day, and asserting one always is asserts nothing about the
+    // format — it just fails on the next capture from a container that is logged out.
+    String authSection = section(read(set, "status.txt"), "Auth Providers");
+    if (authSection.contains("✓")) {
+      assertTrue(report.authProviders().stream().anyMatch(AuthProviderDto::ok),
+          version + ": the captured section has a ✓ row, so one provider must read ok");
+    }
+    if (authSection.contains("✗")) {
+      assertTrue(report.authProviders().stream().anyMatch(provider -> !provider.ok()),
+          version + ": the captured section has a ✗ row, so one provider must read not-ok");
+    }
 
     // the indented lines under a row (Auth file:, Error:, Refreshed:) are detail, not rows
     for (AuthProviderDto provider : report.authProviders()) {
@@ -270,6 +277,15 @@ class HermesCliFixtureTest {
           .sorted()
           .toList();
     }
+  }
+
+  /** One ◆-delimited block of the status report, so an assertion can ask what hermes actually
+   *  printed under a heading rather than assume it. Empty when the heading is absent. */
+  private static String section(String status, String heading) {
+    int start = status.indexOf("◆ " + heading);
+    if (start < 0) return "";
+    int next = status.indexOf("◆ ", start + 2);
+    return next < 0 ? status.substring(start) : status.substring(start, next);
   }
 
   private static String read(Path set, String name) throws IOException {

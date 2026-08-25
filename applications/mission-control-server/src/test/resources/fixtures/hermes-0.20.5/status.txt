@@ -1,0 +1,114 @@
+
+┌─────────────────────────────────────────────────────────┐
+│                 ⚕ Hermes Agent Status                  │
+└─────────────────────────────────────────────────────────┘
+
+◆ Environment
+  Project:      <redacted>
+  Python:       <redacted>
+  .env file:    ✓ exists
+  Model:        <redacted>
+  Provider:     <redacted>
+
+◆ API Keys
+  OpenRouter    ✗ (not set)
+  OpenAI        ✗ (not set)
+  Google / Gemini  ✗ (not set)
+  DeepSeek      ✗ (not set)
+  xAI / Grok    ✗ (not set)
+  NVIDIA NIM    ✗ (not set)
+  Z.AI / GLM    ✗ (not set)
+  Kimi          ✗ (not set)
+  StepFun Step Plan  ✗ (not set)
+  MiniMax       ✗ (not set)
+  MiniMax-CN    ✗ (not set)
+  DeepInfra     ✗ (not set)
+  Firecrawl     ✗ (not set)
+  Tavily        ✗ (not set)
+  Browser Use   ✗ (not set)
+  Browserbase   ✗ (not set)
+  FAL           ✗ (not set)
+  ElevenLabs    ✗ (not set)
+  GitHub        ✗ (not set)
+  Anthropic     ✗ (not set)
+
+◆ Auth Providers
+  Nous Portal   ✗ not logged in (run: hermes portal)
+  OpenAI Codex  ✗ not logged in (run: hermes model)
+    Auth file:  /opt/data/auth.json
+    Error:      No Codex credentials stored. Run `hermes auth` to authenticate.
+  Qwen OAuth    ✗ not logged in (run: qwen auth qwen-oauth)
+    Auth file:  /opt/data/.qwen/oauth_creds.json
+    Error:      Qwen CLI credentials not found. Run 'qwen auth qwen-oauth' first.
+  MiniMax OAuth  ✗ not logged in (run: hermes auth add minimax-oauth)
+  xAI OAuth     ✗ not logged in (run: hermes auth add xai-oauth)
+    Auth file:  /opt/data/auth.json
+    Error:      No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `hermes model`.
+
+◆ API-Key Providers
+  Z.AI / GLM       ✗ not configured (run: hermes model)
+  Kimi / Moonshot  ✗ not configured (run: hermes model)
+  StepFun Step Plan ✗ not configured (run: hermes model)
+  MiniMax          ✗ not configured (run: hermes model)
+  MiniMax (China)  ✗ not configured (run: hermes model)
+  DeepInfra        ✗ not configured (run: hermes model)
+
+◆ Terminal Backend
+  Backend:      local
+  Sudo:         ✗ disabled
+
+◆ Messaging Platforms
+  Telegram      ✗ not configured
+  Discord       ✗ not configured
+  WhatsApp      ✗ not configured
+  Signal        ✗ not configured
+  Slack         ✗ not configured
+  Email         ✗ not configured
+  SMS           ✗ not configured
+  DingTalk      ✗ not configured
+  Feishu        ✗ not configured
+  WeCom         ✗ not configured
+  WeCom Callback  ✗ not configured
+  Weixin        ✗ not configured
+  BlueBubbles   ✗ not configured
+  QQBot         ✗ not configured
+  Yuanbao       ✗ not configured
+  A2A           ✓ configured (plugin)
+  Buzz          ✗ not configured (plugin)
+  DingTalk      ✗ not configured (plugin)
+  Discord       ✓ configured (plugin)
+  Email         ✗ not configured (plugin)
+  Feishu / Lark  ✗ not configured (plugin)
+  Google Chat   ✗ not configured (plugin)
+  Home Assistant  ✓ configured (plugin)
+  IRC           ✗ not configured (plugin)
+  LINE          ✗ not configured (plugin)
+  Matrix        ✓ configured (plugin)
+  Mattermost    ✓ configured (plugin)
+  ntfy          ✗ not configured (plugin)
+  iMessage via Photon  ✓ configured (plugin)
+  Raft          ✗ not configured (plugin)
+  SimpleX Chat  ✗ not configured (plugin)
+  Slack         ✓ configured (plugin)
+  SMS (Twilio)  ✗ not configured (plugin)
+  Microsoft Teams  ✗ not configured (plugin)
+  Telegram      ✓ configured (plugin)
+  WeCom (Enterprise WeChat)  ✓ configured (plugin)
+  WeCom Callback (self-built apps)  ✓ configured (plugin)
+  WhatsApp      ✓ configured (plugin)
+
+◆ Gateway Service
+  Status:       ✓ running
+  Manager:      s6 (container supervisor)
+  PID(s):       <redacted>
+
+◆ Scheduled Jobs
+  Jobs:         0
+
+◆ Sessions
+  Active:       0
+
+────────────────────────────────────────────────────────────
+  Run 'hermes doctor' for detailed diagnostics
+  Run 'hermes setup' to configure
+
