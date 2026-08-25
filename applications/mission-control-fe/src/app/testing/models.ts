@@ -16,7 +16,7 @@ import {
  */
 
 /** The image the fleet actually runs; update badges compare against it. */
-export const HERMES_IMAGE = 'nousresearch/hermes-agent';
+const HERMES_IMAGE = 'nousresearch/hermes-agent';
 
 export const container = (id: string, patch: Partial<HermesContainer> = {}): HermesContainer => ({
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
@@ -79,7 +79,7 @@ export const externalCatalogServer = (
 });
 
 export const template = (id: string, patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id, name: id, description: '', category: 'general', provider: 'anthropic', model: 'claude-fable-5',
+  id, name: id, icon: '', description: '', category: 'general', provider: 'anthropic', model: 'claude-fable-5',
   baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
   secrets: [], createdAt: 1, updatedAt: 1, ...patch,
 });

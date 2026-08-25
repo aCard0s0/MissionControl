@@ -1,6 +1,8 @@
 import { inject, Injectable } from '@angular/core';
+import { HERMES_BASELINE } from '../container-resources';
 import { isFloatingTag } from '../image-policy';
-import { ContainerStatus } from '../models';
+import { ContainerResources, ContainerStatus } from '../models';
+import { ActivityStore } from './activity-store';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';
 import { StoreContext } from './store-context';
@@ -15,19 +17,27 @@ export class ContainerLifecycle {
   private readonly ctx = inject(StoreContext);
   private readonly containers = inject(ContainerStore);
   private readonly images = inject(ImageCatalogStore);
+  private readonly activity = inject(ActivityStore);
 
   /** Deploys a container and resolves only after refreshed inventory contains it. */
-  async deploy(name: string, version: string, profileNames: string[], hostId = 'dh-local'): Promise<string> {
-    try {
-      const r = await this.ctx.api.containers.deploy(hostId, name, version, profileNames);
-      await new Promise(resolve => setTimeout(resolve, 600));
-      await this.containers.refresh();
-      this.containers.select(r.id);
-      return r.id;
-    } catch (e) {
-      this.ctx.toastFailure('deploy', e);
-      return '';
-    }
+  async deploy(
+    name: string, version: string, profileNames: string[], hostId = 'dh-local',
+    resources: ContainerResources = HERMES_BASELINE,
+  ): Promise<string> {
+    return this.activity.run(`deploying ${name}`, async () => {
+      try {
+        const r = await this.ctx.api.containers.deploy(
+          hostId, name, version, profileNames, resources);
+        await new Promise(resolve => setTimeout(resolve, 600));
+        await this.containers.refresh();
+        this.containers.select(r.id);
+        this.ctx.notify(`container ${name} deployed`);
+        return r.id;
+      } catch (e) {
+        this.ctx.toastFailure('deploy', e);
+        return '';
+      }
+    });
   }
 
   setStatus(id: string, status: ContainerStatus): void {
@@ -36,12 +46,22 @@ export class ContainerLifecycle {
       this.ctx.gone('container');
       return;
     }
+    const words = status === 'running'
+      ? { verb: 'start', doing: 'starting', done: 'started' }
+      : { verb: 'stop', doing: 'stopping', done: 'stopped' };
     const call = status === 'running'
       ? this.ctx.api.containers.start(container.hostId, id)
       : this.ctx.api.containers.stop(container.hostId, id);
+    // Tracked from here rather than from the button, because the daemon keeps working on it
+    // after the page that asked is gone — and the refresh, not the call, is what says it landed.
+    // The refresh cannot reject (it keeps its last inventory), so the catch stays about the call.
+    const running = this.activity.begin(`${words.doing} ${container.name}`);
     call
-      .then(() => setTimeout(() => this.containers.refresh(), 700))
-      .catch(e => this.ctx.toastFailure(status === 'running' ? 'start' : 'stop', e));
+      .then(() => new Promise<void>(resolve => setTimeout(resolve, 700)))
+      .then(() => this.containers.refresh())
+      .then(() => this.ctx.notify(`${container.name} ${words.done}`))
+      .catch(e => this.ctx.toastFailure(words.verb, e))
+      .finally(() => this.activity.end(running));
   }
 
   /**

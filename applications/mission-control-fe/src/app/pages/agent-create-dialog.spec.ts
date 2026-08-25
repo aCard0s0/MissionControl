@@ -10,7 +10,7 @@ import {
   AuthProvider, HermesContainer, LlmProvider, ModelProvider, NewAgent, ProfileTemplate,
 } from '../core/models';
 import { AgentCreateDialog } from './agent-create-dialog';
-import { TestFixture, choose, el, field, fill, settle } from '../testing/dom';
+import { TestFixture, choose, el, field, fill, settle, text } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
 
 const llm: LlmProvider[] = [
@@ -307,7 +307,8 @@ describe('AgentCreateDialog create', () => {
     expect(submitButton(fixture).disabled).toBe(true);
   });
 
-  it('closes without a profile when the backend refuses the create', async () => {
+  it('stays open with the form intact when the backend refuses the create', async () => {
+    // it used to close, which threw away a provider key the operator had just typed
     const store = storeStub();
     store.agents.create.mockResolvedValue('');
     const { fixture, host } = await render(store);
@@ -316,7 +317,38 @@ describe('AgentCreateDialog create', () => {
     await submit(fixture);
 
     expect(host.createdId).toBeNull();
+    expect(host.closes).toBe(0);
+    expect(text(fixture)).toContain('nothing was created');
+    expect(field(fixture, 'profile name').querySelector<HTMLInputElement>('.input')!.value)
+      .toBe('ops-bot');
+    expect(submitButton(fixture).disabled).toBe(false);
+  });
+
+  it('says the create runs on without the dialog, and lets it be closed mid-flight', async () => {
+    const store = storeStub();
+    store.agents.create.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { fixture, host } = await render(store);
+
+    await fill(fixture, 'profile name', 'ops-bot');
+    await submit(fixture);
+
+    expect(submitButton(fixture).textContent?.trim()).toBe('creating…');
+    expect(text(fixture)).toContain('close it and keep working');
+
+    el(fixture).querySelector<HTMLButtonElement>('.modal-actions .btn.ghost')!.click();
     expect(host.closes).toBe(1);
+  });
+
+  it('will not send a second create while the first is in flight', async () => {
+    const store = storeStub();
+    store.agents.create.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { fixture } = await render(store);
+
+    await fill(fixture, 'profile name', 'ops-bot');
+    await submit(fixture);
+    await submit(fixture);
+
+    expect(store.agents.create).toHaveBeenCalledTimes(1);
   });
 
   it('reports a cancel to the page rather than closing itself', async () => {

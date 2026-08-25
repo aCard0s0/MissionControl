@@ -7,6 +7,7 @@ import { ContainerStore } from './core/store/container-store';
 import { HostStore } from './core/store/host-store';
 import { LiveSync } from './core/store/live-sync';
 import { StoreContext } from './core/store/store-context';
+import { Notifications } from './shared/notifications';
 import { StatusDot } from './shared/status-dot';
 import { TerminalPanel } from './shared/terminal-panel';
 import { uptime } from './core/format';
@@ -29,7 +30,7 @@ const NAV = [
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusDot, TerminalPanel],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Notifications, StatusDot, TerminalPanel],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: { '[class.side-collapsed]': 'sideCollapsed()' },

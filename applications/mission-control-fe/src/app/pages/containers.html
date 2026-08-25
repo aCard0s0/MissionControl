@@ -130,7 +130,7 @@
 </p>
 
 @if (deployOpen()) {
-  <div class="scrim" (click)="deployBusy() ? null : deployOpen.set(false)">
+  <div class="scrim" (click)="deployOpen.set(false)">
     <div class="modal" (click)="$event.stopPropagation()">
       <div class="panel-h">DEPLOY HERMES CONTAINER</div>
       <div class="modal-b">
@@ -170,11 +170,53 @@
           The default profile is initialized automatically. Named profiles are created before deployment completes;
           configure their model credentials from the Agents page afterwards.
         </p>
+
+        <div class="field resources">
+          <label>resources — starts at what Hermes recommends</label>
+
+          <div class="res-row mono">
+            <span class="res-lbl">memory</span>
+            @for (mb of memoryPresets; track mb) {
+              <button class="chip" type="button" [class.on]="deployMemoryMb() === mb"
+                      (click)="deployMemoryMb.set(mb)">{{ formatMemory(mb) }}</button>
+            }
+          </div>
+
+          <div class="res-row mono">
+            <span class="res-lbl">cpu</span>
+            @for (n of cpuPresets; track n) {
+              <button class="chip" type="button" [class.on]="deployCpus() === n"
+                      (click)="deployCpus.set(n)">{{ n }}{{ n === 1 ? ' core' : ' cores' }}</button>
+            }
+          </div>
+
+          <!-- the recommendation is stated, not just applied: an operator raising it should
+               be able to see what they are moving away from -->
+          <p class="lock-hint" [class.warn]="memoryNote(deployMemoryMb())">
+            {{ memoryNote(deployMemoryMb())
+               ?? 'Hermes recommends 2–4 GB and 2 cores; 1 GB and 1 core is its stated minimum.' }}
+          </p>
+          <p class="lock-hint">
+            The data volume is not capped here — a local docker volume has no size of its own
+            and grows into the host filesystem. Hermes suggests keeping 2+ GB free for it.
+          </p>
+        </div>
+        @if (deployBusy()) {
+          <p class="lock-hint">the image pull and the create run on the host, not in this window —
+            close it and keep working; progress follows you in the top right.</p>
+        }
+        @if (deployFailed()) {
+          <p class="lock-hint crit">no container was created — the reason is in the banner above.
+            Your entries are still here.</p>
+        }
         <div class="modal-actions">
-          <button class="btn ghost" [disabled]="deployBusy()" (click)="deployOpen.set(false)">cancel</button>
+          <button class="btn ghost" (click)="deployOpen.set(false)">{{ deployBusy() ? 'close' : 'cancel' }}</button>
           <button class="btn primary"
                   [disabled]="!deployName.trim() || !deployTags().length || tagsLoading() || deployBusy()"
-                  (click)="deploy()">{{ deployBusy() ? 'deploying…' : 'deploy' }}</button>
+                  (click)="deploy()">
+            @if (deployBusy()) { <span class="spin" aria-hidden="true"></span> }
+            {{ deployBusy() ? 'deploying…' : 'deploy' }}
+          </button>
         </div>
       </div>
     </div>

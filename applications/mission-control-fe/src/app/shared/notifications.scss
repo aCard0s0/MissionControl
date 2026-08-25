@@ -1,0 +1,115 @@
+// Anchored under the 52px topbar, at the same 18px gutter the header uses, so the column
+// lines up with the controls it reports on rather than floating over them.
+//
+// Above every other layer that takes a click — the modal scrim (100), the drawer and the
+// terminal dock (110/120). A dialog tells the operator their deploy carries on in the top
+// right, and a stack hidden behind that dialog's own scrim would make that a lie. Only the
+// scanline overlay is higher, and it takes no pointer events.
+.stack {
+  position: fixed;
+  top: 62px;
+  right: 18px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 36px));
+  pointer-events: none;   // the page underneath stays clickable between cards
+}
+
+.note {
+  pointer-events: auto;
+  padding: 9px 11px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 6px 20px var(--shadow);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  animation: note-in .18s ease-out both;
+
+  &.running { color: var(--cyan); border-color: var(--cyan-line); }
+  &.ok      { color: var(--acc);  border-color: var(--acc-line); }
+  &.error   { color: var(--red);  border-color: var(--red-line); }
+
+  // held on screen by the component for exactly this long — see EXIT_MS
+  &.leaving { animation: note-out .2s ease-in both; }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;   // a backend message can be one long unbroken token
+}
+
+.mark {
+  flex: none;
+  width: 10px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.since {
+  flex: none;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.x {
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover { color: var(--fg); }
+}
+
+// Indeterminate travel, not a fake percentage.
+.bar {
+  margin-top: 7px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--cyan-soft);
+  overflow: hidden;
+
+  span {
+    display: block;
+    width: 38%;
+    height: 100%;
+    border-radius: 2px;
+    background: currentColor;
+    animation: note-bar 1.15s ease-in-out infinite;
+  }
+}
+
+@keyframes note-in {
+  from { opacity: 0; transform: translateX(16px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes note-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateX(16px); }
+}
+
+@keyframes note-bar {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+// The global reduce rule collapses these durations; the travelling bar would still loop, so
+// it is stopped outright and the card keeps the spinner as its sign of life.
+@media (prefers-reduced-motion: reduce) {
+  .bar span { animation: none; width: 100%; opacity: .5; }
+}

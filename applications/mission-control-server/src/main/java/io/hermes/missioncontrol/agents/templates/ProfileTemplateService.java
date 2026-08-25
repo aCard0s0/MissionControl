@@ -171,7 +171,7 @@ public class ProfileTemplateService {
     String name = uniqueName((templateName == null || templateName.isBlank())
         ? agentName + "-template" : templateName);
     ProfileTemplate template = new ProfileTemplate(
-        newId(), name, "Captured from " + agentName, CAPTURED_CATEGORY,
+        newId(), name, "", "Captured from " + agentName, CAPTURED_CATEGORY,
         agent.provider(), agent.model(), "", agent.cwd(),
         agent.soul(), agent.memoryMd(), skills, mcp, captured, now, now);
     repository.insert(template);
@@ -192,7 +192,7 @@ public class ProfileTemplateService {
   private ProfileTemplate build(
       String id, UpsertProfileTemplateRequest r, ProfileTemplate existing, long created, long updated) {
     return new ProfileTemplate(
-        id, r.name(), nz(r.description()), category(r.category()), nz(r.provider()), nz(r.model()),
+        id, r.name(), nz(r.icon()), nz(r.description()), category(r.category()), nz(r.provider()), nz(r.model()),
         nz(r.baseUrl()), nz(r.cwd()), nz(r.soul()), nz(r.memory()),
         nz(r.skills()), snapshots.materialize(r.mcpServers(), existing),
         storedSecrets(r.secrets(), existing), created, updated);
@@ -246,7 +246,7 @@ public class ProfileTemplateService {
         .toList();
     List<McpServerSpec> mcp = t.mcpServers().stream().map(TemplateSecrets::redacted).toList();
     return new ProfileTemplateDto(
-        t.id(), t.name(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
+        t.id(), t.name(), t.icon(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
         t.soul(), t.memory(), t.skills(), mcp, refs, t.createdAt(), t.updatedAt());
   }
 

@@ -10,11 +10,12 @@ import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate } from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
+import { AGENT_ICONS } from '../shared/agent-icon';
 import { TestFixture, el, press, type } from '../testing/dom';
 import { catalogServer as sharedCatalogServer } from '../testing/models';
 
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
-  id: 't-1', name: 'ops-sre', description: '', category: 'ops', provider: 'anthropic',
+  id: 't-1', name: 'ops-sre', icon: '', description: '', category: 'ops', provider: 'anthropic',
   model: 'claude-opus-5',
   baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
   secrets: [], createdAt: 1, updatedAt: 1, ...patch,
@@ -58,7 +59,24 @@ class Host {
 
 /** Renders and lets the panel settle — its draft effect flushes on first
  *  stability, and it clears the scratch fields when it does. */
-const render = async (store: ReturnType<typeof storeStub>, draft = newProfileDraft()) => {
+/**
+ * Opens every optional group.
+ *
+ * <p>They start closed. Most specs here are about what a group *contains* —
+ * adding a skill, snapshotting a server — so the harness opens them and those
+ * specs stay about their subject. The disclosure itself has its own describe
+ * block below, which renders with `groups: 'closed'`.
+ */
+const openAllGroups = (fixture: TestFixture): void => {
+  for (const header of Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.group-h'))) {
+    if (header.getAttribute('aria-expanded') !== 'true') header.click();
+  }
+  fixture.detectChanges();
+};
+
+const render = async (
+  store: ReturnType<typeof storeStub>, draft = newProfileDraft(), groups: 'open' | 'closed' = 'open',
+) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     // the pane links to /agents, so RouterLink needs a router present
@@ -69,6 +87,7 @@ const render = async (store: ReturnType<typeof storeStub>, draft = newProfileDra
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
+  if (groups === 'open') openAllGroups(fixture);
   return { fixture, store, host: fixture.componentInstance };
 };
 
@@ -96,6 +115,8 @@ describe('ProfileEditorPanel', () => {
     host.draft.set(profileDraftFrom(stored(), 'anthropic'));
     fixture.detectChanges();
     await fixture.whenStable();
+    // a new draft closes the groups with it, so the row has to be reached again
+    openAllGroups(fixture);
 
     expect(el(fixture).querySelector<HTMLInputElement>('.add-row .input')!.value).toBe('');
   });
@@ -107,6 +128,7 @@ describe('ProfileEditorPanel', () => {
     host.draft.set(newProfileDraft());
     fixture.detectChanges();
     await fixture.whenStable();
+    openAllGroups(fixture);
 
     expect(el(fixture).querySelector<HTMLInputElement>('.add-row .input')!.value).toBe('');
   });
@@ -180,9 +202,13 @@ const catalogServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer 
 
 /** The `.field` whose label names this section of the form. */
 const section = (fixture: TestFixture, label: string): HTMLElement => {
+  const group = Array.from(el(fixture).querySelectorAll<HTMLElement>('.group'))
+    .find(g => (g.querySelector('.group-t')?.textContent ?? '').includes(label));
+  const body = group?.querySelector<HTMLElement>('.group-b');
+  if (body) return body;
   const match = Array.from(el(fixture).querySelectorAll<HTMLElement>('.field'))
     .find(f => (f.querySelector('label')?.textContent ?? '').includes(label));
-  if (!match) throw new Error(`no field labelled "${label}"`);
+  if (!match) throw new Error(`no field or group labelled "${label}"`);
   return match;
 };
 
@@ -425,5 +451,127 @@ describe('ProfileEditorPanel saving', () => {
 
     expect(draft.mcpServers).toEqual([expect.objectContaining({ name: 'browser' })]);
     expect(draft.mcpServers[0]).not.toHaveProperty('sourceServerId', 'mcp-browser');
+  });
+});
+
+/** One group's header button, named by the words on it. */
+const groupHeader = (fixture: TestFixture, title: string): HTMLButtonElement => {
+  const match = Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.group-h'))
+    .find(h => (h.querySelector('.group-t')?.textContent ?? '').includes(title));
+  if (!match) throw new Error(`no group titled "${title}"`);
+  return match;
+};
+
+const iconButton = (fixture: TestFixture): HTMLButtonElement =>
+  el(fixture).querySelector<HTMLButtonElement>('.icon-btn')!;
+
+describe('ProfileEditorPanel optional groups', () => {
+  it('opens with the core on screen and everything else folded away', async () => {
+    const { fixture } = await render(storeStub(), newProfileDraft(), 'closed');
+
+    // the core: identity, and the model it runs on
+    expect(el(fixture).textContent).toContain('name');
+    expect(el(fixture).textContent).toContain('provider');
+
+    // and nothing from a group, however much the blueprint carries
+    expect(el(fixture).querySelector('.group-b')).toBeNull();
+    expect(el(fixture).querySelectorAll('.group-h').length).toBe(6);
+  });
+
+  it('says what a folded group holds, so opening it is a decision not a search', async () => {
+    const draft = newProfileDraft();
+    draft.skills = ['web-research', 'triage'];
+    const { fixture } = await render(storeStub(), draft, 'closed');
+
+    expect(groupHeader(fixture, 'skills').textContent).toContain('2 skills');
+    expect(groupHeader(fixture, 'tools').textContent).toContain('none');
+  });
+
+  it('counts one of a thing without the plural', async () => {
+    const draft = newProfileDraft();
+    draft.skills = ['triage'];
+    const { fixture } = await render(storeStub(), draft, 'closed');
+
+    expect(groupHeader(fixture, 'skills').textContent).toContain('1 skill');
+  });
+
+  it('opens a group and folds it again', async () => {
+    const { fixture } = await render(storeStub(), newProfileDraft(), 'closed');
+    const header = groupHeader(fixture, 'skills');
+
+    header.click();
+    fixture.detectChanges();
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(el(fixture).querySelectorAll('.group-b').length).toBe(1);
+
+    header.click();
+    fixture.detectChanges();
+    expect(el(fixture).querySelector('.group-b')).toBeNull();
+  });
+
+  it('folds them again when the page hands over a different blueprint', async () => {
+    const { fixture, host } = await render(storeStub([stored()]), newProfileDraft(), 'closed');
+    groupHeader(fixture, 'skills').click();
+    fixture.detectChanges();
+    expect(el(fixture).querySelectorAll('.group-b').length).toBe(1);
+
+    host.draft.set(profileDraftFrom(stored(), 'anthropic'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // otherwise the next blueprint opens on whatever the last one had expanded
+    expect(el(fixture).querySelector('.group-b')).toBeNull();
+  });
+});
+
+describe('ProfileEditorPanel icon', () => {
+  it('keeps the glyph grid closed until it is asked for', async () => {
+    const { fixture } = await render(storeStub(), newProfileDraft(), 'closed');
+
+    expect(el(fixture).querySelector('.icon-grid')).toBeNull();
+
+    iconButton(fixture).click();
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelectorAll('.icon-opt').length).toBe(AGENT_ICONS.length);
+  });
+
+  it('writes the chosen key onto the draft and closes the grid', async () => {
+    const draft = newProfileDraft();
+    const { fixture } = await render(storeStub(), draft, 'closed');
+    iconButton(fixture).click();
+    fixture.detectChanges();
+
+    el(fixture).querySelectorAll<HTMLButtonElement>('.icon-opt')[1].click();
+    fixture.detectChanges();
+
+    expect(draft.icon).toBe(AGENT_ICONS[1]);
+    expect(el(fixture).querySelector('.icon-grid')).toBeNull();
+  });
+
+  it('clears the glyph when the one already set is picked again', async () => {
+    const draft = newProfileDraft();
+    draft.icon = AGENT_ICONS[0];
+    const { fixture } = await render(storeStub(), draft, 'closed');
+    iconButton(fixture).click();
+    fixture.detectChanges();
+
+    // no thirteenth button meaning 'none' — picking twice is how the default is reached
+    el(fixture).querySelectorAll<HTMLButtonElement>('.icon-opt')[0].click();
+    fixture.detectChanges();
+
+    expect(draft.icon).toBe('');
+  });
+
+  it('carries the glyph into the request the backend gets', async () => {
+    const draft = newProfileDraft();
+    draft.name = 'ops-sre';
+    draft.icon = 'shield';
+    const { fixture, store } = await render(storeStub(), draft, 'closed');
+
+    press(fixture, 'create template');
+    await fixture.whenStable();
+
+    expect(store.templates.save.mock.calls[0][0]).toMatchObject({ icon: 'shield' });
   });
 });

@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.NoSuchElementException;
+import static org.mockito.Mockito.mock;
+
 import org.junit.jupiter.api.Test;
 
 /** The configured (offline) catalog path: provider switch + CSV parsing. */
@@ -15,7 +17,10 @@ class ModelCatalogServiceTest {
       "claude-fable-5,claude-opus-4-8",
       "gpt-5.2,gpt-5.2-mini",
       "Hermes-4-405B,Hermes-4-70B,Hermes-4-14B",
-      "nousresearch/hermes-4-405b,anthropic/claude-sonnet-4"),
+      "nousresearch/hermes-4-405b,anthropic/claude-sonnet-4",
+      "meta/llama-3.3-70b-instruct"),
+      // nothing refreshed yet, so every read here falls through to the curated list
+      mock(ModelCatalogRepository.class),
       new ObjectMapper());
 
   @Test

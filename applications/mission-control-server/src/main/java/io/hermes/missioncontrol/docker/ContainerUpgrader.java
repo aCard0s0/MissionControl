@@ -94,7 +94,9 @@ public class ContainerUpgrader {
         config.getUser(), config.getWorkingDir(),
         primaryNetwork, reattachableNetworks(inspected, primaryNetwork, containerId),
         state != null && Boolean.TRUE.equals(state.getRunning()),
-        dataVolume);
+        dataVolume,
+        hostConfig == null ? null : hostConfig.getMemory(),
+        hostConfig == null ? null : hostConfig.getNanoCPUs());
   }
 
   /** The networks the replacement has to be connected to by hand: the primary and the
@@ -238,6 +240,11 @@ public class ContainerUpgrader {
     // setting, so it is gone for good if the replacement does not carry it
     if (spec.portBindings() != null) hostConfig.withPortBindings(spec.portBindings());
     if (spec.publishAllPorts()) hostConfig.withPublishAllPorts(true);
+    // Create-time like the ports above, and just as invisible when it goes missing: an
+    // update that dropped the ceiling would leave the agent unbounded, and nothing about a
+    // container running fine on a quiet afternoon would say so.
+    if (spec.memory() != null && spec.memory() > 0) hostConfig.withMemory(spec.memory());
+    if (spec.nanoCpus() != null && spec.nanoCpus() > 0) hostConfig.withNanoCPUs(spec.nanoCpus());
 
     var create = client.createContainerCmd(image)
         .withName(spec.name())

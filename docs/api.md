@@ -30,7 +30,7 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 | `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts. `imageDigest` is the registry manifest digest of the image the container runs, or null when it was never pulled from a registry — the only evidence that a container on a floating tag such as `latest` is behind |
 | `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates. `ramMb` excludes the reclaimable page cache, matching what `docker stats` reports rather than raw `memory_stats.usage`. 503 if the daemon returns no sample. |
 | `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | container-scoped `{ ts, level, source, msg }`; multiline frames are split, empty records dropped, and explicit severity preserved |
-| `POST /api/containers` | `{ hostId, name, version?, profiles? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. `version` is validated as an image tag (same rule as the update endpoint) — blank or absent means `latest`. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. A gateway that never reports ready is 503, not 500. |
+| `POST /api/containers` | `{ hostId, name, version?, profiles?, memoryMb?, cpus? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. `version` is validated as an image tag (same rule as the update endpoint) — blank or absent means `latest`. `memoryMb`/`cpus` cap the container; absent means the [Hermes recommendation](https://hermes-agent.nousresearch.com/docs/user-guide/docker) of 2048 MB / 2 cores, never *no* limit. Both are refused below the vendor minimum (1024 MB, 1 core). The ceiling is create-time and is carried onto the replacement by an image update. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. A gateway that never reports ready is 503, not 500. |
 | `POST /api/containers/{hostId}/{id}/start` | — | |
 | `POST /api/containers/{hostId}/{id}/stop` | — | 10s graceful timeout |
 | `POST /api/containers/{hostId}/{id}/update` | `{ version }` | recreates the container on another tag, reusing its data volume, and returns the **new** `{ id }`. Pulls first, then stops, parks the old container aside, creates the replacement under the same name/labels/networks, and only removes the parked original once readiness passes — a failure restores it. Never re-seeds profiles and never touches the volume. 400 if the container is not Mission Control-managed or runs another image; 409 if it already runs that tag. Held open through readiness, so it can take minutes on a cold pull. |
@@ -124,8 +124,20 @@ image payloads at a model that may reject them.
 
 | Method & path | Body | Notes |
 |---|---|---|
-| `GET /api/models/{provider}` | — | curated list from `MC_MODELS_ANTHROPIC` / `MC_MODELS_OPENAI` (sensible defaults baked in) |
+| `GET /api/models/{provider}` | — | what the picker offers. A list stored by the background refresh wins (`source: catalog`); otherwise the curated `MC_MODELS_*` list (`source: config`). 404 for a provider with neither |
 | `POST /api/models/{provider}` | `{ apiKey }` | live fetch from the provider's `/v1/models` (truth source); falls back to the config list on any failure |
+
+**Background model-catalog refresh.** Twice a day (`@Scheduled`, 12h fixed delay, first run ~45s after boot) Mission Control re-reads the model list of every provider whose listing endpoint needs no credential, and stores it. Measured against each endpoint unauthenticated:
+
+| provider | endpoint | unauthenticated |
+| --- | --- | --- |
+| OpenRouter | `openrouter.ai/api/v1/models` | 200 — refreshed |
+| NVIDIA NIM | `integrate.api.nvidia.com/v1/models` | 200 — refreshed |
+| Nous | `inference-api.nousresearch.com/v1/models` | 200 — refreshed |
+| Anthropic, OpenAI, xAI, DeepSeek, Kimi, Z.AI, StepFun, MiniMax | their `/v1/models` | 401 — curated list only |
+| Google AI Studio | `generativelanguage.googleapis.com/v1beta/models` | 403 — curated list only |
+
+The eight-plus keyed providers keep their curated list; `POST /api/models/{provider}` with a caller-supplied key remains the way to read them live. A provider that fails, or answers 200 with no models, keeps whatever was stored before rather than emptying the picker. Set `MC_MODEL_CATALOG_REFRESH=false` to switch the job off.
 
 ## Model providers — ollama registry in SQLite
 

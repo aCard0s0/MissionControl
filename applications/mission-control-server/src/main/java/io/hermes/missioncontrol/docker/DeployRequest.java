@@ -1,5 +1,9 @@
 package io.hermes.missioncontrol.docker;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -10,6 +14,10 @@ import java.util.List;
  *     like {@link UpdateContainerRequest#version()} — the same value reaches the same
  *     daemon, and without the rule a typo here is reported as a 502 daemon failure only
  *     after the managed volume has already been created.
+ * @param memoryMb memory ceiling; null takes {@link ContainerResources#BASELINE}. Bounded
+ *     below by the vendor's stated minimum rather than by Docker's, so a deploy cannot
+ *     quietly produce an agent the vendor documents as too small to run.
+ * @param cpus CPU ceiling in cores, fractions allowed; null takes the baseline.
  */
 public record DeployRequest(
     @NotBlank String hostId,
@@ -19,5 +27,13 @@ public record DeployRequest(
     @Pattern(regexp = "|[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", message = "invalid image tag") String version,
     @Size(max = 50) List<@Pattern(
         regexp = "default|[a-z0-9][a-z0-9_-]{0,63}",
-        message = "invalid profile name") String> profiles) {
+        message = "invalid profile name") String> profiles,
+    @Min(ContainerResources.MIN_MEMORY_MB) @Max(ContainerResources.MAX_MEMORY_MB)
+    Integer memoryMb,
+    @DecimalMin("1.0") @DecimalMax("64.0") Double cpus) {
+
+  /** What this deploy should run under: what it asked for, or the recommendation. */
+  public ContainerResources resources() {
+    return ContainerResources.orBaseline(memoryMb, cpus);
+  }
 }

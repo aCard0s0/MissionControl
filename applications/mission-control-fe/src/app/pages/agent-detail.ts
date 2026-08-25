@@ -1,10 +1,8 @@
 import {
-  ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked,
+  ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs';
+import { Router, RouterLink } from '@angular/router';
 import { AgentRemoval } from '../core/store/agent-removal';
 import { AgentSetupStore } from '../core/store/agent-setup-store';
 import { AgentStore } from '../core/store/agent-store';
@@ -48,22 +46,22 @@ export class AgentDetailPage {
   protected readonly removal = inject(AgentRemoval);
   protected readonly setup = inject(AgentSetupStore);
   protected readonly templates = inject(TemplateStore);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   protected readonly ago = ago;
   protected readonly until = until;
 
-  private readonly id = toSignal(this.route.paramMap.pipe(map(p => p.get('id'))), { initialValue: null });
+  /** `agents/:id`, bound by the router (withComponentInputBinding). */
+  readonly id = input<string | null>(null);
 
   protected readonly agent = computed(() => this.agents.byId(this.id()));
 
   protected readonly tabs: Tab[] = ['overview', 'setup', 'skills', 'mcp', 'jobs', 'activity', 'files', 'sessions'];
-  protected readonly tab = signal<Tab>('overview');
+  protected readonly activeTab = signal<Tab>('overview');
 
-  /** `?tab=` — how another page links straight at one tab of this profile. */
-  private readonly tabParam = toSignal(
-    this.route.queryParamMap.pipe(map(p => p.get('tab'))), { initialValue: null });
+  /** `?tab=` — how another page links straight at one tab of this profile, bound by
+   *  the router. It seeds {@link activeTab}; pressing a tab afterwards stays local. */
+  readonly tab = input<string | null>(null);
 
   protected soulDraft = signal('');
   protected readonly soulDirty = computed(() => this.soulDraft() !== (this.agent()?.soul ?? ''));
@@ -126,7 +124,7 @@ export class AgentDetailPage {
       if (id !== lastId) {
         this.sessions.set(null);
         this.viewingSession.set(null);
-        if (untracked(this.tab) === 'sessions') untracked(() => void this.loadSessions());
+        if (untracked(this.activeTab) === 'sessions') untracked(() => void this.loadSessions());
       }
       lastId = id;
       lastSoul = soul;
@@ -137,7 +135,7 @@ export class AgentDetailPage {
     // tab rather than owning it: pressing a tab here stays local, so flipping through
     // them neither rewrites the URL nor fills the back button with tab changes.
     effect(() => {
-      const t = this.tabParam();
+      const t = this.tab();
       if (t && this.tabs.includes(t as Tab)) untracked(() => this.selectTab(t as Tab));
     });
 
@@ -145,7 +143,7 @@ export class AgentDetailPage {
     // and component destruction, so hidden agent pages do not leak intervals.
     effect(onCleanup => {
       const a = this.agent();
-      if (!a || this.tab() !== 'activity') return;
+      if (!a || this.activeTab() !== 'activity') return;
       untracked(() => {
         this.agentLogEntries.set([]);
         this.agentLogsError.set(null);
@@ -159,7 +157,7 @@ export class AgentDetailPage {
   }
 
   protected selectTab(t: Tab): void {
-    this.tab.set(t);
+    this.activeTab.set(t);
     if (t === 'sessions' && this.sessions() === null && !this.sessionsLoading()) void this.loadSessions();
   }
 
@@ -171,12 +169,12 @@ export class AgentDetailPage {
     this.agentLogsError.set(null);
     try {
       const lines = await this.agents.logTail(a.id, 100);
-      if (this.agent()?.id === a.id && this.tab() === 'activity') {
+      if (this.agent()?.id === a.id && this.activeTab() === 'activity') {
         this.agentLogEntries.set(lines);
         this.agentLogsUpdatedAt.set(Date.now());
       }
     } catch (e) {
-      if (this.agent()?.id === a.id && this.tab() === 'activity') {
+      if (this.agent()?.id === a.id && this.activeTab() === 'activity') {
         this.agentLogsError.set(errorMessage(e, 'agent log refresh failed'));
       }
     } finally {

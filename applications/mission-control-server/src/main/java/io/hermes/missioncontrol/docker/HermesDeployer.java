@@ -45,7 +45,8 @@ public class HermesDeployer {
   }
 
   public String deploy(
-      DockerHostRef host, String name, String version, List<String> profiles) {
+      DockerHostRef host, String name, String version, List<String> profiles,
+      ContainerResources resources) {
     DockerClient client = clients.forUrl(host.url());
     String tag = ImageStore.tagOf(version);
     String image = images.reference(tag);
@@ -79,9 +80,14 @@ public class HermesDeployer {
             "create seed profile " + profile);
       }
 
+      // The ceiling goes on the gateway, not on the one-shots above: those run the image's
+      // init hooks for seconds and a limit there would turn a tight-but-workable size into a
+      // deploy that fails during seeding, which reads as a broken image rather than a small box.
       HostConfig hostConfig = HostConfig.newHostConfig()
           .withBinds(new Bind(volumeName, new Volume(ManagedContainer.DATA_MOUNT), AccessMode.rw))
-          .withRestartPolicy(RestartPolicy.unlessStoppedRestart());
+          .withRestartPolicy(RestartPolicy.unlessStoppedRestart())
+          .withMemory(resources.memoryBytes())
+          .withNanoCPUs(resources.nanoCpus());
 
       CreateContainerResponse created;
       try {
@@ -93,9 +99,9 @@ public class HermesDeployer {
       containerId = created.getId();
       client.startContainerCmd(containerId).exec();
       readiness.validate(host, client, containerId, seedProfiles);
-      log.info("deployed {} from {} on {} — container {}, volume {}, seed profiles {}",
+      log.info("deployed {} from {} on {} — container {}, volume {}, seed profiles {}, {} MB / {} cpus",
           name, image, host.id(), shortId(containerId), volumeName,
-          seedProfiles.isEmpty() ? "none" : seedProfiles);
+          seedProfiles.isEmpty() ? "none" : seedProfiles, resources.memoryMb(), resources.cpus());
       return containerId;
     } catch (RuntimeException failure) {
       // The deploy pulls an image and runs bootstrap containers, so a failure can arrive

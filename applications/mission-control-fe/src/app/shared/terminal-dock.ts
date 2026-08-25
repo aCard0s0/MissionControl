@@ -28,7 +28,7 @@ const TAB = 'mc-terminal-tab';
  * between groups, and a drop overlay covering the whole group rather than just
  * its content, so dragging a shell onto a tab strip reads as landing there.
  */
-export const TERM_THEME: DockviewTheme = {
+const TERM_THEME: DockviewTheme = {
   ...themeDark,
   name: 'mission-control-terminal',
   gap: 2,

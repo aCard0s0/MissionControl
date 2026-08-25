@@ -11,6 +11,7 @@ import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { StoreContext } from '../core/store/store-context';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
+import { HERMES_BASELINE } from '../core/container-resources';
 import { ContainersPage, normalizeSeedProfiles } from './containers';
 import {
   TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
@@ -361,8 +362,8 @@ describe('ContainersPage deploy', () => {
     press(fixture, 'deploy');
     await settle(fixture);
 
-    expect(store.lifecycle.deploy)
-      .toHaveBeenCalledWith('hermes-staging', 'latest', ['ops', 'research-team'], 'dh-local');
+    expect(store.lifecycle.deploy).toHaveBeenCalledWith(
+      'hermes-staging', 'latest', ['ops', 'research-team'], 'dh-local', HERMES_BASELINE);
     expect(store.containers.select).toHaveBeenCalledWith('c-new');
     expect(el(fixture).querySelector('.modal')).toBeNull();
   });
@@ -380,6 +381,43 @@ describe('ContainersPage deploy', () => {
     expect(el(fixture).querySelector('.modal')).not.toBeNull();
     expect(field(fixture, 'container name')
       .querySelector<HTMLInputElement>('.input')!.value).toBe('hermes-staging');
+    expect(text(fixture)).toContain('no container was created');
+  });
+
+  it('can be closed while the deploy runs, which is minutes when the image is pulled', async () => {
+    const store = storeStub([]);
+    store.lifecycle.deploy.mockReturnValue(new Promise(() => { /* never settles */ }));
+    const { fixture } = render(store);
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    press(fixture, 'deploy');
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('close it and keep working');
+    press(fixture, 'close');
+
+    expect(el(fixture).querySelector('.modal')).toBeNull();
+  });
+
+  it('does not haul a closed-modal operator onto Overview when the deploy lands', async () => {
+    const store = storeStub([]);
+    let land = (_: string): void => { /* replaced below */ };
+    store.lifecycle.deploy.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const { fixture, router } = render(store);
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    press(fixture, 'deploy');
+    await settle(fixture);
+    press(fixture, 'close');
+
+    land('c-new');
+    await settle(fixture);
+
+    // the container is still adopted as the active one — it is the routing that is not forced
+    expect(store.containers.select).toHaveBeenCalledWith('c-new');
+    expect(router.navigate).not.toHaveBeenCalledWith(['/overview']);
   });
 
   it('will not deploy without a name', async () => {
@@ -682,5 +720,71 @@ describe('ContainersPage removal', () => {
 
     expect(el(fixture).querySelector('.modal')).toBeNull();
     expect(store.lifecycle.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContainersPage deploy resources', () => {
+  const resourceChip = (fixture: TestFixture, label: string): HTMLButtonElement => {
+    const match = Array.from(
+      el(fixture).querySelectorAll<HTMLButtonElement>('.resources .chip'))
+      .find(c => (c.textContent ?? '').trim() === label);
+    if (!match) throw new Error(`no resource preset labelled "${label}"`);
+    return match;
+  };
+
+  it('opens on what Hermes recommends, and says so', async () => {
+    const { fixture } = render(storeStub([]));
+    await openDeploy(fixture);
+
+    expect(resourceChip(fixture, '2 GB').classList.contains('on')).toBe(true);
+    expect(resourceChip(fixture, '2 cores').classList.contains('on')).toBe(true);
+    expect(text(fixture)).toContain('Hermes recommends 2–4 GB and 2 cores');
+  });
+
+  it('deploys the raised ceiling rather than the baseline', async () => {
+    const { fixture, store } = render(storeStub([]));
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    resourceChip(fixture, '8 GB').click();
+    resourceChip(fixture, '4 cores').click();
+    fixture.detectChanges();
+    press(fixture, 'deploy');
+    await settle(fixture);
+
+    expect(store.lifecycle.deploy).toHaveBeenCalledWith(
+      'hermes-staging', 'latest', [], 'dh-local', { memoryMb: 8192, cpus: 4 });
+  });
+
+  it('warns at the floor that browser automation will not fit', async () => {
+    const { fixture } = render(storeStub([]));
+    await openDeploy(fixture);
+
+    resourceChip(fixture, '1 GB').click();
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain('browser automation');
+  });
+
+  it('says the data volume is not capped here rather than implying it is', async () => {
+    // a local docker volume has no size of its own; claiming a control we do not have
+    // would be worse than saying nothing
+    const { fixture } = render(storeStub([]));
+    await openDeploy(fixture);
+
+    expect(text(fixture)).toContain('data volume is not capped here');
+  });
+
+  it('starts the next deploy from the recommendation, not the last one raised', async () => {
+    const { fixture } = render(storeStub([]));
+    await openDeploy(fixture);
+    resourceChip(fixture, '16 GB').click();
+    fixture.detectChanges();
+    press(fixture, 'cancel');
+    fixture.detectChanges();
+
+    await openDeploy(fixture);
+
+    expect(resourceChip(fixture, '2 GB').classList.contains('on')).toBe(true);
   });
 });

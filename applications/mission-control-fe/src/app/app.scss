@@ -271,12 +271,6 @@ main {
   background: var(--amber-soft);
   border: 1px solid var(--amber-line);
   border-radius: var(--r);
-
-  &.crit {
-    color: var(--red);
-    background: var(--red-soft);
-    border-color: var(--red-line);
-  }
 }
 
 // ── responsive ──────────────────────────────────────────────────────────────

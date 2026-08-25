@@ -18,6 +18,7 @@ import { LogStore } from '../core/store/log-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { PromptStore } from '../core/store/prompt-store';
 import { ProviderStore } from '../core/store/provider-store';
+import { ActivityStore } from '../core/store/activity-store';
 import { StoreContext } from '../core/store/store-context';
 import { TemplateStore } from '../core/store/template-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
@@ -36,7 +37,7 @@ const TEST_CONFIG: McRuntimeConfig = {
   apiBaseUrl: '', dockerSocket: 'unix:///var/run/docker.sock',
 };
 
-const specConfig = (): McRuntimeConfig =>
+export const specConfig = (): McRuntimeConfig =>
   typeof window !== 'undefined' && window.__MC_CONFIG__ ? runtimeConfig() : TEST_CONFIG;
 
 /** Replaces the backend of a built context. `api` is the one seam every slice
@@ -109,6 +110,7 @@ export const storeSlices = () => {
   // would answer the poll that loading triggers instead of the test's own call
   return {
     get ctx() { return TestBed.inject(StoreContext); },
+    get activity() { return TestBed.inject(ActivityStore); },
     get hosts() { return TestBed.inject(HostStore); },
     get containers() { return TestBed.inject(ContainerStore); },
     get lifecycle() { return TestBed.inject(ContainerLifecycle); },

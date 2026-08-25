@@ -1,0 +1,28 @@
+@if (notes().length) {
+  <!-- polite, not assertive: these announce work the operator started themselves, and an
+       assertive region would interrupt a screen reader mid-sentence to say so -->
+  <div class="stack" role="status" aria-live="polite">
+    @for (n of notes(); track n.key) {
+      <div class="note" [class]="n.kind" [class.leaving]="n.leaving">
+        <div class="row">
+          @if (n.kind === 'running') {
+            <span class="spin" aria-hidden="true"></span>
+          } @else {
+            <span class="mark" aria-hidden="true">{{ n.kind === 'ok' ? '✓' : '!' }}</span>
+          }
+          <span class="msg">{{ n.message }}</span>
+          @if (n.kind === 'running') {
+            <span class="since mono">{{ since(n.at) }}</span>
+          } @else {
+            <button class="x" aria-label="dismiss" (click)="dismiss(n)">×</button>
+          }
+        </div>
+        @if (n.kind === 'running') {
+          <!-- indeterminate: the backend reports no percentage, and a bar that invented one
+               would be a lie the operator plans around -->
+          <div class="bar" aria-hidden="true"><span></span></div>
+        }
+      </div>
+    }
+  </div>
+}

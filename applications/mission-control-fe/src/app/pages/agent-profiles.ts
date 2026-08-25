@@ -6,6 +6,7 @@ import { ProfileTemplate } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
 import { providerOptionFor, providerOptions } from '../shared/provider-resolve';
+import { AgentIconView } from '../shared/agent-icon';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
 import { ProfileEditorPanel } from './profile-editor-panel';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
@@ -27,7 +28,7 @@ import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-edito
 @Component({
   selector: 'mc-agent-profiles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Reveal, ProfileEditorPanel, ProfileDeployDialog],
+  imports: [Reveal, AgentIconView, ProfileEditorPanel, ProfileDeployDialog],
   templateUrl: './agent-profiles.html',
   styleUrl: './agent-profiles.scss',
 })
@@ -43,6 +44,13 @@ export class AgentProfilesPage {
   protected readonly open = signal(false);   // editor pane visible (mobile + first load)
 
   protected readonly deployFor = signal<ProfileTemplate | null>(null);
+
+  /**
+   * Cards whose detail is showing. Collapsed to begin with: the list is how an
+   * operator finds a blueprint, and a description plus a model line plus three
+   * chip rows each is more than a name needs to be recognised by.
+   */
+  private readonly openCards = signal<ReadonlySet<string>>(new Set());
 
   // ── finding one again ────────────────────────────────────────────────────
   protected readonly query = signal('');
@@ -141,6 +149,18 @@ export class AgentProfilesPage {
     if (this.draft().id === t.id) this.closeEditor();
   }
 
+  protected cardOpen(id: string): boolean {
+    return this.openCards().has(id);
+  }
+
+  protected toggleCard(id: string): void {
+    this.openCards.update(open => {
+      const next = new Set(open);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
   protected openDeploy(t: ProfileTemplate): void {
     this.deployFor.set(t);
   }
@@ -155,7 +175,7 @@ export class AgentProfilesPage {
 /** The three things a blueprint can install, as the toggles name them. */
 export type Carries = 'skills' | 'mcp' | 'keys';
 
-export const CARRIES: readonly Carries[] = ['skills', 'mcp', 'keys'];
+const CARRIES: readonly Carries[] = ['skills', 'mcp', 'keys'];
 
 export function carried(t: ProfileTemplate, what: Carries): boolean {
   switch (what) {
@@ -168,7 +188,7 @@ export function carried(t: ProfileTemplate, what: Carries): boolean {
 /** Everything about a blueprint the search box looks through. Deliberately more
  *  than the card shows: an operator hunting the blueprint that carries a given
  *  skill or key knows that word, not the name someone filed it under. */
-export function haystack(t: ProfileTemplate): string {
+function haystack(t: ProfileTemplate): string {
   return [
     t.name, t.description, t.category, t.provider, t.model,
     ...t.skills,

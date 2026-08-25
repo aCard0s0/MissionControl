@@ -9,18 +9,6 @@
   h2 { font-size: 22px; }
 }
 
-.filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
-
-  .chip { cursor: pointer; background: var(--panel); transition: all .15s;
-    &:hover { border-color: var(--faint); }
-    &.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
-  }
-}
-
 .form-panel { margin-bottom: 14px; }
 .form { display: flex; flex-direction: column; gap: 12px; }
 .row { display: grid; grid-template-columns: 1fr 200px; gap: 12px; }

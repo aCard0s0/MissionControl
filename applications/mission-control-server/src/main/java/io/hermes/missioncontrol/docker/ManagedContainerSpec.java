@@ -38,5 +38,9 @@ public record ManagedContainerSpec(
     String primaryNetwork,
     Map<String, List<String>> extraNetworks,
     boolean wasRunning,
-    String dataVolume) {
+    String dataVolume,
+    /** Memory ceiling in bytes, or null on a container created before this was set. */
+    Long memory,
+    /** CPU ceiling in billionths of a core, or null. */
+    Long nanoCpus) {
 }

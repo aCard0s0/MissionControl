@@ -12,6 +12,9 @@ import { StatusDot } from '../shared/status-dot';
 import { Sparkline } from '../shared/sparkline';
 import { Reveal } from '../shared/reveal';
 import { TerminalIcon } from '../shared/terminal-icon';
+import {
+  CPU_PRESETS, HERMES_BASELINE, MEMORY_PRESETS_MB, formatMemory, memoryNote,
+} from '../core/container-resources';
 import { errorMessage } from '../core/errors';
 import { uptime } from '../core/format';
 import {
@@ -53,6 +56,18 @@ export class ContainersPage {
   protected readonly tagsLoading = signal(false);
   protected readonly tagsError = signal<string | null>(null);
   protected readonly deployBusy = signal(false);
+
+  // The ceiling the new container runs under, starting at the vendor's recommendation.
+  // Signals rather than plain fields: the hint under them reads off the chosen memory.
+  protected readonly deployMemoryMb = signal(HERMES_BASELINE.memoryMb);
+  protected readonly deployCpus = signal(HERMES_BASELINE.cpus);
+  protected readonly memoryPresets = MEMORY_PRESETS_MB;
+  protected readonly cpuPresets = CPU_PRESETS;
+  protected readonly formatMemory = formatMemory;
+  protected readonly memoryNote = memoryNote;
+
+  /** Set when a deploy came back empty, so the modal stays and says why. */
+  protected readonly deployFailed = signal(false);
 
   protected readonly addingHost = signal(false);
   protected hostName = '';
@@ -190,6 +205,11 @@ export class ContainersPage {
 
   protected openDeploy(): void {
     // never carry a stale host id into the modal — snap to a connected host
+    this.deployFailed.set(false);
+    // and never carry the last deploy's ceiling into the next one: the recommendation is
+    // the starting point every time, not whatever was typed once
+    this.deployMemoryMb.set(HERMES_BASELINE.memoryMb);
+    this.deployCpus.set(HERMES_BASELINE.cpus);
     this.deployHost = this.connectedHosts()[0]?.id ?? '';
     this.deployTags.set([]);
     this.tagsError.set(null);
@@ -213,16 +233,24 @@ export class ContainersPage {
     if (!name || !host || host.status !== 'connected' || !this.deployVersion || this.deployBusy()) return;
     const profiles = normalizeSeedProfiles(this.deployProfiles);
     this.deployBusy.set(true);
-    const id = await this.lifecycle.deploy(name, this.deployVersion, profiles, this.deployHost);
+    this.deployFailed.set(false);
+    const id = await this.lifecycle.deploy(name, this.deployVersion, profiles, this.deployHost,
+      { memoryMb: this.deployMemoryMb(), cpus: this.deployCpus() });
     this.deployBusy.set(false);
-    if (id) {
-      this.deployOpen.set(false);
-      this.deployName = '';
-      this.deployProfiles = '';
-      this.deployTags.set([]);
-      this.containers.select(id);
-      this.router.navigate(['/overview']);
+    if (!id) {
+      this.deployFailed.set(true);
+      return;
     }
+    // Following the new container onto Overview is right for an operator who waited on the
+    // modal, and wrong for one who closed it and walked to another page — a pull can take
+    // minutes, and yanking them off whatever they went to do is not a reward for waiting.
+    const waiting = this.deployOpen();
+    this.deployOpen.set(false);
+    this.deployName = '';
+    this.deployProfiles = '';
+    this.deployTags.set([]);
+    this.containers.select(id);
+    if (waiting) this.router.navigate(['/overview']);
   }
 
   protected async confirmRemove(): Promise<void> {

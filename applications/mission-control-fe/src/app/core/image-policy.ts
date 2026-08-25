@@ -98,7 +98,7 @@ export function newerImageTags(
  * built image (no repo digest), an air-gapped install and `MC_REGISTRY_TAGS=false` all keep
  * today's silence rather than inventing a prompt nobody can act on.
  */
-export function floatingUpdate(
+function floatingUpdate(
   container: UpdateCandidate,
   catalog: ImageCatalog | undefined,
 ): ImageTag | null {

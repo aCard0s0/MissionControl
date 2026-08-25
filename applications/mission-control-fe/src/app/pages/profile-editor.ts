@@ -26,6 +26,8 @@ export interface EditorTemplateMcp extends TemplateMcp {
 export interface ProfileDraft {
   id: string | null;
   name: string;
+  /** key into the built-in glyph set; blank draws the default */
+  icon: string;
   description: string;
   /** what the Blueprints page files and filters it under; blank means `general` */
   category: string;
@@ -75,6 +77,7 @@ export function newProfileDraft(): ProfileDraft {
   return {
     id: null,
     name: '',
+    icon: '',
     description: '',
     category: '',
     provider: DEFAULT_PROVIDER,
@@ -101,6 +104,7 @@ export function profileDraftFrom(template: ProfileTemplate, providerOption: stri
   return {
     id: template.id,
     name: template.name,
+    icon: template.icon,
     description: template.description,
     category: template.category,
     provider: providerOption,
@@ -128,6 +132,7 @@ export function profileDraftToInput(
   const resolved = resolveProviderOption(draft.provider, ollamaInstances);
   return {
     name: draft.name.trim(),
+    icon: draft.icon,
     description: draft.description.trim(),
     category: draft.category.trim(),
     provider: providerNameOf(draft.provider),

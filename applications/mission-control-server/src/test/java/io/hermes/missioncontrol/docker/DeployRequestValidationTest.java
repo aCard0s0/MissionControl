@@ -16,9 +16,9 @@ class DeployRequestValidationTest {
     try (var factory = Validation.buildDefaultValidatorFactory()) {
       var validator = factory.getValidator();
       assertTrue(validator.validate(
-          new DeployRequest("dh-local", "demo", "latest", List.of("default", "ops-team"))).isEmpty());
+          new DeployRequest("dh-local", "demo", "latest", List.of("default", "ops-team"), null, null)).isEmpty());
       assertFalse(validator.validate(
-          new DeployRequest("dh-local", "demo", "latest", List.of("Bad.Name"))).isEmpty());
+          new DeployRequest("dh-local", "demo", "latest", List.of("Bad.Name"), null, null)).isEmpty());
     }
   }
 
@@ -31,7 +31,7 @@ class DeployRequestValidationTest {
 
       for (String rejected : List.of("bad tag!", "v1\nlatest", "t".repeat(200))) {
         var violations = validator.validate(
-            new DeployRequest("dh-local", "demo", rejected, List.of("default")));
+            new DeployRequest("dh-local", "demo", rejected, List.of("default"), null, null));
         assertEquals(1, violations.size(), "should have been rejected: " + rejected);
         var violation = violations.iterator().next();
         assertEquals("version", violation.getPropertyPath().toString());
@@ -40,7 +40,7 @@ class DeployRequestValidationTest {
 
       for (String accepted : List.of("v2026.8.3", "latest")) {
         assertTrue(validator.validate(
-                new DeployRequest("dh-local", "demo", accepted, List.of("default"))).isEmpty(),
+                new DeployRequest("dh-local", "demo", accepted, List.of("default"), null, null)).isEmpty(),
             "should have been accepted: " + accepted);
       }
     }
@@ -54,7 +54,7 @@ class DeployRequestValidationTest {
       var validator = factory.getValidator();
       for (String unset : Arrays.asList(null, "")) {
         assertTrue(validator.validate(
-                new DeployRequest("dh-local", "demo", unset, List.of("default")))
+                new DeployRequest("dh-local", "demo", unset, List.of("default"), null, null))
                 .stream()
                 .noneMatch(v -> v.getPropertyPath().toString().equals("version")),
             "an unset version must still mean 'latest'");

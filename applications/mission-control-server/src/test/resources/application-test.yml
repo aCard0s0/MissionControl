@@ -11,6 +11,9 @@ spring:
 
 mc:
   startup-reconcile: false
+  # a context test must not reach a provider API; the suite has to pass offline
+  model-catalog:
+    refresh: false
   registry-tags: false
   docker-socket: unix:///var/run/docker.sock
   mcp-stack-dir: ./target/test-mcp-stacks

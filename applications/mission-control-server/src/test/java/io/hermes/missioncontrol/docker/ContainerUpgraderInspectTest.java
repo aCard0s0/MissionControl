@@ -140,7 +140,9 @@ class ContainerUpgraderInspectTest {
     HostConfig hostConfig = HostConfig.newHostConfig()
         .withBinds(Bind.parse("mc-hermes-demo:/opt/data"))
         .withRestartPolicy(RestartPolicy.unlessStoppedRestart())
-        .withNetworkMode("bridge");
+        .withNetworkMode("bridge")
+        .withMemory(2048L * 1024 * 1024)
+        .withNanoCPUs(2_000_000_000L);
     InspectContainerResponse inspected = mock(InspectContainerResponse.class);
     when(inspected.getConfig()).thenReturn(config);
     when(inspected.getHostConfig()).thenReturn(hostConfig);
@@ -162,6 +164,8 @@ class ContainerUpgraderInspectTest {
     assertEquals("/opt/data", spec.workingDir());
     assertEquals("bridge", spec.primaryNetwork());
     assertEquals(1, spec.binds().size());
+    assertEquals(2048L * 1024 * 1024, spec.memory());
+    assertEquals(2_000_000_000L, spec.nanoCpus());
     assertTrue(spec.wasRunning());
   }
 
@@ -279,6 +283,32 @@ class ContainerUpgraderInspectTest {
     assertEquals("127.0.0.1", bound[0].getHostIp());
     assertEquals("8644", bound[0].getHostPortSpec());
     assertTrue(replacement.getPublishAllPorts(), "`docker run -P` is carried over as well");
+  }
+
+  @Test
+  void theResourceCeilingSurvivesTheReplacement() {
+    // Create-time, like the port mapping above, and far quieter when it goes missing: the
+    // replacement runs unbounded and nothing about a container behaving on a quiet afternoon
+    // says the limit has gone.
+    CreateContainerCmd create = upgradeHarness(true);
+
+    upgrader.upgrade(HOST, ID, "1.3");
+
+    HostConfig replacement = hostConfigOf(create);
+    assertEquals(2048L * 1024 * 1024, replacement.getMemory());
+    assertEquals(2_000_000_000L, replacement.getNanoCPUs());
+  }
+
+  @Test
+  void aContainerDeployedBeforeCeilingsExistedIsRebuiltWithoutInventingOne() {
+    // an older container reports no limit; the upgrade must not quietly impose the baseline
+    // on it, which would be this feature changing a container it was never asked to change
+    CreateContainerCmd create = upgradeHarness(false);
+
+    upgrader.upgrade(HOST, ID, "1.3");
+
+    assertNull(hostConfigOf(create).getMemory());
+    assertNull(hostConfigOf(create).getNanoCPUs());
   }
 
   @Test
@@ -400,6 +430,8 @@ class ContainerUpgraderInspectTest {
             .withBinds(Bind.parse("mc-hermes-demo:/opt/data"))
             .withRestartPolicy(RestartPolicy.unlessStoppedRestart())
             .withPortBindings(new Ports(WEBHOOK_PORT, Ports.Binding.bindIpAndPort("127.0.0.1", 8644)))
+            .withMemory(2048L * 1024 * 1024)
+            .withNanoCPUs(2_000_000_000L)
         : null;
     if (publishAllPorts) {
       hostConfig = (hostConfig == null ? HostConfig.newHostConfig() : hostConfig)

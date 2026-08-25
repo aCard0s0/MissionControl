@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.docker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -84,7 +85,7 @@ class HermesDeployerTest {
     when(state.getRunning()).thenReturn(true);
 
     String containerId = subject.deploy(
-        HOST, "demo", "latest", List.of("ops"));
+        HOST, "demo", "latest", List.of("ops"), ContainerResources.BASELINE);
 
     assertEquals("main-id", containerId);
     verify(createVolume).withName("mc-hermes-demo");
@@ -107,7 +108,59 @@ class HermesDeployerTest {
     assertEquals("mc-hermes-demo:/opt/data:rw", hostConfig.getValue().getBinds()[0].toString());
     // without this an operator's daemon restart leaves the Agent down for good
     assertEquals(RestartPolicy.unlessStoppedRestart(), hostConfig.getValue().getRestartPolicy());
+    // the ceiling the caller asked for, in the units the daemon takes
+    assertEquals(2048L * 1024 * 1024, hostConfig.getValue().getMemory());
+    assertEquals(2_000_000_000L, hostConfig.getValue().getNanoCPUs());
     verify(main).withCmd(List.of("gateway", "run"));
+  }
+
+  @Test
+  void aRaisedCeilingReachesTheDaemonRatherThanTheBaseline() {
+    stubMissingVolume("mc-hermes-demo");
+    stubCreateVolume();
+    CreateContainerCmd init = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    CreateContainerCmd main = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    CreateContainerResponse initCreated = createdWithId("init-id");
+    CreateContainerResponse mainCreated = createdWithId("main-id");
+    when(client.createContainerCmd("hermes/image:latest")).thenReturn(init, main);
+    when(init.exec()).thenReturn(initCreated);
+    when(main.exec()).thenReturn(mainCreated);
+    stubOneShot("init-id", 0);
+    stubStart("main-id");
+    ContainerState state = stubState("main-id");
+    when(state.getRunning()).thenReturn(true);
+
+    subject.deploy(HOST, "demo", "latest", List.of(), new ContainerResources(8192, 4.0));
+
+    ArgumentCaptor<HostConfig> hostConfig = ArgumentCaptor.forClass(HostConfig.class);
+    verify(main).withHostConfig(hostConfig.capture());
+    assertEquals(8192L * 1024 * 1024, hostConfig.getValue().getMemory());
+    assertEquals(4_000_000_000L, hostConfig.getValue().getNanoCPUs());
+  }
+
+  @Test
+  void theOneShotsThatSeedTheVolumeRunWithoutACeiling() {
+    // they run the image's init hooks for seconds; a limit there turns a tight-but-workable
+    // size into a deploy that fails during seeding, which reads as a broken image
+    stubMissingVolume("mc-hermes-demo");
+    stubCreateVolume();
+    CreateContainerCmd init = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    CreateContainerCmd main = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    CreateContainerResponse initCreated = createdWithId("init-id");
+    CreateContainerResponse mainCreated = createdWithId("main-id");
+    when(client.createContainerCmd("hermes/image:latest")).thenReturn(init, main);
+    when(init.exec()).thenReturn(initCreated);
+    when(main.exec()).thenReturn(mainCreated);
+    stubOneShot("init-id", 0);
+    stubStart("main-id");
+    ContainerState state = stubState("main-id");
+    when(state.getRunning()).thenReturn(true);
+
+    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE);
+
+    ArgumentCaptor<HostConfig> oneShot = ArgumentCaptor.forClass(HostConfig.class);
+    verify(init).withHostConfig(oneShot.capture());
+    assertNull(oneShot.getValue().getMemory());
   }
 
   @Test
@@ -130,7 +183,7 @@ class HermesDeployerTest {
     when(state.getRunning()).thenReturn(true);
 
     String containerId = subject.deploy(
-        HOST, "demo", "latest", List.of("ops", "research"));
+        HOST, "demo", "latest", List.of("ops", "research"), ContainerResources.BASELINE);
 
     assertEquals("main-id", containerId);
 
@@ -170,7 +223,7 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    String containerId = subject.deploy(HOST, "demo", "latest", List.of());
+    String containerId = subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE);
 
     assertEquals("main-id", containerId);
     // the repository must be pulled without the tag glued on twice, and at the tag
@@ -200,7 +253,7 @@ class HermesDeployerTest {
     stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.deploy(HOST, "demo", "latest", List.of()));
+        () -> subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
 
     assertTrue(failure.getMessage().contains("exited before readiness checks"), failure.getMessage());
     // an exec against a dead container blocks or reports a confusing daemon error
@@ -229,7 +282,7 @@ class HermesDeployerTest {
     RemoveVolumeCmd removeVolume = stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.deploy(HOST, "demo", "latest", List.of()));
+        () -> subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
 
     assertTrue(failure.getMessage().contains("stopped during readiness checks"), failure.getMessage());
     // a half-deployed Agent left behind would block the next deploy on its volume
@@ -253,7 +306,7 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    subject.deploy(HOST, "demo", "latest", List.of());
+    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE);
 
     ArgumentCaptor<List<String>> command = ArgumentCaptor.forClass(List.class);
     verify(dockerExec).runAsUser(eq(HOST), eq("main-id"), eq("hermes"), command.capture(),

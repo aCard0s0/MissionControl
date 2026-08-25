@@ -47,9 +47,14 @@ const cases: Record<string, Case> = {
     url: '/api/containers/dh-local/c-1/logs?tail=25',
   },
   'containers.deploy': {
-    call: a => a.containers.deploy('dh-local', 'hermes-prod', 'v1', ['ops']), method: 'POST',
+    call: a => a.containers.deploy(
+      'dh-local', 'hermes-prod', 'v1', ['ops'], { memoryMb: 4096, cpus: 4 }),
+    method: 'POST',
     url: '/api/containers',
-    body: { hostId: 'dh-local', name: 'hermes-prod', version: 'v1', profiles: ['ops'] },
+    body: {
+      hostId: 'dh-local', name: 'hermes-prod', version: 'v1', profiles: ['ops'],
+      memoryMb: 4096, cpus: 4,
+    },
   },
   'containers.start': {
     call: a => a.containers.start('dh-local', 'c-1'), method: 'POST',

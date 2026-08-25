@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { rollNumber } from '../core/motion';
 
-/** Number that rolls to its new value when the input changes (GSAP tween). */
+/** Number that rolls to its new value when the input changes. */
 @Component({
   selector: 'mc-num',
   changeDetection: ChangeDetectionStrategy.OnPush,

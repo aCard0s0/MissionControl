@@ -177,6 +177,7 @@ describe('AgentStore create', () => {
       containerId: 'c-1', name: 'sre', provider: 'anthropic', model: 'm', apiKey: '',
     })).toBe('');
     expect(ctx.liveError()).toBe('create profile failed: profile exists');
+    expect(ctx.liveNotice()).toBeNull();
   });
 
   it('replaces a row a concurrent poll already picked up', async () => {

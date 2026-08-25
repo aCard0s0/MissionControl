@@ -3,7 +3,7 @@ import { ApiProfileTemplate } from '../hermes-api';
 import { apiProfile, loadedAgentSlices } from '../../testing/store';
 
 const template = (id: string, patch: Partial<ApiProfileTemplate> = {}): ApiProfileTemplate => ({
-  id, name: id, description: 'SRE copilot', category: 'ops', provider: 'anthropic',
+  id, name: id, icon: '', description: 'SRE copilot', category: 'ops', provider: 'anthropic',
   model: 'claude-fable-5',
   baseUrl: '', cwd: '/opt/data', soul: '# SOUL', memory: '# MEMORY',
   skills: ['ops'], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2, ...patch,

@@ -18,6 +18,8 @@ import java.util.Optional;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import static org.mockito.Mockito.mock;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,13 +37,14 @@ class ModelCatalogLiveTest {
       "claude-fable-5,claude-opus-4-8",
       "gpt-5.2,gpt-5.2-mini",
       "Hermes-4-405B",
-      "nousresearch/hermes-4-405b");
+      "nousresearch/hermes-4-405b",
+      "meta/llama-3.3-70b-instruct");
 
   private final List<HttpRequest> sent = new ArrayList<>();
 
   /** A service whose provider calls are answered from {@code responder} instead of the network. */
   private ModelCatalogService serviceAnswering(Function<HttpRequest, String> responder) {
-    return new ModelCatalogService(PROPS, new ObjectMapper()) {
+    return new ModelCatalogService(PROPS, mock(ModelCatalogRepository.class), new ObjectMapper()) {
       @Override
       String send(HttpRequest request) {
         sent.add(request);
@@ -51,7 +54,7 @@ class ModelCatalogLiveTest {
   }
 
   private ModelCatalogService serviceFailing(Exception failure) {
-    return new ModelCatalogService(PROPS, new ObjectMapper()) {
+    return new ModelCatalogService(PROPS, mock(ModelCatalogRepository.class), new ObjectMapper()) {
       @Override
       String send(HttpRequest request) throws Exception {
         sent.add(request);
@@ -116,11 +119,13 @@ class ModelCatalogLiveTest {
 
   @Test
   void aProviderWithNoLiveEndpointAnswersFromItsCuratedList() {
+    // Google AI Studio answers 403 to an unauthenticated list and this app has no fetcher
+    // for it, so there is nothing to call — the curated list is the whole answer
     ModelCatalogService service = serviceAnswering(request -> "{}");
 
-    ModelCatalogDto catalog = service.live("nous", "key");
+    ModelCatalogDto catalog = service.live("gemini", "key");
 
-    assertEquals(List.of("Hermes-4-405B"), catalog.models());
+    assertEquals(List.of(), catalog.models());
     assertTrue(sent.isEmpty(), "no provider call is made for a catalog-only provider");
   }
 
@@ -201,7 +206,7 @@ class ModelCatalogLiveTest {
   void aTwoHundredResponseIsReturnedAsItsBody() throws Exception {
     route(200, "{\"data\":[]}");
 
-    assertEquals("{\"data\":[]}", new ModelCatalogService(PROPS, new ObjectMapper()).send(get()));
+    assertEquals("{\"data\":[]}", new ModelCatalogService(PROPS, mock(ModelCatalogRepository.class), new ObjectMapper()).send(get()));
   }
 
   @Test
@@ -210,7 +215,7 @@ class ModelCatalogLiveTest {
 
     assertEquals("provider returned HTTP 429",
         assertThrows(IllegalStateException.class,
-            () -> new ModelCatalogService(PROPS, new ObjectMapper()).send(get())).getMessage());
+            () -> new ModelCatalogService(PROPS, mock(ModelCatalogRepository.class), new ObjectMapper()).send(get())).getMessage());
   }
 
   @Test
@@ -219,7 +224,7 @@ class ModelCatalogLiveTest {
     route(302, "");
 
     assertFalse(assertThrows(IllegalStateException.class,
-        () -> new ModelCatalogService(PROPS, new ObjectMapper()).send(get())).getMessage().isBlank());
+        () -> new ModelCatalogService(PROPS, mock(ModelCatalogRepository.class), new ObjectMapper()).send(get())).getMessage().isBlank());
   }
 
   private HttpServer server;
