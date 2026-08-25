@@ -99,6 +99,9 @@ class McpStartupReconciler {
         resumedDeletes++;
         lifecycle.submit(row.id(), () -> lifecycle.runDelete(row.id()));
       } else {
+        // beginOperation, not claimOperation: a record left in `starting` by a dashboard that
+        // went down mid-Compose is precisely what this pass exists for, and a claim would
+        // decline it — stranding it in that state with nothing left to drive it out
         repository.beginOperation(row.id(), row.desiredState(), McpOperationState.RECONCILING.wire());
         lifecycle.submit(row.id(), () -> lifecycle.reconcile(row.id()));
       }

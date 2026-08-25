@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.mcp;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -62,5 +63,18 @@ enum McpOperationState {
   static boolean settled(String stored) {
     McpOperationState state = of(stored);
     return state != null && state.isSettled();
+  }
+
+  /**
+   * The settled values as the column stores them, for the {@code IN (…)} that
+   * {@link McpServerRepository#claimOperation} claims a record under.
+   *
+   * <p>Derived rather than written out there, because the claim is the only thing standing
+   * between two requests and the same record: a settled state added here and not added to that
+   * literal would make the claim refuse a record nothing is doing anything to, and one dropped
+   * from here would make it accept one mid-operation.
+   */
+  static List<String> settledWire() {
+    return SETTLED.stream().map(McpOperationState::wire).toList();
   }
 }

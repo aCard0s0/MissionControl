@@ -125,8 +125,10 @@ class McpCatalogSeeder {
           config.internalPort(), config.publishedPort(), config.path(), config.crossHostUrl(),
           config.environment(), config.headers(), config.volumes(), config.healthcheck(),
           config.supportServices());
+      // repair runs at boot, before anything can be editing this row, so the revision guard
+      // cannot lose here — but it is the same write, and the guard belongs to the write
       repository.updateDefinition(row.id(), row.name(), row.description(), configs.write(repaired),
-          row.revision() + 1, row.appliedRevision(), row.operationState());
+          row.revision() + 1, row.appliedRevision(), row.operationState(), row.revision());
       log.info("repaired the seeded Postgres MCP entry: the image ignores PORT and rejects the "
           + "Compose service name as a Host header, so it is now booted through an explicit "
           + "entrypoint");

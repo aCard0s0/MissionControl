@@ -137,6 +137,46 @@ class McpServerRepositoryTest {
   }
 
   @Test
+  void aClaimIsTakenOnlyBySomethingThatFindsTheRecordSettled() {
+    repository.insert(row("mcp-1", "files"));
+
+    // idle and error both mean nothing is in flight, so both admit a claim
+    assertTrue(repository.claimOperation("mcp-1", "running", "starting"));
+    repository.failOperation("mcp-1", "compose up failed");
+    assertTrue(repository.claimOperation("mcp-1", "running", "starting"));
+    assertNull(repository.findById("mcp-1").orElseThrow().operationError());
+
+    // the second of two requests that both read an idle record is refused by the write itself,
+    // which is the only thing that can tell them apart
+    assertFalse(repository.claimOperation("mcp-1", "stopped", "stopping"));
+    ServerRow held = repository.findById("mcp-1").orElseThrow();
+    assertEquals("starting", held.operationState());
+    assertEquals("running", held.desiredState(), "a refused claim must not move the desired state");
+
+    repository.releaseOperation("mcp-1");
+    assertEquals("idle", repository.findById("mcp-1").orElseThrow().operationState());
+    assertTrue(repository.claimOperation("mcp-1", "stopped", "stopping"));
+
+    assertFalse(repository.claimOperation("mcp-nope", "running", "starting"));
+  }
+
+  @Test
+  void aDefinitionWriteOnlyLandsOverTheRevisionItsAuthorRead() {
+    repository.insert(row("mcp-1", "files"));
+
+    // two editors both open revision 1. The first save wins; the second is told to reload
+    // rather than silently overwriting an edit it never saw.
+    assertTrue(repository.updateDefinition(
+        "mcp-1", "documents", "d", "{\"first\":1}", 2L, 1L, "idle", 1L));
+    assertFalse(repository.updateDefinition(
+        "mcp-1", "invoices", "d", "{\"second\":1}", 2L, 1L, "idle", 1L));
+
+    ServerRow stored = repository.findById("mcp-1").orElseThrow();
+    assertEquals("documents", stored.name());
+    assertEquals("{\"first\":1}", stored.configJson());
+  }
+
+  @Test
   void failOperationKeepsOnlyTheFirstLineAndTruncatesAtFiveHundredCharacters() {
     repository.insert(row("mcp-1", "files"));
 
@@ -159,7 +199,8 @@ class McpServerRepositoryTest {
     repository.insert(row("mcp-1", "files"));
     repository.failOperation("mcp-1", "boom");
 
-    repository.updateDefinition("mcp-1", "documents", "new desc", "{\"a\":1}", 2L, 1L, "applying");
+    assertTrue(repository.updateDefinition(
+        "mcp-1", "documents", "new desc", "{\"a\":1}", 2L, 1L, "applying", 1L));
     ServerRow updated = repository.findById("mcp-1").orElseThrow();
     assertEquals("documents", updated.name());
     assertEquals("{\"a\":1}", updated.configJson());

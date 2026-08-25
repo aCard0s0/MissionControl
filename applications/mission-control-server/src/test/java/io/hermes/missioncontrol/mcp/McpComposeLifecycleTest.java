@@ -195,7 +195,8 @@ class McpComposeLifecycleTest {
     // the record is one revision ahead of its stack; stopping it does not write that stack, so
     // marking it applied would hide a pending change the operator still has to apply
     String id = insertManaged("Files");
-    repository.updateDefinition(id, "Files", null, row(id).configJson(), 2, 1, "stopping");
+    repository.updateDefinition(id, "Files", null, row(id).configJson(), 2, 1, "stopping",
+        row(id).revision());
 
     lifecycle.runStop(id);
 
