@@ -5,15 +5,32 @@ import java.util.Locale;
 
 /**
  * The model providers offered in the create-agent / template UIs and the single
- * source of truth for provider → API-key env var mapping. Keys and env vars
- * mirror hermes' own provider records (hermes_cli/auth.py); ollama instances are
- * handled separately (registered per-container, not listed here).
+ * source of truth for provider → API-key env var mapping. Keys, labels and env
+ * vars mirror hermes' own {@code CANONICAL_PROVIDERS} picker order
+ * (hermes_cli/models.py) and its provider records (hermes_cli/auth.py); ollama
+ * instances are handled separately (registered per-container, not listed here).
  *
  * <p>{@code hasCatalog} marks the providers Mission Control can list models for
  * ({@link io.hermes.missioncontrol.models.ModelCatalogService}); the rest take a
  * free-text model id in the UI, because their listing endpoint refuses a request
- * carrying no key and this app holds none. {@code oauth} providers (Nous Portal)
- * need no API key — they authenticate out-of-band via {@code hermes portal}.
+ * carrying no key and this app holds none.
+ *
+ * <p>Three authentication shapes, and the record spells all three:
+ * <ul>
+ *   <li><b>key</b> — an {@code envVar} and {@code oauth=false}: the UI collects a key
+ *   <li><b>portal OAuth</b> — {@code oauth=true}: authenticated out of band by
+ *       {@code hermes portal}, so no key field
+ *   <li><b>keyless, not portal</b> — no {@code envVar} and {@code oauth=false}: the
+ *       provider authenticates from ambient cloud credentials (Vertex's service-account
+ *       JSON or ADC, Bedrock's IAM). The UI collects nothing; the operator sets those up
+ *       inside the container, which is why they are offered rather than hidden
+ * </ul>
+ *
+ * <p>Deliberately not every row hermes lists. Skipped: {@code lmstudio} and
+ * {@code copilot-acp}, which drive a desktop app or spawn a local binary and cannot work
+ * from a container; and {@code moa}, which resolves to a named Mixture-of-Agents preset
+ * that a freshly created profile does not have yet — picking it at create time would
+ * produce an agent that cannot answer.
  */
 public final class ModelProviderRegistry {
 
@@ -26,21 +43,43 @@ public final class ModelProviderRegistry {
 
   private ModelProviderRegistry() {}
 
-  /** Ordered for the picker — Nous first (the default account). */
+  /** Ordered as hermes orders its own picker — Nous first (the default account). */
   public static final List<Provider> PROVIDERS = List.of(
       new Provider("nous", "Nous (account)", null, true, true),
+      new Provider("fireworks", "Fireworks AI", "FIREWORKS_API_KEY", false, false),
       new Provider("openrouter", "OpenRouter", "OPENROUTER_API_KEY", false, true),
+      new Provider("novita", "NovitaAI", "NOVITA_API_KEY", false, false),
       new Provider("anthropic", "Anthropic", "ANTHROPIC_API_KEY", false, true),
       new Provider("openai", "OpenAI", "OPENAI_API_KEY", false, true),
-      new Provider("gemini", "Google AI Studio", "GOOGLE_API_KEY", false, false),
-      new Provider("xai", "xAI / Grok", "XAI_API_KEY", false, false),
-      new Provider("deepseek", "DeepSeek", "DEEPSEEK_API_KEY", false, false),
+      new Provider("alibaba", "Qwen Cloud", "DASHSCOPE_API_KEY", false, false),
+      new Provider("xiaomi", "Xiaomi MiMo", "XIAOMI_API_KEY", false, false),
+      new Provider("tencent-tokenhub", "Tencent TokenHub", "TOKENHUB_API_KEY", false, false),
       // its /v1/models is served without a key, so the picker can offer a list
       new Provider("nvidia", "NVIDIA NIM", "NVIDIA_API_KEY", false, true),
+      new Provider("copilot", "GitHub Copilot", "COPILOT_GITHUB_TOKEN", false, false),
+      new Provider("huggingface", "Hugging Face", "HF_TOKEN", false, false),
+      new Provider("gemini", "Google AI Studio", "GOOGLE_API_KEY", false, false),
+      // service-account JSON or ADC inside the container, never a key through this UI
+      new Provider("vertex", "Google Vertex AI", null, false, false),
+      new Provider("deepseek", "DeepSeek", "DEEPSEEK_API_KEY", false, false),
+      new Provider("deepinfra", "DeepInfra", "DEEPINFRA_API_KEY", false, false),
+      new Provider("xai", "xAI / Grok", "XAI_API_KEY", false, false),
       new Provider("zai", "Z.AI / GLM", "GLM_API_KEY", false, false),
       new Provider("kimi-coding", "Kimi / Moonshot", "KIMI_API_KEY", false, false),
+      new Provider("kimi-coding-cn", "Kimi / Moonshot (China)", "KIMI_CN_API_KEY", false, false),
+      new Provider("stepfun", "StepFun", "STEPFUN_API_KEY", false, false),
       new Provider("minimax", "MiniMax", "MINIMAX_API_KEY", false, false),
-      new Provider("stepfun", "StepFun", "STEPFUN_API_KEY", false, false));
+      new Provider("minimax-cn", "MiniMax (China)", "MINIMAX_CN_API_KEY", false, false),
+      new Provider("ollama-cloud", "Ollama Cloud", "OLLAMA_API_KEY", false, false),
+      new Provider("arcee", "Arcee AI", "ARCEEAI_API_KEY", false, false),
+      new Provider("gmi", "GMI Cloud", "GMI_API_KEY", false, false),
+      new Provider("kilocode", "Kilo Code", "KILOCODE_API_KEY", false, false),
+      new Provider("opencode-zen", "OpenCode Zen", "OPENCODE_ZEN_API_KEY", false, false),
+      new Provider("opencode-go", "OpenCode Go", "OPENCODE_GO_API_KEY", false, false),
+      new Provider("ai-gateway", "Vercel AI Gateway", "AI_GATEWAY_API_KEY", false, false),
+      new Provider("azure-foundry", "Azure Foundry", "AZURE_FOUNDRY_API_KEY", false, false),
+      // IAM or an API key configured in the container's AWS environment
+      new Provider("bedrock", "AWS Bedrock", null, false, false));
 
   /**
    * Collapses a provider name to the key this registry lists it under. Hermes accepts
