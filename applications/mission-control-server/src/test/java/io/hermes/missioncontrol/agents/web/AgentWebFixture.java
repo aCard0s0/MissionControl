@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
@@ -45,6 +46,6 @@ final class AgentWebFixture {
     return new AgentProfileDto(
         HOST + "/" + CONTAINER + "/" + name, CONTAINER, name, "scout the codebase", "ready",
         "anthropic", "claude-opus-5", "sk-…abcd", "/work", "soul", "memory", "model: opus\n",
-        List.of(), List.of(), List.of(), 1_700_000_000_000L);
+        List.of(), List.of(), List.of(), GatewayDto.unknown(), 1_700_000_000_000L);
   }
 }

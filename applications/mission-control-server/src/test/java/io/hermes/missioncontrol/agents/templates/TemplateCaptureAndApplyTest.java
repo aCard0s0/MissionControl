@@ -24,6 +24,7 @@ import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
@@ -388,7 +389,7 @@ class TemplateCaptureAndApplyTest {
   private static AgentProfileDto agent(String name, List<SkillDto> skills, List<AgentMcpServerDto> mcp) {
     return new AgentProfileDto("c1:" + name, CONTAINER, name, "role", "idle", "anthropic",
         "claude-opus-5", "sk-…abcd", "/work", "be useful", "remembered", "model: opus\n",
-        skills, mcp, List.of(), 0L);
+        skills, mcp, List.of(), GatewayDto.unknown(), 0L);
   }
 
   private static AgentMcpServerDto mcp(String name, String transport, String status) {

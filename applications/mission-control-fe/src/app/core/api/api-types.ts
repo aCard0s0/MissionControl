@@ -270,6 +270,21 @@ export interface ApiIntegration {
   detail: string;
 }
 
+/** What the gateway says about itself: the platforms above come out of the same file, and
+ *  these are the fields beside them — how it is running, and whether `hermes pause` has it
+ *  held. `activeAgents` is the count of turns in flight, which is the difference between
+ *  stopping a container safely and dropping live work. */
+export interface ApiGateway {
+  state: string;
+  desiredState: string;
+  activeAgents: number;
+  agentVersion: string;
+  sessionStore: string;
+  paused: boolean;
+  pauseReason: string | null;
+  pausedAt: string | null;
+}
+
 export interface ApiSession {
   id: string;
   title: string;
@@ -318,6 +333,7 @@ export interface ApiAgentProfile {
   skills: ApiSkillRef[];
   mcp: ApiMcpServer[];
   integrations: ApiIntegration[];
+  gateway: ApiGateway;
   lastActive: number;
 }
 

@@ -53,6 +53,8 @@ class AgentRouteInventoryTest {
       "POST /api/agents/{hostId}/{containerId}/{name}/mcp/catalog",
       "POST /api/agents/{hostId}/{containerId}/{name}/mcp/{serverName}/sync",
       "POST /api/agents/{hostId}/{containerId}/{name}/mcp/{serverName}/test",
+      "POST /api/agents/{hostId}/{containerId}/{name}/pause",
+      "POST /api/agents/{hostId}/{containerId}/{name}/resume",
       "POST /api/agents/{hostId}/{containerId}/{name}/skills",
       "POST /api/agents/{hostId}/{containerId}/{name}/webhooks",
       "POST /api/agents/{hostId}/{containerId}/{name}/webhooks/{route}/test",

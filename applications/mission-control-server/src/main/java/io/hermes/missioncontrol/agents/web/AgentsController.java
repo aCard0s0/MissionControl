@@ -6,6 +6,7 @@ import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
+import io.hermes.missioncontrol.agents.api.PauseAgentRequest;
 import io.hermes.missioncontrol.agents.api.UpdateConfigRequest;
 import io.hermes.missioncontrol.agents.api.UpdateSoulRequest;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
@@ -105,6 +106,29 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name) {
     return profiles.integrations(endpoints.host(hostId), containerId, name);
+  }
+
+  /**
+   * Hermes' own emergency stop, not a container stop: cron dispatch, kanban dispatch and new
+   * gateway turns are held, and whatever is mid-turn is left to finish. Idempotent — pausing
+   * an already-paused agent just restates the reason.
+   */
+  @PostMapping("/{hostId}/{containerId}/{name}/pause")
+  public AgentProfileDto pause(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @Valid @RequestBody(required = false) PauseAgentRequest request) {
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.pause(
+        host, containerId, name, request == null ? null : request.reason()));
+  }
+
+  @PostMapping("/{hostId}/{containerId}/{name}/resume")
+  public AgentProfileDto resume(
+      @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, profiles.resume(host, containerId, name));
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/logs")

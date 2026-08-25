@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -128,6 +129,6 @@ class AgentLifecycleTest {
   private static AgentProfileDto profile() {
     return new AgentProfileDto("c1--scout", CONTAINER, "scout", "Profile", "idle",
         "anthropic", "claude-opus-5", "", "/opt/data", "", "", "", List.of(), List.of(),
-        List.of(), 0L);
+        List.of(), GatewayDto.unknown(), 0L);
   }
 }

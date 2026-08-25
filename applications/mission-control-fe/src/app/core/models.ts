@@ -285,9 +285,15 @@ export interface McpRetainedResource {
   createdAt: number;
 }
 
+/** Whatever the gateway calls it. This used to be a closed union of the ten kinds the
+ *  dashboard had a card for, which the backend filtered against — so a profile talking over
+ *  anything newer rendered as "no integrations" while the gateway was connected. The names
+ *  below are the ones worth styling; the type stays open because hermes adds channels
+ *  faster than a union can be edited. */
 export type IntegrationKind =
   | 'slack' | 'whatsapp' | 'discord' | 'telegram' | 'signal' | 'email'
-  | 'github' | 'filesystem' | 'browser' | 'database';
+  | 'github' | 'filesystem' | 'browser' | 'database'
+  | (string & {});
 
 export type IntegrationStatus = 'up' | 'degraded' | 'down' | 'off';
 
@@ -295,6 +301,20 @@ export interface Integration {
   kind: IntegrationKind;
   status: IntegrationStatus;
   detail: string;                 // e.g. "gateway up 14d · @ops-bot"
+}
+
+/** How a profile's gateway is running, from the file it keeps for saying so.
+ *  `activeAgents` is the count of turns in flight — the difference between stopping a
+ *  container safely and dropping live work — and `paused` is hermes' own emergency stop. */
+export interface Gateway {
+  state: string;
+  desiredState: string;
+  activeAgents: number;
+  agentVersion: string;
+  sessionStore: string;
+  paused: boolean;
+  pauseReason: string | null;
+  pausedAt: string | null;
 }
 
 export interface SessionInfo {
@@ -332,6 +352,7 @@ export interface AgentProfile {
   skills: SkillRef[];
   mcp: McpServer[];
   integrations: Integration[];
+  gateway: Gateway;
   sessions: SessionInfo[];
   msgsToday: number;
   tokensToday: number;            // thousands

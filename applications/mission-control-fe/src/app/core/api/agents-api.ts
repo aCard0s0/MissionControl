@@ -72,6 +72,16 @@ export class AgentsApi {
     return this.http.get(`${agentPath(ref)}/integrations`);
   }
 
+  /** Hermes' own emergency stop, which is not a container stop: cron and kanban dispatch and
+   *  new gateway turns are held, and whatever is mid-turn is left to finish. */
+  pause(ref: AgentRef, reason?: string): Promise<ApiAgentProfile> {
+    return this.http.post(`${agentPath(ref)}/pause`, { reason: reason ?? null });
+  }
+
+  resume(ref: AgentRef): Promise<ApiAgentProfile> {
+    return this.http.post(`${agentPath(ref)}/resume`);
+  }
+
   sessions(ref: AgentRef): Promise<ApiSession[]> {
     return this.http.get(`${agentPath(ref)}/sessions`);
   }

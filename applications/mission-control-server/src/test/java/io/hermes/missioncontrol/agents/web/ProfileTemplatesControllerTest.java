@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -64,7 +65,7 @@ class ProfileTemplatesControllerTest {
   private static AgentProfileDto profile() {
     return new AgentProfileDto("scout", "c1", "scout", null, "idle", "anthropic",
         "claude-opus-5", "...abcd", "/work", "soul", "memory", "model: x",
-        List.of(), List.of(), List.of(), 9L);
+        List.of(), List.of(), List.of(), GatewayDto.unknown(), 9L);
   }
 
   @Test

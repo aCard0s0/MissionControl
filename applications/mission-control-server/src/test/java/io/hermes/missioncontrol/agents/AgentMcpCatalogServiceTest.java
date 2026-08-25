@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -167,7 +168,7 @@ class AgentMcpCatalogServiceTest {
         new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1)));
     AgentProfileDto unreadable = new AgentProfileDto(
         "container:default", "container", "default", "", "idle", "nous", "model", "",
-        "/opt/data", "", "", "", List.of(), List.of(), List.of(), 0);
+        "/opt/data", "", "", "", List.of(), List.of(), List.of(), GatewayDto.unknown(), 0);
 
     service.enrich(HOST, unreadable);
 
@@ -177,7 +178,7 @@ class AgentMcpCatalogServiceTest {
   private static AgentProfileDto profile(List<AgentMcpServerDto> mcp) {
     return new AgentProfileDto(
         "container:default", "container", "default", "", "idle", "nous", "model", "",
-        "/opt/data", "", "", "mcp_servers: {}\n", List.of(), mcp, List.of(), 0);
+        "/opt/data", "", "", "mcp_servers: {}\n", List.of(), mcp, List.of(), GatewayDto.unknown(), 0);
   }
 
   // ── aliases ─────────────────────────────────────────────────────────────

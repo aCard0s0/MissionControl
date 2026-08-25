@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
@@ -46,7 +47,7 @@ class HermesProfilesDelegationTest {
   private HermesProfileMcp mcp;
   private HermesSessions sessions;
   private HermesGatewayLogs gatewayLogs;
-  private HermesIntegrations integrations;
+  private HermesGatewayState gatewayState;
   private HermesProfiles profiles;
 
   @BeforeEach
@@ -58,13 +59,15 @@ class HermesProfilesDelegationTest {
     mcp = mock(HermesProfileMcp.class);
     sessions = mock(HermesSessions.class);
     gatewayLogs = mock(HermesGatewayLogs.class);
-    integrations = mock(HermesIntegrations.class);
+    gatewayState = mock(HermesGatewayState.class);
     profiles = new HermesProfiles(files, env, modelConfig, skills, mcp, sessions, gatewayLogs,
-        integrations, new ProfileInventory(files));
+        gatewayState, new ProfileInventory(files));
 
     when(files.requireProfileDir(HOST, CONTAINER, PROFILE)).thenReturn(DIR);
     when(files.readFile(any(), anyString(), anyString())).thenReturn("");
     when(modelConfig.parseConfig(any())).thenReturn(new ConfigInfo("anthropic", "claude-opus-5", "/work"));
+    when(gatewayState.read(any(), anyString(), anyString()))
+        .thenReturn(new HermesGatewayState.Reading(GatewayDto.unknown(), List.of()));
   }
 
   // ── reading ─────────────────────────────────────────────────────────────
@@ -85,7 +88,7 @@ class HermesProfilesDelegationTest {
     assertEquals("remembered", profile.memoryMd());
     verify(skills).list(HOST, CONTAINER, PROFILE, Map.of());
     verify(mcp).list(HOST, CONTAINER, PROFILE, Map.of());
-    verify(integrations).list(HOST, CONTAINER, PROFILE);
+    verify(gatewayState).read(HOST, CONTAINER, PROFILE);
   }
 
   @Test
@@ -205,6 +208,31 @@ class HermesProfilesDelegationTest {
     verify(mcp).remove(HOST, CONTAINER, PROFILE, "files");
   }
 
+  // ── emergency stop ──────────────────────────────────────────────────────
+
+  @Test
+  void pausingRunsHermesOwnEmergencyStopRatherThanTouchingTheContainer() {
+    profiles.pause(HOST, CONTAINER, PROFILE, "rotating credentials");
+
+    verify(files).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "pause", "--reason", "rotating credentials"));
+  }
+
+  @Test
+  void aPauseWithNoReasonGivenPassesNoReasonFlagAtAll() {
+    // hermes stores an empty --reason as the reason, which reads worse than none
+    profiles.pause(HOST, CONTAINER, PROFILE, "   ");
+
+    verify(files).exec(HOST, CONTAINER, List.of("hermes", "-p", PROFILE, "pause"));
+  }
+
+  @Test
+  void resumingLiftsThePauseAndReReadsTheProfile() {
+    assertEquals(PROFILE, profiles.resume(HOST, CONTAINER, PROFILE).name());
+
+    verify(files).exec(HOST, CONTAINER, List.of("hermes", "-p", PROFILE, "resume"));
+  }
+
   // ── reads that pass straight through ────────────────────────────────────
 
   @Test
@@ -222,7 +250,7 @@ class HermesProfilesDelegationTest {
 
     profiles.deleteSession(HOST, CONTAINER, PROFILE, "s-1");
     verify(sessions).delete(HOST, CONTAINER, PROFILE, "s-1");
-    verify(integrations).list(HOST, CONTAINER, PROFILE);
+    verify(gatewayState).integrations(HOST, CONTAINER, PROFILE);
     verify(gatewayLogs).read(HOST, CONTAINER, PROFILE, 50);
   }
 }
