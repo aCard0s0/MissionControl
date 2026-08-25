@@ -88,6 +88,27 @@ services:
       # deployed today is UNTAGGED, so acl.hujson's tag:server rule does not
       # match it and its key expires — see docs/deployment-tailscale.md.
       TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
+      # Go runtime ceilings, and they are what make mem_limit below survivable.
+      #
+      # In userspace mode tailscaled terminates WireGuard and runs a netstack in
+      # userland, and its buffers grow with concurrency and are never returned:
+      # measured on this stack, 71 MiB idle, 292 MiB after 12 concurrent
+      # transfers, 586 MiB after 28 — each level persisting indefinitely once
+      # reached. There is therefore no "correct" mem_limit to read off a graph.
+      # A limit alone just converts unbounded growth into an OOM kill of the one
+      # container that provides ALL access to this stack.
+      #
+      # GOMEMLIMIT is a soft ceiling: at it, Go collects harder instead of
+      # growing. mem_limit stays above it as a backstop the kernel enforces, not
+      # as the operating point — exactly how the app pairs -XX:MaxRAMPercentage
+      # with its own mem_limit.
+      #
+      # GOMAXPROCS is set because Go does not read the cgroup CPU quota: without
+      # it the runtime sizes its thread pool and per-P caches from the HOST's
+      # core count, so `cpus` would cap throughput while still paying the memory
+      # cost of a machine-sized runtime.
+      GOMEMLIMIT: ${TS_GOMEMLIMIT:-128MiB}
+      GOMAXPROCS: ${TS_GOMAXPROCS:-2}
     volumes:
       - tailscale-state:/var/lib/tailscale
       # A DIRECTORY, not ./tailscale/serve-https.json:/config/serve.json.
@@ -113,6 +134,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Sized from measurement, not habit. Idle is ~71 MiB and 29 threads; the
+    # ceiling is set by GOMEMLIMIT above rather than by traffic, so this is a
+    # backstop with room above the runtime's own target, not a target itself.
+    # Do not lower it without lowering GOMEMLIMIT too: a kernel OOM kill here
+    # takes the whole tailnet node down, and you lose the way in to debug it.
+    cpus: ${TS_CPUS:-2.0}
+    mem_limit: ${TS_MEM_LIMIT:-256m}
+    pids_limit: ${TS_PIDS_LIMIT:-128}
     restart: unless-stopped
     healthcheck:
       # `tailscale status` exits non-zero when the backend is down or logged
