@@ -285,6 +285,37 @@ export interface ApiGateway {
   pausedAt: string | null;
 }
 
+/** What stopping a container would interrupt. `unreadable` is the honest third answer:
+ *  the gateway wrote no state, so nothing-in-flight is an absence of evidence. */
+export interface ApiContainerActivity {
+  activeAgents: number;
+  busyProfiles: string[];
+  pausedProfiles: string[];
+  unreadable: string[];
+}
+
+/** One outbound webhook target, from `hooks.outbound` in the profile's config.yaml. */
+export interface ApiOutboundWebhook {
+  name: string;
+  url: string;
+  events: string[];
+  matcher: string | null;
+  timeout: number | null;
+  secretEnv: string | null;
+  /** True when the config carries an inline `secret:`. Never its value — the dashboard will
+   *  not show one and will not overwrite one. */
+  literalSecret: boolean;
+}
+
+export interface ApiOutboundWebhookRequest {
+  name: string;
+  url: string;
+  events: string[];
+  matcher: string | null;
+  timeout: number | null;
+  secretEnv: string | null;
+}
+
 export interface ApiSession {
   id: string;
   title: string;
@@ -477,6 +508,7 @@ export interface ApiWebhookPlatform {
 export interface ApiWebhooks {
   subscriptions: ApiWebhookSubscription[];
   platform: ApiWebhookPlatform;
+  outbound: ApiOutboundWebhook[];
 }
 
 export interface ApiSubscribeWebhookRequest {

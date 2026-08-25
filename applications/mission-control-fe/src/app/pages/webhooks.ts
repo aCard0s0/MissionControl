@@ -3,7 +3,10 @@ import { FormsModule } from '@angular/forms';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { WebhookStore } from '../core/store/webhook-store';
-import { WebhookRoute } from '../core/models';
+import { OutboundWebhook, WebhookRoute } from '../core/models';
+import {
+  HERMES_HOOK_EVENTS, isKnownHookEvent, matcherApplies,
+} from '../core/hermes-hook-events';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { ago } from '../core/format';
@@ -12,11 +15,18 @@ import { ago } from '../core/format';
 const DEFAULT_WEBHOOK_PORT = 8644;
 
 /**
- * Inbound webhooks — routes that wake a profile when something posts to them.
+ * Webhooks in both directions, one page with a direction toggle.
  *
- * Two things gate a route firing, and the page says which one is missing: the profile's
- * listener has to be enabled, and nothing outside the docker network can reach it until an
- * operator publishes the port themselves. Mission Control never receives the traffic.
+ * **Inbound** — routes that wake a profile when something posts to them. Two things gate a
+ * route firing, and the page says which one is missing: the profile's listener has to be
+ * enabled, and nothing outside the docker network can reach it until an operator publishes
+ * the port themselves. Mission Control never receives the traffic.
+ *
+ * **Outbound** — targets the agent POSTs signed lifecycle events to, from `hooks.outbound`
+ * in its config. These need no listener and no published port, because the agent is the one
+ * making the connection. Hermes reads the list at startup, so a change here lands on the
+ * next gateway restart, which the page says rather than leaving an operator to wonder why
+ * nothing is arriving.
  */
 @Component({
   selector: 'mc-webhooks',
@@ -35,6 +45,14 @@ export class WebhooksPage {
   protected readonly adding = signal(false);
   protected readonly busy = signal(false);
 
+  protected readonly direction = signal<'inbound' | 'outbound'>('inbound');
+
+  /** The outbound target being edited, or 'new'; null when the form is closed. */
+  protected readonly editingOutbound = signal<OutboundWebhook | 'new' | null>(null);
+
+  protected readonly eventGroups = HERMES_HOOK_EVENTS;
+  protected readonly isKnownHookEvent = isKnownHookEvent;
+
   /** Secrets an operator has asked to see, by route name. */
   protected readonly revealed = signal<Record<string, string>>({});
   /** The last test result, by route name. */
@@ -42,6 +60,14 @@ export class WebhooksPage {
 
   /** Literal braces, kept out of the template so Angular does not read them as ICU. */
   protected readonly promptExample = 'Alert {alert.name} is {status}';
+
+  protected oAgent = '';
+  protected oName = '';
+  protected oUrl = '';
+  protected oMatcher = '';
+  protected oTimeout = '';
+  protected oSecretEnv = '';
+  protected readonly oEvents = signal<string[]>([]);
 
   protected fName = '';
   protected fPrompt = '';
@@ -59,6 +85,17 @@ export class WebhooksPage {
     const filter = this.agentFilter();
     return filter === 'all' ? all : all.filter(w => w.agentId === filter);
   });
+
+  protected readonly outboundTargets = computed(() => {
+    const filter = this.agentFilter();
+    const all = this.webhooks.outbound()
+      .filter(o => this.agents.byId(o.agentId));   // only the selected container's profiles
+    return filter === 'all' ? all : all.filter(o => o.agentId === filter);
+  });
+
+  /** A matcher only does anything for the two tool-scoped events; hermes ignores it
+   *  elsewhere, so the form says so instead of silently writing a key with no effect. */
+  protected readonly matcherApplies = computed(() => matcherApplies(this.oEvents()));
 
   /** The profiles whose listener is off, so the page can offer to turn it on. */
   protected readonly listenersOff = computed(() =>
@@ -106,6 +143,54 @@ export class WebhooksPage {
     });
     this.busy.set(false);
     if (added) this.adding.set(false);
+  }
+
+  // ── outbound targets ─────────────────────────────────────────────────────
+
+  protected toggleEvent(event: string): void {
+    this.oEvents.update(events => events.includes(event)
+      ? events.filter(e => e !== event)
+      : [...events, event]);
+  }
+
+  protected startOutbound(target?: OutboundWebhook): void {
+    this.editingOutbound.set(target ?? 'new');
+    this.oAgent = target?.agentId ?? (this.agentFilter() !== 'all'
+      ? this.agentFilter()
+      : this.agents.forSelectedContainer()[0]?.id ?? '');
+    this.oName = target?.name ?? '';
+    this.oUrl = target?.url ?? '';
+    this.oMatcher = target?.matcher ?? '';
+    this.oTimeout = target?.timeout != null ? String(target.timeout) : '';
+    this.oSecretEnv = target?.secretEnv ?? '';
+    this.oEvents.set([...(target?.events ?? [])]);
+  }
+
+  protected async saveOutbound(): Promise<void> {
+    const editing = this.editingOutbound();
+    const url = this.oUrl.trim();
+    if (!editing || !this.oAgent || !url || !this.oEvents().length || this.busy()) return;
+    const timeout = this.oTimeout.trim() ? Number(this.oTimeout) : null;
+    const request = {
+      name: this.oName.trim(),
+      url,
+      events: this.oEvents(),
+      matcher: this.oMatcher.trim() || null,
+      timeout: Number.isFinite(timeout) ? timeout : null,
+      secretEnv: this.oSecretEnv.trim().toUpperCase() || null,
+    };
+    this.busy.set(true);
+    const saved = editing === 'new'
+      ? await this.webhooks.addOutbound(this.oAgent, request)
+      : await this.webhooks.updateOutbound(editing.agentId, editing.index, request);
+    this.busy.set(false);
+    if (saved) this.editingOutbound.set(null);
+  }
+
+  protected async removeOutbound(target: OutboundWebhook): Promise<void> {
+    const label = target.name || target.url;
+    if (!confirm(`Remove outbound webhook "${label}"? The agent stops posting to it.`)) return;
+    await this.webhooks.removeOutbound(target.agentId, target.index);
   }
 
   protected async remove(route: WebhookRoute): Promise<void> {

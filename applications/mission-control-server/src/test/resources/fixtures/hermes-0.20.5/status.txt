@@ -103,7 +103,7 @@
   PID(s):       <redacted>
 
 ◆ Scheduled Jobs
-  Jobs:         0
+  Jobs:         3 active, 3 total
 
 ◆ Sessions
   Active:       0

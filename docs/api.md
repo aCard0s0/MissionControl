@@ -89,8 +89,29 @@ host networking, privileged mode, devices, and capabilities are not accepted.
 | `POST …/{name}/mcp/catalog` | `{ serverId, alias }` | materializes a catalog definition; same-host managed entries attach the Agent container to the MCP network |
 | `POST …/{name}/mcp/{serverName}/sync` | — | manually applies the current catalog revision while preserving enabled state |
 | `DELETE …/{name}/mcp/{serverName}/link` | — | converts a linked entry into an Agent-local custom definition without deleting config |
-| `GET  …/{name}/integrations` | — | parsed from `gateway_state.json` |
+| `GET  …/{name}/integrations` | — | every platform in `gateway_state.json`, whatever it is called — not an allowlist |
+| `GET  …/{containerId}/activity` | — | what a stop would interrupt: `{ activeAgents, busyProfiles, pausedProfiles, unreadable }`, one exec per profile. Read on the click, never on the fleet poll |
+| `POST …/{name}/pause` | `{ reason? }` | `hermes pause` — holds cron dispatch, kanban dispatch and new gateway turns; in-flight work finishes |
+| `POST …/{name}/resume` | — | `hermes resume`; dispatch picks up on the next tick, no restart |
+| `POST …/{name}/webhooks/outbound` | `{ url, events[], name?, matcher?, timeout?, secretEnv? }` | appends to `hooks.outbound` in `config.yaml` |
+| `PUT …/{name}/webhooks/outbound/{index}` | same as POST | rewrites the target at that position; an inline `secret:` set by hand is preserved |
+| `DELETE …/{name}/webhooks/outbound/{index}` | — | 404 on a stale index rather than rewriting its neighbour |
 | `PUT  …/{name}/config` | `{ configYaml }` | full config.yaml replace — validated as a YAML mapping (400 otherwise); platform tokens (slack, whatsapp, honcho, …) and `model.default` / `model.base_url` overrides live here |
+
+Every agent DTO also carries `gateway`: the profile's own view of itself out of
+`gateway_state.json` — `state`/`desiredState` (which differ while it drains),
+`activeAgents` (turns in flight), `agentVersion` (the hermes actually running, not the
+image tag) and `sessionStore` — plus `paused`/`pauseReason`/`pausedAt` from the `ESTOP`
+sentinel. Presence of that sentinel *is* the pause: hermes honours a bare `touch`, so an
+unparseable body still reads as paused.
+
+Outbound webhook targets are addressed **by position**, because that is the only handle
+hermes gives one — `name` is optional and not unique. They carry no `secret` field in
+either direction: hermes accepts an inline secret and calls it discouraged in its own
+schema, so only `secretEnv` (the variable's name) travels, and a literal secret already in
+the file is reported as `literalSecret: true` without its value and left untouched by an
+edit. Hermes reads `hooks.outbound` at gateway startup, so a change lands on the agent's
+next restart.
 
 Configured MCP servers report `unknown` until tested, then `connected` or
 `error`; disabled entries report `disabled`. Every server DTO also carries an

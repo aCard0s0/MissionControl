@@ -229,11 +229,9 @@ quietly wrong dashboard:
 ./tools/capture-hermes-fixtures.sh <container> [profile]
 ```
 
-The v0.20.5 set was captured from a container with no cron jobs and no webhook routes, so
-`cron-jobs.json` and `webhook-subscriptions.json` are absent from it and the parsers for those
-two still test against the v0.16.0 documents. Re-run the capture against a container that has
-both to close that gap — the script skips what it cannot find rather than writing an empty
-fixture.
+The script skips a document the profile does not have rather than writing an empty one, so give
+the container a webhook route and one cron job of each schedule kind before capturing — the
+fixture README has the five commands, and the fixture test fails naming what a set is missing.
 
 ## Related references
 

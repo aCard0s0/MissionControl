@@ -2,10 +2,13 @@ package io.hermes.missioncontrol.agents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookDto;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.util.List;
 import java.util.Map;
@@ -241,5 +244,238 @@ class HermesConfigEditorTest {
   void anAbsentConfigStartsFromAnEmptyTree() {
     assertTrue(editor.parseForEdit(null, PATH).isEmpty());
     assertTrue(editor.parseForEdit("   ", PATH).isEmpty());
+  }
+
+  // ── hooks.outbound ─────────────────────────────────────────────────────────
+
+  private static OutboundWebhookRequest target(
+      String name, String url, List<String> events, String matcher, Integer timeout,
+      String secretEnv) {
+    return new OutboundWebhookRequest(name, url, events, matcher, timeout, secretEnv);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<Map<?, ?>> outboundIn(String configYaml) {
+    Map<?, ?> root = (Map<?, ?>) new Yaml().load(configYaml);
+    Map<?, ?> hooks = (Map<?, ?>) root.get("hooks");
+    return hooks == null ? List.of() : (List<Map<?, ?>>) hooks.get("outbound");
+  }
+
+  @Test
+  void addingTheFirstTargetCreatesTheHooksBlockAroundIt() {
+    String updated = editor.addOutboundWebhook("model:\n  provider: nous\n", PATH,
+        target("ci", "https://ci.example.test/hooks", List.of("on_session_end"), null, 10, "CI_SECRET"));
+
+    Map<?, ?> written = outboundIn(updated).getFirst();
+    assertEquals("https://ci.example.test/hooks", written.get("url"));
+    assertEquals(List.of("on_session_end"), written.get("events"));
+    assertEquals("ci", written.get("name"));
+    assertEquals(10, written.get("timeout"));
+    assertEquals("CI_SECRET", written.get("secret_env"));
+    // and the rest of the config is still there
+    assertEquals("nous", ((Map<?, ?>) ((Map<?, ?>) new Yaml().load(updated)).get("model")).get("provider"));
+  }
+
+  @Test
+  void anOptionalFieldLeftBlankIsNotWrittenAtAll() {
+    // hermes treats a key's absence and an empty string differently — an empty matcher would
+    // be compiled as a regex that matches everything
+    String updated = editor.addOutboundWebhook("", PATH,
+        target("", "https://x.test/h", List.of("subagent_stop"), "  ", null, ""));
+
+    Map<?, ?> written = outboundIn(updated).getFirst();
+    assertFalse(written.containsKey("name"));
+    assertFalse(written.containsKey("matcher"));
+    assertFalse(written.containsKey("timeout"));
+    assertFalse(written.containsKey("secret_env"));
+  }
+
+  @Test
+  void anInlineSecretSomeoneSetByHandSurvivesAnEditThroughTheDashboard() {
+    // the UI never shows a literal secret, so it must never be the thing that drops it
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: [on_session_end]
+              secret: hand-written-signing-key
+        """;
+
+    String updated = editor.updateOutboundWebhook(config, PATH, 0,
+        target("renamed", "https://y.test/h", List.of("subagent_stop"), null, null, null));
+
+    Map<?, ?> written = outboundIn(updated).getFirst();
+    assertEquals("hand-written-signing-key", written.get("secret"));
+    assertEquals("https://y.test/h", written.get("url"));
+    assertEquals("renamed", written.get("name"));
+  }
+
+  @Test
+  void removingTheLastTargetTakesTheEmptyHooksBlockWithIt() {
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: [on_session_end]
+        model:
+          provider: nous
+        """;
+
+    String updated = editor.removeOutboundWebhook(config, PATH, 0);
+
+    assertFalse(((Map<?, ?>) new Yaml().load(updated)).containsKey("hooks"));
+    assertEquals("nous", ((Map<?, ?>) ((Map<?, ?>) new Yaml().load(updated)).get("model")).get("provider"));
+  }
+
+  @Test
+  void otherKeysUnderHooksKeepTheBlockAliveWhenTheLastTargetGoes() {
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: [on_session_end]
+          shell:
+            - name: keep-me
+        """;
+
+    String updated = editor.removeOutboundWebhook(config, PATH, 0);
+
+    Map<?, ?> hooks = (Map<?, ?>) ((Map<?, ?>) new Yaml().load(updated)).get("hooks");
+    assertFalse(hooks.containsKey("outbound"));
+    assertTrue(hooks.containsKey("shell"));
+  }
+
+  @Test
+  void anIndexThatIsNoLongerThereIsRefusedRatherThanRewritingWhateverMovedIntoIt() {
+    // position is the only handle hermes gives a target, so a stale one from a page whose
+    // config changed underneath must not silently edit its neighbour
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: [on_session_end]
+        """;
+
+    assertThrows(NoSuchElementException.class,
+        () -> editor.updateOutboundWebhook(config, PATH, 1,
+            target("", "https://z.test/h", List.of("subagent_stop"), null, null, null)));
+    assertThrows(NoSuchElementException.class,
+        () -> editor.removeOutboundWebhook(config, PATH, 4));
+  }
+
+  @Test
+  void aMalformedEntryIsListedAroundRatherThanCrashingTheListing() {
+    // hermes skips a bad entry with a warning and keeps delivering to the rest; a listing
+    // that threw would report a working profile as having no targets at all
+    String config = """
+        hooks:
+          outbound:
+            - "not a mapping"
+            - events: [on_session_end]
+            - url: https://good.test/h
+              events: [on_session_end, subagent_stop]
+              name: good
+        """;
+
+    List<OutboundWebhookDto> listed = editor.outboundWebhooks(config);
+
+    assertEquals(1, listed.size());
+    assertEquals("good", listed.getFirst().name());
+    assertEquals(List.of("on_session_end", "subagent_stop"), listed.getFirst().events());
+  }
+
+  @Test
+  void aLiteralSecretIsFlaggedWithoutItsValueEverLeavingTheFile() {
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: [on_session_end]
+              secret: hand-written-signing-key
+        """;
+
+    OutboundWebhookDto listed = editor.outboundWebhooks(config).getFirst();
+
+    assertTrue(listed.literalSecret());
+    assertNull(listed.secretEnv());
+  }
+
+  @Test
+  void aProfileWithNoHooksBlockHasNoTargets() {
+    assertEquals(List.of(), editor.outboundWebhooks("model:\n  provider: nous\n"));
+    assertEquals(List.of(), editor.outboundWebhooks(""));
+    assertEquals(List.of(), editor.outboundWebhooks("hooks:\n  outbound: not-a-list\n"));
+  }
+
+  @Test
+  void everyOptionalFieldSetIsWrittenAndAKeptTargetReadsBackWithAllOfThem() {
+    String updated = editor.addOutboundWebhook("", PATH, target(
+        "tools", "http://inside.test/h", List.of("pre_tool_call", "post_tool_call"),
+        "terminal|delegate_task", 45, "TOOLS_SECRET"));
+
+    OutboundWebhookDto listed = editor.outboundWebhooks(updated).getFirst();
+
+    assertEquals("tools", listed.name());
+    assertEquals("http://inside.test/h", listed.url());
+    assertEquals(List.of("pre_tool_call", "post_tool_call"), listed.events());
+    assertEquals("terminal|delegate_task", listed.matcher());
+    assertEquals(45, listed.timeout());
+    assertEquals("TOOLS_SECRET", listed.secretEnv());
+    assertFalse(listed.literalSecret());
+  }
+
+  @Test
+  void aTargetMissingTheFieldsThatMakeItUsableReadsBackAsNullsRatherThanBlanks() {
+    // hermes treats an absent key and an empty one differently, so the listing has to as well
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: [on_session_end]
+              timeout: not-a-number
+        """;
+
+    OutboundWebhookDto listed = editor.outboundWebhooks(config).getFirst();
+
+    assertEquals("", listed.name());
+    assertNull(listed.matcher());
+    assertNull(listed.timeout());
+    assertNull(listed.secretEnv());
+  }
+
+  @Test
+  void anEntryThatIsNotAMappingIsRefusedForEditRatherThanReplaced() {
+    // it is left out of the listing, so an index that lands on it came from somewhere stale
+    String config = """
+        hooks:
+          outbound:
+            - "not a mapping"
+        """;
+
+    assertThrows(ResourceConflictException.class,
+        () -> editor.updateOutboundWebhook(config, PATH, 0,
+            target("", "https://z.test/h", List.of("subagent_stop"), null, null, null)));
+  }
+
+  @Test
+  void aMalformedEventsKeyLeavesTheTargetWithNoEventsRatherThanFailingTheListing() {
+    String config = """
+        hooks:
+          outbound:
+            - url: https://x.test/h
+              events: on_session_end
+            - url: https://y.test/h
+              events: [on_session_end, "", null]
+        """;
+
+    List<OutboundWebhookDto> listed = editor.outboundWebhooks(config);
+
+    assertEquals(List.of(), listed.getFirst().events());
+    assertEquals(List.of("on_session_end"), listed.get(1).events());
+  }
+
+  @Test
+  void aHooksBlockThatIsNotAMappingIsIgnoredRatherThanCrashing() {
+    assertEquals(List.of(), editor.outboundWebhooks("hooks: nope\n"));
   }
 }

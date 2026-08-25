@@ -1,7 +1,9 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesWebhooks;
+import jakarta.validation.Valid;
 import io.hermes.missioncontrol.agents.api.EnableWebhookPlatformRequest;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import java.util.Map;
@@ -62,6 +64,42 @@ class AgentWebhooksController {
    * The route's HMAC secret, which the sending provider needs. Its own endpoint on purpose:
    * a secret must not ride along in the listing the dashboard polls.
    */
+  /**
+   * The outbound half: targets hermes POSTs signed lifecycle events to. Hermes registers the
+   * list at startup, so an edit here takes effect when the gateway next restarts.
+   *
+   * <p>Addressed by position, because that is the only handle hermes gives a target —
+   * {@code name} is optional and not unique. A stale index is a 404, not a rewrite of
+   * whatever moved into that slot.
+   */
+  @PostMapping("/outbound")
+  public WebhooksDto addOutbound(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @Valid @RequestBody OutboundWebhookRequest request) {
+    return webhooks.addOutbound(endpoints.host(hostId), containerId, name, request);
+  }
+
+  @PutMapping("/outbound/{index}")
+  public WebhooksDto updateOutbound(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable int index,
+      @Valid @RequestBody OutboundWebhookRequest request) {
+    return webhooks.updateOutbound(endpoints.host(hostId), containerId, name, index, request);
+  }
+
+  @DeleteMapping("/outbound/{index}")
+  public WebhooksDto removeOutbound(
+      @PathVariable String hostId,
+      @PathVariable String containerId,
+      @PathVariable String name,
+      @PathVariable int index) {
+    return webhooks.removeOutbound(endpoints.host(hostId), containerId, name, index);
+  }
+
   @GetMapping("/{route}/secret")
   public Map<String, String> secret(
       @PathVariable String hostId,

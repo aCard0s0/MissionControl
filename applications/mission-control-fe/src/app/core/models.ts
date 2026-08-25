@@ -611,6 +611,27 @@ export interface WebhookRoute {
   containerId: string;
 }
 
+/**
+ * One outbound webhook target: where the agent POSTs signed lifecycle events. The mirror of
+ * {@link WebhookRoute} — a route wakes the agent, a target tells the world.
+ *
+ * <p>`index` is its position in `hooks.outbound`, which is the only handle hermes gives one:
+ * `name` is optional and not unique, so every edit addresses it by position.
+ */
+export interface OutboundWebhook {
+  index: number;
+  name: string;
+  url: string;
+  events: string[];
+  matcher: string | null;
+  timeout: number | null;
+  secretEnv: string | null;
+  /** the config carries an inline `secret:`; never its value */
+  literalSecret: boolean;
+  agentId: string;
+  containerId: string;
+}
+
 /** A profile's webhook listener, which must be on before any route can fire. */
 export interface WebhookListener {
   agentId: string;

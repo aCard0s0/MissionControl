@@ -1,6 +1,9 @@
 package io.hermes.missioncontrol.agents;
 
+import io.hermes.missioncontrol.agents.api.OutboundWebhookDto;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -152,6 +155,140 @@ class HermesConfigEditor {
     } else if (!server.containsKey("enabled")) {
       server.put("enabled", true);
     }
+  }
+
+  // ── hooks.outbound ─────────────────────────────────────────────────────────
+
+  /**
+   * Reads {@code hooks.outbound} as the dashboard shows it.
+   *
+   * <p>Tolerant on purpose: hermes skips a malformed entry with a warning and keeps
+   * delivering to the rest, so a listing that threw on one bad row would report a working
+   * profile as having no targets at all. An entry that is not a map, or carries no url, is
+   * left out of the listing and left alone in the file.
+   */
+  List<OutboundWebhookDto> outboundWebhooks(String configYaml) {
+    Map<?, ?> root = YamlValues.parseMap(configYaml);
+    Object outbound = root.get("hooks") instanceof Map<?, ?> hooks ? hooks.get("outbound") : null;
+    if (!(outbound instanceof List<?> entries)) return List.of();
+    List<OutboundWebhookDto> result = new ArrayList<>();
+    for (Object entry : entries) {
+      if (!(entry instanceof Map<?, ?> target)) continue;
+      String url = YamlValues.stringValue(target.get("url"));
+      if (url.isBlank()) continue;
+      List<String> events = new ArrayList<>();
+      if (target.get("events") instanceof List<?> raw) {
+        for (Object event : raw) {
+          String name = YamlValues.stringValue(event);
+          if (!name.isBlank()) events.add(name);
+        }
+      }
+      String matcher = YamlValues.stringValue(target.get("matcher"));
+      String secretEnv = YamlValues.stringValue(target.get("secret_env"));
+      Object timeout = target.get("timeout");
+      result.add(new OutboundWebhookDto(
+          YamlValues.stringValue(target.get("name")),
+          url,
+          List.copyOf(events),
+          matcher.isBlank() ? null : matcher,
+          timeout instanceof Number n ? n.intValue() : null,
+          secretEnv.isBlank() ? null : secretEnv,
+          target.get("secret") != null));
+    }
+    return List.copyOf(result);
+  }
+
+  /** Appends a target to {@code hooks.outbound}, creating the list and its parent. */
+  String addOutboundWebhook(String configYaml, String configPath, OutboundWebhookRequest request) {
+    Map<Object, Object> root = parseForEdit(configYaml, configPath);
+    List<Object> targets = outboundForEdit(root);
+    targets.add(applyTarget(new LinkedHashMap<>(), request));
+    return writeOutbound(root, targets);
+  }
+
+  /**
+   * Rewrites the target at {@code index}, keeping every key the request does not carry —
+   * an inline {@code secret} an operator set by hand above all, which this UI never shows
+   * and must therefore never silently drop.
+   */
+  String updateOutboundWebhook(
+      String configYaml, String configPath, int index, OutboundWebhookRequest request) {
+    Map<Object, Object> root = parseForEdit(configYaml, configPath);
+    List<Object> targets = outboundForEdit(root);
+    Map<Object, Object> existing = asMutableMap(requireTarget(targets, index));
+    targets.set(index, applyTarget(existing, request));
+    return writeOutbound(root, targets);
+  }
+
+  String removeOutboundWebhook(String configYaml, String configPath, int index) {
+    Map<Object, Object> root = parseForEdit(configYaml, configPath);
+    List<Object> targets = outboundForEdit(root);
+    requireTarget(targets, index);
+    targets.remove(index);
+    return writeOutbound(root, targets);
+  }
+
+  /**
+   * The index is the target's position in the list, which is the only handle hermes gives
+   * one — {@code name} is optional and not unique. A stale index from a page whose config
+   * changed underneath must not silently rewrite a different target.
+   */
+  private static Object requireTarget(List<Object> targets, int index) {
+    if (index < 0 || index >= targets.size()) {
+      throw new NoSuchElementException("no outbound webhook at position " + index);
+    }
+    Object target = targets.get(index);
+    if (!(target instanceof Map<?, ?>)) {
+      throw new ResourceConflictException("refusing to rewrite malformed outbound webhook");
+    }
+    return target;
+  }
+
+  private static Map<Object, Object> applyTarget(
+      Map<Object, Object> target, OutboundWebhookRequest request) {
+    target.put("url", request.url().trim());
+    target.put("events", List.copyOf(request.events()));
+    putOrRemove(target, "name", blankToNull(request.name()));
+    putOrRemove(target, "matcher", blankToNull(request.matcher()));
+    putOrRemove(target, "timeout", request.timeout());
+    putOrRemove(target, "secret_env", blankToNull(request.secretEnv()));
+    return target;
+  }
+
+  private static void putOrRemove(Map<Object, Object> target, String key, Object value) {
+    if (value == null) {
+      target.remove(key);
+    } else {
+      target.put(key, value);
+    }
+  }
+
+  private static String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  @SuppressWarnings("unchecked")
+  private List<Object> outboundForEdit(Map<Object, Object> root) {
+    Object hooks = root.get("hooks");
+    Object outbound = hooks instanceof Map<?, ?> map ? ((Map<Object, Object>) map).get("outbound") : null;
+    return outbound instanceof List<?> list ? new ArrayList<>(list) : new ArrayList<>();
+  }
+
+  /** Writes the list back, dropping an empty {@code hooks.outbound} rather than leaving a
+   *  bare key behind, and dropping {@code hooks} with it when nothing else lives there. */
+  private String writeOutbound(Map<Object, Object> root, List<Object> targets) {
+    Map<Object, Object> hooks = asMutableMap(root.get("hooks"));
+    if (targets.isEmpty()) {
+      hooks.remove("outbound");
+    } else {
+      hooks.put("outbound", targets);
+    }
+    if (hooks.isEmpty()) {
+      root.remove("hooks");
+    } else {
+      root.put("hooks", hooks);
+    }
+    return dump(root);
   }
 
   String serverName(String value) {

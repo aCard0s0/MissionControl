@@ -255,7 +255,7 @@ class HermesCliFixtureTest {
             ? WEBHOOK_LISTENER_CONFIG : captured);
 
     List<WebhookSubscriptionDto> routes =
-        new HermesWebhooks(files, new HermesCli(files), json, new ProfileInventory(files))
+        new HermesWebhooks(files, new HermesCli(files), json, new ProfileInventory(files), new HermesConfigEditor())
             .list(HOST, CONTAINER, "default").subscriptions();
 
     assertFalse(routes.isEmpty(), version + ": the captured routes parsed to nothing");

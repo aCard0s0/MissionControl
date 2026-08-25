@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.agents;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.EnableWebhookPlatformRequest;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhookPlatformDto;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
@@ -64,19 +65,71 @@ public class HermesWebhooks {
   private final HermesCli cli;
   private final ObjectMapper objectMapper;
   private final ProfileInventory inventory;
+  private final HermesConfigEditor config;
 
   HermesWebhooks(
       HermesContainerFiles files,
-      HermesCli cli, ObjectMapper objectMapper, ProfileInventory inventory) {
+      HermesCli cli, ObjectMapper objectMapper, ProfileInventory inventory,
+      HermesConfigEditor config) {
     this.files = files;
     this.cli = cli;
     this.objectMapper = objectMapper;
     this.inventory = inventory;
+    this.config = config;
   }
 
   public WebhooksDto list(DockerHostRef host, String containerId, String profileName) {
     return new WebhooksDto(
-        read(host, containerId, profileName), platform(host, containerId, profileName));
+        read(host, containerId, profileName),
+        platform(host, containerId, profileName),
+        config.outboundWebhooks(
+            files.readFile(host, containerId, ProfilePaths.configFile(profileName))));
+  }
+
+  // ── outbound targets ───────────────────────────────────────────────────────
+
+  /**
+   * Outbound targets live in {@code config.yaml}, not in hermes' webhook store, and hermes
+   * ships no CLI command that edits them — so unlike every inbound mutation here, these
+   * three rewrite the YAML directly, the same way the MCP block is edited.
+   *
+   * <p>Hermes registers the list at startup, so a change lands on the next gateway restart
+   * rather than immediately. Saying so is the caller's job; silently implying it took effect
+   * is what makes an operator think delivery is broken.
+   */
+  public WebhooksDto addOutbound(
+      DockerHostRef host, String containerId, String profileName, OutboundWebhookRequest request) {
+    rewriteConfig(host, containerId, profileName,
+        (yaml, path) -> config.addOutboundWebhook(yaml, path, request));
+    return list(host, containerId, profileName);
+  }
+
+  public WebhooksDto updateOutbound(
+      DockerHostRef host, String containerId, String profileName, int index,
+      OutboundWebhookRequest request) {
+    rewriteConfig(host, containerId, profileName,
+        (yaml, path) -> config.updateOutboundWebhook(yaml, path, index, request));
+    return list(host, containerId, profileName);
+  }
+
+  public WebhooksDto removeOutbound(
+      DockerHostRef host, String containerId, String profileName, int index) {
+    rewriteConfig(host, containerId, profileName,
+        (yaml, path) -> config.removeOutboundWebhook(yaml, path, index));
+    return list(host, containerId, profileName);
+  }
+
+  private void rewriteConfig(
+      DockerHostRef host, String containerId, String profileName, ConfigRewrite rewrite) {
+    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+    String configYaml = files.readFile(host, containerId, configPath);
+    files.writeFileAtomically(
+        host, containerId, configPath, rewrite.apply(configYaml, configPath));
+  }
+
+  @FunctionalInterface
+  private interface ConfigRewrite {
+    String apply(String configYaml, String configPath);
   }
 
   /**

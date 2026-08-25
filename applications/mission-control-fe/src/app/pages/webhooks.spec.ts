@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStore } from '../core/store/agent-store';
 import { ContainerStore } from '../core/store/container-store';
 import { WebhookStore } from '../core/store/webhook-store';
-import { WebhookListener, WebhookRoute } from '../core/models';
+import { OutboundWebhook, WebhookListener, WebhookRoute } from '../core/models';
 import { WebhooksPage } from './webhooks';
-import { el, fill, press, settle, text } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
 
 const agents = [{ id: 'a-1', name: 'atlas' }, { id: 'a-2', name: 'scribe' }];
 
@@ -20,8 +20,16 @@ const route = (name: string, agentId: string, patch: Partial<WebhookRoute> = {})
 const listener = (agentId: string, enabled = true): WebhookListener =>
   ({ agentId, enabled, host: '0.0.0.0', port: 8644, published: false });
 
+const outboundTarget = (patch: Partial<OutboundWebhook> = {}): OutboundWebhook => ({
+  index: 0, name: 'ci-notify', url: 'https://ci.example.test/hooks',
+  events: ['on_session_end'], matcher: null, timeout: 10, secretEnv: 'CI_SECRET',
+  literalSecret: false, agentId: 'a-1', containerId: 'c-1', ...patch,
+});
+
 /** Only what the page reaches for on the store. */
-const storeStub = (routes: WebhookRoute[], listeners: WebhookListener[]) => ({
+const storeStub = (
+  routes: WebhookRoute[], listeners: WebhookListener[], outbound: OutboundWebhook[] = [],
+) => ({
   agents: {
     forSelectedContainer: signal(agents),
     byId: (id: string) => agents.find(a => a.id === id) ?? null,
@@ -39,8 +47,18 @@ const storeStub = (routes: WebhookRoute[], listeners: WebhookListener[]) => ({
     remove: vi.fn().mockResolvedValue(true),
     secretOf: vi.fn().mockResolvedValue('the-real-secret'),
     test: vi.fn().mockResolvedValue('delivered 200'),
+    outbound: signal(outbound),
+    addOutbound: vi.fn().mockResolvedValue(true),
+    updateOutbound: vi.fn().mockResolvedValue(true),
+    removeOutbound: vi.fn().mockResolvedValue(true),
   },
 });
+
+/** Switches the page to its outbound half. */
+const showOutbound = async (fixture: Parameters<typeof settle>[0]) => {
+  press(fixture, 'outbound — the agent posts out');
+  await settle(fixture);
+};
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
@@ -272,5 +290,96 @@ describe('WebhooksPage route details', () => {
     const { fixture } = render(storeStub([route('orphan', 'a-deleted')], []));
 
     expect(text(fixture)).toContain('?');
+  });
+});
+
+
+describe('WebhooksPage outbound targets', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('says an unsigned target is unsigned, because the receiver cannot tell who sent it', async () => {
+    const { fixture } = render(storeStub([], [listener('a-1')],
+      [outboundTarget({ secretEnv: null })]));
+
+    await showOutbound(fixture);
+
+    expect(text(fixture)).toContain('unsigned');
+    expect(text(fixture)).toContain('cannot tell this POST came from your agent');
+  });
+
+  it('shows a hand-written inline secret as present without ever printing it', async () => {
+    const { fixture } = render(storeStub([], [listener('a-1')],
+      [outboundTarget({ secretEnv: null, literalSecret: true })]));
+
+    await showOutbound(fixture);
+
+    expect(text(fixture)).toContain('not shown, not touched');
+    expect(text(fixture)).toContain('signed');
+  });
+
+  it('sends only the env var name, never a secret value', async () => {
+    const { fixture, store } = render(storeStub([], [listener('a-1')]));
+
+    await showOutbound(fixture);
+    press(fixture, '+ add target');
+    await fill(fixture, 'url', 'https://ci.example.test/hooks');
+    press(fixture, 'on_session_end');
+    await fill(fixture, 'signing secret', 'ci_secret');
+    buttonWith(fixture, 'save target').click();
+    await settle(fixture);
+
+    expect(store.webhooks.addOutbound).toHaveBeenCalledWith('a-1', expect.objectContaining({
+      url: 'https://ci.example.test/hooks',
+      events: ['on_session_end'],
+      secretEnv: 'CI_SECRET',
+    }));
+    expect(Object.keys(store.webhooks.addOutbound.mock.calls[0][1])).not.toContain('secret');
+  });
+
+  it('holds a save until at least one event is picked', async () => {
+    const { fixture, store } = render(storeStub([], [listener('a-1')]));
+
+    await showOutbound(fixture);
+    press(fixture, '+ add target');
+    await fill(fixture, 'url', 'https://ci.example.test/hooks');
+
+    expect(button(fixture, 'save target').disabled).toBe(true);
+    expect(store.webhooks.addOutbound).not.toHaveBeenCalled();
+  });
+
+  it('warns that a matcher does nothing for the events chosen', async () => {
+    const { fixture } = render(storeStub([], [listener('a-1')]));
+
+    await showOutbound(fixture);
+    press(fixture, '+ add target');
+    press(fixture, 'on_session_end');
+    await fill(fixture, 'matcher', 'terminal');
+
+    expect(text(fixture)).toContain('honours a matcher for');
+  });
+
+  it('flags an event this hermes does not know rather than rendering it as fine', async () => {
+    const { fixture } = render(storeStub([], [listener('a-1')],
+      [outboundTarget({ events: ['on_session_end', 'on_telepathy'] })]));
+
+    await showOutbound(fixture);
+
+    const chips = Array.from(el(fixture).querySelectorAll('.chip'))
+      .filter(c => (c.textContent ?? '').trim() === 'on_telepathy');
+    expect(chips).toHaveLength(1);
+    expect(chips[0].classList.contains('off')).toBe(false);
+  });
+
+  it('says an edit lands on the next gateway restart', async () => {
+    const { fixture } = render(storeStub([], [listener('a-1')], [outboundTarget()]));
+
+    await showOutbound(fixture);
+
+    expect(text(fixture)).toContain('next restart');
   });
 });

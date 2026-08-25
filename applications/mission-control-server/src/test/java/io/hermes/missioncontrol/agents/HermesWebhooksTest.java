@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -9,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.agents.api.EnableWebhookPlatformRequest;
 import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
+import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -80,6 +82,20 @@ class HermesWebhooksTest {
       return new ExecResult(0, "delivered", "");
     }
 
+    /** The last config.yaml written back, so an edit can be read rather than inferred. */
+    private String written;
+
+    @Override
+    void writeFileAtomically(DockerHostRef host, String containerId, String path, String content) {
+      commands.add(List.of("writeFileAtomically", path));
+      written = content;
+    }
+
+    @Override
+    String requireProfileDir(DockerHostRef host, String containerId, String profileName) {
+      return "default".equals(profileName) ? "/opt/data" : PROFILES_PREFIX + profileName;
+    }
+
     List<List<String>> hermesCommands() {
       return commands.stream()
           .filter(c -> !c.isEmpty() && "hermes".equals(c.getFirst()))
@@ -91,7 +107,7 @@ class HermesWebhooksTest {
 
   private final Exec exec = new Exec();
   private final HermesWebhooks webhooks =
-      new HermesWebhooks(exec, new HermesCli(exec), new ObjectMapper(), new ProfileInventory(exec));
+      new HermesWebhooks(exec, new HermesCli(exec), new ObjectMapper(), new ProfileInventory(exec), new HermesConfigEditor());
 
   private static String fixture() throws IOException {
     return Files.readString(
@@ -388,7 +404,7 @@ class HermesWebhooksTest {
         exec.hermesCommands().getFirst());
 
     Exec other = new Exec();
-    HermesWebhooks fresh = new HermesWebhooks(other, new HermesCli(other), new ObjectMapper(), new ProfileInventory(other));
+    HermesWebhooks fresh = new HermesWebhooks(other, new HermesCli(other), new ObjectMapper(), new ProfileInventory(other), new HermesConfigEditor());
     assertEquals("delivered", fresh.test(HOST, CONTAINER, "default", "grafana"));
     assertEquals(List.of("hermes", "webhook", "test", "grafana"),
         other.hermesCommands().getFirst());
@@ -409,5 +425,73 @@ class HermesWebhooksTest {
   @Test
   void aProfileNameThatCouldEscapeTheProfilesDirIsRefused() {
     assertThrows(IllegalArgumentException.class, () -> webhooks.list(HOST, CONTAINER, "../../etc"));
+  }
+
+  // ── outbound targets ───────────────────────────────────────────────────────
+
+  private static final OutboundWebhookRequest CI_TARGET = new OutboundWebhookRequest(
+      "ci-notify", "https://ci.example.test/hooks", List.of("on_session_end"), null, 10,
+      "CI_SECRET");
+
+  @Test
+  void anOutboundTargetIsWrittenIntoTheProfileConfigRatherThanThroughTheCli() {
+    // hermes ships no CLI command for hooks.outbound, so unlike every inbound mutation here
+    // this one edits config.yaml — and must not have invented a hermes subcommand to do it
+    exec.config = ENABLED_CONFIG;
+
+    WebhooksDto after = webhooks.addOutbound(HOST, CONTAINER, "default", CI_TARGET);
+
+    assertEquals(List.of(), exec.hermesCommands());
+    assertTrue(exec.written.contains("https://ci.example.test/hooks"));
+    assertTrue(exec.written.contains("CI_SECRET"));
+    // the listener config it was added beside is still there
+    assertTrue(exec.written.contains("webhook"));
+    assertNotNull(after);
+  }
+
+  @Test
+  void anOutboundEditRewritesTheTargetAtThatPositionAndRemovalDropsIt() {
+    exec.config = """
+        hooks:
+          outbound:
+            - url: https://old.example.test/hooks
+              events: [on_session_end]
+        """;
+
+    webhooks.updateOutbound(HOST, CONTAINER, "default", 0, CI_TARGET);
+    assertTrue(exec.written.contains("https://ci.example.test/hooks"));
+    assertFalse(exec.written.contains("https://old.example.test/hooks"));
+
+    webhooks.removeOutbound(HOST, CONTAINER, "default", 0);
+    assertFalse(exec.written.contains("outbound"));
+  }
+
+  @Test
+  void aListingCarriesTheOutboundTargetsBesideTheInboundRoutes() throws IOException {
+    exec.subscriptions = fixture();
+    exec.config = """
+        platforms:
+          webhook:
+            enabled: true
+        hooks:
+          outbound:
+            - url: https://ci.example.test/hooks
+              events: [on_session_end]
+              name: ci-notify
+              secret_env: CI_SECRET
+        """;
+
+    WebhooksDto listed = webhooks.list(HOST, CONTAINER, "default");
+
+    assertFalse(listed.subscriptions().isEmpty());
+    assertEquals(1, listed.outbound().size());
+    assertEquals("ci-notify", listed.outbound().getFirst().name());
+    assertEquals("CI_SECRET", listed.outbound().getFirst().secretEnv());
+  }
+
+  @Test
+  void anOutboundEditOnAProfileNameThatCouldEscapeTheProfilesDirIsRefused() {
+    assertThrows(IllegalArgumentException.class,
+        () -> webhooks.addOutbound(HOST, CONTAINER, "../../etc", CI_TARGET));
   }
 }

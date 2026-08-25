@@ -1,6 +1,6 @@
 import {
-  ApiAgentProfile, ApiAgentSetup, ApiAuxiliaryModel, ApiChatMessage, ApiIntegration, ApiLogLine,
-  ApiSession, ApiSetupAuthProvider,
+  ApiAgentProfile, ApiAgentSetup, ApiAuxiliaryModel, ApiChatMessage, ApiContainerActivity,
+  ApiIntegration, ApiLogLine, ApiSession, ApiSetupAuthProvider,
 } from './api-types';
 import { AgentCronApi } from './agent-cron-api';
 import { AgentMcpApi } from './agent-mcp-api';
@@ -106,6 +106,12 @@ export class AgentsApi {
   /** Writes the commented-out .env template, only when the file is missing. */
   initEnv(ref: AgentRef): Promise<ApiAgentSetup> {
     return this.http.post(`${agentPath(ref)}/env/init`);
+  }
+
+  /** What a stop, restart or replace of this container would interrupt, across every profile
+   *  in it. Read on the click that is about to destroy work, never on the fleet poll. */
+  activity(hostId: string, containerId: string): Promise<ApiContainerActivity> {
+    return this.http.get(`/api/agents/${seg(hostId)}/${seg(containerId)}/activity`);
   }
 
   /** Container-level auth-provider status (e.g. Nous Portal OAuth) read from the
