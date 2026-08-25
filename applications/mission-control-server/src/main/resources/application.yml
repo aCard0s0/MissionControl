@@ -90,15 +90,26 @@ mc:
     # container user the web shell runs as; empty keeps the image default
     user: ${MC_TERMINAL_USER:hermes}
   # curated model catalog fallbacks, used when no live provider fetch is possible
+  # Twice-daily re-read of the providers whose model list needs no credential
+  # (OpenRouter, NVIDIA NIM, Nous). Off in tests, which must not reach the internet.
+  model-catalog:
+    refresh: ${MC_MODEL_CATALOG_REFRESH:true}
   models:
-    # Nous Portal is an OAuth account (hermes portal) — no key in the dashboard,
-    # so the catalog is always this curated list (no live fetch).
+    # Seeds and fallbacks. Once the background refresh has read a provider, its
+    # stored list is what the picker offers and these are only what it starts from
+    # — or falls back to for a provider that needs a key (Anthropic, OpenAI).
+    #
+    # Nous Portal is an OAuth account (hermes portal) for inference, but its model
+    # LIST is served without a key, so this list is superseded once refreshed.
     nous: ${MC_MODELS_NOUS:Hermes-4-405B,Hermes-4-70B,Hermes-4-14B}
     anthropic: ${MC_MODELS_ANTHROPIC:claude-fable-5,claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5-20251001}
     openai: ${MC_MODELS_OPENAI:gpt-5.2,gpt-5.2-mini,gpt-5.1,gpt-4.1}
     # OpenRouter ids are provider/model — the live list (openrouter.ai/api/v1/models)
     # supersedes this when reachable.
     openrouter: ${MC_MODELS_OPENROUTER:nousresearch/hermes-4-405b,anthropic/claude-opus-4.7,anthropic/claude-sonnet-4,openai/gpt-5.2,google/gemini-2.5-pro,deepseek/deepseek-chat}
+    # Instruct-tuned entries taken from NVIDIA's own /v1/models, so the picker has
+    # something usable in the window before the first refresh lands.
+    nvidia: ${MC_MODELS_NVIDIA:meta/llama-3.3-70b-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5,nvidia/llama-3.1-nemotron-70b-instruct,nvidia/llama-3.1-nemotron-ultra-253b-v1,mistralai/mistral-nemotron}
 
 logging:
   # One process per container, one application per process: the PID, the application

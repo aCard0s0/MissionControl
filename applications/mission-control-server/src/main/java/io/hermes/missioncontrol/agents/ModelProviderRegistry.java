@@ -11,8 +11,9 @@ import java.util.Locale;
  *
  * <p>{@code hasCatalog} marks the providers Mission Control can list models for
  * ({@link io.hermes.missioncontrol.models.ModelCatalogService}); the rest take a
- * free-text model id in the UI. {@code oauth} providers (Nous Portal) need no API
- * key — they authenticate out-of-band via {@code hermes portal}.
+ * free-text model id in the UI, because their listing endpoint refuses a request
+ * carrying no key and this app holds none. {@code oauth} providers (Nous Portal)
+ * need no API key — they authenticate out-of-band via {@code hermes portal}.
  */
 public final class ModelProviderRegistry {
 
@@ -34,7 +35,8 @@ public final class ModelProviderRegistry {
       new Provider("gemini", "Google AI Studio", "GOOGLE_API_KEY", false, false),
       new Provider("xai", "xAI / Grok", "XAI_API_KEY", false, false),
       new Provider("deepseek", "DeepSeek", "DEEPSEEK_API_KEY", false, false),
-      new Provider("nvidia", "NVIDIA NIM", "NVIDIA_API_KEY", false, false),
+      // its /v1/models is served without a key, so the picker can offer a list
+      new Provider("nvidia", "NVIDIA NIM", "NVIDIA_API_KEY", false, true),
       new Provider("zai", "Z.AI / GLM", "GLM_API_KEY", false, false),
       new Provider("kimi-coding", "Kimi / Moonshot", "KIMI_API_KEY", false, false),
       new Provider("minimax", "MiniMax", "MINIMAX_API_KEY", false, false),

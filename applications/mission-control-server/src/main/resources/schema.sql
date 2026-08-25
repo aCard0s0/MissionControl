@@ -139,3 +139,23 @@ CREATE TABLE IF NOT EXISTS prompt_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Model ids fetched from a provider's own API by the background refresh, so the
+-- picker offers what the provider actually serves today rather than the curated
+-- list this app shipped with. Only providers whose listing endpoint needs no
+-- credential are refreshed; see ModelCatalogService.PUBLIC_CATALOGS.
+--
+-- `position` keeps the provider's own ordering. Both the curated list and a live
+-- read preserve their source's order, and a refreshed list that alpha-sorted
+-- itself would put the picker in a different order depending on where its
+-- contents came from.
+CREATE TABLE IF NOT EXISTS model_catalog (
+  provider   TEXT NOT NULL,
+  model_id   TEXT NOT NULL,
+  position   INTEGER NOT NULL,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (provider, model_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_catalog_provider ON model_catalog (provider, position);
+

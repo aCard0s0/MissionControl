@@ -23,7 +23,7 @@ class ModelProviderRegistryTest {
 
   /** Mirrors ModelCatalogService's provider switch — the set it can serve a catalog for. */
   private static final Set<String> PROVIDERS_WITH_A_CURATED_CATALOG =
-      Set.of("anthropic", "openai", "nous", "openrouter");
+      Set.of("anthropic", "openai", "nous", "openrouter", "nvidia");
 
   @Test
   void everyProviderKeyIsUniqueAndLowercase() {

@@ -25,18 +25,89 @@ public class ModelCatalogService {
   private static final List<String> OPENAI_EXCLUDED = List.of(
       "embedding", "audio", "realtime", "image", "tts", "whisper", "moderation", "transcribe");
 
+  /**
+   * The providers whose model list can be read with no credential at all, measured
+   * against each endpoint rather than taken from documentation:
+   *
+   * <pre>
+   *   openrouter  openrouter.ai/api/v1/models                200
+   *   nvidia      integrate.api.nvidia.com/v1/models         200
+   *   nous        inference-api.nousresearch.com/v1/models    200
+   * </pre>
+   *
+   * <p>Everything else in {@link io.hermes.missioncontrol.agents.ModelProviderRegistry}
+   * answers 401 (Anthropic, OpenAI, xAI, DeepSeek, Kimi, Z.AI, StepFun, MiniMax) or 403
+   * (Google AI Studio) without a key, and so cannot be refreshed by a background job that
+   * holds none. Those keep their curated list, and {@link #live} remains the way to read
+   * them — with a key the caller supplies for that one request.
+   */
+  static final List<String> PUBLIC_CATALOGS = List.of("openrouter", "nvidia", "nous");
+
   private final ModelCatalogProperties props;
+  private final ModelCatalogRepository repository;
   private final ObjectMapper objectMapper;
   private final HttpClient http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
 
-  public ModelCatalogService(ModelCatalogProperties props, ObjectMapper objectMapper) {
+  public ModelCatalogService(
+      ModelCatalogProperties props, ModelCatalogRepository repository, ObjectMapper objectMapper) {
     this.props = props;
+    this.repository = repository;
     this.objectMapper = objectMapper;
   }
 
+  /**
+   * What the picker should offer for this provider.
+   *
+   * <p>A refreshed list wins over the curated one: it came from the provider itself and
+   * says so through {@code source}, which is how the page can tell an operator whether it
+   * is looking at today's models or at what this app shipped with.
+   */
   public ModelCatalogDto configured(String provider) {
     String normalized = normalize(provider);
+    List<String> refreshed = repository.models(normalized);
+    if (!refreshed.isEmpty()) {
+      return new ModelCatalogDto(normalized, refreshed, "catalog");
+    }
     return new ModelCatalogDto(normalized, configuredModels(normalized), "config");
+  }
+
+  /**
+   * Re-reads every keyless provider and stores what came back. Never throws: one
+   * provider being down must not stop the other two being refreshed, and the whole
+   * job runs unattended twice a day with nobody to catch anything it raised.
+   *
+   * @return the providers that were actually updated
+   */
+  public List<String> refreshAll() {
+    List<String> refreshed = new ArrayList<>();
+    for (String provider : PUBLIC_CATALOGS) {
+      if (refresh(provider)) refreshed.add(provider);
+    }
+    return refreshed;
+  }
+
+  /** One provider. False when it could not be read, or answered with nothing usable. */
+  public boolean refresh(String provider) {
+    String normalized = normalize(provider);
+    try {
+      List<String> models = fetch(normalized, null);
+      if (models.isEmpty()) {
+        // 200-with-nothing is far more likely a changed response shape than a vendor
+        // with no models, and storing it would empty the picker on the strength of a guess
+        log.warn("model catalog refresh for {} returned no models — keeping the previous list",
+            normalized);
+        return false;
+      }
+      repository.replace(normalized, models, System.currentTimeMillis());
+      log.info("model catalog refreshed for {}: {} models", normalized, models.size());
+      return true;
+    } catch (Exception e) {
+      if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+      // the stored list stays exactly as it was; a provider that is down for a day
+      // costs the picker nothing
+      log.warn("model catalog refresh for {} failed: {}", normalized, e.toString());
+      return false;
+    }
   }
 
   /** Live list from the provider API; falls back to the configured list. */
@@ -46,12 +117,7 @@ public class ModelCatalogService {
     // curated CSV for (gemini, xai, …) must yield an empty live list, not a 404
     List<String> configured = configuredModelsOrEmpty(normalized);
     try {
-      List<String> models = switch (normalized) {
-        case "anthropic" -> fetchAnthropic(apiKey);
-        case "openai" -> fetchOpenai(apiKey);
-        case "openrouter" -> fetchOpenrouter(apiKey);
-        default -> configured;
-      };
+      List<String> models = fetch(normalized, apiKey);
       return new ModelCatalogDto(normalized, models, "live");
     } catch (Exception e) {
       if (e instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -66,6 +132,7 @@ public class ModelCatalogService {
       case "openai" -> props.openai();
       case "nous" -> props.nous();
       case "openrouter" -> props.openrouter();
+      case "nvidia" -> props.nvidia();
       default -> throw new NoSuchElementException("unknown model provider: " + provider);
     };
     List<String> models = new ArrayList<>();
@@ -84,6 +151,27 @@ public class ModelCatalogService {
     } catch (NoSuchElementException e) {
       return List.of();
     }
+  }
+
+  /** The provider's own list, or empty for one this app has no fetcher for. */
+  private List<String> fetch(String provider, String apiKey) throws Exception {
+    return switch (provider) {
+      case "anthropic" -> fetchAnthropic(apiKey);
+      case "openai" -> fetchOpenai(apiKey);
+      case "openrouter" -> fetchOpenrouter(apiKey);
+      case "nvidia" -> fetchKeyless("https://integrate.api.nvidia.com/v1/models");
+      // Nous is an OAuth account for *inference*, which is why nothing here holds a key for
+      // it — but its model list is served without one, so the default provider no longer has
+      // to sit on a hand-written list.
+      case "nous" -> fetchKeyless("https://inference-api.nousresearch.com/v1/models");
+      default -> List.of();
+    };
+  }
+
+  /** A provider whose listing endpoint takes no credential; both are OpenAI-shaped. */
+  private List<String> fetchKeyless(String url) throws Exception {
+    HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(TIMEOUT).GET().build();
+    return modelIds(send(request), id -> true);
   }
 
   private List<String> fetchAnthropic(String apiKey) throws Exception {

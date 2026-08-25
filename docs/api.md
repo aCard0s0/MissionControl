@@ -124,8 +124,20 @@ image payloads at a model that may reject them.
 
 | Method & path | Body | Notes |
 |---|---|---|
-| `GET /api/models/{provider}` | — | curated list from `MC_MODELS_ANTHROPIC` / `MC_MODELS_OPENAI` (sensible defaults baked in) |
+| `GET /api/models/{provider}` | — | what the picker offers. A list stored by the background refresh wins (`source: catalog`); otherwise the curated `MC_MODELS_*` list (`source: config`). 404 for a provider with neither |
 | `POST /api/models/{provider}` | `{ apiKey }` | live fetch from the provider's `/v1/models` (truth source); falls back to the config list on any failure |
+
+**Background model-catalog refresh.** Twice a day (`@Scheduled`, 12h fixed delay, first run ~45s after boot) Mission Control re-reads the model list of every provider whose listing endpoint needs no credential, and stores it. Measured against each endpoint unauthenticated:
+
+| provider | endpoint | unauthenticated |
+| --- | --- | --- |
+| OpenRouter | `openrouter.ai/api/v1/models` | 200 — refreshed |
+| NVIDIA NIM | `integrate.api.nvidia.com/v1/models` | 200 — refreshed |
+| Nous | `inference-api.nousresearch.com/v1/models` | 200 — refreshed |
+| Anthropic, OpenAI, xAI, DeepSeek, Kimi, Z.AI, StepFun, MiniMax | their `/v1/models` | 401 — curated list only |
+| Google AI Studio | `generativelanguage.googleapis.com/v1beta/models` | 403 — curated list only |
+
+The eight-plus keyed providers keep their curated list; `POST /api/models/{provider}` with a caller-supplied key remains the way to read them live. A provider that fails, or answers 200 with no models, keeps whatever was stored before rather than emptying the picker. Set `MC_MODEL_CATALOG_REFRESH=false` to switch the job off.
 
 ## Model providers — ollama registry in SQLite
 
