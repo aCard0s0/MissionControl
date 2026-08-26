@@ -6,7 +6,6 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -54,7 +53,7 @@ class AgentsControllerTest {
 
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentsController(
-            profiles, templates, lifecycle, new AgentEndpoints(hosts, mcpCatalog)))
+            profiles, templates, lifecycle, hosts, mcpCatalog))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

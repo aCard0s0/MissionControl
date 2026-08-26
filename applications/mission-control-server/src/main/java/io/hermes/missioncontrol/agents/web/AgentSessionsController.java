@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.SessionDto;
+import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,11 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentSessionsController {
 
   private final HermesProfiles profiles;
-  private final AgentEndpoints endpoints;
+  private final HostService hosts;
 
-  AgentSessionsController(HermesProfiles profiles, AgentEndpoints endpoints) {
+  AgentSessionsController(HermesProfiles profiles, HostService hosts) {
     this.profiles = profiles;
-    this.endpoints = endpoints;
+    this.hosts = hosts;
   }
 
   @GetMapping
@@ -28,7 +29,7 @@ class AgentSessionsController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return profiles.listSessions(endpoints.host(hostId), containerId, name);
+    return profiles.listSessions(hosts.requireConnected(hostId), containerId, name);
   }
 
   @GetMapping(value = "/{sessionId}", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -38,7 +39,8 @@ class AgentSessionsController {
       @PathVariable String name,
       @PathVariable String sessionId) {
     // already a JSON array string emitted by the in-container query
-    return profiles.readSessionMessages(endpoints.host(hostId), containerId, name, sessionId);
+    return profiles.readSessionMessages(
+        hosts.requireConnected(hostId), containerId, name, sessionId);
   }
 
   @DeleteMapping("/{sessionId}")
@@ -47,6 +49,6 @@ class AgentSessionsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String sessionId) {
-    profiles.deleteSession(endpoints.host(hostId), containerId, name, sessionId);
+    profiles.deleteSession(hosts.requireConnected(hostId), containerId, name, sessionId);
   }
 }

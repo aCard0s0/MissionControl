@@ -4,6 +4,7 @@ import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
+import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,11 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentSetupController {
 
   private final HermesSetup setup;
-  private final AgentEndpoints endpoints;
+  private final HostService hosts;
 
-  AgentSetupController(HermesSetup setup, AgentEndpoints endpoints) {
+  AgentSetupController(HermesSetup setup, HostService hosts) {
     this.setup = setup;
-    this.endpoints = endpoints;
+    this.hosts = hosts;
   }
 
   /** Container-level auth-provider status (e.g. Nous Portal OAuth login), read
@@ -35,7 +36,7 @@ class AgentSetupController {
   @GetMapping("/auth-providers")
   public List<AuthProviderDto> authProviders(
       @PathVariable String hostId, @PathVariable String containerId) {
-    return setup.setup(endpoints.host(hostId), containerId, "default").authProviders();
+    return setup.setup(hosts.requireConnected(hostId), containerId, "default").authProviders();
   }
 
   @GetMapping("/{name}/setup")
@@ -43,7 +44,7 @@ class AgentSetupController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return setup.setup(endpoints.host(hostId), containerId, name);
+    return setup.setup(hosts.requireConnected(hostId), containerId, name);
   }
 
   @PutMapping("/{name}/env")
@@ -52,7 +53,7 @@ class AgentSetupController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody SetEnvRequest request) {
-    return setup.putEnv(endpoints.host(hostId), containerId, name, request.entries());
+    return setup.putEnv(hosts.requireConnected(hostId), containerId, name, request.entries());
   }
 
   @PostMapping("/{name}/env/init")
@@ -60,7 +61,7 @@ class AgentSetupController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return setup.initEnv(endpoints.host(hostId), containerId, name);
+    return setup.initEnv(hosts.requireConnected(hostId), containerId, name);
   }
 
   /** A batch of {@code .env} writes. A blank value removes the variable. */

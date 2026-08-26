@@ -81,7 +81,7 @@ public class AgentLifecycle {
    * also leave the entry in {@code config.yaml} with nothing recording where it came from.
    *
    * @return the profile as it stands afterwards, before catalog links are overlaid —
-   *     {@code AgentEndpoints.linked} does that for every profile the API answers with
+   *     {@code AgentMcpCatalogService.enrich} does that for every profile the API answers with
    */
   public AgentProfileDto removeMcpServer(
       DockerHostRef host, String containerId, String name, String serverName) {
