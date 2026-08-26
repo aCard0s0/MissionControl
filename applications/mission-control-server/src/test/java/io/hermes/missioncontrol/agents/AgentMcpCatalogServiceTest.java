@@ -450,7 +450,7 @@ class AgentMcpCatalogServiceTest {
     when(profiles.setMcpServerEnabled(HOST, "container", "default", "tools", false))
         .thenReturn(profile(List.of(disabled("tools"))));
 
-    service.beforeServerDeleted("mcp-1");
+    service.disableAndUnlinkForDeletion("mcp-1");
 
     InOrder order = inOrder(profiles, links);
     order.verify(profiles).setMcpServerEnabled(HOST, "container", "default", "tools", false);

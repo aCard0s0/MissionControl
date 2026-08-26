@@ -11,8 +11,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -25,20 +25,20 @@ import org.mockito.InOrder;
  * the protocol was three statements in that controller's handler.
  *
  * <p>The first step is a claim and not a question, so the record is held for the whole time the
- * listeners take. Every path out that is not a completed deletion has to give it back, or one
+ * agent-side cleanup takes. Every path out that is not a completed deletion has to give it back, or one
  * failed delete leaves the record stuck in {@code deleting} with nothing left to drive it out.
  */
 class McpServerDeletionTest {
 
   private McpRegistryService registry;
-  private McpServerDeletionListener listener;
+  private AgentMcpCatalogService agentCopies;
   private McpServerDeletion deletion;
 
   @BeforeEach
   void setUp() {
     registry = mock(McpRegistryService.class);
-    listener = mock(McpServerDeletionListener.class);
-    deletion = new McpServerDeletion(registry, List.of(listener));
+    agentCopies = mock(AgentMcpCatalogService.class);
+    deletion = new McpServerDeletion(registry, agentCopies);
   }
 
   @Test
@@ -53,7 +53,7 @@ class McpServerDeletionTest {
     // releasing a reference rewrites config.yaml on every agent holding this server and drops
     // the link rows, and nothing puts them back. Running it before the refusal is ruled out
     // means a rejected request still destroyed the caller's setup.
-    verifyNoInteractions(listener);
+    verifyNoInteractions(agentCopies);
     verify(registry, never()).completeDeletion(anyString());
     // nothing was taken, so there is nothing to hand back
     verify(registry, never()).releaseClaim(anyString());
@@ -65,9 +65,9 @@ class McpServerDeletionTest {
 
     deletion.delete("mcp-1");
 
-    InOrder order = inOrder(registry, listener);
+    InOrder order = inOrder(registry, agentCopies);
     order.verify(registry).claimForDeletion("mcp-1");
-    order.verify(listener).beforeServerDeleted("mcp-1");
+    order.verify(agentCopies).disableAndUnlinkForDeletion("mcp-1");
     order.verify(registry).completeDeletion("mcp-1");
     // the claim is consumed by the deletion, not handed back
     verify(registry, never()).releaseClaim(anyString());
@@ -75,9 +75,9 @@ class McpServerDeletionTest {
 
   @Test
   void aListenerThatCannotFinishAbortsTheDeletionRatherThanDroppingTheRow() {
-    // the listener contract says a throw aborts, leaving what it already processed retryable
+    // the cleanup contract says a throw aborts, leaving what it already processed retryable
     doThrow(new ResourceConflictException("could not disable MCP entry tools"))
-        .when(listener).beforeServerDeleted("mcp-1");
+        .when(agentCopies).disableAndUnlinkForDeletion("mcp-1");
 
     assertThrows(ResourceConflictException.class, () -> deletion.delete("mcp-1"));
 
@@ -87,15 +87,15 @@ class McpServerDeletionTest {
   @Test
   void aListenerThatCannotFinishHandsTheClaimBack() {
     doThrow(new ResourceConflictException("could not disable MCP entry tools"))
-        .when(listener).beforeServerDeleted("mcp-1");
+        .when(agentCopies).disableAndUnlinkForDeletion("mcp-1");
 
     assertThrows(ResourceConflictException.class, () -> deletion.delete("mcp-1"));
 
     // without this the record stays in `deleting` forever: no operation is running to finish
     // it, and every later request is refused because one apparently already is
-    InOrder order = inOrder(registry, listener);
+    InOrder order = inOrder(registry, agentCopies);
     order.verify(registry).claimForDeletion("mcp-1");
-    order.verify(listener).beforeServerDeleted("mcp-1");
+    order.verify(agentCopies).disableAndUnlinkForDeletion("mcp-1");
     order.verify(registry).releaseClaim("mcp-1");
   }
 }
