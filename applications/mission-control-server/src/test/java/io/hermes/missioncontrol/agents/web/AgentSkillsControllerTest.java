@@ -48,7 +48,7 @@ class AgentSkillsControllerTest {
     hosts = mock(HostService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new AgentSkillsController(profiles, new AgentEndpoints(hosts, mcpCatalog)))
+        .standaloneSetup(new AgentSkillsController(profiles, hosts, mcpCatalog))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

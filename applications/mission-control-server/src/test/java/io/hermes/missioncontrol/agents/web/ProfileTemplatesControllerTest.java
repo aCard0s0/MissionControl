@@ -38,7 +38,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * of these seven endpoints needs a live Docker host and which must work with every daemon
  * in the fleet down.
  *
- * <p>Wired through {@link AgentEndpoints} like the sibling controller tests, because
+ * <p>Wired like the sibling controller tests, because
  * {@code deploy} answers with an agent profile and every profile the API returns is enriched
  * with its catalog links on the way out.
  */
@@ -55,7 +55,7 @@ class ProfileTemplatesControllerTest {
     hosts = mock(HostService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new ProfileTemplatesController(service, new AgentEndpoints(hosts, mcpCatalog)))
+        .standaloneSetup(new ProfileTemplatesController(service, hosts, mcpCatalog))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

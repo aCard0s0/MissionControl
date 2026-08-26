@@ -93,13 +93,14 @@ final class HermesEnvCatalog {
 
   /** Commented-out .env template documenting every supported variable. */
   static String template() {
-    StringBuilder sb = new StringBuilder();
-    sb.append("# hermes profile environment\n");
-    sb.append("# Uncomment a variable and fill in its value to enable it.\n");
-    sb.append("# OAuth providers are not configured here — run 'hermes portal'\n");
-    sb.append("# (auth) or 'hermes model' (model selection) from the web terminal.\n");
-    sb.append("\n");
-    sb.append("# ── model & tool API keys\n");
+    StringBuilder sb = new StringBuilder("""
+        # hermes profile environment
+        # Uncomment a variable and fill in its value to enable it.
+        # OAuth providers are not configured here — run 'hermes portal'
+        # (auth) or 'hermes model' (model selection) from the web terminal.
+
+        # ── model & tool API keys
+        """);
     for (ApiKeySpec spec : API_KEYS) {
       sb.append("# ").append(spec.envVar()).append("=  # ").append(spec.label());
       if (!spec.altVars().isEmpty()) {

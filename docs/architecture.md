@@ -19,8 +19,7 @@ mission-control/
 │   └── tailscale/                 mounted as /config — serve-https.json, serve-funnel.json
 ├── docs/                          this documentation
 ├── mc                             manager script — build + deploy (tailnet or plain) + ollama
-├── Dockerfile                     combined image (FE + BE, one container)
-└── pom.xml                        maven aggregator
+└── Dockerfile                     combined image (FE + BE, one container)
 ```
 
 ## How the pieces fit

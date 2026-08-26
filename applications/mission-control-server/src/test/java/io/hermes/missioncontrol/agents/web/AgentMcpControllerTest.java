@@ -28,7 +28,6 @@ import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.McpServerDefinition;
-import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
@@ -73,7 +72,7 @@ class AgentMcpControllerTest {
     lifecycle = mock(AgentLifecycle.class);
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentMcpController(
-            profiles, mcpCatalog, lifecycle, new AgentEndpoints(hosts, mcpCatalog)))
+            profiles, mcpCatalog, lifecycle, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

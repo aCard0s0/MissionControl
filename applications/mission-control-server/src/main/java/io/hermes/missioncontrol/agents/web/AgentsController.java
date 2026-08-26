@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.AgentLifecycle;
+import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
@@ -10,6 +11,7 @@ import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
+import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,7 +32,8 @@ import jakarta.validation.constraints.Size;
  * <p>The sub-resources each have their own controller on the same base path —
  * {@link AgentSkillsController}, {@link AgentMcpController}, {@link AgentSessionsController}
  * and {@link AgentSetupController} — and all of them resolve the host through
- * {@link AgentEndpoints}.
+ * {@link HostService#requireConnected}, which refuses one that is not connected before any
+ * container is touched.
  */
 @RestController
 @RequestMapping("/api/agents")
@@ -39,44 +42,47 @@ public class AgentsController {
   private final HermesProfiles profiles;
   private final ProfileTemplateService templates;
   private final AgentLifecycle lifecycle;
-  private final AgentEndpoints endpoints;
+  private final HostService hosts;
+  private final AgentMcpCatalogService mcpCatalog;
 
   public AgentsController(
       HermesProfiles profiles,
       ProfileTemplateService templates,
       AgentLifecycle lifecycle,
-      AgentEndpoints endpoints) {
+      HostService hosts,
+      AgentMcpCatalogService mcpCatalog) {
     this.profiles = profiles;
     this.templates = templates;
     this.lifecycle = lifecycle;
-    this.endpoints = endpoints;
+    this.hosts = hosts;
+    this.mcpCatalog = mcpCatalog;
   }
 
   @GetMapping
   public List<AgentProfileDto> list(@RequestParam String hostId, @RequestParam String containerId) {
-    DockerHostRef host = endpoints.host(hostId);
+    DockerHostRef host = hosts.requireConnected(hostId);
     return profiles.list(host, containerId).stream()
-        .map(profile -> endpoints.linked(host, profile))
+        .map(profile -> mcpCatalog.enrich(host, profile))
         .toList();
   }
 
   @PostMapping
   public AgentProfileDto create(@Valid @RequestBody CreateAgentRequest request) {
-    DockerHostRef host = endpoints.host(request.hostId());
+    DockerHostRef host = hosts.requireConnected(request.hostId());
     ProfileSpec spec = ProfileSpec.from(request);
     String templateId = request.fromTemplateId();
     if (templateId != null && !templateId.isBlank()) {
       // Create the request-configured base and layer the template's
       // soul/memory/skills/mcp/secrets as one owned, rollback-safe operation.
-      return endpoints.linked(host, templates.createFromTemplate(templateId, host, spec));
+      return mcpCatalog.enrich(host, templates.createFromTemplate(templateId, host, spec));
     }
-    return endpoints.linked(host, profiles.create(host, spec));
+    return mcpCatalog.enrich(host, profiles.create(host, spec));
   }
 
   @DeleteMapping("/{hostId}/{containerId}/{name}")
   public void delete(
       @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    lifecycle.delete(endpoints.host(hostId), containerId, name);
+    lifecycle.delete(hosts.requireConnected(hostId), containerId, name);
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/soul")
@@ -85,7 +91,7 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateSoulRequest request) {
-    profiles.updateSoul(endpoints.host(hostId), containerId, name, request.soul());
+    profiles.updateSoul(hosts.requireConnected(hostId), containerId, name, request.soul());
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/config")
@@ -94,8 +100,8 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateConfigRequest request) {
-    DockerHostRef host = endpoints.host(hostId);
-    return endpoints.linked(host, profiles.updateConfig(
+    DockerHostRef host = hosts.requireConnected(hostId);
+    return mcpCatalog.enrich(host, profiles.updateConfig(
         host, containerId, name, request.configYaml()));
   }
 
@@ -104,7 +110,7 @@ public class AgentsController {
   @GetMapping("/{hostId}/{containerId}/activity")
   public ContainerActivityDto activity(
       @PathVariable String hostId, @PathVariable String containerId) {
-    return profiles.activity(endpoints.host(hostId), containerId);
+    return profiles.activity(hosts.requireConnected(hostId), containerId);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/integrations")
@@ -112,7 +118,7 @@ public class AgentsController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return profiles.integrations(endpoints.host(hostId), containerId, name);
+    return profiles.integrations(hosts.requireConnected(hostId), containerId, name);
   }
 
   /**
@@ -126,16 +132,16 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody(required = false) PauseAgentRequest request) {
-    DockerHostRef host = endpoints.host(hostId);
-    return endpoints.linked(host, profiles.pause(
+    DockerHostRef host = hosts.requireConnected(hostId);
+    return mcpCatalog.enrich(host, profiles.pause(
         host, containerId, name, request == null ? null : request.reason()));
   }
 
   @PostMapping("/{hostId}/{containerId}/{name}/resume")
   public AgentProfileDto resume(
       @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    DockerHostRef host = endpoints.host(hostId);
-    return endpoints.linked(host, profiles.resume(host, containerId, name));
+    DockerHostRef host = hosts.requireConnected(hostId);
+    return mcpCatalog.enrich(host, profiles.resume(host, containerId, name));
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/logs")
@@ -144,7 +150,7 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestParam(defaultValue = "100") int tail) {
-    return profiles.logs(endpoints.host(hostId), containerId, name, tail);
+    return profiles.logs(hosts.requireConnected(hostId), containerId, name, tail);
   }
 
   public record UpdateConfigRequest(String configYaml) {

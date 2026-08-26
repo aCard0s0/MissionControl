@@ -20,6 +20,7 @@ jobs:
           cache: npm
           cache-dependency-path: applications/mission-control-fe/package-lock.json
       - name: Backend tests
+        working-directory: applications/mission-control-server
         run: mvn test
       - name: Backend coverage summary
         # jacoco's report goal is bound to `test`, so the CSV already exists. Columns are
@@ -78,4 +79,5 @@ jobs:
           java-version: '24'
           cache: maven
       - name: Managed MCP lifecycle against a real daemon
+        working-directory: applications/mission-control-server
         run: mvn -B test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true

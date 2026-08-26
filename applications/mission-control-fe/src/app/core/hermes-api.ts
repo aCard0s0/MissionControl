@@ -15,6 +15,9 @@ import { TemplatesApi } from './api/templates-api';
 //
 // The wire shapes and the per-resource clients live under ./api; this file only
 // wires them onto one object so callers read as `api.agents.updateSoul(...)`.
+//
+// It is also the one door into ./api for everything outside it: files under
+// ./api import their siblings directly, everyone else takes the wire types here.
 export * from './api/api-types';
 export type { AgentRef } from './api/agent-ref';
 export type { AgentMcpRequest } from './api/agent-mcp-api';

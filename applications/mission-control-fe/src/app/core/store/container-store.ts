@@ -1,5 +1,5 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { ApiStats } from '../api/api-types';
+import { ApiStats } from '../hermes-api';
 import { ContainerStatus, HermesContainer } from '../models';
 import { StoreContext } from './store-context';
 

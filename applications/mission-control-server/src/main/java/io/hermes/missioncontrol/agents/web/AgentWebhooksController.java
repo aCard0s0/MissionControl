@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesWebhooks;
+import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import io.hermes.missioncontrol.agents.api.EnableWebhookPlatformRequest;
 import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
@@ -26,11 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentWebhooksController {
 
   private final HermesWebhooks webhooks;
-  private final AgentEndpoints endpoints;
+  private final HostService hosts;
 
-  AgentWebhooksController(HermesWebhooks webhooks, AgentEndpoints endpoints) {
+  AgentWebhooksController(HermesWebhooks webhooks, HostService hosts) {
     this.webhooks = webhooks;
-    this.endpoints = endpoints;
+    this.hosts = hosts;
   }
 
   @GetMapping
@@ -38,7 +39,7 @@ class AgentWebhooksController {
       @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return webhooks.list(endpoints.host(hostId), containerId, name);
+    return webhooks.list(hosts.requireConnected(hostId), containerId, name);
   }
 
   /** Turns the profile's webhook listener on or off. */
@@ -48,7 +49,7 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody EnableWebhookPlatformRequest request) {
-    return webhooks.setPlatformEnabled(endpoints.host(hostId), containerId, name, request);
+    return webhooks.setPlatformEnabled(hosts.requireConnected(hostId), containerId, name, request);
   }
 
   @PostMapping
@@ -57,7 +58,7 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody SubscribeWebhookRequest request) {
-    return webhooks.subscribe(endpoints.host(hostId), containerId, name, request);
+    return webhooks.subscribe(hosts.requireConnected(hostId), containerId, name, request);
   }
 
   /**
@@ -78,7 +79,7 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody OutboundWebhookRequest request) {
-    return webhooks.addOutbound(endpoints.host(hostId), containerId, name, request);
+    return webhooks.addOutbound(hosts.requireConnected(hostId), containerId, name, request);
   }
 
   @PutMapping("/outbound/{index}")
@@ -88,7 +89,8 @@ class AgentWebhooksController {
       @PathVariable String name,
       @PathVariable int index,
       @Valid @RequestBody OutboundWebhookRequest request) {
-    return webhooks.updateOutbound(endpoints.host(hostId), containerId, name, index, request);
+    return webhooks.updateOutbound(
+        hosts.requireConnected(hostId), containerId, name, index, request);
   }
 
   @DeleteMapping("/outbound/{index}")
@@ -97,7 +99,7 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable int index) {
-    return webhooks.removeOutbound(endpoints.host(hostId), containerId, name, index);
+    return webhooks.removeOutbound(hosts.requireConnected(hostId), containerId, name, index);
   }
 
   @GetMapping("/{route}/secret")
@@ -106,7 +108,8 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return Map.of("secret", webhooks.secret(endpoints.host(hostId), containerId, name, route));
+    return Map.of(
+        "secret", webhooks.secret(hosts.requireConnected(hostId), containerId, name, route));
   }
 
   /** Fires hermes' own test POST at the route. */
@@ -116,7 +119,8 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return Map.of("output", webhooks.test(endpoints.host(hostId), containerId, name, route));
+    return Map.of(
+        "output", webhooks.test(hosts.requireConnected(hostId), containerId, name, route));
   }
 
   @DeleteMapping("/{route}")
@@ -125,6 +129,6 @@ class AgentWebhooksController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return webhooks.remove(endpoints.host(hostId), containerId, name, route);
+    return webhooks.remove(hosts.requireConnected(hostId), containerId, name, route);
   }
 }

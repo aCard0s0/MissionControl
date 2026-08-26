@@ -15,9 +15,9 @@ import java.util.List;
 /**
  * Shared setup for the {@code /api/agents/**} controller tests.
  *
- * <p>All five controllers resolve their host through {@link AgentEndpoints} and answer with a
- * profile enriched by {@link AgentMcpCatalogService}, so every test file needs the same two
- * stubs and the same profile fixture.
+ * <p>All five controllers resolve their host through {@link HostService#requireConnected} and
+ * answer with a profile enriched by {@link AgentMcpCatalogService}, so every test file needs
+ * the same two stubs and the same profile fixture.
  */
 final class AgentWebFixture {
 
@@ -37,7 +37,7 @@ final class AgentWebFixture {
         .thenThrow(new UpstreamUnavailableException("docker host not connected"));
   }
 
-  /** Makes {@code AgentEndpoints.linked} transparent so a test can assert on what the service returned. */
+  /** Makes the enrichment transparent so a test can assert on what the service returned. */
   static void enrichmentIsTransparent(AgentMcpCatalogService mcpCatalog) {
     when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
   }

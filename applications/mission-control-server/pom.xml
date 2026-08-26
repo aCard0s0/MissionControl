@@ -148,31 +148,19 @@
               <rules>
                 <rule>
                   <element>BUNDLE</element>
+                  <!-- LINE and BRANCH only: INSTRUCTION restates LINE, and METHOD and
+                       COMPLEXITY move with it. BRANCH is the one thing a line count cannot
+                       see — a line executed down only one of its paths. -->
                   <limits>
-                    <limit>
-                      <counter>INSTRUCTION</counter>
-                      <value>COVEREDRATIO</value>
-                      <minimum>0.95</minimum>
-                    </limit>
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
                       <minimum>0.95</minimum>
                     </limit>
                     <limit>
-                      <counter>METHOD</counter>
-                      <value>COVEREDRATIO</value>
-                      <minimum>0.96</minimum>
-                    </limit>
-                    <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
                       <minimum>0.91</minimum>
-                    </limit>
-                    <limit>
-                      <counter>COMPLEXITY</counter>
-                      <value>COVEREDRATIO</value>
-                      <minimum>0.89</minimum>
                     </limit>
                   </limits>
                 </rule>

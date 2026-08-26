@@ -10,7 +10,7 @@ import {
   TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
 } from '../testing/dom';
 import { container, dockerHost } from '../testing/models';
-import { ApiContainerActivity } from '../core/api/api-types';
+import { ApiContainerActivity } from '../core/hermes-api';
 import { provideStores } from '../testing/store';
 
 describe('normalizeSeedProfiles', () => {

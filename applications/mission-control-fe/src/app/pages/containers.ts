@@ -21,7 +21,7 @@ import {
   containerUpdate, displayVersion, isFloatingTag, targetVersion, updateTargets,
 } from '../core/image-policy';
 import { HermesContainer, ImageTag } from '../core/models';
-import { ApiContainerActivity } from '../core/api/api-types';
+import { ApiContainerActivity } from '../core/hermes-api';
 
 export function normalizeSeedProfiles(value: string): string[] {
   return Array.from(new Set(value.split(',')

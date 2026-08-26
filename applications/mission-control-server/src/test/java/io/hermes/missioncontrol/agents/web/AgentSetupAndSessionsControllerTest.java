@@ -23,7 +23,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
@@ -56,11 +55,10 @@ class AgentSetupAndSessionsControllerTest {
     setup = mock(HermesSetup.class);
     profiles = mock(HermesProfiles.class);
     hosts = mock(HostService.class);
-    AgentEndpoints endpoints = new AgentEndpoints(hosts, mock(AgentMcpCatalogService.class));
     mvc = MockMvcBuilders
         .standaloneSetup(
-            new AgentSetupController(setup, endpoints),
-            new AgentSessionsController(profiles, endpoints))
+            new AgentSetupController(setup, hosts),
+            new AgentSessionsController(profiles, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

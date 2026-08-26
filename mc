@@ -59,11 +59,12 @@ Commands:
   stop               stop whichever flavor is running (incl. the ollama service)
   restart [...]      stop + start (same flags as start)
   status             which flavor is running, container states, port/URL, ollama
-  logs [-f] [-n N]   app container logs (default: last 100 lines)
+  logs [flags]       app container logs (default: last 100 lines); flags go to
+                     `docker compose logs` — -f, -n N, --since, --until, -t
   shell              interactive sh in the app container
   ollama up|down     start / remove the optional ollama service on its own
   ollama [args...]   ollama CLI inside the service container (no args: list);
-                     './mc ollama logs [-f] [-n N]' shows the service logs
+                     './mc ollama logs [flags]' shows the service logs
   build              build the image only
   down [--volumes]   stop everything; --volumes also removes the data volumes
                      (and logs the node out of the tailnet first, so the next
@@ -233,10 +234,7 @@ svc_exists()  { [[ -n "$(compose_ro ps -aq "$1" 2>/dev/null || true)" ]]; }
 svc_running() { [[ -n "$(compose_ro ps -q  "$1" 2>/dev/null || true)" ]]; }
 
 ts_exists()      { svc_exists tailscale; }
-ts_running()     { svc_running tailscale; }
 app_exists()     { svc_exists mission-control; }
-app_running()    { svc_running mission-control; }
-plain_exists()   { app_exists && ! ts_exists; }
 ollama_exists()  { svc_exists ollama; }
 ollama_running() { svc_running ollama; }
 
@@ -463,7 +461,7 @@ cmd_status() {
       echo "  ⚠ host port published on ${lport} — bypasses the tailnet ACL and Serve"
     fi
   fi
-  if plain_exists; then
+  if app_exists && ! ts_exists; then
     found=1
     echo "→ flavor: plain (same compose service, no tailscale sidecar)"
     compose_ro ps mission-control
@@ -497,21 +495,12 @@ cmd_status() {
   if [[ -z "${found}" ]]; then echo "→ nothing deployed"; fi
 }
 
+# The leading --tail only sets the default: `docker compose logs` takes the last
+# value of a repeated flag, so a caller's own -n still wins.
 cmd_logs() {
-  local follow="" tail=100
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -f) follow=1 ;;
-      -n) [[ $# -ge 2 ]] || { echo "error: -n needs a value" >&2; exit 1; }
-          tail="$2"; shift ;;
-      *) echo "error: unknown logs flag: $1" >&2; exit 1 ;;
-    esac
-    shift
-  done
-
   require_docker
   if app_exists; then
-    compose_ro logs ${follow:+-f} --tail "${tail}" mission-control
+    compose_ro logs --tail 100 "$@" mission-control
   else
     echo "error: nothing deployed — './mc start' first" >&2
     exit 1
@@ -520,7 +509,7 @@ cmd_logs() {
 
 cmd_shell() {
   require_docker
-  if app_running; then
+  if svc_running mission-control; then
     compose_ro exec mission-control sh
   else
     echo "error: nothing running — './mc start' first" >&2
@@ -544,23 +533,14 @@ cmd_ollama() {
     return
   fi
 
+  # 'logs' is ours too — the ollama CLI has no such verb.
   if [[ "${1:-}" == "logs" ]]; then
     shift
-    local follow="" tail=100
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        -f) follow=1 ;;
-        -n) [[ $# -ge 2 ]] || { echo "error: -n needs a value" >&2; exit 1; }
-            tail="$2"; shift ;;
-        *) echo "error: unknown ollama logs flag: $1" >&2; exit 1 ;;
-      esac
-      shift
-    done
     if ! ollama_exists; then
       echo "error: ollama service not deployed — './mc ollama up' first" >&2
       exit 1
     fi
-    compose_ro logs ${follow:+-f} --tail "${tail}" ollama
+    compose_ro logs --tail 100 "$@" ollama
     return
   fi
 
@@ -602,7 +582,7 @@ cmd_down() {
     # name, so the next deploy comes up as mission-control-1 and every URL, ACL
     # and bookmark points at the corpse. A plain `down` keeps the volume, so the
     # node returns intact and must NOT be logged out.
-    if ts_running; then
+    if svc_running tailscale; then
       echo "→ logging the node out of the tailnet (frees the MagicDNS name)"
       compose_ro exec -T tailscale tailscale logout >/dev/null 2>&1 || true
     fi

@@ -156,10 +156,10 @@ public class AgentMcpCatalogService {
   /**
    * Overlays the dashboard-owned catalog link onto each MCP entry the profile reports.
    *
-   * <p>Called from exactly one place — {@code AgentEndpoints.linked}, which every controller
-   * answering with a profile routes through. It used to be called from here as well, by the
-   * three catalog methods above, which meant the rule "a profile leaves the API enriched" had
-   * two homes and the template deploy route landed in neither.
+   * <p>Called by every controller that answers with a profile, and only by those — it used to
+   * be called from here as well, by the three catalog methods above, which meant the rule "a
+   * profile leaves the API enriched" had two homes and the template deploy route landed in
+   * neither.
    *
    * <p>Runs once per profile on every {@code /api/agents} listing, which the dashboard polls,
    * so it reads catalog rows through {@link McpRegistryService#definition} and never

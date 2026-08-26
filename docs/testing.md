@@ -173,7 +173,7 @@ deep-link assertions cannot run.
 Tagged `docker`, excluded from `mvn test`, and run as their own CI job:
 
 ```bash
-mvn test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true
+cd applications/mission-control-server && mvn test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true
 ```
 
 `ComposeStackDockerAcceptanceTest` exists because the mocked tier pins the argv Mission Control
