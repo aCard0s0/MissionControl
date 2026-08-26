@@ -200,7 +200,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
       }
     }
     dropStrandedLinks(host, profile, byAlias.keySet());
-    return copyWithMcp(profile, servers);
+    return profile.withMcp(servers);
   }
 
   /**
@@ -286,13 +286,5 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     String result = value == null ? "" : value.trim();
     if (!ALIAS.matcher(result).matches()) throw new IllegalArgumentException("invalid MCP alias");
     return result;
-  }
-
-  private static AgentProfileDto copyWithMcp(AgentProfileDto value, List<AgentMcpServerDto> mcp) {
-    return new AgentProfileDto(
-        value.id(), value.containerId(), value.name(), value.role(), value.state(), value.provider(),
-        value.model(), value.apiKeyMasked(), value.cwd(), value.soul(), value.memoryMd(),
-        value.configYaml(), value.skills(), List.copyOf(mcp), value.integrations(), value.gateway(),
-        value.lastActive());
   }
 }
