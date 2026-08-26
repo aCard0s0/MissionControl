@@ -199,10 +199,22 @@ public class HermesProfiles {
     writeProfileFile(host, containerId, name, "MEMORY.md", memory);
   }
 
+  /**
+   * Replaces one of a profile's documents.
+   *
+   * <p>Atomic, and taken under the profile's lock, because {@code config.yaml} arrives here
+   * whole from the editor while four other paths are reading it, changing one key, and writing
+   * it back. A non-atomic write also lets a reader see the file half-replaced — and a truncated
+   * {@code config.yaml} is not blank, so it slips past
+   * {@code AgentMcpCatalogService.dropStrandedLinks}' emptiness guard and reads as a profile
+   * whose MCP entries were all removed.
+   */
   private void writeProfileFile(
       DockerHostRef host, String containerId, String name, String fileName, String content) {
-    String path = files.requireProfileDir(host, containerId, name) + "/" + fileName;
-    files.writeFile(host, containerId, path, content == null ? "" : content);
+    files.serialized(containerId, name, () -> {
+      String path = files.requireProfileDir(host, containerId, name) + "/" + fileName;
+      files.writeFileAtomically(host, containerId, path, content == null ? "" : content);
+    });
   }
 
   public AgentProfileDto updateConfig(DockerHostRef host, String containerId, String name, String configYaml) {

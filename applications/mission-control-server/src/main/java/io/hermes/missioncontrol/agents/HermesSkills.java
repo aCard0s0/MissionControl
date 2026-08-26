@@ -63,30 +63,36 @@ class HermesSkills {
   // ── mutation ───────────────────────────────────────────────────────────────
 
   /** Adds or removes the skill from {@code skills.platform_disabled.cli}, leaving every
-   *  other key in the config — including ones Mission Control does not model — intact. */
+   *  other key in the config — including ones Mission Control does not model — intact.
+   *
+   *  <p>Serialized and written atomically for the reason given on
+   *  {@code HermesProfileMcp.rewriteConfig}: a toggle that read the file before another edit
+   *  landed would otherwise write that edit back out again. */
   void setEnabled(
       DockerHostRef host, String containerId, String profileName, String skillName, boolean enabled) {
     if (skillName == null || skillName.isBlank()) {
       throw new IllegalArgumentException("missing skill name");
     }
-    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
-    String configYaml = files.readFile(host, containerId, configPath);
-    Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
-    Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
-    root.put("skills", skills);
-    Map<Object, Object> platformDisabled = config.asMutableMap(skills.get("platform_disabled"));
-    skills.put("platform_disabled", platformDisabled);
-    List<Object> cliDisabled = YamlValues.asMutableList(platformDisabled.get(ProfilePaths.PLATFORM_CLI));
-    platformDisabled.put(ProfilePaths.PLATFORM_CLI, cliDisabled);
+    files.serialized(containerId, profileName, () -> {
+      String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+      String configYaml = files.readFile(host, containerId, configPath);
+      Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
+      Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
+      root.put("skills", skills);
+      Map<Object, Object> platformDisabled = config.asMutableMap(skills.get("platform_disabled"));
+      skills.put("platform_disabled", platformDisabled);
+      List<Object> cliDisabled = YamlValues.asMutableList(platformDisabled.get(ProfilePaths.PLATFORM_CLI));
+      platformDisabled.put(ProfilePaths.PLATFORM_CLI, cliDisabled);
 
-    if (enabled) {
-      cliDisabled.removeIf(x -> skillName.equals(YamlValues.stringValue(x)));
-    } else {
-      boolean present = cliDisabled.stream().anyMatch(x -> skillName.equals(YamlValues.stringValue(x)));
-      if (!present) cliDisabled.add(skillName);
-    }
+      if (enabled) {
+        cliDisabled.removeIf(x -> skillName.equals(YamlValues.stringValue(x)));
+      } else {
+        boolean present = cliDisabled.stream().anyMatch(x -> skillName.equals(YamlValues.stringValue(x)));
+        if (!present) cliDisabled.add(skillName);
+      }
 
-    files.writeFile(host, containerId, configPath, YamlValues.dump(root));
+      files.writeFileAtomically(host, containerId, configPath, YamlValues.dump(root));
+    });
   }
 
   void install(DockerHostRef host, String containerId, String profileName, String skillId) {

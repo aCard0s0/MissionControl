@@ -115,17 +115,22 @@ class HermesProfileMcp implements ContainerIdListener {
 
   /** The one shape every edit takes: read, rewrite, drop the stale probes, write atomically.
    *  The cache is cleared before the write so a concurrent listing cannot re-cache a probe
-   *  taken against the definition that is being replaced. */
+   *  taken against the definition that is being replaced.
+   *
+   *  <p>Serialized because the read and the write are separate execs: another edit landing
+   *  between them is discarded by this one, silently and with both requests reporting success. */
   private void rewriteConfig(
       DockerHostRef host, String containerId, String profileName, List<String> invalidate,
       ConfigRewrite rewrite) {
-    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
-    String configYaml = files.readFile(host, containerId, configPath);
-    String updated = rewrite.apply(configYaml, configPath);
-    for (String name : invalidate) {
-      probeCache.remove(new CacheKey(host, containerId, profileName, name));
-    }
-    files.writeFileAtomically(host, containerId, configPath, updated);
+    files.serialized(containerId, profileName, () -> {
+      String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+      String configYaml = files.readFile(host, containerId, configPath);
+      String updated = rewrite.apply(configYaml, configPath);
+      for (String name : invalidate) {
+        probeCache.remove(new CacheKey(host, containerId, profileName, name));
+      }
+      files.writeFileAtomically(host, containerId, configPath, updated);
+    });
   }
 
   @FunctionalInterface

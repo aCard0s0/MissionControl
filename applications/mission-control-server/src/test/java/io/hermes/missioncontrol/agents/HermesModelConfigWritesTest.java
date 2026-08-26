@@ -40,7 +40,7 @@ class HermesModelConfigWritesTest {
 
   @BeforeEach
   void setUp() {
-    files = mock(HermesContainerFiles.class);
+    files = AgentsWiring.mockFiles();
     env = mock(HermesEnvFile.class);
     modelConfig = new HermesModelConfig(files, new HermesCli(files), env);
   }

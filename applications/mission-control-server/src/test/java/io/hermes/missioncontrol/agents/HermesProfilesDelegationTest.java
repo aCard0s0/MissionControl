@@ -55,7 +55,7 @@ class HermesProfilesDelegationTest {
 
   @BeforeEach
   void setUp() {
-    files = mock(HermesContainerFiles.class);
+    files = AgentsWiring.mockFiles();
     env = mock(HermesEnvFile.class);
     modelConfig = mock(HermesModelConfig.class);
     skills = mock(HermesSkills.class);
@@ -149,9 +149,10 @@ class HermesProfilesDelegationTest {
     profiles.updateSoul(HOST, CONTAINER, PROFILE, "be useful");
     profiles.updateMemory(HOST, CONTAINER, PROFILE, null);
 
-    verify(files).writeFile(HOST, CONTAINER, DIR + "/SOUL.md", "be useful");
+    // atomic: a reader must see the old document or the new one, never a half-written file
+    verify(files).writeFileAtomically(HOST, CONTAINER, DIR + "/SOUL.md", "be useful");
     // a null document is written as empty rather than as the string "null"
-    verify(files).writeFile(HOST, CONTAINER, DIR + "/MEMORY.md", "");
+    verify(files).writeFileAtomically(HOST, CONTAINER, DIR + "/MEMORY.md", "");
   }
 
   @Test
@@ -160,14 +161,16 @@ class HermesProfilesDelegationTest {
         assertThrows(IllegalArgumentException.class,
             () -> profiles.updateConfig(HOST, CONTAINER, PROFILE, "- a list\n")).getMessage());
 
-    verify(files, never()).writeFile(any(), anyString(), anyString(), anyString());
+    verify(files, never()).writeFileAtomically(any(), anyString(), anyString(), anyString());
   }
 
   @Test
   void aValidConfigIsWrittenAndTheProfileIsReadBack() {
     AgentProfileDto updated = profiles.updateConfig(HOST, CONTAINER, PROFILE, "model: opus\n");
 
-    verify(files).writeFile(HOST, CONTAINER, DIR + "/config.yaml", "model: opus\n");
+    // config.yaml has five editors; a torn read of it is not blank, so it slips past the
+    // emptiness guard that stops the agents poll dropping a profile's catalog links
+    verify(files).writeFileAtomically(HOST, CONTAINER, DIR + "/config.yaml", "model: opus\n");
     assertEquals(PROFILE, updated.name(), "the caller gets the state after the write");
   }
 

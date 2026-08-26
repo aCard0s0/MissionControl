@@ -5,7 +5,11 @@ import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,8 +27,58 @@ class HermesContainerFiles {
 
   private final DockerExecService dockerExec;
 
+  /**
+   * One lock per profile, for the edits that read a file, change it here, and write it back.
+   *
+   * <p>{@link #writeFileAtomically} makes a <em>reader</em> see one version or the other. It says
+   * nothing about two writers: five paths read {@code config.yaml} into the JVM and write it back
+   * — the MCP entries, the webhooks, the skill toggles, the config editor and the model settings
+   * — and without this the later write silently discards whatever the earlier one added, with
+   * both requests reporting success. The one that made this worth finding: the Agent layer
+   * disables an MCP entry, verifies it, drops the link row, and a skill toggle that had read the
+   * file first then puts the entry back — leaving an enabled entry pointing at a catalog server
+   * that no longer exists, and no link row saying where it came from.
+   *
+   * <p>Reentrant because these paths nest: a create writes the model config inside a flow that
+   * already holds the profile.
+   *
+   * <p>Bounded by the number of profiles this dashboard has touched, which is the same order as
+   * the containers it manages.
+   *
+   * <p>ponytail: one JVM. A second dashboard against the same daemon, or an edit made by
+   * {@code hermes} inside the container, is outside this lock — that needs a version check on the
+   * file itself (write only if the content still hashes to what was read), which is worth doing
+   * the day a second writer exists.
+   */
+  private final Map<String, ReentrantLock> profileLocks = new ConcurrentHashMap<>();
+
   HermesContainerFiles(DockerExecService dockerExec) {
     this.dockerExec = dockerExec;
+  }
+
+  /**
+   * Runs a profile's read-modify-write with no other one interleaving.
+   *
+   * <p>Held here rather than in each of the five callers because this class is already the single
+   * seam they all reach the container through, and a lock per caller is not a lock.
+   */
+  <T> T serialized(String containerId, String profileName, Supplier<T> work) {
+    ReentrantLock lock = profileLocks.computeIfAbsent(
+        containerId + "/" + profileName, ignored -> new ReentrantLock());
+    lock.lock();
+    try {
+      return work.get();
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  /** {@link #serialized} for an edit with nothing to hand back. */
+  void serialized(String containerId, String profileName, Runnable work) {
+    serialized(containerId, profileName, () -> {
+      work.run();
+      return null;
+    });
   }
 
   ExecResult exec(DockerHostRef host, String containerId, List<String> command) {
