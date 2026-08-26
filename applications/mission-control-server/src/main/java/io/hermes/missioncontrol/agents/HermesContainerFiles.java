@@ -4,8 +4,16 @@ import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,8 +31,58 @@ class HermesContainerFiles {
 
   private final DockerExecService dockerExec;
 
+  /**
+   * One lock per profile, for the edits that read a file, change it here, and write it back.
+   *
+   * <p>{@link #writeFileAtomically} makes a <em>reader</em> see one version or the other. It says
+   * nothing about two writers: five paths read {@code config.yaml} into the JVM and write it back
+   * — the MCP entries, the webhooks, the skill toggles, the config editor and the model settings
+   * — and without this the later write silently discards whatever the earlier one added, with
+   * both requests reporting success. The one that made this worth finding: the Agent layer
+   * disables an MCP entry, verifies it, drops the link row, and a skill toggle that had read the
+   * file first then puts the entry back — leaving an enabled entry pointing at a catalog server
+   * that no longer exists, and no link row saying where it came from.
+   *
+   * <p>Reentrant because these paths nest: a create writes the model config inside a flow that
+   * already holds the profile.
+   *
+   * <p>Bounded by the number of profiles this dashboard has touched, which is the same order as
+   * the containers it manages.
+   *
+   * <p>ponytail: one JVM. A second dashboard against the same daemon, or an edit made by
+   * {@code hermes} inside the container, is outside this lock — that needs a version check on the
+   * file itself (write only if the content still hashes to what was read), which is worth doing
+   * the day a second writer exists.
+   */
+  private final Map<String, ReentrantLock> profileLocks = new ConcurrentHashMap<>();
+
   HermesContainerFiles(DockerExecService dockerExec) {
     this.dockerExec = dockerExec;
+  }
+
+  /**
+   * Runs a profile's read-modify-write with no other one interleaving.
+   *
+   * <p>Held here rather than in each of the five callers because this class is already the single
+   * seam they all reach the container through, and a lock per caller is not a lock.
+   */
+  <T> T serialized(String containerId, String profileName, Supplier<T> work) {
+    ReentrantLock lock = profileLocks.computeIfAbsent(
+        containerId + "/" + profileName, ignored -> new ReentrantLock());
+    lock.lock();
+    try {
+      return work.get();
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  /** {@link #serialized} for an edit with nothing to hand back. */
+  void serialized(String containerId, String profileName, Runnable work) {
+    serialized(containerId, profileName, () -> {
+      work.run();
+      return null;
+    });
   }
 
   ExecResult exec(DockerHostRef host, String containerId, List<String> command) {
@@ -60,6 +118,47 @@ class HermesContainerFiles {
     ExecResult result =
         exec(host, containerId, List.of("sh", "-lc", "cat \"$1\" 2>/dev/null || true", "_", path));
     return result.stdout();
+  }
+
+  /**
+   * {@link #readFile} for several paths at once, in one exec.
+   *
+   * <p>The agents listing is the reason. It reads four documents per profile and one SKILL.md
+   * per skill, inside a loop over every profile in the container, on a twelve-second poll: a
+   * container with three profiles and the bundled skill set was spending around ninety-six exec
+   * round trips per poll, each one creating and inspecting an exec inside the container, on the
+   * same daemon the ten-second fleet poll and the three-second stats poll are using.
+   *
+   * <p>Framed with a marker carrying a nonce minted for this call, so a file cannot contain its
+   * own delimiter — SKILL.md and MEMORY.md are written by agents, and a fixed sentinel would be
+   * a matter of time. Paths travel as argv, never interpolated into the script, which is the
+   * rule this class exists to hold.
+   *
+   * <p>Absent files answer empty, exactly as {@link #readFile} does and for the same reason: a
+   * profile legitimately has no MEMORY.md, no .env and no gateway_state.json.
+   */
+  Map<String, String> readFiles(DockerHostRef host, String containerId, List<String> paths) {
+    Map<String, String> contents = new LinkedHashMap<>();
+    if (paths.isEmpty()) return contents;
+    for (String path : paths) contents.put(path, "");
+
+    String marker = "==mission-control-" + UUID.randomUUID() + "==";
+    List<String> command = new ArrayList<>(List.of("sh", "-lc",
+        "marker=\"$1\"; shift;"
+            + " for f in \"$@\"; do printf '%s%s\\n' \"$marker\" \"$f\";"
+            + " cat \"$f\" 2>/dev/null || true; done",
+        "_", marker));
+    command.addAll(paths);
+
+    String stdout = exec(host, containerId, command).stdout();
+    for (String chunk : stdout.split(Pattern.quote(marker))) {
+      int newline = chunk.indexOf('\n');
+      if (newline < 0) continue;   // the empty head before the first marker
+      String path = chunk.substring(0, newline);
+      // only what was asked for: `ls`-style surprises in the output cannot invent a key
+      if (contents.containsKey(path)) contents.put(path, chunk.substring(newline + 1));
+    }
+    return contents;
   }
 
   void writeFile(DockerHostRef host, String containerId, String path, String content) {

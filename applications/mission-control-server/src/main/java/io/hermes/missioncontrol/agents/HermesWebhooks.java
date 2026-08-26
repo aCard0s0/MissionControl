@@ -119,12 +119,16 @@ public class HermesWebhooks {
     return list(host, containerId, profileName);
   }
 
+  /** Serialized for the reason given on {@code HermesProfileMcp.rewriteConfig}: the read and the
+   *  write are separate execs, and this file has four other editors. */
   private void rewriteConfig(
       DockerHostRef host, String containerId, String profileName, ConfigRewrite rewrite) {
-    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
-    String configYaml = files.readFile(host, containerId, configPath);
-    files.writeFileAtomically(
-        host, containerId, configPath, rewrite.apply(configYaml, configPath));
+    files.serialized(containerId, profileName, () -> {
+      String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+      String configYaml = files.readFile(host, containerId, configPath);
+      files.writeFileAtomically(
+          host, containerId, configPath, rewrite.apply(configYaml, configPath));
+    });
   }
 
   @FunctionalInterface

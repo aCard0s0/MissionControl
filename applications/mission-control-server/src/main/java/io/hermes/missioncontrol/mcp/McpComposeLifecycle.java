@@ -212,9 +212,12 @@ class McpComposeLifecycle {
     }
   }
 
-  /** Drops a volume kept behind when its server was deleted. */
-  void purgeVolume(String hostId, String volumeName) {
-    compose.purgeVolume(hostId, volumeName);
+  /** Drops a volume kept behind when its server was deleted.
+   *
+   *  @return false when the daemon no longer has it, which is not a failure — the volume the
+   *      caller wanted gone is gone */
+  boolean purgeVolume(String hostId, String volumeName) {
+    return compose.purgeVolume(hostId, volumeName);
   }
 
   /** Re-renders every managed record on a host: Compose owns whole files, so one record's
@@ -235,15 +238,59 @@ class McpComposeLifecycle {
   }
 
   /**
+   * {@link #refreshRuntime(ServerRow)} for a whole listing, at two daemon reads per host rather
+   * than two per row.
+   *
+   * <p>The per-row version forks {@code docker compose ps} under the host's compose lock and
+   * then lists every container on the daemon, to read one status string. Mapping a listing
+   * through it meant eight managed servers cost eight forks and eight full listings, taking a
+   * lock that a start or a stop holds for as long as its image pull — so the page waited on the
+   * operation, and the operation was slowed by the page.
+   *
+   * <p>Rows this cannot speak for — not managed, or mid-operation — are passed through
+   * untouched, exactly as the per-row version leaves them.
+   */
+  List<ServerRow> refreshRuntime(List<ServerRow> rows) {
+    Map<String, List<ServerRow>> byHost = new LinkedHashMap<>();
+    for (ServerRow row : rows) {
+      if (refreshable(row)) byHost.computeIfAbsent(row.hostId(), ignored -> new ArrayList<>()).add(row);
+    }
+
+    Map<String, ServerRow> refreshed = new LinkedHashMap<>();
+    for (Map.Entry<String, List<ServerRow>> host : byHost.entrySet()) {
+      try {
+        Map<String, String> containerIds = compose.containerIdsByService(host.getKey());
+        Map<String, String> statuses = new LinkedHashMap<>();
+        for (ContainerDto container : docker.listContainers(hosts.ref(host.getKey()), true)) {
+          statuses.put(container.id(), container.status());
+        }
+        for (ServerRow row : host.getValue()) {
+          String containerId = containerIds.get(row.serviceKey());
+          McpRuntimeState runtime = containerId == null
+              ? McpRuntimeState.MISSING
+              : McpRuntimeState.fromContainerStatus(statuses.get(containerId));
+          if (!runtime.wire().equals(row.runtimeState())) {
+            repository.updateRuntime(row.id(), runtime.wire());
+            refreshed.put(row.id(), requireRow(row.id()));
+          }
+        }
+      } catch (RuntimeException e) {
+        // as in the per-row version: inventory is best-effort, and a daemon that cannot be
+        // reached must degrade one host's rows rather than fail the whole catalog GET
+        log.debug("could not refresh managed MCP runtime state on {}: {}", host.getKey(), e.toString());
+      }
+    }
+    return rows.stream().map(row -> refreshed.getOrDefault(row.id(), row)).toList();
+  }
+
+  /**
    * Reconciles the recorded runtime state with what the daemon actually reports.
    *
    * <p>Only while no operation is in flight: a record mid-{@code starting} has a Compose run
    * writing its state, and a read must not race it.
    */
   ServerRow refreshRuntime(ServerRow row) {
-    if (!"managed".equals(row.kind()) || !McpOperationState.settled(row.operationState())) {
-      return row;
-    }
+    if (!refreshable(row)) return row;
     try {
       String containerId = compose.serviceContainerId(row.hostId(), row.serviceKey());
       McpRuntimeState runtime = McpRuntimeState.MISSING;
@@ -264,6 +311,12 @@ class McpComposeLifecycle {
       log.debug("could not refresh managed MCP runtime state for {}: {}", row.id(), e.toString());
     }
     return row;
+  }
+
+  /** Whether the daemon has anything to say about this row: only a managed one, and only while
+   *  no Compose run of its own is writing its state. */
+  private static boolean refreshable(ServerRow row) {
+    return "managed".equals(row.kind()) && McpOperationState.settled(row.operationState());
   }
 
   private void fail(String id, Exception error) {

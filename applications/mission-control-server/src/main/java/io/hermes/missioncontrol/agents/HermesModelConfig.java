@@ -75,13 +75,18 @@ class HermesModelConfig {
    *  full reset is the only way to guarantee no leak.) */
   void write(DockerHostRef host, String containerId, String name,
       String provider, String model, String baseUrl, ModelTarget auxiliary) {
-    for (String[] kv : modelConfigEntries(provider, model, baseUrl)) {
-      setConfig(host, containerId, name, kv[0], kv[1]);
-    }
-    for (String[] kv : auxiliaryConfigEntries(
-        auxiliary.provider(), auxiliary.model(), auxiliary.baseUrl())) {
-      setConfig(host, containerId, name, kv[0], kv[1]);
-    }
+    // taken under the profile's lock as one unit: the wipe-then-rebuild above is only safe
+    // while nothing else is reading config.yaml to write it back, and one of these sets
+    // deliberately leaves the file with `model: ""` for the next set to build back up
+    files.serialized(containerId, name, () -> {
+      for (String[] kv : modelConfigEntries(provider, model, baseUrl)) {
+        setConfig(host, containerId, name, kv[0], kv[1]);
+      }
+      for (String[] kv : auxiliaryConfigEntries(
+          auxiliary.provider(), auxiliary.model(), auxiliary.baseUrl())) {
+        setConfig(host, containerId, name, kv[0], kv[1]);
+      }
+    });
   }
 
   /** Writes the profile's own API key, when the chosen provider takes one and the

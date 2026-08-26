@@ -242,8 +242,7 @@ class McpRegistryLifecycleTest {
         () -> service.start(id),
         () -> service.stop(id),
         () -> service.apply(id),
-        () -> service.delete(id),
-        () -> service.assertDeletable(id))) {
+        () -> service.claimForDeletion(id))) {
       assertEquals("an MCP server operation is already in progress",
           assertThrows(ResourceConflictException.class, mutation::run).getMessage());
     }
@@ -254,7 +253,8 @@ class McpRegistryLifecycleTest {
     String id = service.create(managed("Files", "dh-local")).id();
     repository.beginOperation(id, "stopped", "error");
 
-    service.assertDeletable(id);
+    service.claimForDeletion(id);
+    service.releaseClaim(id);
     assertEquals(2, service.update(id, managed("Files renamed", "dh-local")).revision());
   }
 
@@ -298,6 +298,46 @@ class McpRegistryLifecycleTest {
     assertEquals(0, operations.queued());
   }
 
+  @Test
+  void aSaveOfARevisionSomethingElseHasAlreadyMovedPastIsRefused() throws Exception {
+    // both editors opened revision 1. Without the guard the second save lands on top of the
+    // first, the first operator's edit is gone, and both requests reported success.
+    //
+    // The competing write is made from inside the repository, between the read this update took
+    // and the write it is about to make — which is the window, and the only place a test can
+    // stand in it without two threads and a timing assumption.
+    McpServerRepository racing = new McpServerRepository(database.jdbc()) {
+      private boolean raced;
+
+      @Override
+      boolean updateDefinition(String id, String name, String description, String configJson,
+          long revision, long appliedRevision, String operationState, long expectedRevision) {
+        if (!raced) {
+          raced = true;
+          // the other editor's save lands first, taking revision 1 to 2
+          super.updateDefinition(id, "Saved by someone else", description, configJson,
+              expectedRevision + 1, appliedRevision, operationState, expectedRevision);
+        }
+        return super.updateDefinition(id, name, description, configJson, revision,
+            appliedRevision, operationState, expectedRevision);
+      }
+    };
+    McpWiring.Graph raced = McpWiring.graph(racing, retained, links, hosts,
+        mock(DockerGateway.class), compose, LIVE_MODE, new QueuedOperations());
+    try {
+      String id = raced.service().create(external("Remote docs")).id();
+
+      assertEquals(
+          "the MCP server changed while this edit was open; reload it and apply the change again",
+          assertThrows(ResourceConflictException.class,
+              () -> raced.service().update(id, external("My version"))).getMessage());
+      // the winner's save is intact, and the loser was told rather than silently discarded
+      assertEquals("Saved by someone else", raced.service().definition(id).name());
+    } finally {
+      raced.close();
+    }
+  }
+
   // ── delete ──────────────────────────────────────────────────────────────
 
   @Test
@@ -307,10 +347,10 @@ class McpRegistryLifecycleTest {
     settle(managed);
     operations.clear();
 
-    service.delete(external);
+    deleteThroughClaim(external);
     assertTrue(repository.findById(external).isEmpty());
 
-    service.delete(managed);
+    deleteThroughClaim(managed);
     // the row survives until its containers and volumes are gone, carrying the operation state
     assertEquals("deleting", row(managed).operationState());
     assertEquals("stopped", row(managed).desiredState());
@@ -324,19 +364,59 @@ class McpRegistryLifecycleTest {
     links.upsert(new AgentMcpLink("dh-local", "container", "default", "docs", id, 1, 0, 0));
 
     assertEquals("the MCP server is still linked to one or more Agents; disable and unlink them, then retry",
-        assertThrows(ResourceConflictException.class, () -> service.delete(id)).getMessage());
+        assertThrows(ResourceConflictException.class, () -> deleteThroughClaim(id)).getMessage());
     assertTrue(repository.findById(id).isPresent());
+    // the refusal has to hand the claim back, or the record it declined to delete is stuck
+    // in `deleting` and every later request is refused because one apparently is in flight
+    assertEquals("idle", row(id).operationState());
   }
 
   @Test
-  void assertDeletableAnswersBeforeAnyAgentIsTouched() {
-    // the Agent layer asks first, because disabling and unlinking every copy is not undone if
-    // the delete then refuses
+  void theRecordIsClaimedBeforeAnyAgentIsTouched() {
+    // the Agent layer claims first, because disabling and unlinking every copy is not undone
+    // if the delete then refuses
     String id = service.create(managed("Files", "dh-local")).id();
     settle(id);
 
-    service.assertDeletable(id);
-    assertThrows(NoSuchElementException.class, () -> service.assertDeletable("mcp-nope"));
+    service.claimForDeletion(id);
+    assertEquals("deleting", row(id).operationState());
+    assertThrows(NoSuchElementException.class, () -> service.claimForDeletion("mcp-nope"));
+  }
+
+  @Test
+  void aClaimedDeletionRefusesTheStartThatUsedToSlipInBehindIt() {
+    // this is the whole reason the claim replaced a check. The Agent layer spends the window
+    // between claiming and completing rewriting config.yaml on every linked Agent — one docker
+    // exec each — and a start admitted in that window made the delete refuse AFTER those Agents
+    // had been severed, with the link rows recording where their entries came from gone too.
+    String id = service.create(managed("Files", "dh-local")).id();
+    settle(id);
+    service.claimForDeletion(id);
+    operations.clear();
+
+    for (Runnable racing : List.of(
+        (Runnable) () -> service.start(id),
+        () -> service.stop(id),
+        () -> service.apply(id),
+        () -> service.claimForDeletion(id))) {
+      assertEquals("an MCP server operation is already in progress",
+          assertThrows(ResourceConflictException.class, racing::run).getMessage());
+    }
+    assertEquals("deleting", row(id).operationState());
+    assertEquals(0, operations.queued(), "nothing may be queued against a claimed record");
+  }
+
+  @Test
+  void twoSavesOfTheSameRevisionCannotOverwriteEachOtherSilently() {
+    // both editors opened revision 1. Without the guard the second save lands on top of the
+    // first, the first operator's edit is gone, and both requests reported success.
+    String id = service.create(external("Remote docs")).id();
+    assertEquals(2, service.update(id, external("Remote docs renamed")).revision());
+
+    // the stale write carries revision 1, which is no longer what the row holds
+    repository.updateDefinition(id, "stale", "d", "{}", 2L, 2L, "idle", 1L);
+
+    assertEquals("Remote docs renamed", service.definition(id).name());
   }
 
   // ── reads ───────────────────────────────────────────────────────────────
@@ -376,7 +456,7 @@ class McpRegistryLifecycleTest {
         (Runnable) () -> service.definition("mcp-nope"),
         () -> service.live("mcp-nope"),
         () -> service.update("mcp-nope", external("Remote docs")),
-        () -> service.delete("mcp-nope"),
+        () -> service.claimForDeletion("mcp-nope"),
         () -> service.start("mcp-nope"),
         () -> service.stop("mcp-nope"),
         () -> service.apply("mcp-nope"),
@@ -408,6 +488,7 @@ class McpRegistryLifecycleTest {
     // operator says otherwise
     retained.retain("mcp-gone", "Files", "dh-local", "mission-control-mcp-files-data");
     RetainedResourceDto resource = service.retainedResources().getFirst();
+    when(compose.purgeVolume("dh-local", "mission-control-mcp-files-data")).thenReturn(true);
 
     assertEquals("mission-control-mcp-files-data", service.retainedResource(resource.id()).name());
 
@@ -416,6 +497,20 @@ class McpRegistryLifecycleTest {
     verify(compose).purgeVolume("dh-local", "mission-control-mcp-files-data");
     assertTrue(service.retainedResources().isEmpty());
     assertThrows(NoSuchElementException.class, () -> service.retainedResource(resource.id()));
+  }
+
+  @Test
+  void aRetainedVolumeTheDaemonNoLongerHasStillLosesItsRow() {
+    // the operator removed it with `docker volume rm`. This used to answer 500 with no detail
+    // and leave the row in place, so the inventory went on listing a volume that did not exist
+    // and every retry took the same path — there was no way to clear it
+    retained.retain("mcp-gone", "Files", "dh-local", "mission-control-mcp-files-data");
+    RetainedResourceDto resource = service.retainedResources().getFirst();
+    when(compose.purgeVolume("dh-local", "mission-control-mcp-files-data")).thenReturn(false);
+
+    service.purgeRetainedResource(resource.id());
+
+    assertTrue(service.retainedResources().isEmpty());
   }
 
   // ── startup ─────────────────────────────────────────────────────────────
@@ -461,6 +556,12 @@ class McpRegistryLifecycleTest {
   }
 
   /** Marks the record's queued operation as finished, without doing it. */
+  /** A delete as {@code McpServerDeletion} drives one: claim the record, then finish it. */
+  private McpServerDto deleteThroughClaim(String id) {
+    service.claimForDeletion(id);
+    return service.completeDeletion(id);
+  }
+
   private void settle(String id) {
     repository.beginOperation(id, row(id).desiredState(), "idle");
   }
@@ -615,7 +716,7 @@ class McpRegistryLifecycleTest {
   void aQueuedDeleteRemovesTheRecordOnceItsStackIsTornDown() {
     String id = service.create(managed("Files", "dh-local")).id();
     operations.runAll();
-    service.delete(id);
+    deleteThroughClaim(id);
 
     operations.runAll();
 

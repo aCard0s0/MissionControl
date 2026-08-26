@@ -130,6 +130,12 @@ class ComposeStackDockerAcceptanceTest {
     assertEquals("idle", row().operationState(), failureOf());
     assertTrue(isRunning(), "the service did not come up");
 
+    // 2a. the batched lookup the catalog listing reads runtime state through. Everything else
+    //     substitutes the CLI, so this is the only thing that can say whether the daemon
+    //     accepts the --format template and prints the tab-separated pair it is asked for
+    assertEquals(containerId(), compose.containerIdsByService(HOST).get(serviceKey),
+        "the batched service lookup did not find the container compose ps reports");
+
     // 3. stop, with the grace timeout the code passes
     lifecycle.runStop("mcp-it");
     assertEquals("idle", row().operationState(), failureOf());

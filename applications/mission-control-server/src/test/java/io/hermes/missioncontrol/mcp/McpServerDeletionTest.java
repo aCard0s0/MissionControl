@@ -23,6 +23,10 @@ import org.mockito.InOrder;
  *
  * <p>This used to be asserted through MockMvc against {@code McpServersController}, because
  * the protocol was three statements in that controller's handler.
+ *
+ * <p>The first step is a claim and not a question, so the record is held for the whole time the
+ * listeners take. Every path out that is not a completed deletion has to give it back, or one
+ * failed delete leaves the record stuck in {@code deleting} with nothing left to drive it out.
  */
 class McpServerDeletionTest {
 
@@ -39,9 +43,9 @@ class McpServerDeletionTest {
 
   @Test
   void aRefusedDeletionReleasesNothingAndDropsNoRow() {
-    // a server mid-operation cannot be deleted
+    // a server mid-operation cannot be claimed for deletion
     doThrow(new ResourceConflictException("an MCP server operation is already in progress"))
-        .when(registry).assertDeletable("mcp-1");
+        .when(registry).claimForDeletion("mcp-1");
 
     assertEquals("an MCP server operation is already in progress",
         assertThrows(ResourceConflictException.class, () -> deletion.delete("mcp-1")).getMessage());
@@ -50,19 +54,23 @@ class McpServerDeletionTest {
     // the link rows, and nothing puts them back. Running it before the refusal is ruled out
     // means a rejected request still destroyed the caller's setup.
     verifyNoInteractions(listener);
-    verify(registry, never()).delete(anyString());
+    verify(registry, never()).completeDeletion(anyString());
+    // nothing was taken, so there is nothing to hand back
+    verify(registry, never()).releaseClaim(anyString());
   }
 
   @Test
-  void referencesAreReleasedOnlyAfterTheRegistryHasAuthorisedTheDeletion() {
-    when(registry.delete("mcp-1")).thenReturn(mock(McpServerDto.class));
+  void referencesAreReleasedOnlyAfterTheRegistryHasClaimedTheRecordForDeletion() {
+    when(registry.completeDeletion("mcp-1")).thenReturn(mock(McpServerDto.class));
 
     deletion.delete("mcp-1");
 
     InOrder order = inOrder(registry, listener);
-    order.verify(registry).assertDeletable("mcp-1");
+    order.verify(registry).claimForDeletion("mcp-1");
     order.verify(listener).beforeServerDeleted("mcp-1");
-    order.verify(registry).delete("mcp-1");
+    order.verify(registry).completeDeletion("mcp-1");
+    // the claim is consumed by the deletion, not handed back
+    verify(registry, never()).releaseClaim(anyString());
   }
 
   @Test
@@ -73,6 +81,21 @@ class McpServerDeletionTest {
 
     assertThrows(ResourceConflictException.class, () -> deletion.delete("mcp-1"));
 
-    verify(registry, never()).delete(anyString());
+    verify(registry, never()).completeDeletion(anyString());
+  }
+
+  @Test
+  void aListenerThatCannotFinishHandsTheClaimBack() {
+    doThrow(new ResourceConflictException("could not disable MCP entry tools"))
+        .when(listener).beforeServerDeleted("mcp-1");
+
+    assertThrows(ResourceConflictException.class, () -> deletion.delete("mcp-1"));
+
+    // without this the record stays in `deleting` forever: no operation is running to finish
+    // it, and every later request is refused because one apparently already is
+    InOrder order = inOrder(registry, listener);
+    order.verify(registry).claimForDeletion("mcp-1");
+    order.verify(listener).beforeServerDeleted("mcp-1");
+    order.verify(registry).releaseClaim("mcp-1");
   }
 }

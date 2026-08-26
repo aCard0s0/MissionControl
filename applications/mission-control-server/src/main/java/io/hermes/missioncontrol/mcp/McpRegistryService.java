@@ -13,6 +13,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -39,6 +41,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class McpRegistryService {
+
+  private static final Logger log = LoggerFactory.getLogger(McpRegistryService.class);
 
   private final McpServerRepository repository;
   private final RetainedResourceRepository retained;
@@ -73,9 +77,15 @@ public class McpRegistryService {
 
   // ── reads ──────────────────────────────────────────────────────────────────
 
+  /**
+   * The whole catalog, with managed runtime state refreshed first.
+   *
+   * <p>The refresh is handed the rows together rather than mapped over one at a time: per row it
+   * costs a {@code docker compose ps} fork under the host's compose lock plus a full container
+   * listing, and per host it costs one of each.
+   */
   public List<McpServerDto> list() {
-    return repository.findAll().stream()
-        .map(lifecycle::refreshRuntime)
+    return lifecycle.refreshRuntime(repository.findAll()).stream()
         .map(mapper::toDto)
         .toList();
   }
@@ -153,6 +163,9 @@ public class McpRegistryService {
     ServerRow existing = requireRow(id);
     ensureIdle(existing);
     Validated validated = McpRequestValidator.validate(request);
+    // the definition write below is guarded on `existing.revision()`, so this check is only
+    // here to answer a mid-operation record with the message it expects rather than the
+    // stale-revision one
     if (!existing.kind().equals(validated.kind())) {
       throw new IllegalArgumentException("kind is immutable; create a new catalog record instead");
     }
@@ -170,34 +183,58 @@ public class McpRegistryService {
     boolean recreateStopped = "managed".equals(existing.kind())
         && "stopped".equals(existing.desiredState());
     long applied = "managed".equals(existing.kind()) ? existing.appliedRevision() : revision;
-    repository.updateDefinition(id, validated.name(), validated.description(), configs.write(config),
-        revision, applied,
-        (recreateStopped ? McpOperationState.APPLYING : McpOperationState.IDLE).wire());
+    boolean written = repository.updateDefinition(
+        id, validated.name(), validated.description(), configs.write(config), revision, applied,
+        (recreateStopped ? McpOperationState.APPLYING : McpOperationState.IDLE).wire(),
+        existing.revision());
+    if (!written) {
+      throw new ResourceConflictException(
+          "the MCP server changed while this edit was open; reload it and apply the change again");
+    }
     if (recreateStopped) lifecycle.submit(id, () -> lifecycle.provisionStopped(id));
     return live(id);
   }
 
   /**
-   * Every reason this record could refuse to be deleted, except for the links that the
-   * caller is about to remove itself.
+   * Takes the record out of circulation for a deletion that is about to start.
    *
-   * <p>Exists so the Agent integration layer can be asked for permission before it starts
-   * disabling and unlinking Agent copies. That step rewrites {@code config.yaml} on every
-   * Agent holding the server and drops the link rows, none of which is undone if
-   * {@link #delete} then refuses — so it must not run before the refusal is ruled out.
+   * <p>Exists so the Agent integration layer can be given permission before it starts disabling
+   * and unlinking Agent copies. That step rewrites {@code config.yaml} on every Agent holding the
+   * server and drops the link rows, none of which is undone if {@link #completeDeletion} then
+   * refuses — so it must not run before the refusal is ruled out.
+   *
+   * <p>A claim rather than the question this used to ask. Answering "yes, currently" left the
+   * record free for the whole time the listeners took, and a {@code start} arriving in that
+   * window made the deletion refuse after the Agents had already been severed — the exact
+   * outcome the ordering exists to prevent, which ordering alone cannot reach. Every caller that
+   * takes one owes a {@link #releaseClaim} on any path that does not go through to
+   * {@link #completeDeletion}.
    */
-  public void assertDeletable(String id) {
-    ensureIdle(requireRow(id));
+  public void claimForDeletion(String id) {
+    ServerRow row = requireRow(id);
+    if (!repository.claimOperation(id, row.desiredState(), McpOperationState.DELETING.wire())) {
+      throw new ResourceConflictException("an MCP server operation is already in progress");
+    }
+  }
+
+  /** Hands back a claim whose deletion did not go ahead, so the record is usable again. */
+  public void releaseClaim(String id) {
+    repository.releaseOperation(id);
   }
 
   /**
-   * Starts managed deletion asynchronously. Linked Agent entries must first be
-   * disabled and unlinked by the Agent integration layer, preventing silent loss.
+   * Finishes a deletion the caller already holds the claim for: managed records asynchronously,
+   * everything else by dropping the row. Linked Agent entries must first be disabled and unlinked
+   * by the Agent integration layer, preventing silent loss.
+   *
+   * <p>Does not re-check that the record is settled — it is {@code deleting}, because this
+   * caller put it there. The link guard is what can still refuse, and it releases the claim
+   * before it does.
    */
-  public McpServerDto delete(String id) {
+  public McpServerDto completeDeletion(String id) {
     ServerRow row = requireRow(id);
-    ensureIdle(row);
     if (!links.findByServer(id).isEmpty()) {
+      releaseClaim(id);
       throw new ResourceConflictException(
           "the MCP server is still linked to one or more Agents; disable and unlink them, then retry");
     }
@@ -205,7 +242,6 @@ public class McpRegistryService {
       repository.delete(id);
       return mapper.toDto(row);
     }
-    repository.beginOperation(id, "stopped", McpOperationState.DELETING.wire());
     lifecycle.submit(id, () -> lifecycle.runDelete(id));
     return live(id);
   }
@@ -213,22 +249,22 @@ public class McpRegistryService {
   // ── container lifecycle ────────────────────────────────────────────────────
 
   public McpServerDto start(String id) {
-    requireManagedIdle(id);
-    repository.beginOperation(id, "running", McpOperationState.STARTING.wire());
+    requireManaged(id);
+    claim(id, "running", McpOperationState.STARTING);
     lifecycle.submit(id, () -> lifecycle.runStart(id, false));
     return live(id);
   }
 
   public McpServerDto stop(String id) {
-    requireManagedIdle(id);
-    repository.beginOperation(id, "stopped", McpOperationState.STOPPING.wire());
+    requireManaged(id);
+    claim(id, "stopped", McpOperationState.STOPPING);
     lifecycle.submit(id, () -> lifecycle.runStop(id));
     return live(id);
   }
 
   public McpServerDto apply(String id) {
-    ServerRow row = requireManagedIdle(id);
-    repository.beginOperation(id, row.desiredState(), McpOperationState.APPLYING.wire());
+    ServerRow row = requireManaged(id);
+    claim(id, row.desiredState(), McpOperationState.APPLYING);
     lifecycle.submit(id, () -> lifecycle.reconcile(id));
     return live(id);
   }
@@ -248,9 +284,20 @@ public class McpRegistryService {
     return retained.require(id);
   }
 
+  /**
+   * Drops a volume kept behind by a deletion, and the row that remembered it.
+   *
+   * <p>The row goes whether or not the daemon still had the volume. An operator who removed it
+   * by hand used to be stuck: the purge answered 500 with no detail, the row survived, and every
+   * retry took the same path — so the inventory went on listing a volume that did not exist,
+   * with no way to clear it.
+   */
   public void purgeRetainedResource(String id) {
     RetainedResourceDto resource = retained.require(id);
-    lifecycle.purgeVolume(resource.hostId(), resource.name());
+    if (!lifecycle.purgeVolume(resource.hostId(), resource.name())) {
+      log.info("retained volume {} on {} was already gone; dropping the record of it",
+          resource.name(), resource.hostId());
+    }
     retained.delete(id);
   }
 
@@ -261,13 +308,24 @@ public class McpRegistryService {
         .orElseThrow(() -> new NoSuchElementException("unknown MCP server: " + id));
   }
 
-  private ServerRow requireManagedIdle(String id) {
+  private ServerRow requireManaged(String id) {
     ServerRow row = requireRow(id);
     if (!"managed".equals(row.kind())) {
       throw new IllegalArgumentException("container lifecycle applies only to managed MCP servers");
     }
-    ensureIdle(row);
     return row;
+  }
+
+  /**
+   * Records what is about to be done, or refuses because something already is.
+   *
+   * <p>The refusal comes from the write itself, not from a read taken before it: two requests
+   * arriving together both saw an idle record, and both used to be admitted.
+   */
+  private void claim(String id, String desiredState, McpOperationState operation) {
+    if (!repository.claimOperation(id, desiredState, operation.wire())) {
+      throw new ResourceConflictException("an MCP server operation is already in progress");
+    }
   }
 
   /**

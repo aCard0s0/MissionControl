@@ -109,7 +109,7 @@ class HermesCliFixtureTest {
    * indistinguishable from a genuinely empty agent.
    */
   private void assertTheStatusReportParses(Path set, String version) throws IOException {
-    HermesContainerFiles files = mock(HermesContainerFiles.class);
+    HermesContainerFiles files = AgentsWiring.mockFiles();
     when(files.fileExists(any(), anyString(), anyString())).thenReturn(true);
     when(files.readFile(any(), anyString(), anyString())).thenReturn("");
     when(files.exec(any(), anyString(), any()))
@@ -209,7 +209,7 @@ class HermesCliFixtureTest {
     String captured = read(set, "cron-jobs.json");
     if (captured.isBlank()) return;   // optional: a profile may have no jobs at all
 
-    HermesContainerFiles files = mock(HermesContainerFiles.class);
+    HermesContainerFiles files = AgentsWiring.mockFiles();
     when(files.readFile(any(), anyString(), anyString())).thenReturn(captured);
     when(files.exec(any(), anyString(), any(), anyBoolean()))
         .thenReturn(new ExecResult(0, "✓ Cron scheduler is running", ""));
@@ -249,7 +249,7 @@ class HermesCliFixtureTest {
         version + ": route '" + route.getKey() + "' carries a secret the capture script did not"
             + " scrub — that is a live signing key in a git repository"));
 
-    HermesContainerFiles files = mock(HermesContainerFiles.class);
+    HermesContainerFiles files = AgentsWiring.mockFiles();
     when(files.readFile(any(), anyString(), anyString())).thenAnswer(invocation ->
         invocation.getArgument(2, String.class).endsWith("config.yaml")
             ? WEBHOOK_LISTENER_CONFIG : captured);

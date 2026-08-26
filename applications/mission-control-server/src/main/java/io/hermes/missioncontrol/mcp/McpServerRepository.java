@@ -2,6 +2,8 @@ package io.hermes.missioncontrol.mcp;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -79,18 +81,65 @@ class McpServerRepository {
         row.createdAt(), row.updatedAt());
   }
 
-  void updateDefinition(
+  /**
+   * Writes a new definition, but only over the revision the caller read.
+   *
+   * <p>{@code expectedRevision} is what makes two concurrent saves of the same record safe. Both
+   * read revision 3, both compute 4, and without the guard the second silently overwrites the
+   * first — the losing operator's edit is gone and their request reported success.
+   *
+   * @return false when the record has moved on, or is no longer there
+   */
+  boolean updateDefinition(
       String id, String name, String description, String configJson, long revision,
-      long appliedRevision, String operationState) {
-    jdbc.update("""
+      long appliedRevision, String operationState, long expectedRevision) {
+    return jdbc.update("""
         UPDATE mcp_servers
            SET name = ?, description = ?, config_json = ?, revision = ?, applied_revision = ?,
                operation_state = ?, operation_error = NULL, updated_at = ?
-         WHERE id = ?
+         WHERE id = ? AND revision = ?
         """, name, description, configJson, revision, appliedRevision, operationState,
-        System.currentTimeMillis(), id);
+        System.currentTimeMillis(), id, expectedRevision) == 1;
   }
 
+  /**
+   * Takes a record that is not doing anything and records what is about to be done to it — in
+   * one statement, so nothing can slip between the two.
+   *
+   * <p>This is the only thing serializing operations on a record. The alternative it replaced —
+   * read the state, decide, then write — leaves a window as long as whatever the caller does in
+   * between, and the deletion path spends that window rewriting {@code config.yaml} on every
+   * Agent holding the server. A second request claiming the record in that window made the
+   * deletion refuse <em>after</em> its listeners had already severed those Agents.
+   *
+   * @return false when the record is mid-operation, or is no longer there
+   */
+  boolean claimOperation(String id, String desiredState, String operationState) {
+    List<String> settled = McpOperationState.settledWire();
+    String placeholders = String.join(",", Collections.nCopies(settled.size(), "?"));
+    List<Object> arguments = new ArrayList<>(
+        List.of(desiredState, operationState, System.currentTimeMillis(), id));
+    arguments.addAll(settled);
+    return jdbc.update("""
+        UPDATE mcp_servers SET desired_state = ?, operation_state = ?, operation_error = NULL,
+          updated_at = ? WHERE id = ? AND operation_state IN (%s)
+        """.formatted(placeholders), arguments.toArray()) == 1;
+  }
+
+  /** Gives a claim back, for a caller that took one and then could not go through with it. */
+  void releaseOperation(String id) {
+    jdbc.update("""
+        UPDATE mcp_servers SET operation_state = 'idle', operation_error = NULL,
+          updated_at = ? WHERE id = ?
+        """, System.currentTimeMillis(), id);
+  }
+
+  /**
+   * Records an operation without asking whether the record is free, for the one caller that must
+   * not be refused: {@link McpStartupReconciler}, whose whole job is the records left mid-flight
+   * by a dashboard that went down. Those are exactly the rows {@link #claimOperation} declines,
+   * and declining them would strand the record in {@code starting} forever.
+   */
   void beginOperation(String id, String desiredState, String operationState) {
     jdbc.update("""
         UPDATE mcp_servers SET desired_state = ?, operation_state = ?, operation_error = NULL,

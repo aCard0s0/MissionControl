@@ -113,10 +113,12 @@ class McpRegistryServiceTest {
 
     assertEquals(serverId, links.find("dh-local", "container", "default", "docs").orElseThrow().serverId());
     assertEquals(1, links.findByServer(serverId).size());
-    assertThrows(RuntimeException.class, () -> service.delete(serverId));
+    service.claimForDeletion(serverId);
+    assertThrows(RuntimeException.class, () -> service.completeDeletion(serverId));
 
     links.delete("dh-local", "container", "default", "docs");
-    service.delete(serverId);
+    service.claimForDeletion(serverId);
+    service.completeDeletion(serverId);
     assertTrue(links.findByServer(serverId).isEmpty());
   }
 
@@ -203,7 +205,7 @@ class McpRegistryServiceTest {
     try {
       repository.updateDefinition(row.id(), row.name(), row.description(),
           new ObjectMapper().writeValueAsString(broken), row.revision(), row.appliedRevision(),
-          row.operationState());
+          row.operationState(), row.revision());
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }

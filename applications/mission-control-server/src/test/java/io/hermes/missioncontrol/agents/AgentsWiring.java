@@ -1,7 +1,14 @@
 package io.hermes.missioncontrol.agents;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import java.util.function.Supplier;
 
 /**
  * Builds the profile collaborator graph the way Spring does, for tests that exercise a
@@ -16,6 +23,25 @@ final class AgentsWiring {
 
   static HermesContainerFiles files(DockerExecService dockerExec) {
     return new HermesContainerFiles(dockerExec);
+  }
+
+  /**
+   * A mocked file seam whose {@code serialized} still runs the work handed to it.
+   *
+   * <p>Here rather than in each test that mocks this class, because the failure mode is silent:
+   * every profile edit now runs inside {@code serialized}, and a bare mock returns without
+   * calling it — so the write under test simply never happens and the assertion fails somewhere
+   * else entirely. Anything that mocks {@link HermesContainerFiles} wants this.
+   */
+  static HermesContainerFiles mockFiles() {
+    HermesContainerFiles files = mock(HermesContainerFiles.class);
+    when(files.serialized(anyString(), anyString(), any(Supplier.class)))
+        .thenAnswer(call -> call.<Supplier<?>>getArgument(2).get());
+    doAnswer(call -> {
+      call.<Runnable>getArgument(2).run();
+      return null;
+    }).when(files).serialized(anyString(), anyString(), any(Runnable.class));
+    return files;
   }
 
   static HermesEnvFile envFile(DockerExecService dockerExec) {

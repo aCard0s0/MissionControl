@@ -34,16 +34,30 @@ class HermesSkills {
 
   // ── listing ────────────────────────────────────────────────────────────────
 
+  /**
+   * Every skill the profile has, with its frontmatter.
+   *
+   * <p>Two execs, not {@code 2 + one per skill}. This ran on the agents listing, which runs once
+   * per profile, on a twelve-second poll — so a container with the bundled skill set spent most
+   * of that poll waiting on {@code cat}, one skill at a time. The manifest rides along in the
+   * same batched read as the skill files.
+   */
   List<SkillDto> list(DockerHostRef host, String containerId, String profileName, Map<?, ?> configMap) {
     String skillsDir = ProfilePaths.skillsDir(profileName);
     Set<String> disabled = disabledSkills(configMap, ProfilePaths.PLATFORM_CLI);
-    Set<String> bundled = bundledSkillNames(host, containerId, skillsDir);
+
+    String manifestPath = skillsDir + "/.bundled_manifest";
+    List<String> skillMdPaths = findSkillMdPaths(host, containerId, skillsDir);
+    List<String> toRead = new ArrayList<>(skillMdPaths);
+    toRead.add(manifestPath);
+    Map<String, String> read = files.readFiles(host, containerId, toRead);
+
+    Set<String> bundled = bundledSkillNames(read.get(manifestPath));
     List<SkillDto> skills = new ArrayList<>();
-    for (String skillMdPath : findSkillMdPaths(host, containerId, skillsDir)) {
-      String dirName = skillDirName(skillMdPath);
-      String skillMd = files.readFile(host, containerId, skillMdPath);
+    for (String skillMdPath : skillMdPaths) {
+      String skillMd = read.get(skillMdPath);
       if (skillMd == null || skillMd.isBlank()) continue;
-      SkillMeta meta = parseSkillMeta(skillMd, dirName);
+      SkillMeta meta = parseSkillMeta(skillMd, skillDirName(skillMdPath));
       String source = resolveSkillSource(meta, bundled);
       boolean enabled = !disabled.contains(meta.name());
       skills.add(new SkillDto(
@@ -63,30 +77,36 @@ class HermesSkills {
   // ── mutation ───────────────────────────────────────────────────────────────
 
   /** Adds or removes the skill from {@code skills.platform_disabled.cli}, leaving every
-   *  other key in the config — including ones Mission Control does not model — intact. */
+   *  other key in the config — including ones Mission Control does not model — intact.
+   *
+   *  <p>Serialized and written atomically for the reason given on
+   *  {@code HermesProfileMcp.rewriteConfig}: a toggle that read the file before another edit
+   *  landed would otherwise write that edit back out again. */
   void setEnabled(
       DockerHostRef host, String containerId, String profileName, String skillName, boolean enabled) {
     if (skillName == null || skillName.isBlank()) {
       throw new IllegalArgumentException("missing skill name");
     }
-    String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
-    String configYaml = files.readFile(host, containerId, configPath);
-    Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
-    Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
-    root.put("skills", skills);
-    Map<Object, Object> platformDisabled = config.asMutableMap(skills.get("platform_disabled"));
-    skills.put("platform_disabled", platformDisabled);
-    List<Object> cliDisabled = YamlValues.asMutableList(platformDisabled.get(ProfilePaths.PLATFORM_CLI));
-    platformDisabled.put(ProfilePaths.PLATFORM_CLI, cliDisabled);
+    files.serialized(containerId, profileName, () -> {
+      String configPath = files.requireProfileDir(host, containerId, profileName) + "/config.yaml";
+      String configYaml = files.readFile(host, containerId, configPath);
+      Map<Object, Object> root = config.parseForEdit(configYaml, configPath);
+      Map<Object, Object> skills = config.asMutableMap(root.get("skills"));
+      root.put("skills", skills);
+      Map<Object, Object> platformDisabled = config.asMutableMap(skills.get("platform_disabled"));
+      skills.put("platform_disabled", platformDisabled);
+      List<Object> cliDisabled = YamlValues.asMutableList(platformDisabled.get(ProfilePaths.PLATFORM_CLI));
+      platformDisabled.put(ProfilePaths.PLATFORM_CLI, cliDisabled);
 
-    if (enabled) {
-      cliDisabled.removeIf(x -> skillName.equals(YamlValues.stringValue(x)));
-    } else {
-      boolean present = cliDisabled.stream().anyMatch(x -> skillName.equals(YamlValues.stringValue(x)));
-      if (!present) cliDisabled.add(skillName);
-    }
+      if (enabled) {
+        cliDisabled.removeIf(x -> skillName.equals(YamlValues.stringValue(x)));
+      } else {
+        boolean present = cliDisabled.stream().anyMatch(x -> skillName.equals(YamlValues.stringValue(x)));
+        if (!present) cliDisabled.add(skillName);
+      }
 
-    files.writeFile(host, containerId, configPath, YamlValues.dump(root));
+      files.writeFileAtomically(host, containerId, configPath, YamlValues.dump(root));
+    });
   }
 
   void install(DockerHostRef host, String containerId, String profileName, String skillId) {
@@ -186,9 +206,8 @@ class HermesSkills {
   /** Names listed in skills/.bundled_manifest ("name:hash" per line) ship with
    *  Hermes. Anything present on disk but absent here was created locally — by
    *  the agent itself or the curator (which authors umbrella skills). */
-  private Set<String> bundledSkillNames(DockerHostRef host, String containerId, String skillsDir) {
+  private static Set<String> bundledSkillNames(String manifest) {
     Set<String> names = new HashSet<>();
-    String manifest = files.readFile(host, containerId, skillsDir + "/.bundled_manifest");
     if (manifest == null) return names;
     for (String line : HermesContainerFiles.lines(manifest)) {
       int colon = line.indexOf(':');

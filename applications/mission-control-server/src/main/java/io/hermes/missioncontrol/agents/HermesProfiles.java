@@ -98,12 +98,21 @@ public class HermesProfiles {
     return readProfile(host, containerId, name);
   }
 
+  /**
+   * The four documents a profile is described by, then its skills, MCP entries and gateway state.
+   *
+   * <p>The four are read in one exec rather than four. This runs once per profile inside
+   * {@link #list}, which the agents page polls every twelve seconds, so each read here is paid
+   * for by every profile in the container on every poll.
+   */
   private AgentProfileDto readProfile(DockerHostRef host, String containerId, String name) {
     String dir = ProfilePaths.profileDir(name);
-    String configYaml = files.readFile(host, containerId, dir + "/config.yaml");
-    String soul = files.readFile(host, containerId, dir + "/SOUL.md");
-    String memoryMd = files.readFile(host, containerId, dir + "/MEMORY.md");
-    String envFile = files.readFile(host, containerId, dir + "/.env");
+    Map<String, String> documents = files.readFiles(host, containerId, List.of(
+        dir + "/config.yaml", dir + "/SOUL.md", dir + "/MEMORY.md", dir + "/.env"));
+    String configYaml = documents.get(dir + "/config.yaml");
+    String soul = documents.get(dir + "/SOUL.md");
+    String memoryMd = documents.get(dir + "/MEMORY.md");
+    String envFile = documents.get(dir + "/.env");
     Map<?, ?> configMap = YamlValues.parseMap(configYaml);
     ConfigInfo config = modelConfig.parseConfig(configMap);
     List<SkillDto> skillList = skills.list(host, containerId, name, configMap);
@@ -199,10 +208,22 @@ public class HermesProfiles {
     writeProfileFile(host, containerId, name, "MEMORY.md", memory);
   }
 
+  /**
+   * Replaces one of a profile's documents.
+   *
+   * <p>Atomic, and taken under the profile's lock, because {@code config.yaml} arrives here
+   * whole from the editor while four other paths are reading it, changing one key, and writing
+   * it back. A non-atomic write also lets a reader see the file half-replaced — and a truncated
+   * {@code config.yaml} is not blank, so it slips past
+   * {@code AgentMcpCatalogService.dropStrandedLinks}' emptiness guard and reads as a profile
+   * whose MCP entries were all removed.
+   */
   private void writeProfileFile(
       DockerHostRef host, String containerId, String name, String fileName, String content) {
-    String path = files.requireProfileDir(host, containerId, name) + "/" + fileName;
-    files.writeFile(host, containerId, path, content == null ? "" : content);
+    files.serialized(containerId, name, () -> {
+      String path = files.requireProfileDir(host, containerId, name) + "/" + fileName;
+      files.writeFileAtomically(host, containerId, path, content == null ? "" : content);
+    });
   }
 
   public AgentProfileDto updateConfig(DockerHostRef host, String containerId, String name, String configYaml) {

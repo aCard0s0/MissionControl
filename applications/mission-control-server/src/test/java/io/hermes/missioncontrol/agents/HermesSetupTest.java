@@ -40,7 +40,7 @@ class HermesSetupTest {
 
   @BeforeEach
   void setUp() {
-    files = mock(HermesContainerFiles.class);
+    files = AgentsWiring.mockFiles();
     setup = new HermesSetup(files, mock(HermesEnvFile.class));
     when(files.fileExists(any(), anyString(), anyString())).thenReturn(true);
     when(files.readFile(any(), anyString(), anyString())).thenReturn("");
