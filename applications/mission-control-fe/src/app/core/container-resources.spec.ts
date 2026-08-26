@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CPU_PRESETS, HERMES_BASELINE, HERMES_MINIMUM, MEMORY_PRESETS_MB,
-  formatMemory, isBaseline, memoryNote,
+  CPU_PRESETS, HERMES_BASELINE, MEMORY_PRESETS_MB, formatMemory, memoryNote,
 } from './container-resources';
+
+/** The vendor floor the backend enforces. Written here and not exported from the module:
+ *  nothing renders it, and only this invariant reads it. */
+const VENDOR_MINIMUM = { memoryMb: 1024, cpus: 1 };
 
 describe('Hermes container resources', () => {
   it('starts at the vendor recommendation, not at the absence of one Docker defaults to', () => {
     // https://hermes-agent.nousresearch.com/docs/user-guide/docker — 2–4 GB, 2 cores
     expect(HERMES_BASELINE).toEqual({ memoryMb: 2048, cpus: 2 });
-  });
-
-  it('records the vendor minimum the backend enforces', () => {
-    expect(HERMES_MINIMUM).toEqual({ memoryMb: 1024, cpus: 1 });
   });
 
   it('offers the baseline as one of the presets, so it can be returned to', () => {
@@ -20,8 +19,8 @@ describe('Hermes container resources', () => {
   });
 
   it('offers nothing below the vendor minimum, which the backend would refuse', () => {
-    expect(Math.min(...MEMORY_PRESETS_MB)).toBeGreaterThanOrEqual(HERMES_MINIMUM.memoryMb);
-    expect(Math.min(...CPU_PRESETS)).toBeGreaterThanOrEqual(HERMES_MINIMUM.cpus);
+    expect(Math.min(...MEMORY_PRESETS_MB)).toBeGreaterThanOrEqual(VENDOR_MINIMUM.memoryMb);
+    expect(Math.min(...CPU_PRESETS)).toBeGreaterThanOrEqual(VENDOR_MINIMUM.cpus);
   });
 
   it('reads a size the way an operator would say it', () => {
@@ -42,11 +41,5 @@ describe('Hermes container resources', () => {
 
   it('notes that memory above the recommendation is reserved whether used or not', () => {
     expect(memoryNote(8192)).toContain('reserved on the host');
-  });
-
-  it('knows whether anything was raised', () => {
-    expect(isBaseline(HERMES_BASELINE)).toBe(true);
-    expect(isBaseline({ memoryMb: 4096, cpus: 2 })).toBe(false);
-    expect(isBaseline({ memoryMb: 2048, cpus: 4 })).toBe(false);
   });
 });
