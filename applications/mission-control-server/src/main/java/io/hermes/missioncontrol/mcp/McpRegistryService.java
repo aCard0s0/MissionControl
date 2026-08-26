@@ -73,9 +73,15 @@ public class McpRegistryService {
 
   // ── reads ──────────────────────────────────────────────────────────────────
 
+  /**
+   * The whole catalog, with managed runtime state refreshed first.
+   *
+   * <p>The refresh is handed the rows together rather than mapped over one at a time: per row it
+   * costs a {@code docker compose ps} fork under the host's compose lock plus a full container
+   * listing, and per host it costs one of each.
+   */
   public List<McpServerDto> list() {
-    return repository.findAll().stream()
-        .map(lifecycle::refreshRuntime)
+    return lifecycle.refreshRuntime(repository.findAll()).stream()
         .map(mapper::toDto)
         .toList();
   }

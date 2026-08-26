@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -100,6 +101,38 @@ class ComposeStackManager {
         "docker", "--host", hosts.ref(hostId).url(), "volume", "ls",
         "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
         "--format", "{{.Name}}"));
+  }
+
+  /**
+   * Every managed container on this host, keyed by its Compose service name.
+   *
+   * <p>{@link #serviceContainerId} answers the same question for one service, by forking
+   * {@code docker compose ps} under this host's lock — the same lock {@link #execute} holds for
+   * the length of an image pull. The catalog listing asked it once per row, so a page load with
+   * eight managed servers forked Compose eight times and either blocked a start that was in
+   * flight or was blocked by it.
+   *
+   * <p>Keyed by the Compose service and not by the server id, because a record's support
+   * services carry the same {@code SERVER_ID_LABEL}: their state is not the record's, and the
+   * one the catalog reports is the service the row's {@code service_key} names.
+   *
+   * <p>Read from the labels rather than through Compose, which is what lets one call cover every
+   * record — and is how {@link #servicesOf} and {@link #volumesOf} already work.
+   */
+  Map<String, String> containerIdsByService(String hostId) {
+    List<String> rows = labelled(hostId, List.of(
+        "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
+        "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
+        "--format", "{{.Label \"com.docker.compose.service\"}}\t{{.ID}}"));
+    Map<String, String> byService = new LinkedHashMap<>();
+    for (String row : rows) {
+      int tab = row.indexOf('\t');
+      if (tab <= 0) continue;   // a container the daemon reported no service name for
+      String service = row.substring(0, tab).trim();
+      String containerId = row.substring(tab + 1).trim();
+      if (!service.isEmpty() && !containerId.isEmpty()) byService.putIfAbsent(service, containerId);
+    }
+    return byService;
   }
 
   /**

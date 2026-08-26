@@ -8,7 +8,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +26,7 @@ import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
@@ -387,6 +390,81 @@ class McpComposeLifecycleTest {
         .thenThrow(new UpstreamUnavailableException("could not start Docker CLI"));
 
     assertEquals("missing", lifecycle.refreshRuntime(row(id)).runtimeState());
+  }
+
+  // ── the listing's refresh ───────────────────────────────────────────────
+
+  @Test
+  void aListingCostsTwoDaemonReadsPerHostRatherThanTwoPerRow() {
+    // per row this is a `docker compose ps` fork taken under the host's compose lock plus a
+    // full container listing — the same lock a start or a stop holds for the length of its
+    // image pull, so the page waited on the operation and the operation was slowed by the page
+    String files = insertIdleManaged("Files");
+    String docs = insertIdleManaged("Docs");
+    String gone = insertIdleManaged("Gone");
+    when(compose.containerIdsByService(HOST))
+        .thenReturn(Map.of("mcp-files", "cid-files", "mcp-docs", "cid-docs"));
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true)).thenReturn(
+        List.of(container("cid-files", "running"), container("cid-docs", "unhealthy")));
+
+    List<ServerRow> refreshed = lifecycle.refreshRuntime(repository.findAll());
+
+    assertEquals("running", byId(refreshed, files).runtimeState());
+    assertEquals("error", byId(refreshed, docs).runtimeState());
+    // a record the daemon has no container for at all
+    assertEquals("missing", byId(refreshed, gone).runtimeState());
+    assertEquals("running", row(files).runtimeState(), "the refreshed state is persisted");
+
+    verify(compose, times(1)).containerIdsByService(HOST);
+    verify(docker, times(1)).listContainers(new DockerHostRef(HOST, "unix:///sock"), true);
+    verify(compose, never()).serviceContainerId(anyString(), anyString());
+  }
+
+  @Test
+  void aListingLeavesRowsTheDaemonCannotSpeakForExactlyAsTheyWere() {
+    String provisioning = insertManaged("Files");
+    String external = insertExternal("Remote docs");
+    when(compose.containerIdsByService(HOST)).thenReturn(Map.of("mcp-files", "cid-files"));
+
+    List<ServerRow> refreshed = lifecycle.refreshRuntime(repository.findAll());
+
+    // a Compose run is writing the first row's state, and the second has no container at all
+    assertEquals("provisioning", byId(refreshed, provisioning).operationState());
+    assertEquals("missing", byId(refreshed, provisioning).runtimeState());
+    assertEquals("unavailable", byId(refreshed, external).runtimeState());
+    verifyNoInteractions(compose);
+    verifyNoInteractions(docker);
+  }
+
+  @Test
+  void eachHostIsReadOnceAndADeadOneDoesNotTakeTheOthersDown() {
+    String local = insertIdleManaged("Files");
+    String remote = insert("Docs", "managed", "dh-remote", List.of(), List.of(), "idle");
+    when(hosts.ref("dh-remote")).thenReturn(new DockerHostRef("dh-remote", "tcp://remote:2375"));
+    when(compose.containerIdsByService(HOST)).thenReturn(Map.of("mcp-files", "cid-files"));
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
+        .thenReturn(List.of(container("cid-files", "running")));
+    when(compose.containerIdsByService("dh-remote"))
+        .thenThrow(new UpstreamUnavailableException("could not start Docker CLI"));
+
+    List<ServerRow> refreshed = lifecycle.refreshRuntime(repository.findAll());
+
+    // the reachable host still answers; a catalog GET must not 503 because one daemon is down
+    assertEquals("running", byId(refreshed, local).runtimeState());
+    assertEquals("missing", byId(refreshed, remote).runtimeState());
+    verify(compose, times(1)).containerIdsByService(HOST);
+    verify(compose, times(1)).containerIdsByService("dh-remote");
+  }
+
+  @Test
+  void anEmptyCatalogAsksNoDaemonAnything() {
+    assertEquals(List.of(), lifecycle.refreshRuntime(List.of()));
+    verifyNoInteractions(compose);
+    verifyNoInteractions(docker);
+  }
+
+  private static ServerRow byId(List<ServerRow> rows, String id) {
+    return rows.stream().filter(row -> row.id().equals(id)).findFirst().orElseThrow();
   }
 
   @Test

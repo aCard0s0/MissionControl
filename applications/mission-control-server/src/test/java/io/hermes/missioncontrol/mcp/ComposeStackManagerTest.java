@@ -405,6 +405,35 @@ class ComposeStackManagerTest {
     assertTrue(commands.getLast().contains("volume"));
   }
 
+  @Test
+  void oneReadMapsEveryManagedContainerToItsComposeService() {
+    // what the catalog listing uses instead of forking `docker compose ps` per row under the
+    // host lock. Keyed by service, not by server id, because a record's support services carry
+    // the same server-id label and their state is not the record's.
+    ComposeStackManager manager = managerReturning(command ->
+        "mcp-files\tcid-files\nmcp-files-database\tcid-database\nmcp-docs\tcid-docs\n");
+
+    Map<String, String> byService = manager.containerIdsByService("dh-local");
+
+    assertEquals(Map.of(
+        "mcp-files", "cid-files",
+        "mcp-files-database", "cid-database",
+        "mcp-docs", "cid-docs"), byService);
+    assertTrue(commands.getFirst().contains(
+        "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT));
+    assertEquals(1, commands.size(), "one read for the whole host: " + commands);
+  }
+
+  @Test
+  void aContainerTheDaemonNamesNoServiceForIsSkippedRatherThanKeyedOnBlank() {
+    // `--format` prints an empty column for a label that is not set, and a blank key would
+    // collide with every other unlabelled container
+    ComposeStackManager manager = managerReturning(command ->
+        "\tcid-orphan\nmcp-files\tcid-files\nno-tab-at-all\n");
+
+    assertEquals(Map.of("mcp-files", "cid-files"), manager.containerIdsByService("dh-local"));
+  }
+
   // ── the CLI runner itself ───────────────────────────────────────────────
   //
   // Everything above substitutes run(). These exercise the real one with /bin/sh instead of
