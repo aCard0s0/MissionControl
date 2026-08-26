@@ -249,8 +249,7 @@ WebSocket frames carry raw terminal bytes; a text frame (`{"type":"resize",…}`
   the same user every profile-scoped exec uses, because a root shell writing into `/opt/data`
   leaves files the agent itself can no longer read. An image without that account sets the
   variable empty, which keeps the image default.
-- **Command drawer.** The `cmds` button opens the hermes CLI reference inside the panel
-  ([docs/hermes-cli.md](hermes-cli.md) is the same catalog, and a spec keeps the two in step).
+- **Command drawer.** The `cmds` button opens the hermes CLI reference inside the panel.
   Its lines carry the focused pane's profile, and **insert** types one at the prompt *without* a
   newline — the operator still presses Enter. The same list is a full page at `/reference`,
   which sends its lines through the existing terminal request channel.

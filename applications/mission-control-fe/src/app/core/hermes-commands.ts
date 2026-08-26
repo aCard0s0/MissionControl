@@ -7,10 +7,11 @@
  * of in a browser tab: one row per command, what it does, the flags worth knowing, and a
  * deep link to the section upstream documents it in.
  *
- * Kept in step with `docs/hermes-cli.md` — the same catalog for someone reading the repo —
- * by hermes-commands.spec.ts, which fails when a command exists in one and not the other.
- * Captured against Hermes Agent v0.20.5; the container is the authority when they disagree,
- * which is why every row carries its docs anchor rather than a copy of the full flag list.
+ * The only copy. There was a second one in `docs/hermes-cli.md`, and a spec whose job was to
+ * diff the two — a markdown table parser and a repo-root walker to keep a reference in step
+ * with the reference. Captured against Hermes Agent v0.20.5; the container is the authority
+ * when they disagree, which is why every row carries its docs anchor rather than a copy of the
+ * full flag list.
  */
 export const HERMES_DOCS = 'https://hermes-agent.nousresearch.com/docs/reference/cli-commands';
 
