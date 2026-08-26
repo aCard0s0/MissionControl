@@ -1,11 +1,8 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
-import io.hermes.missioncontrol.agents.api.AddSkillRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
-import io.hermes.missioncontrol.agents.api.SetSkillEnabledRequest;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
-import io.hermes.missioncontrol.agents.api.UpdateSkillContentRequest;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +13,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.constraints.NotBlank;
 
 /** An agent's skills. Every mutation answers with the whole refreshed profile. */
 @RestController
@@ -83,5 +81,14 @@ class AgentSkillsController {
     DockerHostRef host = endpoints.host(hostId);
     return endpoints.linked(host, profiles.updateSkillContent(
         host, containerId, name, skillName, request.body()));
+  }
+
+  public record SetSkillEnabledRequest(boolean enabled) {
+  }
+
+  public record UpdateSkillContentRequest(String body) {
+  }
+
+  public record AddSkillRequest(@NotBlank String name) {
   }
 }

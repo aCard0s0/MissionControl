@@ -4,7 +4,7 @@ Operations dashboard for [Hermes Agent](https://hermes-agent.nousresearch.com/) 
 
 > Read and visualize almost everything. Edit only the smallest safe config surface.
 
-Documentation: [docs/architecture.md](docs/architecture.md) · [docs/api.md](docs/api.md) · [docs/testing.md](docs/testing.md) · [docs/hermes-cli.md](docs/hermes-cli.md) · [docs/mission_control_guidelines.md](docs/mission_control_guidelines.md)
+Documentation: [docs/architecture.md](docs/architecture.md) · [docs/api.md](docs/api.md) · [docs/testing.md](docs/testing.md) · [docs/mission_control_guidelines.md](docs/mission_control_guidelines.md)
 
 ## Modules
 
@@ -64,6 +64,6 @@ stays unreachable from outside the docker network until an operator exposes the 
 listener deliberately.
 
 For everything the dashboard has no button for there is the web terminal, and next to it a
-searchable **CLI Reference** ([docs/hermes-cli.md](docs/hermes-cli.md) is the same catalog):
+searchable **CLI Reference**:
 pick a profile and every line carries its `-p`, then insert one at the prompt — unrun, so
 pressing Enter stays your decision.

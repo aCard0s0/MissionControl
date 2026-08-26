@@ -11,7 +11,6 @@ import io.hermes.missioncontrol.mcp.AgentMcpLink;
 import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.mcp.ManagedMcpStack;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
-import io.hermes.missioncontrol.mcp.McpServerDeletionListener;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,7 +28,7 @@ import org.springframework.stereotype.Service;
  * link itself remains dashboard-owned SQLite state.
  */
 @Service
-public class AgentMcpCatalogService implements McpServerDeletionListener {
+public class AgentMcpCatalogService {
 
   private static final Logger log = LoggerFactory.getLogger(AgentMcpCatalogService.class);
 
@@ -125,11 +124,6 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     // one statement rather than one per alias: a failure partway through the old loop
     // left the profile holding some of its links and not others
     links.deleteByAgent(host.id(), containerId, profile);
-  }
-
-  @Override
-  public void beforeServerDeleted(String serverId) {
-    disableAndUnlinkForDeletion(serverId);
   }
 
   /**

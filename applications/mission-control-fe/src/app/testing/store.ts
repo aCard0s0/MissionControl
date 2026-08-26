@@ -146,3 +146,65 @@ export const flush = async (): Promise<void> => {
   if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
   else await new Promise(resolve => setTimeout(resolve, 0));
 };
+
+/**
+ * The newest message of each kind still on the toast stack.
+ *
+ * <p>Here rather than on {@link StoreContext}: the app renders the whole stack, so a
+ * newest-of-kind reader had no production caller — every one of them was an assertion.
+ */
+const newest = (ctx: StoreContext, kind: 'ok' | 'error'): string | null => {
+  const matching = ctx.toasts().filter(t => t.kind === kind);
+  return matching.length ? matching[matching.length - 1].message : null;
+};
+
+/** The newest failure still on screen. */
+export const liveError = (ctx: StoreContext): string | null => newest(ctx, 'error');
+
+/** The newest confirmation still on screen. */
+export const liveNotice = (ctx: StoreContext): string | null => newest(ctx, 'ok');
+
+/**
+ * DI providers for a hand-built store stub, keyed by slice name.
+ *
+ * <p>Twenty-one specs wrote out the same slice-name-to-token table, four to ten entries at a
+ * time, so adding a slice meant editing every spec that already stubbed a neighbour of it. The
+ * stub objects themselves stay in their specs — those are each test's actual input — but which
+ * token a slice is injected under is one fact, and it lives here.
+ *
+ * <p>Only recognised keys are provided, so a spec can keep its own bookkeeping — a signal it
+ * replays a poll through — in the same object as its slices, and still stub exactly what its
+ * component reaches for and nothing more. A misspelled slice name surfaces as Angular's own
+ * "No provider for XStore" at {@code createComponent}, which names the missing token.
+ */
+const SLICE_TOKENS = {
+  agentMcp: AgentMcpStore,
+  agents: AgentStore,
+  board: BoardStore,
+  catalog: McpCatalogStore,
+  containers: ContainerStore,
+  ctx: StoreContext,
+  hosts: HostStore,
+  images: ImageCatalogStore,
+  jobs: JobStore,
+  lifecycle: ContainerLifecycle,
+  liveSync: LiveSync,
+  logs: LogStore,
+  providers: ProviderStore,
+  removal: AgentRemoval,
+  setup: AgentSetupStore,
+  skills: AgentSkillStore,
+  templates: TemplateStore,
+  terminal: TerminalRequestStore,
+  webhooks: WebhookStore,
+} as const;
+
+export type StoreSliceName = keyof typeof SLICE_TOKENS;
+
+export function provideStores(
+  stub: Partial<Record<StoreSliceName, unknown>>,
+): { provide: unknown; useValue: unknown }[] {
+  return Object.entries(stub)
+    .filter(([slice]) => slice in SLICE_TOKENS)
+    .map(([slice, value]) => ({ provide: SLICE_TOKENS[slice as StoreSliceName], useValue: value }));
+}

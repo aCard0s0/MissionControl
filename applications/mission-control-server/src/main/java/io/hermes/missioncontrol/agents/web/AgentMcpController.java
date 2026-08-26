@@ -8,7 +8,6 @@ import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
-import io.hermes.missioncontrol.agents.api.SetMcpServerEnabledRequest;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +17,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * An agent's MCP servers.
@@ -137,5 +137,9 @@ class AgentMcpController {
       @PathVariable String name,
       @PathVariable String serverName) {
     return profiles.testMcpServer(endpoints.host(hostId), containerId, name, serverName);
+  }
+
+  /** Enables or disables an MCP definition without removing its connection details. */
+  public record SetMcpServerEnabledRequest(@NotNull Boolean enabled) {
   }
 }

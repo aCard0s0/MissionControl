@@ -4,7 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 /**
  * Each terminal holds a live {@code docker exec} stream and JVM-side reader/writer threads,
@@ -106,5 +111,67 @@ class TerminalReapPolicyTest {
     assertNull(TerminalSocketHandler.reapReason(NOW, NOW, NOW, NOW, defaults));
     assertEquals("max-lifetime", TerminalSocketHandler.reapReason(
         NOW, NOW - Duration.ofHours(9).toMillis(), NOW, NOW, defaults));
+  }
+
+  // ── where the values come from ──────────────────────────────────────────
+
+  /**
+   * application.yml carries no numbers for these — the record's compact constructor is the one
+   * place they are written. What the yml still carries is the {@code ${MC_TERMINAL_*:}}
+   * placeholders, which exist only to spell the underscored variable names, and which resolve
+   * to empty when nothing sets them.
+   */
+  @Test
+  void anUnsetVariableResolvesToEmptyAndBindsAsTheRecordDefault() {
+    TerminalProperties bound = bind(Map.of(
+        "mc.terminal.max-sessions", "",
+        "mc.terminal.max-sessions-per-client", "",
+        "mc.terminal.idle-timeout", "",
+        "mc.terminal.session-max-lifetime", "",
+        "mc.terminal.heartbeat-interval", "",
+        "mc.terminal.pong-timeout", ""));
+
+    assertEquals(50, bound.maxSessions());
+    assertEquals(5, bound.maxSessionsPerClient());
+    assertEquals(Duration.ofMinutes(30), bound.idleTimeout());
+    assertEquals(Duration.ofHours(8), bound.sessionMaxLifetime());
+    assertEquals(Duration.ofSeconds(30), bound.heartbeatInterval());
+    assertEquals(Duration.ofSeconds(90), bound.pongTimeout());
+  }
+
+  /**
+   * A set variable still wins, through the placeholder the yml keeps for exactly that.
+   */
+  @Test
+  void aSetVariableOverridesTheDefault() {
+    assertEquals(2, bind(Map.of("mc.terminal.max-sessions", "2")).maxSessions());
+  }
+
+  /**
+   * {@code user} has no yml line at all: it carries no dash, so relaxed binding reaches
+   * MC_TERMINAL_USER straight from the environment. Worth proving rather than assuming — the
+   * difference between the default holding and not is a web shell writing /opt/data as root.
+   */
+  @Test
+  void theExecUserBindsFromTheEnvironmentWithNoPlaceholderToHelpIt() {
+    assertEquals("hermes", bindEnv(Map.of()).user());
+    assertEquals("root", bindEnv(Map.of("MC_TERMINAL_USER", "root")).user());
+    // and an operator who blanks it still gets the image default, not the fallback back
+    assertEquals("", bindEnv(Map.of("MC_TERMINAL_USER", "")).user());
+  }
+
+  private static TerminalProperties bind(Map<String, Object> properties) {
+    StandardEnvironment environment = new StandardEnvironment();
+    environment.getPropertySources().addFirst(new MapPropertySource("test", properties));
+    return Binder.get(environment).bindOrCreate("mc.terminal", TerminalProperties.class);
+  }
+
+  /** Bound the way the running app binds it: through the system-environment source, whose
+   *  relaxed name mapping is the thing under test. */
+  private static TerminalProperties bindEnv(Map<String, Object> variables) {
+    StandardEnvironment environment = new StandardEnvironment();
+    environment.getPropertySources().addFirst(new SystemEnvironmentPropertySource(
+        StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, variables));
+    return Binder.get(environment).bindOrCreate("mc.terminal", TerminalProperties.class);
   }
 }

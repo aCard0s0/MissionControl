@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpCatalogServer } from '../models';
 import { catalogServer } from '../../testing/models';
-import { testSlices } from '../../testing/store';
+import { liveError, testSlices } from '../../testing/store';
 
 const store = (mcp: Record<string, unknown>) => {
   const { ctx, catalog } = testSlices({ mcp });
@@ -37,7 +37,7 @@ describe('McpCatalogStore reading', () => {
     await catalog.refresh();
 
     expect(catalog.servers().map(s => s.id)).toEqual(['browser']);
-    expect(ctx.liveError()).toBe('MCP server refresh failed: gateway down');
+    expect(liveError(ctx)).toBe('MCP server refresh failed: gateway down');
   });
 
   it('stays quiet when a silent refresh fails — it is the poller, not an action', async () => {
@@ -45,7 +45,7 @@ describe('McpCatalogStore reading', () => {
 
     await catalog.refresh(true);
 
-    expect(ctx.liveError()).toBeNull();
+    expect(liveError(ctx)).toBeNull();
   });
 
   it('answers byId, and null for an id the catalog does not hold', async () => {
@@ -74,7 +74,7 @@ describe('McpCatalogStore saving', () => {
 
     expect(await catalog.save({ name: 'BROWSER' } as never)).toBe('');
     expect(create).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('MCP server name already exists: browser');
+    expect(liveError(ctx)).toBe('MCP server name already exists: browser');
   });
 
   it('allows an entry to keep its own name while being edited', async () => {
@@ -99,7 +99,7 @@ describe('McpCatalogStore saving', () => {
     });
 
     expect(await catalog.save({ name: 'files' } as never)).toBe('');
-    expect(ctx.liveError()).toBe('MCP server save failed: port 1100 taken');
+    expect(liveError(ctx)).toBe('MCP server save failed: port 1100 taken');
     expect(catalog.servers()).toEqual([]);
   });
 });
@@ -143,7 +143,7 @@ describe('McpCatalogStore lifecycle', () => {
     expect(server.checkStatus).toBe('error');
     expect(server.checkError).toBe('connection refused');
     expect(server.operationState).toBe('idle');
-    expect(ctx.liveError()).toBe('MCP server check failed: connection refused');
+    expect(liveError(ctx)).toBe('MCP server check failed: connection refused');
   });
 
   it('leaves a failed start visible on the entry so the page can show why', async () => {
@@ -210,7 +210,7 @@ describe('McpCatalogStore lifecycle', () => {
     const { ctx, catalog } = await loaded([catalogServer('browser')], { list });
 
     expect(await catalog.waitUntilRunning('browser')).toBe(false);
-    expect(ctx.liveError()).toBe('MCP server start failed: exited 1');
+    expect(liveError(ctx)).toBe('MCP server start failed: exited 1');
   });
 
   it('reports false when the entry disappears while a start is being awaited', async () => {
@@ -302,7 +302,7 @@ describe('McpCatalogStore operation polling', () => {
     const { ctx, catalog } = await loaded([catalogServer('browser')], { list });
 
     expect(await catalog.waitUntilRunning('browser')).toBe(false);
-    expect(ctx.liveError()).toBe('MCP server start failed: stopped');
+    expect(liveError(ctx)).toBe('MCP server start failed: stopped');
   });
 });
 
@@ -321,7 +321,7 @@ describe('McpCatalogStore deletion and logs', () => {
 
     expect(await catalog.remove('browser')).toBe(false);
     expect(catalog.byId('browser')).not.toBeNull();
-    expect(ctx.liveError()).toBe('MCP server delete failed: in use by 2 agents');
+    expect(liveError(ctx)).toBe('MCP server delete failed: in use by 2 agents');
   });
 
   it('ignores a delete for an id the catalog does not hold', async () => {
@@ -361,7 +361,7 @@ describe('McpCatalogStore deletion and logs', () => {
     });
 
     expect(await catalog.purgeRetainedResource('vol-1')).toBe(false);
-    expect(ctx.liveError()).toBe('retained resource purge failed: volume in use');
+    expect(liveError(ctx)).toBe('retained resource purge failed: volume in use');
   });
 
   it('reads a managed server log newest first, and refuses one that has no container', async () => {

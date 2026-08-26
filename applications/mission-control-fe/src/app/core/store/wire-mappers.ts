@@ -73,7 +73,7 @@ export function toAgentProfile(api: ApiAgentProfile): AgentProfile {
 }
 
 /** A profile whose gateway has written nothing yet still needs a shape to render. */
-export function toGateway(api: ApiAgentProfile['gateway'] | null | undefined): Gateway {
+function toGateway(api: ApiAgentProfile['gateway'] | null | undefined): Gateway {
   return {
     state: api?.state ?? '',
     desiredState: api?.desiredState ?? '',

@@ -2,16 +2,13 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentSetupStore } from '../core/store/agent-setup-store';
-import { AgentStore } from '../core/store/agent-store';
-import { ProviderStore } from '../core/store/provider-store';
-import { TemplateStore } from '../core/store/template-store';
 import {
   AuthProvider, HermesContainer, LlmProvider, ModelProvider, NewAgent, ProfileTemplate,
 } from '../core/models';
 import { AgentCreateDialog } from './agent-create-dialog';
 import { TestFixture, choose, el, field, fill, settle, text } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
@@ -72,10 +69,7 @@ class Host {
 
 const render = async (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents },
-      { provide: AgentSetupStore, useValue: store.setup },
-      { provide: ProviderStore, useValue: store.providers },
-      { provide: TemplateStore, useValue: store.templates }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   await fixture.whenStable();

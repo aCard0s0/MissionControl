@@ -2,11 +2,11 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentSkillStore } from '../core/store/agent-skill-store';
 import { AgentProfile, SkillContent, SkillRef } from '../core/models';
 import { AgentSkillsPanel } from './agent-skills-panel';
 import { buttonWith, el } from '../testing/dom';
 import { agent, skill } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 /** Only what the panel actually reaches for on the store. */
 const storeStub = (content: SkillContent | null = null) => ({
@@ -29,7 +29,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>, agent?: AgentProfile) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: AgentSkillStore, useValue: store.skills }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
   if (agent) fixture.componentInstance.agent.set(agent);
   fixture.detectChanges();

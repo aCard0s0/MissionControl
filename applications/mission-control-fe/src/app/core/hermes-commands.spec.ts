@@ -1,65 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   HERMES_COMMANDS, HERMES_COMMAND_GROUPS, HERMES_DOCS,
   agentSessionCommand, hermesDocsUrl, hermesLine, searchHermesCommands,
 } from './hermes-commands';
-
-const DOC = 'docs/hermes-cli.md';
-/** What marks a directory as the repo root rather than just some ancestor of the cwd. */
-const REPO_MARKERS = ['applications/mission-control-fe', 'docs'];
-
-/**
- * Finds the repo root by walking up from the working directory, because the working directory
- * is not ours to assume: `ng test` roots at the frontend project, `vitest` from the repo root
- * roots there, and an IDE runner roots wherever it likes. A fixed `../../` resolved outside the
- * repo entirely under the last of those. `import.meta.url` is not the answer either — the
- * Angular builder rewrites it to a non-file URL.
- *
- * Null when there is no checkout above us at all, which is the Dockerfile's frontend stage:
- * it copies only `applications/mission-control-fe/`, and `.dockerignore` drops `docs` and every
- * `*.md` besides. The parity check is about two files in the repo agreeing, so a build context
- * that deliberately excludes one of them has nothing to check — see the skip below.
- */
-const findRepoRoot = (): string | null => {
-  let dir = process.cwd();
-  for (;;) {
-    if (REPO_MARKERS.every(marker => existsSync(join(dir, marker)))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-};
-
-const repoRoot = findRepoRoot();
-
-/**
- * The repo-side copy of the same reference, read as text so the two cannot drift apart. Empty
- * only where {@link findRepoRoot} found no checkout — and a checkout that has one marker but
- * not the doc is a deleted doc, which must fail rather than quietly stop being checked.
- */
-const doc = repoRoot ? readFileSync(join(repoRoot, DOC), 'utf8') : '';
-
-/** Every `hermes <cmd>` the doc lists in a table's first column. `-p` rows are the
- *  Mission-Control-runs-these table, which is prose about invocation, not a command list. */
-const documented = new Set(
-  [...doc.matchAll(/^\| `hermes ([a-z][a-z0-9-]*(?: [a-z][a-z0-9-]*)?)` \|/gm)].map(m => m[1]),
-);
-
-// the two parity tests, and only those, need the repo beside us
-describe.skipIf(!repoRoot)(`hermes command catalog against ${DOC}`, () => {
-  it('lists every command the repo reference documents', () => {
-    const catalog = new Set(HERMES_COMMANDS.map(c => c.cmd));
-    const missing = [...documented].filter(cmd => !catalog.has(cmd));
-    expect(missing, 'documented in docs/hermes-cli.md but absent from the catalog').toEqual([]);
-  });
-
-  it('documents every command it lists — a row with no docs link is a dead end', () => {
-    const missing = HERMES_COMMANDS.map(c => c.cmd).filter(cmd => !documented.has(cmd));
-    expect(missing, 'in the catalog but absent from docs/hermes-cli.md').toEqual([]);
-  });
-});
 
 describe('hermes command catalog', () => {
   it('names each command exactly once, across every group', () => {

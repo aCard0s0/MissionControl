@@ -2,12 +2,11 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostStore } from '../core/store/host-store';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { DockerHost, McpCatalogServer, McpRetainedResource } from '../core/models';
 import { McpServersPage } from './mcp-servers';
 import { button, el, press, settle, text, type } from '../testing/dom';
 import { catalogServer as server, dockerHost } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const hosts: DockerHost[] = [
   dockerHost('dh-local', { name: 'localhost', url: 'unix:///var/run/docker.sock', kind: 'local' }),
@@ -43,7 +42,7 @@ const storeStub = (servers: McpCatalogServer[], retained: McpRetainedResource[] 
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HostStore, useValue: store.hosts }, { provide: McpCatalogStore, useValue: store.catalog }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(McpServersPage);
   fixture.detectChanges();
   return { fixture, store };

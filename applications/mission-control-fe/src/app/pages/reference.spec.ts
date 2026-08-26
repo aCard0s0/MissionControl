@@ -2,11 +2,9 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentStore } from '../core/store/agent-store';
-import { ContainerStore } from '../core/store/container-store';
-import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { ReferencePage } from './reference';
 import { el, press } from '../testing/dom';
+import { provideStores } from '../testing/store';
 
 const agents = [
   { id: 'a-1', name: 'atlas', containerId: 'c-1' },
@@ -29,9 +27,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
-      { provide: AgentStore, useValue: store.agents },
-      { provide: ContainerStore, useValue: store.containers },
-      { provide: TerminalRequestStore, useValue: store.terminal },
+      ...provideStores(store),
     ],
   });
   const fixture = TestBed.createComponent(ReferencePage);

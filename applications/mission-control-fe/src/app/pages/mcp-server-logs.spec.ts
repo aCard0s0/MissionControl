@@ -2,11 +2,11 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { LogEntry } from '../core/models';
 import { McpServerLogs } from './mcp-server-logs';
 import { el, settle } from '../testing/dom';
 import { catalogServer } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const line = (msg: string, source = 'browser'): LogEntry =>
   ({ ts: 1_700_000_000_000, level: 'info', source, agentId: null, msg });
@@ -26,7 +26,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: McpCatalogStore, useValue: store.catalog }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   return { fixture, host: fixture.componentInstance };

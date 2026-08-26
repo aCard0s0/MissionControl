@@ -7,7 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.yaml.snakeyaml.Yaml;
 
+/**
+ * The rendered stack is checked by parsing it back, not by matching the whitespace it happens
+ * to emit. A generated Compose file is only ever read by Compose, so what has to hold is that
+ * the document parses and says what it was asked to — not that a key sits at a given column.
+ */
 class ComposeStackRendererTest {
 
   @Test
@@ -22,22 +28,29 @@ class ComposeStackRendererTest {
         "sse", null, "example/mcp:latest", null, List.of(), List.of(), null, List.of(),
         1103, null, "/sse", null, List.of(), List.of(), List.of(), null,
         List.of(database, cache));
-    ComposeStackRenderer renderer = new ComposeStackRenderer();
 
-    ComposeStackRenderer.Rendered rendered = renderer.render(List.of(new ComposeStackRenderer.Deployment(
-        "mcp-1", "postgres-mcp", config,
-        Map.of("DATABASE_URL", "postgres://mcp:very-secret@database/mcp"),
-        Map.of("database", Map.of("POSTGRES_PASSWORD", "very-secret"), "cache", Map.of()))));
+    ComposeStackRenderer.Rendered rendered = new ComposeStackRenderer().render(
+        List.of(new ComposeStackRenderer.Deployment(
+            "mcp-1", "postgres-mcp", config,
+            Map.of("DATABASE_URL", "postgres://mcp:very-secret@database/mcp"),
+            Map.of("database", Map.of("POSTGRES_PASSWORD", "very-secret"), "cache", Map.of()))));
 
-    assertTrue(rendered.yaml().contains("io.hermes.mission-control.owner: 'mission-control-mcp'"));
-    assertTrue(rendered.yaml().contains("name: '" + ManagedMcpStack.NETWORK + "'"));
-    assertTrue(rendered.yaml().contains("condition: service_healthy"));
-    assertTrue(rendered.yaml().contains("condition: service_started"));
-    assertTrue(rendered.yaml().contains("'postgres-mcp-database-data:/var/lib/postgresql/data'"));
-    assertTrue(rendered.yaml().contains("${MC_MCP_"));
-    assertTrue(rendered.yaml().contains(":-}"));
-    assertFalse(rendered.yaml().contains("very-secret"));
+    Map<String, Object> main = service(rendered, "postgres-mcp");
+    assertEquals(Map.of(ManagedMcpStack.OWNER_LABEL, ManagedMcpStack.PROJECT,
+        ManagedMcpStack.SERVER_ID_LABEL, "mcp-1"), main.get("labels"));
+    assertEquals(ManagedMcpStack.NETWORK, network(rendered).get("name"));
+    assertEquals(Map.of("condition", "service_healthy"),
+        dependsOn(main).get("postgres-mcp-database"));
+    assertEquals(Map.of("condition", "service_started"), dependsOn(main).get("postgres-mcp-cache"));
+    assertEquals(List.of("postgres-mcp-database-data:/var/lib/postgresql/data"),
+        service(rendered, "postgres-mcp-database").get("volumes"));
+
+    // no secret reaches the file: every value is a Compose variable resolved from the process
+    assertFalse(rendered.yaml().contains("very-secret"), rendered.yaml());
+    assertTrue(environment(main).get("DATABASE_URL").toString().startsWith("${MC_MCP_"));
+    assertTrue(environment(main).get("DATABASE_URL").toString().endsWith(":-}"));
     assertTrue(rendered.processEnvironment().containsValue("very-secret"));
+
     assertEquals(List.of("postgres-mcp", "postgres-mcp-database", "postgres-mcp-cache"),
         rendered.serviceNames().get("mcp-1"));
     assertEquals(List.of("mission-control-mcp-postgres-mcp-database-data"),
@@ -45,83 +58,72 @@ class ComposeStackRendererTest {
   }
 
   @Test
-  void entrypointAndCommandRenderAsListsWithQuotesEscaped() {
+  void entrypointAndCommandSurviveTheQuotesInsideThem() {
     StoredConfig config = new StoredConfig(
         "sse", null, "example/mcp:latest", null,
         List.of("python", "-c"), List.of("uvicorn.run(host='0.0.0.0')"), null, List.of(),
         1103, null, "/sse", null, List.of(), List.of(), List.of(), null, List.of());
 
-    String yaml = new ComposeStackRenderer().render(List.of(new ComposeStackRenderer.Deployment(
-        "mcp-1", "postgres-mcp", config, Map.of(), Map.of()))).yaml();
+    ComposeStackRenderer.Rendered rendered = new ComposeStackRenderer().render(
+        List.of(new ComposeStackRenderer.Deployment(
+            "mcp-1", "postgres-mcp", config, Map.of(), Map.of())));
 
-    assertTrue(yaml.contains("    entrypoint:\n      - 'python'\n      - '-c'\n"));
-    // Single quotes inside the boot command must survive as the YAML '' escape.
-    assertTrue(yaml.contains("    command:\n      - 'uvicorn.run(host=''0.0.0.0'')'\n"));
+    Map<String, Object> main = service(rendered, "postgres-mcp");
+    assertEquals(List.of("python", "-c"), main.get("entrypoint"));
+    assertEquals(List.of("uvicorn.run(host='0.0.0.0')"), main.get("command"));
   }
-
-  @Test
-  void emptyStackIsStillValidStructuredYaml() {
-    String yaml = new ComposeStackRenderer().render(List.of()).yaml();
-    assertTrue(yaml.startsWith("services: {}"));
-    assertFalse(yaml.contains("project_name: mcp"));
-  }
-
-  // ── optional blocks ─────────────────────────────────────────────────────
 
   @Test
   void anEmptyHostRendersAValidButEmptyComposeFile() {
     // Compose refuses a file with a bare 'services:' key and nothing under it
     ComposeStackRenderer.Rendered rendered = new ComposeStackRenderer().render(List.of());
 
-    // the empty services map plus the network declaration: Compose refuses a bare 'services:' key
-    assertTrue(rendered.yaml().startsWith("services: {}\n"), rendered.yaml());
+    assertEquals(Map.of(), parse(rendered).get("services"));
+    assertFalse(parse(rendered).containsKey("volumes"), "no volume block until one is declared");
     assertTrue(rendered.processEnvironment().isEmpty());
     assertTrue(rendered.serviceNames().isEmpty());
     assertTrue(rendered.volumeNames().isEmpty());
   }
 
+  // ── optional blocks ─────────────────────────────────────────────────────
+
   @Test
   void aHealthcheckIsRenderedFieldByFieldAndOmitsWhatItDoesNotCarry() {
-    String yaml = render(config(c -> c.healthcheck =
-        new HealthcheckSpec(List.of("CMD", "true"), "5s", "3s", 3, "1s"))).yaml();
+    Map<String, Object> full = healthcheck(render(config(c -> c.healthcheck =
+        new HealthcheckSpec(List.of("CMD", "true"), "5s", "3s", 3, "1s"))));
 
-    assertTrue(yaml.contains("      interval: '5s'"), yaml);
-    assertTrue(yaml.contains("      timeout: '3s'"));
-    assertTrue(yaml.contains("      retries: 3"));
-    assertTrue(yaml.contains("      start_period: '1s'"));
+    assertEquals("5s", full.get("interval"));
+    assertEquals("3s", full.get("timeout"));
+    assertEquals(3, full.get("retries"));
+    assertEquals("1s", full.get("start_period"));
 
-    String sparse = render(config(c -> c.healthcheck =
+    Map<String, Object> sparse = healthcheck(render(config(c -> c.healthcheck =
         new HealthcheckSpec(List.of("CMD-SHELL", "curl -f http://localhost:1100/mcp"),
-            null, null, null, null))).yaml();
+            null, null, null, null))));
 
-    assertTrue(sparse.contains("      test:\n"));
-    assertTrue(!sparse.contains("interval"), sparse);
-    assertTrue(!sparse.contains("retries"));
-    assertTrue(!sparse.contains("start_period"));
+    assertEquals(List.of("CMD-SHELL", "curl -f http://localhost:1100/mcp"), sparse.get("test"));
+    assertEquals(List.of("test"), List.copyOf(sparse.keySet()));
   }
 
   @Test
   void aServiceWithNoOptionalFieldsRendersNoneOfThoseKeys() {
-    String yaml = render(config(c -> { })).yaml();
+    Map<String, Object> main = service(render(config(c -> { })), "postgres-mcp");
 
-    assertTrue(!yaml.contains("platform:"), yaml);
-    assertTrue(!yaml.contains("entrypoint:"));
-    assertTrue(!yaml.contains("command:"));
-    assertTrue(!yaml.contains("environment:"));
-    assertTrue(!yaml.contains("healthcheck:"));
+    assertEquals(List.of("image", "restart", "labels", "networks", "expose"),
+        List.copyOf(main.keySet()));
   }
 
   @Test
   void aPlatformAndAnEntrypointAreRenderedWhenPresent() {
-    String yaml = render(config(c -> {
+    Map<String, Object> main = service(render(config(c -> {
       c.platform = "linux/arm64";
       c.entrypoint = List.of("python", "-c");
       c.command = List.of("print('hi')");
-    })).yaml();
+    })), "postgres-mcp");
 
-    assertTrue(yaml.contains("    platform: 'linux/arm64'"), yaml);
-    assertTrue(yaml.contains("    entrypoint:\n      - 'python'\n      - '-c'\n"));
-    assertTrue(yaml.contains("    command:\n      - 'print(''hi'')'\n"), "single quotes are doubled");
+    assertEquals("linux/arm64", main.get("platform"));
+    assertEquals(List.of("python", "-c"), main.get("entrypoint"));
+    assertEquals(List.of("print('hi')"), main.get("command"));
   }
 
   @Test
@@ -135,6 +137,42 @@ class ComposeStackRendererTest {
     String volume = rendered.volumeNames().values().iterator().next().getFirst();
     assertTrue(volume.startsWith(ManagedMcpStack.PROJECT + "-"), volume);
     assertTrue(volume.length() <= ManagedMcpStack.PROJECT.length() + 1 + 63, volume);
+  }
+
+  // ── reading the document back ───────────────────────────────────────────
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> parse(ComposeStackRenderer.Rendered rendered) {
+    return (Map<String, Object>) new Yaml().load(rendered.yaml());
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> service(ComposeStackRenderer.Rendered rendered, String key) {
+    return (Map<String, Object>) ((Map<String, Object>) parse(rendered).get("services")).get(key);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> network(ComposeStackRenderer.Rendered rendered) {
+    return (Map<String, Object>) ((Map<String, Object>) parse(rendered).get("networks")).get("mcp");
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> dependsOn(Map<String, Object> service) {
+    return (Map<String, Object>) service.get("depends_on");
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> environment(Map<String, Object> service) {
+    return (Map<String, Object>) service.get("environment");
+  }
+
+  private static Map<String, Object> healthcheck(ComposeStackRenderer.Rendered rendered) {
+    return environmentless(service(rendered, "postgres-mcp").get("healthcheck"));
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> environmentless(Object node) {
+    return (Map<String, Object>) node;
   }
 
   /** One managed deployment, so each test above sets only the field it is about. */

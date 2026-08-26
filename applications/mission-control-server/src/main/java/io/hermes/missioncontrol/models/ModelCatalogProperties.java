@@ -3,9 +3,10 @@ package io.hermes.missioncontrol.models;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Curated model lists, bound from MC_MODELS_* environment variables via
- * application.yml placeholders. Each value is a comma-separated list of
- * model ids.
+ * Curated model lists, bound from the {@code mc.models} block in application.yml. Each value is
+ * a comma-separated list of model ids. Written there literally rather than behind an env
+ * placeholder: the background refresh replaces every one of these on first contact, so a
+ * deploy-time override was a knob with nothing to turn it.
  *
  * @param anthropic  default Anthropic model ids
  * @param openai     default OpenAI model ids

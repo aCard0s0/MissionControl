@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiBoardTask } from '../hermes-api';
-import { apiContainer, flush, testSlices } from '../../testing/store';
+import { apiContainer, flush, liveError, testSlices } from '../../testing/store';
 
 const task = (id: string, patch: Partial<ApiBoardTask> = {}): ApiBoardTask => ({
   id, containerId: 'c-1', agentId: 'a-atlas', title: `task ${id}`, column: 'queued',
@@ -44,7 +44,7 @@ describe('BoardStore', () => {
     await store.refresh();
 
     expect(store.tasks().map(t => t.id)).toEqual(['t-1']);
-    expect(ctx.liveError()).toBeNull();
+    expect(liveError(ctx)).toBeNull();
   });
 
   it('moves a card immediately, before the backend has agreed', async () => {
@@ -66,7 +66,7 @@ describe('BoardStore', () => {
     await flush();
 
     expect(store.tasks().map(t => t.column)).toEqual(['queued', 'done']);
-    expect(ctx.liveError()).toBe('move failed: task locked');
+    expect(liveError(ctx)).toBe('move failed: task locked');
   });
 
   it('drops the tasks of a container or a profile that is gone', async () => {

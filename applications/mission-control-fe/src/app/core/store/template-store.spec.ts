@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiProfileTemplate } from '../hermes-api';
-import { apiProfile, loadedAgentSlices } from '../../testing/store';
+import { apiProfile, liveError, loadedAgentSlices } from '../../testing/store';
 
 const template = (id: string, patch: Partial<ApiProfileTemplate> = {}): ApiProfileTemplate => ({
   id, name: id, icon: '', description: 'SRE copilot', category: 'ops', provider: 'anthropic',
@@ -55,7 +55,7 @@ describe('TemplateStore', () => {
     await store.refresh();
 
     expect(store.templates().map(t => t.id)).toEqual(['pt-ops']);
-    expect(ctx.liveError()).toBeNull();
+    expect(liveError(ctx)).toBeNull();
   });
 
   it('creates when given no id and updates when given one', async () => {
@@ -73,7 +73,7 @@ describe('TemplateStore', () => {
     const { store, ctx } = await loaded({ create: vi.fn().mockRejectedValue(new Error('name taken')) });
 
     expect(await store.save({ name: 'pt-new' } as never)).toBe('');
-    expect(ctx.liveError()).toBe('save template failed: name taken');
+    expect(liveError(ctx)).toBe('save template failed: name taken');
   });
 
   it('drops a template only after the backend confirms the delete', async () => {
@@ -91,7 +91,7 @@ describe('TemplateStore', () => {
     await store.remove('pt-ops');
 
     expect(store.templates().map(t => t.id)).toEqual(['pt-ops']);
-    expect(ctx.liveError()).toBe('delete template failed: in use');
+    expect(liveError(ctx)).toBe('delete template failed: in use');
   });
 
   it('deploys into a container and folds the new profile in', async () => {
@@ -118,7 +118,7 @@ describe('TemplateStore', () => {
       { deploy: vi.fn().mockRejectedValue(new Error('profile exists')) }, [template('pt-ops')]);
 
     expect(await store.deploy('pt-ops', 'c-1', 'sre')).toBe('');
-    expect(ctx.liveError()).toBe('deploy template failed: profile exists');
+    expect(liveError(ctx)).toBe('deploy template failed: profile exists');
   });
 
   it('captures a running profile into a new template', async () => {
@@ -139,6 +139,6 @@ describe('TemplateStore', () => {
     expect(capture).not.toHaveBeenCalled();
 
     expect(await store.capture('a-atlas')).toBe('');
-    expect(ctx.liveError()).toBe('capture template failed: profile busy');
+    expect(liveError(ctx)).toBe('capture template failed: profile busy');
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { storeSlices, stubBackend } from '../../testing/store';
+import { liveError, storeSlices, stubBackend } from '../../testing/store';
 
 // What an operator action leaves behind, across the slices it touches: a write
 // that only lands once the backend agrees, a removal that takes its jobs and
@@ -61,7 +61,7 @@ describe('store actions: profile writes', () => {
 
     expect(await store.agents.updateSoul('a-1', 'must not land')).toBe(false);
     expect(store.agents.byId('a-1')?.soul).toBe('# SOUL');
-    expect(store.ctx.liveError()).toBe('SOUL.md save failed: offline');
+    expect(liveError(store.ctx)).toBe('SOUL.md save failed: offline');
   });
 
   it('reports failed container deletion without optimistically dropping inventory', async () => {
@@ -217,7 +217,7 @@ describe('store actions: container updates', () => {
     expect(await store.lifecycle.update('c-1', 'v2026.9.1')).toBe('');
     expect(store.containers.containers().some(c => c.id === 'c-1')).toBe(true);
     expect(store.containers.selectedContainerId()).toBe('c-1');
-    expect(store.ctx.liveError()).toBe('update failed: image pull timed out');
+    expect(liveError(store.ctx)).toBe('update failed: image pull timed out');
   });
 
   it('refuses to update a container onto the tag it already runs', async () => {

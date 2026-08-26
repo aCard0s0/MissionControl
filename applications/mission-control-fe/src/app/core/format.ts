@@ -50,6 +50,17 @@ export function shortDate(ts: number): string {
   return new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
 
+/** `APRIL 2026` — the month a calendar grid is showing. */
+export function monthStamp(date: Date): string {
+  return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
+}
+
+/** `WED 15 APR` — one day, as the calendar's detail pane heads it. */
+export function dayStamp(date: Date): string {
+  const weekday = date.toLocaleDateString('en-GB', { weekday: 'short' });
+  return `${weekday} ${shortDate(date.getTime())}`.toUpperCase();
+}
+
 /**
  * Date and time for a log line. A tail can span midnight — and a stopped container's
  * tail is often days old — so a bare clock reads as "today" for entries that are not.

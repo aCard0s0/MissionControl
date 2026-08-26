@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiPrompt } from '../hermes-api';
-import { testSlices } from '../../testing/store';
+import { liveError, testSlices } from '../../testing/store';
 
 const apiPrompt = (id: string, patch: Partial<ApiPrompt> = {}): ApiPrompt => ({
   id, title: `prompt ${id}`, body: 'read the first error', category: 'ops',
@@ -33,7 +33,7 @@ describe('PromptStore', () => {
     await store.refresh();
 
     expect(store.prompts().map(p => p.id)).toEqual(['p-1']);
-    expect(ctx.liveError()).toBeNull();
+    expect(liveError(ctx)).toBeNull();
   });
 
   it('lists every category in use once, sorted, for the filter chips', async () => {
@@ -84,7 +84,7 @@ describe('PromptStore', () => {
 
     expect(id).toBe('');
     expect(store.prompts().map(p => p.id)).toEqual(['p-1']);
-    expect(ctx.liveError()).toBe('save prompt failed: disk full');
+    expect(liveError(ctx)).toBe('save prompt failed: disk full');
   });
 
   it('drops a deleted prompt and reports that it is gone', async () => {
@@ -103,7 +103,7 @@ describe('PromptStore', () => {
 
     expect(await store.remove('p-1')).toBe(false);
     expect(store.prompts().map(p => p.id)).toEqual(['p-1']);
-    expect(ctx.liveError()).toBe('delete prompt failed: locked');
+    expect(liveError(ctx)).toBe('delete prompt failed: locked');
   });
 
   it('answers null for an id the library does not hold', async () => {

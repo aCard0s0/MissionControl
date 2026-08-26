@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HERMES_BASELINE } from '../container-resources';
-import { apiContainer, testSlices } from '../../testing/store';
+import { apiContainer, liveError, liveNotice, testSlices } from '../../testing/store';
 
 /** The three slices a lifecycle action touches, sharing one stubbed backend. */
 const loaded = async (containersApi: Record<string, unknown>, images: Record<string, unknown> = {}) => {
@@ -67,7 +67,7 @@ describe('ContainerLifecycle deploy', () => {
     });
 
     expect(await lifecycle.deploy('hermes-lab', 'v1', [], 'dh-local')).toBe('');
-    expect(ctx.liveError()).toBe('deploy failed: name already in use');
+    expect(liveError(ctx)).toBe('deploy failed: name already in use');
   });
 
   it('confirms a deploy that worked — success used to say nothing at all', async () => {
@@ -77,7 +77,7 @@ describe('ContainerLifecycle deploy', () => {
     await vi.advanceTimersByTimeAsync(600);
     await deployed;
 
-    expect(ctx.liveNotice()).toBe('container hermes-lab deployed');
+    expect(liveNotice(ctx)).toBe('container hermes-lab deployed');
   });
 
   it('is visible as running for the whole deploy, including the image pull', async () => {
@@ -143,7 +143,7 @@ describe('ContainerLifecycle start and stop', () => {
     lifecycle.setStatus('c-1', 'running');
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(ctx.liveError()).toBe('start failed: port bound');
+    expect(liveError(ctx)).toBe('start failed: port bound');
   });
 
   it('says so rather than going quiet on a container it does not hold', async () => {
@@ -153,7 +153,7 @@ describe('ContainerLifecycle start and stop', () => {
     lifecycle.setStatus('c-missing', 'running');
 
     expect(start).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('container is no longer available');
+    expect(liveError(ctx)).toBe('container is no longer available');
   });
 
   it('tracks the start on the shell, so leaving the page does not lose it', async () => {
@@ -166,7 +166,7 @@ describe('ContainerLifecycle start and stop', () => {
     await vi.advanceTimersByTimeAsync(700);
 
     expect(activity.active()).toEqual([]);
-    expect(ctx.liveNotice()).toBe('hermes-prod started');
+    expect(liveNotice(ctx)).toBe('hermes-prod started');
   });
 
   it('names a stop in the words a stop deserves', async () => {
@@ -179,7 +179,7 @@ describe('ContainerLifecycle start and stop', () => {
 
     await vi.advanceTimersByTimeAsync(700);
 
-    expect(ctx.liveNotice()).toBe('hermes-prod stopped');
+    expect(liveNotice(ctx)).toBe('hermes-prod stopped');
   });
 
   it('clears the entry when the daemon refuses, rather than showing it forever', async () => {
@@ -229,7 +229,7 @@ describe('ContainerLifecycle update', () => {
     expect(await lifecycle.update('c-1', 'v2026.8.3')).toBe('');   // already on this tag
     expect(await lifecycle.update('c-1', '')).toBe('');
     expect(update).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBeNull();
+    expect(liveError(ctx)).toBeNull();
   });
 
   it('says so when the container to update is no longer there', async () => {
@@ -238,7 +238,7 @@ describe('ContainerLifecycle update', () => {
 
     expect(await lifecycle.update('c-missing', 'v2026.8.4')).toBe('');
     expect(update).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('container is no longer available');
+    expect(liveError(ctx)).toBe('container is no longer available');
   });
 
   it('re-reads the inventory after a failed update, which may have half landed', async () => {
@@ -248,7 +248,7 @@ describe('ContainerLifecycle update', () => {
     });
 
     expect(await lifecycle.update('c-1', 'v2026.8.4')).toBe('');
-    expect(ctx.liveError()).toBe('update failed: pull timed out');
+    expect(liveError(ctx)).toBe('update failed: pull timed out');
     expect(list).toHaveBeenCalledTimes(2);
   });
 });
@@ -274,7 +274,7 @@ describe('ContainerLifecycle remove', () => {
 
     expect(await lifecycle.remove('c-1')).toBe(false);
     expect(containers.byId('c-1')).not.toBeNull();
-    expect(ctx.liveError()).toBe('remove failed: volume busy');
+    expect(liveError(ctx)).toBe('remove failed: volume busy');
     expect(list).toHaveBeenCalledTimes(2);
   });
 
@@ -284,6 +284,6 @@ describe('ContainerLifecycle remove', () => {
 
     expect(await lifecycle.remove('c-missing')).toBe(false);
     expect(remove).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('container is no longer available');
+    expect(liveError(ctx)).toBe('container is no longer available');
   });
 });

@@ -2,10 +2,10 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProviderStore } from '../core/store/provider-store';
 import { ModelProvider, OllamaModel, PullState } from '../core/models';
 import { ModelsPage } from './models';
 import { el, press, settle, type } from '../testing/dom';
+import { provideStores } from '../testing/store';
 
 const provider = (id: string, name: string): ModelProvider => ({
   id, name, url: `http://${name}:11434`, kind: 'ollama', status: 'connected',
@@ -31,7 +31,7 @@ const storeStub = (providers: ModelProvider[] = [provider('mp-1', 'workstation')
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: ProviderStore, useValue: store.providers }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(ModelsPage);
   fixture.detectChanges();
   return { fixture, store };

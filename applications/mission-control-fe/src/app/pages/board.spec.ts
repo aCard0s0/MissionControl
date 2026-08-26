@@ -3,12 +3,10 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentStore } from '../core/store/agent-store';
-import { BoardStore } from '../core/store/board-store';
-import { ContainerStore } from '../core/store/container-store';
 import { BoardColumn, BoardTask } from '../core/models';
 import { BoardPage } from './board';
 import { el } from '../testing/dom';
+import { provideStores } from '../testing/store';
 
 const task = (id: string, column: BoardColumn, patch: Partial<BoardTask> = {}): BoardTask => ({
   id, containerId: 'c-1', agentId: 'a-1', title: `task ${id}`, column,
@@ -30,7 +28,7 @@ const storeStub = (tasks: BoardTask[]) => ({
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents }, { provide: BoardStore, useValue: store.board }, { provide: ContainerStore, useValue: store.containers }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(BoardPage);
   fixture.detectChanges();
   return { fixture, store };

@@ -20,9 +20,6 @@ import { ContainerResources } from './models';
  */
 export const HERMES_BASELINE: ContainerResources = { memoryMb: 2048, cpus: 2 };
 
-/** The vendor's stated minimums. The backend refuses anything under them. */
-export const HERMES_MINIMUM: ContainerResources = { memoryMb: 1024, cpus: 1 };
-
 /** Offered as buttons, so the common case is one click rather than a typed number. */
 export const MEMORY_PRESETS_MB = [1024, 2048, 4096, 8192, 16384] as const;
 export const CPU_PRESETS = [1, 2, 4, 8] as const;
@@ -44,10 +41,4 @@ export function memoryNote(mb: number): string | null {
   if (mb < 2048) return 'below 2 GB, browser automation (Playwright/Chromium) will not fit';
   if (mb > 4096) return 'above the recommended 2–4 GB — reserved on the host whether used or not';
   return null;
-}
-
-/** True when nothing has been raised above what the vendor recommends. */
-export function isBaseline(resources: ContainerResources): boolean {
-  return resources.memoryMb === HERMES_BASELINE.memoryMb
-    && resources.cpus === HERMES_BASELINE.cpus;
 }

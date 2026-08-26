@@ -5,14 +5,9 @@ import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
 import { ActivityStore } from './core/store/activity-store';
-import { AgentStore } from './core/store/agent-store';
-import { ContainerStore } from './core/store/container-store';
-import { HostStore } from './core/store/host-store';
-import { LiveSync } from './core/store/live-sync';
-import { StoreContext } from './core/store/store-context';
-import { TerminalRequestStore } from './core/store/terminal-request-store';
 import { HermesContainer } from './core/models';
 import { button, el, press, settle, text } from './testing/dom';
+import { provideStores } from './testing/store';
 
 const container = (id: string, patch: Partial<HermesContainer> = {}): HermesContainer => ({
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
@@ -36,8 +31,6 @@ const storeStub = (containers: HermesContainer[]) => ({
   ctx: {
     config: { apiBaseUrl: '', dockerSocket: '' },
     toasts: signal<{ id: number; kind: 'ok' | 'error'; message: string; at: number }[]>([]),
-    liveError: signal<string | null>(null),
-    liveNotice: signal<string | null>(null),
     toast: vi.fn(),
     notify: vi.fn(),
     dismiss: vi.fn(),
@@ -56,7 +49,7 @@ const storeStub = (containers: HermesContainer[]) => ({
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: AgentStore, useValue: store.agents }, { provide: ContainerStore, useValue: store.containers }, { provide: HostStore, useValue: store.hosts }, { provide: LiveSync, useValue: store.liveSync }, { provide: StoreContext, useValue: store.ctx }, { provide: TerminalRequestStore, useValue: store.terminal }],
+    providers: [provideRouter([]), ...provideStores(store)],
   });
   const fixture = TestBed.createComponent(App);
   fixture.detectChanges();

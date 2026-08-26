@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DockerHost } from '../models';
 import { dockerHost } from '../../testing/models';
-import { flush, testSlices } from '../../testing/store';
+import { flush, liveError, testSlices } from '../../testing/store';
 
 const host = (id: string, patch: Partial<DockerHost> = {}): DockerHost =>
   dockerHost(id, { engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, ...patch });
@@ -58,7 +58,7 @@ describe('HostStore', () => {
     store.add('remote', 'nonsense');
     await flush();
 
-    expect(ctx.liveError()).toContain('add host failed: bad address');
+    expect(liveError(ctx)).toContain('add host failed: bad address');
     expect(store.hosts().map(h => h.id)).toEqual(['dh-local']);
   });
 
@@ -112,7 +112,7 @@ describe('HostStore', () => {
     await flush();
     await flush();
 
-    expect(ctx.liveError()).toContain('host check failed: timeout');
+    expect(liveError(ctx)).toContain('host check failed: timeout');
     expect(store.hosts()[0].status).toBe('connected');
   });
 });

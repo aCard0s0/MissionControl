@@ -228,14 +228,17 @@ image_exists()   { docker image inspect "${IMAGE}:${TAG}" >/dev/null 2>&1; }
 # instead of 256 MiB), no pids limit, no init and no healthcheck.
 #
 # The ollama service is in the same project but must not flip flavor detection.
-ts_exists()      { [[ -n "$(compose_ro ps -aq tailscale 2>/dev/null || true)" ]]; }
-ts_running()     { [[ -n "$(compose_ro ps -q tailscale 2>/dev/null || true)" ]]; }
-app_exists()     { [[ -n "$(compose_ro ps -aq mission-control 2>/dev/null || true)" ]]; }
-app_running()    { [[ -n "$(compose_ro ps -q mission-control 2>/dev/null || true)" ]]; }
+# `ps -aq` counts a stopped container, `ps -q` only a running one.
+svc_exists()  { [[ -n "$(compose_ro ps -aq "$1" 2>/dev/null || true)" ]]; }
+svc_running() { [[ -n "$(compose_ro ps -q  "$1" 2>/dev/null || true)" ]]; }
+
+ts_exists()      { svc_exists tailscale; }
+ts_running()     { svc_running tailscale; }
+app_exists()     { svc_exists mission-control; }
+app_running()    { svc_running mission-control; }
 plain_exists()   { app_exists && ! ts_exists; }
-plain_running()  { app_running && ! ts_running; }
-ollama_exists()  { [[ -n "$(compose_ro ps -aq ollama 2>/dev/null || true)" ]]; }
-ollama_running() { [[ -n "$(compose_ro ps -q ollama 2>/dev/null || true)" ]]; }
+ollama_exists()  { svc_exists ollama; }
+ollama_running() { svc_running ollama; }
 
 build_image() {
   echo "→ building ${IMAGE}:${TAG}"

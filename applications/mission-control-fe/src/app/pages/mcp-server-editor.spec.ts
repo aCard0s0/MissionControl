@@ -2,12 +2,11 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { HostStore } from '../core/store/host-store';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { DockerHost } from '../core/models';
 import { McpEditorDraft, newMcpDraft } from '../core/mcp/catalog-draft';
 import { McpServerEditor } from './mcp-server-editor';
 import { el, press } from '../testing/dom';
+import { provideStores } from '../testing/store';
 
 const managedDraft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
   ...newMcpDraft('managed', 'dh-local'), name: 'browser', image: 'mcp/playwright:latest', ...patch,
@@ -41,7 +40,7 @@ class Host {
 
 const render = (draft: McpEditorDraft, store = storeStub()) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: HostStore, useValue: store.hosts }, { provide: McpCatalogStore, useValue: store.catalog }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.draft.set(draft);
   fixture.detectChanges();

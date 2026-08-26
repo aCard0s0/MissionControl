@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StoreSlices, storeSlices, stubBackend } from '../../testing/store';
+import { StoreSlices, liveError, storeSlices, stubBackend } from '../../testing/store';
 
 // The probe, the first load fan-out and the pollers used to run only against a
 // real backend. These drive the real HermesApi against a stubbed fetch, so the
@@ -432,7 +432,7 @@ describe('live MCP catalog lifecycle', () => {
     expect(store.catalog.byId(server.id)).toMatchObject({
       operationState: 'error', operationError: 'port 5432 already published',
     });
-    expect(store.ctx.liveError()).toBe('MCP server start failed: port 5432 already published');
+    expect(liveError(store.ctx)).toBe('MCP server start failed: port 5432 already published');
   });
 
   it('answers a check with what the probe found, leaving the operation state alone', async () => {
@@ -486,7 +486,7 @@ describe('live MCP catalog lifecycle', () => {
 
     expect(await connecting).toBe(false);
     expect(connectCatalog).not.toHaveBeenCalled();
-    expect(store.ctx.liveError()).toContain('MCP server start failed: image pull failed');
+    expect(liveError(store.ctx)).toContain('MCP server start failed: image pull failed');
   });
 });
 
@@ -531,7 +531,7 @@ describe('live registries', () => {
     store.hosts.check('dh-local');
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.ctx.liveError()).toBe('host check failed: x509: certificate expired');
+    expect(liveError(store.ctx)).toBe('host check failed: x509: certificate expired');
     expect(list).toHaveBeenCalled();
   });
 
@@ -592,7 +592,7 @@ describe('live registries', () => {
 
     expect(await store.providers.models('mp-local')).toEqual([]);
     expect(await store.providers.pullStatus('mp-local')).toEqual([]);
-    expect(store.ctx.liveError()).toBe('model list failed: ollama down');
+    expect(liveError(store.ctx)).toBe('model list failed: ollama down');
   });
 
   it('creates a template, then updates that same one', async () => {
@@ -624,7 +624,7 @@ describe('live registries', () => {
       name: 'ops', icon: '', description: '', category: '', provider: '', model: '', baseUrl: '', cwd: '',
       soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
     })).toBe('');
-    expect(store.ctx.liveError()).toBe('save template failed: name taken');
+    expect(liveError(store.ctx)).toBe('save template failed: name taken');
     expect(store.templates.templates()).toHaveLength(before);
   });
 
@@ -636,7 +636,7 @@ describe('live registries', () => {
     await store.templates.remove(target.id);
 
     expect(store.templates.byId(target.id)).not.toBeNull();
-    expect(store.ctx.liveError()).toBe('delete template failed: in use');
+    expect(liveError(store.ctx)).toBe('delete template failed: in use');
   });
 
   it('adopts the profile a template deploy created', async () => {
@@ -704,7 +704,7 @@ describe('live profile writes', () => {
 
     expect(await store.agents.updateConfig(agent.id, 'broken: [')).toBe(false);
     expect(store.agents.byId(agent.id)?.configYaml).toBe(original);
-    expect(store.ctx.liveError()).toBe('config save failed: invalid yaml at line 3');
+    expect(liveError(store.ctx)).toBe('config save failed: invalid yaml at line 3');
   });
 
   it('applies the skill list a toggle answered with', async () => {
@@ -734,7 +734,7 @@ describe('live profile writes', () => {
     });
 
     expect(await store.setup.setup(agent.id)).toBeNull();
-    expect(store.ctx.liveError()).toBe('setup load failed: hermes status timed out');
+    expect(liveError(store.ctx)).toBe('setup load failed: hermes status timed out');
   });
 
   it('returns the refreshed setup an env write answered with', async () => {
@@ -763,7 +763,7 @@ describe('live profile writes', () => {
     });
 
     expect(await store.setup.authProviders(container.id)).toEqual([]);
-    expect(store.ctx.liveError()).toBeNull();
+    expect(liveError(store.ctx)).toBeNull();
   });
 
   it('drops a removed profile only after the backend confirms it', async () => {
@@ -775,7 +775,7 @@ describe('live profile writes', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(store.agents.byId(agent.id)).not.toBeNull();
-    expect(store.ctx.liveError()).toBe('remove profile failed: profile busy');
+    expect(liveError(store.ctx)).toBe('remove profile failed: profile busy');
   });
 });
 
@@ -900,7 +900,7 @@ describe('live setup cache', () => {
     expect(await store.setup.setup(agent.id, true)).toBeNull();
 
     expect(store.setup.setupOf(agent.id)).toMatchObject({ envExists: true });
-    expect(store.ctx.liveError()).toBe('setup load failed: hermes status timed out');
+    expect(liveError(store.ctx)).toBe('setup load failed: hermes status timed out');
   });
 
   it('forgets a deleted profile\'s credentials along with the profile', async () => {
