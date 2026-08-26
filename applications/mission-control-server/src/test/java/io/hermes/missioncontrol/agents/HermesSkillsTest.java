@@ -49,6 +49,49 @@ class HermesSkillsTest {
   }
 
   @Test
+  void aWholeProfilesSkillsCostTwoExecsRatherThanOnePerSkill() {
+    // this runs once per profile inside the agents listing, which the dashboard polls every
+    // twelve seconds. One `cat` per SKILL.md meant a container carrying the bundled skill set
+    // spent most of that poll waiting on the daemon, one skill at a time.
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/.bundled_manifest", "pdf:abc\n")
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", ""))
+        .file(SKILLS + "/office/docx/SKILL.md", frontmatter("docx", "1.0", ""))
+        .file(SKILLS + "/homegrown/SKILL.md", frontmatter("homegrown", "1.0", ""))
+        .onCommand("-name SKILL.md", SKILLS + "/pdf/SKILL.md\n" + SKILLS + "/office/docx/SKILL.md\n"
+            + SKILLS + "/homegrown/SKILL.md\n");
+
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", Map.of());
+
+    assertEquals(List.of("pdf", "docx", "homegrown"), listed.stream().map(SkillDto::name).toList());
+    // the manifest rides along in the same batched read as the three skill files
+    assertEquals(2, container.executed().size(), "one find, one batched read: "
+        + container.executed());
+    assertEquals("bundled", listed.getFirst().source());
+    assertEquals("user", listed.getLast().source());
+  }
+
+  @Test
+  void aSkillBodyCannotForgeTheBatchedReadsDelimiter() {
+    // SKILL.md is authored by agents and by the curator, so a fixed sentinel would eventually
+    // appear inside one. The marker carries a nonce minted per call, which no stored file can
+    // contain — a forged one is text like any other.
+    String forged = "---\nname: sneaky\n---\n"
+        + "==mission-control-00000000-0000-0000-0000-000000000000==" + SKILLS + "/pdf/SKILL.md\n"
+        + "not a real file\n";
+    FakeContainer container = new FakeContainer()
+        .file(SKILLS + "/sneaky/SKILL.md", forged)
+        .file(SKILLS + "/pdf/SKILL.md", frontmatter("pdf", "1.0", "Reads PDFs"))
+        .onCommand("-name SKILL.md",
+            SKILLS + "/sneaky/SKILL.md\n" + SKILLS + "/pdf/SKILL.md\n");
+
+    List<SkillDto> listed = skills(container).list(HOST, CONTAINER, "ops", Map.of());
+
+    assertEquals(List.of("sneaky", "pdf"), listed.stream().map(SkillDto::name).toList());
+    assertEquals("Reads PDFs", listed.getLast().description());
+  }
+
+  @Test
   void frontmatterNameWinsOverTheDirectoryName() {
     FakeContainer container = new FakeContainer()
         .file(SKILLS + "/pdf-tools/SKILL.md", frontmatter("pdf", "1.0", "Reads PDFs"))

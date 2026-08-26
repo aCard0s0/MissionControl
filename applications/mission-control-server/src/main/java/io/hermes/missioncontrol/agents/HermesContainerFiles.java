@@ -4,12 +4,16 @@ import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -114,6 +118,47 @@ class HermesContainerFiles {
     ExecResult result =
         exec(host, containerId, List.of("sh", "-lc", "cat \"$1\" 2>/dev/null || true", "_", path));
     return result.stdout();
+  }
+
+  /**
+   * {@link #readFile} for several paths at once, in one exec.
+   *
+   * <p>The agents listing is the reason. It reads four documents per profile and one SKILL.md
+   * per skill, inside a loop over every profile in the container, on a twelve-second poll: a
+   * container with three profiles and the bundled skill set was spending around ninety-six exec
+   * round trips per poll, each one creating and inspecting an exec inside the container, on the
+   * same daemon the ten-second fleet poll and the three-second stats poll are using.
+   *
+   * <p>Framed with a marker carrying a nonce minted for this call, so a file cannot contain its
+   * own delimiter — SKILL.md and MEMORY.md are written by agents, and a fixed sentinel would be
+   * a matter of time. Paths travel as argv, never interpolated into the script, which is the
+   * rule this class exists to hold.
+   *
+   * <p>Absent files answer empty, exactly as {@link #readFile} does and for the same reason: a
+   * profile legitimately has no MEMORY.md, no .env and no gateway_state.json.
+   */
+  Map<String, String> readFiles(DockerHostRef host, String containerId, List<String> paths) {
+    Map<String, String> contents = new LinkedHashMap<>();
+    if (paths.isEmpty()) return contents;
+    for (String path : paths) contents.put(path, "");
+
+    String marker = "==mission-control-" + UUID.randomUUID() + "==";
+    List<String> command = new ArrayList<>(List.of("sh", "-lc",
+        "marker=\"$1\"; shift;"
+            + " for f in \"$@\"; do printf '%s%s\\n' \"$marker\" \"$f\";"
+            + " cat \"$f\" 2>/dev/null || true; done",
+        "_", marker));
+    command.addAll(paths);
+
+    String stdout = exec(host, containerId, command).stdout();
+    for (String chunk : stdout.split(Pattern.quote(marker))) {
+      int newline = chunk.indexOf('\n');
+      if (newline < 0) continue;   // the empty head before the first marker
+      String path = chunk.substring(0, newline);
+      // only what was asked for: `ls`-style surprises in the output cannot invent a key
+      if (contents.containsKey(path)) contents.put(path, chunk.substring(newline + 1));
+    }
+    return contents;
   }
 
   void writeFile(DockerHostRef host, String containerId, String path, String content) {

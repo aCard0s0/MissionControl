@@ -100,6 +100,15 @@ final class FakeContainer {
       // cat … || true cannot tell an absent file from an empty one
       return new ExecResult(0, files.getOrDefault(path, ""), "");
     }
+    if (script.startsWith("marker=")) {
+      // the batched read: (…, "_", marker, path…), each body behind its own marker line
+      String marker = command.get(4);
+      StringBuilder out = new StringBuilder();
+      for (String each : command.subList(5, command.size())) {
+        out.append(marker).append(each).append('\n').append(files.getOrDefault(each, ""));
+      }
+      return new ExecResult(0, out.toString(), "");
+    }
     return new ExecResult(0, "", "");
   }
 }

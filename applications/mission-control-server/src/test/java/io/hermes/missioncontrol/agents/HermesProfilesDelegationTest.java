@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,6 +23,7 @@ import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +45,8 @@ class HermesProfilesDelegationTest {
   private static final String PROFILE = "scout";
   private static final String DIR = "/opt/data/profiles/scout";
 
+  /** What the container holds, so the batched read can answer by path. */
+  private final Map<String, String> documents = new LinkedHashMap<>();
   private HermesContainerFiles files;
   private HermesEnvFile env;
   private HermesModelConfig modelConfig;
@@ -68,6 +72,14 @@ class HermesProfilesDelegationTest {
 
     when(files.requireProfileDir(HOST, CONTAINER, PROFILE)).thenReturn(DIR);
     when(files.readFile(any(), anyString(), anyString())).thenReturn("");
+    // the four profile documents come back from one exec, so the stub answers by path
+    when(files.readFiles(any(), anyString(), anyList())).thenAnswer(call -> {
+      Map<String, String> answered = new LinkedHashMap<>();
+      for (String path : call.<List<String>>getArgument(2)) {
+        answered.put(path, documents.getOrDefault(path, ""));
+      }
+      return answered;
+    });
     when(modelConfig.parseConfig(any())).thenReturn(new ConfigInfo("anthropic", "claude-opus-5", "/work"));
     when(gatewayState.read(any(), anyString(), anyString()))
         .thenReturn(new HermesGatewayState.Reading(GatewayDto.unknown(), List.of()));
@@ -77,8 +89,8 @@ class HermesProfilesDelegationTest {
 
   @Test
   void readingOneProfileAssemblesItFromEveryCollaborator() {
-    when(files.readFile(HOST, CONTAINER, DIR + "/SOUL.md")).thenReturn("be useful");
-    when(files.readFile(HOST, CONTAINER, DIR + "/MEMORY.md")).thenReturn("remembered");
+    documents.put(DIR + "/SOUL.md", "be useful");
+    documents.put(DIR + "/MEMORY.md", "remembered");
 
     AgentProfileDto profile = profiles.get(HOST, CONTAINER, PROFILE);
 
@@ -101,7 +113,9 @@ class HermesProfilesDelegationTest {
     AgentProfileDto profile = profiles.get(HOST, CONTAINER, "default");
 
     assertEquals("Default profile", profile.role());
-    verify(files).readFile(HOST, CONTAINER, "/opt/data/config.yaml");
+    // one exec for all four documents, not one each: this runs per profile on a 12s poll
+    verify(files).readFiles(HOST, CONTAINER, List.of(
+        "/opt/data/config.yaml", "/opt/data/SOUL.md", "/opt/data/MEMORY.md", "/opt/data/.env"));
   }
 
   @Test

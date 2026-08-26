@@ -101,6 +101,15 @@ class ProfileConfigSerializationTest {
         }
         return new ExecResult(0, read(path), "");
       }
+      if (script.startsWith("marker=")) {
+        String marker = command.get(4);
+        StringBuilder out = new StringBuilder();
+        for (String each : command.subList(5, command.size())) {
+          out.append(marker).append(each).append('\n').append(read(each));
+        }
+        operations.add(Thread.currentThread().getName() + ":batch");
+        return new ExecResult(0, out.toString(), "");
+      }
       if (script.contains("mv -f") || script.contains("> \"$path\"")) {
         // the write scripts take (…, "_", path, content)
         String path = command.get(command.size() - 2);
@@ -224,6 +233,38 @@ class ProfileConfigSerializationTest {
     }));
 
     assertEquals("kept", files.serialized(CONTAINER, PROFILE, () -> "kept"));
+  }
+
+  // ── the batched read ────────────────────────────────────────────────────
+
+  @Test
+  void aBatchedReadAnswersEveryPathAskedForAndNothingElse() {
+    MutableContainer container = new MutableContainer()
+        .file("/opt/data/SOUL.md", "be useful\n")
+        // no trailing newline, and a body carrying blank lines: the framing has to hand back
+        // exactly what cat produced, or a profile document comes back subtly altered
+        .file("/opt/data/MEMORY.md", "line one\n\nline three")
+        .file("/opt/data/config.yaml", "");
+    HermesContainerFiles files = new HermesContainerFiles(container.dockerExec);
+
+    Map<String, String> read = files.readFiles(HOST, CONTAINER, List.of(
+        "/opt/data/config.yaml", "/opt/data/SOUL.md", "/opt/data/MEMORY.md", "/opt/data/.env"));
+
+    assertEquals("be useful\n", read.get("/opt/data/SOUL.md"));
+    assertEquals("line one\n\nline three", read.get("/opt/data/MEMORY.md"));
+    assertEquals("", read.get("/opt/data/config.yaml"));
+    // absent answers empty, as readFile does: a profile legitimately has no .env
+    assertEquals("", read.get("/opt/data/.env"));
+    assertEquals(4, read.size());
+  }
+
+  @Test
+  void anEmptyBatchAsksTheContainerNothing() {
+    MutableContainer container = new MutableContainer();
+    HermesContainerFiles files = new HermesContainerFiles(container.dockerExec);
+
+    assertEquals(Map.of(), files.readFiles(HOST, CONTAINER, List.of()));
+    assertEquals(List.of(), container.operations);
   }
 
   private static void assertThrowsAnything(Runnable work) {

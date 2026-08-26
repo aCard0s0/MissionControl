@@ -34,16 +34,30 @@ class HermesSkills {
 
   // ── listing ────────────────────────────────────────────────────────────────
 
+  /**
+   * Every skill the profile has, with its frontmatter.
+   *
+   * <p>Two execs, not {@code 2 + one per skill}. This ran on the agents listing, which runs once
+   * per profile, on a twelve-second poll — so a container with the bundled skill set spent most
+   * of that poll waiting on {@code cat}, one skill at a time. The manifest rides along in the
+   * same batched read as the skill files.
+   */
   List<SkillDto> list(DockerHostRef host, String containerId, String profileName, Map<?, ?> configMap) {
     String skillsDir = ProfilePaths.skillsDir(profileName);
     Set<String> disabled = disabledSkills(configMap, ProfilePaths.PLATFORM_CLI);
-    Set<String> bundled = bundledSkillNames(host, containerId, skillsDir);
+
+    String manifestPath = skillsDir + "/.bundled_manifest";
+    List<String> skillMdPaths = findSkillMdPaths(host, containerId, skillsDir);
+    List<String> toRead = new ArrayList<>(skillMdPaths);
+    toRead.add(manifestPath);
+    Map<String, String> read = files.readFiles(host, containerId, toRead);
+
+    Set<String> bundled = bundledSkillNames(read.get(manifestPath));
     List<SkillDto> skills = new ArrayList<>();
-    for (String skillMdPath : findSkillMdPaths(host, containerId, skillsDir)) {
-      String dirName = skillDirName(skillMdPath);
-      String skillMd = files.readFile(host, containerId, skillMdPath);
+    for (String skillMdPath : skillMdPaths) {
+      String skillMd = read.get(skillMdPath);
       if (skillMd == null || skillMd.isBlank()) continue;
-      SkillMeta meta = parseSkillMeta(skillMd, dirName);
+      SkillMeta meta = parseSkillMeta(skillMd, skillDirName(skillMdPath));
       String source = resolveSkillSource(meta, bundled);
       boolean enabled = !disabled.contains(meta.name());
       skills.add(new SkillDto(
@@ -192,9 +206,8 @@ class HermesSkills {
   /** Names listed in skills/.bundled_manifest ("name:hash" per line) ship with
    *  Hermes. Anything present on disk but absent here was created locally — by
    *  the agent itself or the curator (which authors umbrella skills). */
-  private Set<String> bundledSkillNames(DockerHostRef host, String containerId, String skillsDir) {
+  private static Set<String> bundledSkillNames(String manifest) {
     Set<String> names = new HashSet<>();
-    String manifest = files.readFile(host, containerId, skillsDir + "/.bundled_manifest");
     if (manifest == null) return names;
     for (String line : HermesContainerFiles.lines(manifest)) {
       int colon = line.indexOf(':');
