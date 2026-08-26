@@ -1,7 +1,6 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
-import io.hermes.missioncontrol.agents.templates.CaptureFromAgentRequest;
 import io.hermes.missioncontrol.agents.templates.DeployFromTemplateRequest;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
@@ -17,6 +16,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * Reusable agent blueprints — dashboard-owned, applied when deploying agents.
@@ -79,4 +79,11 @@ public class ProfileTemplatesController {
     return endpoints.linked(host, service.deploy(id, host, request.containerId(), request.name()));
   }
 
+  /** Snapshot a running agent's config into a new reusable template. */
+  public record CaptureFromAgentRequest(
+      @NotBlank String hostId,
+      @NotBlank String containerId,
+      @NotBlank String name,
+      String templateName) {
+  }
 }

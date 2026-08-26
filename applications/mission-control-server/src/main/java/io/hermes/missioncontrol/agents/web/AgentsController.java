@@ -7,9 +7,6 @@ import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
-import io.hermes.missioncontrol.agents.api.PauseAgentRequest;
-import io.hermes.missioncontrol.agents.api.UpdateConfigRequest;
-import io.hermes.missioncontrol.agents.api.UpdateSoulRequest;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
@@ -24,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.constraints.Size;
 
 /**
  * Agent profiles themselves: the inventory, the lifecycle, and the documents that belong to
@@ -147,5 +145,19 @@ public class AgentsController {
       @PathVariable String name,
       @RequestParam(defaultValue = "100") int tail) {
     return profiles.logs(endpoints.host(hostId), containerId, name, tail);
+  }
+
+  public record UpdateConfigRequest(String configYaml) {
+  }
+
+  public record UpdateSoulRequest(String soul) {
+  }
+
+  /**
+   * Why an agent was paused. Optional — hermes stores the reason in the sentinel and shows it
+   * to anyone who messages the agent while it is held, so it is worth filling in, but a panic
+   * button that demanded a justification first would be the wrong panic button.
+   */
+  public record PauseAgentRequest(@Size(max = 200) String reason) {
   }
 }

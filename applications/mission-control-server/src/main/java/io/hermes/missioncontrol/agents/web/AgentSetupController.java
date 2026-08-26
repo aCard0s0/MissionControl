@@ -3,7 +3,7 @@ package io.hermes.missioncontrol.agents.web;
 import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
-import io.hermes.missioncontrol.agents.api.SetEnvRequest;
+import io.hermes.missioncontrol.agents.api.EnvEntry;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,5 +61,9 @@ class AgentSetupController {
       @PathVariable String containerId,
       @PathVariable String name) {
     return setup.initEnv(endpoints.host(hostId), containerId, name);
+  }
+
+  /** A batch of {@code .env} writes. A blank value removes the variable. */
+  public record SetEnvRequest(@Valid List<@Valid EnvEntry> entries) {
   }
 }

@@ -1,7 +1,6 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.ModelProviderRegistry;
-import io.hermes.missioncontrol.agents.api.ProviderOptionDto;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,5 +17,15 @@ public class ProvidersController {
     return ModelProviderRegistry.PROVIDERS.stream()
         .map(p -> new ProviderOptionDto(p.key(), p.label(), p.needsKey(), p.oauth(), p.hasCatalog(), p.envVar()))
         .toList();
+  }
+
+  /** A selectable model provider for the create-agent / template UIs. */
+  public record ProviderOptionDto(
+      String key,
+      String label,
+      boolean needsKey,
+      boolean oauth,
+      boolean hasCatalog,
+      String envVar) {
   }
 }
