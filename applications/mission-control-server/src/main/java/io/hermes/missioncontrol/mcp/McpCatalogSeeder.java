@@ -1,7 +1,6 @@
 package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -138,7 +137,7 @@ class McpCatalogSeeder {
   private void createSeed(
       String seedKey, String expectedName, String serviceKey, McpServerRequest request) {
     if (repository.findBySeedKey(seedKey).isPresent()) return;
-    Validated validated = McpRequestValidator.validate(request);
+    McpServerRequest validated = McpRequestValidator.validate(request);
     if (repository.nameExists(expectedName, null)) {
       log.warn("not seeding default MCP {} because that display name is already in use", expectedName);
       return;

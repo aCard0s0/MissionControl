@@ -8,6 +8,17 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+/**
+ * Every rule a catalog create/update body has to satisfy, and the normalization that goes with
+ * them: trimmed, lower-cased where the value is a vocabulary, and defaulted per kind.
+ *
+ * <p>{@link #validate} answers with an {@link McpServerRequest} rather than a type of its own.
+ * There used to be a {@code Validated} record here, and it was {@code McpServerRequest} field for
+ * field — same 21 names, same types, same order — so the catalog's shape was declared twice and
+ * adding a field meant editing both. What it bought was a compile-time marker that validation had
+ * run; all three consumers sit one line below their own {@code validate} call, which is where that
+ * guarantee actually comes from.
+ */
 final class McpRequestValidator {
 
   private static final Pattern ENV_KEY = Pattern.compile(ConfigValueInput.ENV_KEY_PATTERN);
@@ -18,32 +29,10 @@ final class McpRequestValidator {
   private static final Pattern SUPPORT_NAME = Pattern.compile("[a-z0-9][a-z0-9-]{0,62}");
   private static final Pattern DURATION = Pattern.compile("[1-9][0-9]*(?:\\.[0-9]+)?(?:ns|us|ms|s|m|h)");
 
-  record Validated(
-      String name,
-      String description,
-      String kind,
-      String hostId,
-      String transport,
-      String url,
-      String image,
-      String platform,
-      List<String> entrypoint,
-      List<String> command,
-      String stdioCommand,
-      List<String> args,
-      Integer internalPort,
-      Integer publishedPort,
-      String path,
-      String crossHostUrl,
-      List<ConfigValueInput> environment,
-      List<ConfigValueInput> headers,
-      List<VolumeSpec> volumes,
-      HealthcheckSpec healthcheck,
-      List<SupportServiceRequest> supportServices) {}
-
   private McpRequestValidator() {}
 
-  static Validated validate(McpServerRequest request) {
+  /** The request as the catalog will store it: normalized, and refused if it cannot be. */
+  static McpServerRequest validate(McpServerRequest request) {
     if (request == null) throw new IllegalArgumentException("request body is required");
     String name = required(request.name(), "name", 100);
     String description = optional(request.description(), "description", 2_000);
@@ -108,7 +97,7 @@ final class McpRequestValidator {
       default -> throw new IllegalStateException("unreachable");
     }
 
-    return new Validated(name, description, kind, hostId, transport, url, image, platform,
+    return new McpServerRequest(name, description, kind, hostId, transport, url, image, platform,
         entrypoint, command, stdioCommand, args, request.internalPort(), request.publishedPort(),
         path, crossHostUrl, environment, headers, volumes, healthcheck, supports);
   }

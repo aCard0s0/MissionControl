@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretsAtRest;
@@ -186,7 +185,7 @@ class ComposeStackDockerAcceptanceTest {
   // ── fixtures and daemon queries (deliberately not the code under test) ──
 
   private ServerRow managedRow(McpConfigStore configs) {
-    Validated validated = McpRequestValidator.validate(new McpServerRequest(
+    McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
         "Acceptance " + serviceKey, null, "managed", HOST, "http", null, IMAGE, null,
         List.of(), List.of("sh", "-c", "sleep 600"), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(new VolumeSpec("data", "/data")), null, List.of()));

@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
-import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.List;
@@ -212,17 +211,17 @@ class McpConfigStoreTest {
     return config.environment().stream().filter(v -> v.key().equals(key)).findFirst().orElseThrow();
   }
 
-  private static Validated validated(List<ConfigValueInput> environment) {
-    return new Validated("Example", "an example server", "managed", "dh-local", "http", null,
+  private static McpServerRequest validated(List<ConfigValueInput> environment) {
+    return new McpServerRequest("Example", "an example server", "managed", "dh-local", "http", null,
         "example/mcp:latest", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp",
         null, environment, List.of(), List.of(), null, List.of());
   }
 
-  private static Validated withSupportSecret(String key, String value) {
+  private static McpServerRequest withSupportSecret(String key, String value) {
     SupportServiceRequest support = new SupportServiceRequest("database", "postgres:16-alpine",
         null, List.of(), List.of(), List.of(new ConfigValueInput(key, value, true, null)),
         List.of(), null);
-    return new Validated("Example", "an example server", "managed", "dh-local", "http", null,
+    return new McpServerRequest("Example", "an example server", "managed", "dh-local", "http", null,
         "example/mcp:latest", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp",
         null, List.of(), List.of(), List.of(), null, List.of(support));
   }
