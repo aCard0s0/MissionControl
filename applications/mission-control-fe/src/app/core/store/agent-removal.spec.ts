@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { apiContainer, apiProfile, storeSlices, stubBackend } from '../../testing/store';
+import { apiContainer, apiProfile, liveError, storeSlices, stubBackend } from '../../testing/store';
 
 /**
  * The one rule in the store layer that spans slices: a profile takes its jobs,
@@ -44,6 +44,6 @@ describe('AgentRemoval', () => {
     expect(slices.agents.byId('a-atlas')).not.toBeNull();
     expect(jobs).not.toHaveBeenCalled();
     expect(setup).not.toHaveBeenCalled();
-    expect(slices.ctx.liveError()).toBe('remove profile failed: profile busy');
+    expect(liveError(slices.ctx)).toBe('remove profile failed: profile busy');
   });
 });

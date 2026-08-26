@@ -3,15 +3,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ContainerStore } from '../core/store/container-store';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
-import { ProviderStore } from '../core/store/provider-store';
-import { StoreContext } from '../core/store/store-context';
-import { TemplateStore } from '../core/store/template-store';
 import { LlmProvider, ProfileTemplate } from '../core/models';
 import { AgentProfilesPage } from './agent-profiles';
 import { TestFixture, el, field, press, settle, type } from '../testing/dom';
 import { template as buildTemplate } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
@@ -67,7 +63,7 @@ const render = (store = storeStub()) => {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: ContainerStore, useValue: store.containers }, { provide: McpCatalogStore, useValue: store.catalog }, { provide: ProviderStore, useValue: store.providers }, { provide: StoreContext, useValue: store.ctx }, { provide: TemplateStore, useValue: store.templates },
+      ...provideStores(store),
     ],
   });
   // the real router, with navigation recorded — RouterLink in these templates

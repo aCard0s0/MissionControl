@@ -3,16 +3,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentSetupStore } from '../core/store/agent-setup-store';
-import { AgentStore } from '../core/store/agent-store';
-import { ContainerStore } from '../core/store/container-store';
-import { ProviderStore } from '../core/store/provider-store';
-import { TemplateStore } from '../core/store/template-store';
-import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentProfile, HermesContainer } from '../core/models';
 import { AgentsPage } from './agents';
 import { el, press, settle } from '../testing/dom';
 import { agent, container as buildContainer } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const container: HermesContainer = buildContainer('c-1', { name: 'hermes-prod' });
 
@@ -45,12 +40,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: AgentStore, useValue: store.agents },
-      { provide: AgentSetupStore, useValue: store.setup },
-      { provide: ContainerStore, useValue: store.containers },
-      { provide: ProviderStore, useValue: store.providers },
-      { provide: TemplateStore, useValue: store.templates },
-      { provide: TerminalRequestStore, useValue: store.terminal },
+      ...provideStores(store),
     ],
   });
   const fixture = TestBed.createComponent(AgentsPage);

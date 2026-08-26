@@ -3,19 +3,13 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentStore } from '../core/store/agent-store';
-import { ContainerStore } from '../core/store/container-store';
-import { JobStore } from '../core/store/job-store';
-import { ContainerLifecycle } from '../core/store/container-lifecycle';
-import { ImageCatalogStore } from '../core/store/image-catalog-store';
-import { LogStore } from '../core/store/log-store';
-import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import {
   AgentProfile, CronJob, HermesContainer, ImageCatalog, Integration, LogEntry, McpServer, SkillRef,
 } from '../core/models';
 import { OverviewPage } from './overview';
 import { button, el, text } from '../testing/dom';
 import { agent, cronJob as job, mcpServer, skill as buildSkill } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const container: HermesContainer = {
   id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
@@ -51,13 +45,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: AgentStore, useValue: store.agents },
-      { provide: ContainerStore, useValue: store.containers },
-      { provide: JobStore, useValue: store.jobs },
-      { provide: LogStore, useValue: store.logs },
-      { provide: ImageCatalogStore, useValue: store.images },
-      { provide: ContainerLifecycle, useValue: store.lifecycle },
-      { provide: TerminalRequestStore, useValue: store.terminal },
+      ...provideStores(store),
     ],
   });
   // the real router, with navigation recorded — the RouterLinks in this template

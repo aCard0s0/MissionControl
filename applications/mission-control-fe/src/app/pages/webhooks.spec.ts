@@ -2,12 +2,10 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentStore } from '../core/store/agent-store';
-import { ContainerStore } from '../core/store/container-store';
-import { WebhookStore } from '../core/store/webhook-store';
 import { OutboundWebhook, WebhookListener, WebhookRoute } from '../core/models';
 import { WebhooksPage } from './webhooks';
 import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
+import { provideStores } from '../testing/store';
 
 const agents = [{ id: 'a-1', name: 'atlas' }, { id: 'a-2', name: 'scribe' }];
 
@@ -62,7 +60,7 @@ const showOutbound = async (fixture: Parameters<typeof settle>[0]) => {
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents }, { provide: ContainerStore, useValue: store.containers }, { provide: WebhookStore, useValue: store.webhooks }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(WebhooksPage);
   fixture.detectChanges();
   return { fixture, store };

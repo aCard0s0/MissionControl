@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiWebhookSubscription } from '../hermes-api';
-import { apiProfile, loadedAgentSlices } from '../../testing/store';
+import { apiProfile, liveError, loadedAgentSlices } from '../../testing/store';
 
 const route = (name: string, patch: Partial<ApiWebhookSubscription> = {}): ApiWebhookSubscription => ({
   name, description: `${name} hook`, url: `http://<agent-host>:8644/webhooks/${name}`,
@@ -153,7 +153,7 @@ describe('WebhookStore mutations', () => {
     }, ['atlas']);
 
     expect(await store.secretOf('a-atlas', 'gone')).toBeNull();
-    expect(ctx.liveError()).toContain('read webhook secret failed: no such route');
+    expect(liveError(ctx)).toContain('read webhook secret failed: no such route');
   });
 
   it('answers with whatever hermes printed for a test fire', async () => {
@@ -173,7 +173,7 @@ describe('WebhookStore mutations', () => {
     await store.refresh();
 
     expect(await store.remove('a-atlas', 'grafana')).toBe(false);
-    expect(ctx.liveError()).toContain('remove webhook failed: route is in use');
+    expect(liveError(ctx)).toContain('remove webhook failed: route is in use');
     expect(store.routes().map(r => r.name)).toEqual(['grafana']);
   });
 
@@ -237,7 +237,7 @@ describe('WebhookStore listeners', () => {
     await store.refresh();
 
     expect(await store.test('a-atlas', 'grafana')).toBeNull();
-    expect(ctx.liveError()).toBe('webhook test failed: listener is off');
+    expect(liveError(ctx)).toBe('webhook test failed: listener is off');
   });
 
   it('does not test on behalf of a profile it does not hold', async () => {

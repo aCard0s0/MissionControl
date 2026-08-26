@@ -2,15 +2,12 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ContainerStore } from '../core/store/container-store';
-import { HostStore } from '../core/store/host-store';
 import { terminalSocketUrl } from '../core/api/terminal-socket';
-import { StoreContext } from '../core/store/store-context';
-import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { HermesContainer } from '../core/models';
 import { TerminalPanel } from './terminal-panel';
 import { el, settle, text } from '../testing/dom';
 import { container } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 /**
  * Records every shell the panel opens. The real xterm runs here — it only needs
@@ -111,7 +108,7 @@ const liveShells = (): void => {
 
 const render = (store: ReturnType<typeof storeStub> = storeStub()) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: ContainerStore, useValue: store.containers }, { provide: HostStore, useValue: store.hosts }, { provide: StoreContext, useValue: store.ctx }, { provide: TerminalRequestStore, useValue: store.terminal }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(TerminalPanel);
   fixture.detectChanges();
   return { fixture, store };

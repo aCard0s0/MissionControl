@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ModelProvider } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
-import { flush, testSlices } from '../../testing/store';
+import { flush, liveError, testSlices } from '../../testing/store';
 
 const provider = (id: string, patch: Partial<ModelProvider> = {}): ModelProvider => ({
   id, name: id, url: `http://${id}:11434`, kind: 'ollama', status: 'connected',
@@ -48,7 +48,7 @@ describe('ProviderStore ollama endpoints', () => {
     await built.store.refresh();
 
     expect(built.store.ollamaProviders().map(p => p.id)).toEqual(['mp-1']);
-    expect(built.ctx.liveError()).toBeNull();
+    expect(liveError(built.ctx)).toBeNull();
   });
 
   it('re-reads the list after adding one, since the backend assigns the id', async () => {
@@ -69,7 +69,7 @@ describe('ProviderStore ollama endpoints', () => {
     built.store.add('lab', 'http://ollama:11434');
     await flush();
 
-    expect(built.ctx.liveError()).toBe('add provider failed: duplicate url');
+    expect(liveError(built.ctx)).toBe('add provider failed: duplicate url');
   });
 
   it('re-reads the list after removing one, and reports a refused remove', async () => {
@@ -82,7 +82,7 @@ describe('ProviderStore ollama endpoints', () => {
     await flush();
 
     expect(list).toHaveBeenCalled();
-    expect(bad.ctx.liveError()).toBe('remove provider failed: in use');
+    expect(liveError(bad.ctx)).toBe('remove provider failed: in use');
   });
 
   it('blanks the status while a check runs, then shows what came back', async () => {
@@ -107,7 +107,7 @@ describe('ProviderStore ollama endpoints', () => {
     built.store.check('mp-1');
     await flush();
 
-    expect(built.ctx.liveError()).toBe('provider check failed: timeout');
+    expect(liveError(built.ctx)).toBe('provider check failed: timeout');
     expect(list).toHaveBeenCalledTimes(2);
   });
 });
@@ -117,7 +117,7 @@ describe('ProviderStore models', () => {
     const built = store({ models: vi.fn().mockRejectedValue(new Error('no such provider')) });
 
     expect(await built.store.models('mp-1')).toEqual([]);
-    expect(built.ctx.liveError()).toBe('model list failed: no such provider');
+    expect(liveError(built.ctx)).toBe('model list failed: no such provider');
   });
 
   it('reports a failed pull and a failed delete by name', async () => {
@@ -127,15 +127,15 @@ describe('ProviderStore models', () => {
     await pull.store.pullModel('mp-1', 'llama3');
     await del.store.deleteModel('mp-1', 'llama3');
 
-    expect(pull.ctx.liveError()).toBe('pull failed: disk full');
-    expect(del.ctx.liveError()).toBe('model delete failed: model in use');
+    expect(liveError(pull.ctx)).toBe('pull failed: disk full');
+    expect(liveError(del.ctx)).toBe('model delete failed: model in use');
   });
 
   it('treats pull progress as best-effort — a failed poll is not an error', async () => {
     const built = store({ pullStatus: vi.fn().mockRejectedValue(new Error('gone')) });
 
     expect(await built.store.pullStatus('mp-1')).toEqual([]);
-    expect(built.ctx.liveError()).toBeNull();
+    expect(liveError(built.ctx)).toBeNull();
   });
 
   it('serves the configured catalog for a provider key', async () => {

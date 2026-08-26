@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiAgentProfile, ApiMcpServer } from '../hermes-api';
 import { catalogServer } from '../../testing/models';
-import { apiProfile, loadedAgentSlices, stubBackend } from '../../testing/store';
+import { apiProfile, liveError, loadedAgentSlices, stubBackend } from '../../testing/store';
 
 const server = (name: string, patch: Partial<ApiMcpServer> = {}): ApiMcpServer => ({
   id: `m-${name}`, name, transport: 'http', enabled: true, origin: 'custom',
@@ -59,7 +59,7 @@ describe('AgentMcpStore direct servers', () => {
     });
 
     expect(await store.add('a-atlas', 'github', 'http')).toBe(false);
-    expect(ctx.liveError()).toBe('mcp add failed: bad url');
+    expect(liveError(ctx)).toBe('mcp add failed: bad url');
   });
 
   it('carries the enabled flag through a rename so an edit cannot silently re-enable', async () => {
@@ -77,7 +77,7 @@ describe('AgentMcpStore direct servers', () => {
 
     expect(await store.update('a-atlas', 'github', 'files', 'http')).toBe(false);
     expect(update).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('MCP alias already exists: files');
+    expect(liveError(ctx)).toBe('MCP alias already exists: files');
   });
 
   it('refuses to edit a server the profile does not have', async () => {
@@ -161,7 +161,7 @@ describe('AgentMcpStore catalog links', () => {
       [catalogServer('browser', { runtimeState: 'running' })]);
 
     expect(await store.connectCatalog('a-atlas', 'browser', 'browser')).toBe(false);
-    expect(ctx.liveError()).toBe('MCP alias already exists: browser');
+    expect(liveError(ctx)).toBe('MCP alias already exists: browser');
     expect(connectCatalog).not.toHaveBeenCalled();
   });
 
@@ -171,7 +171,7 @@ describe('AgentMcpStore catalog links', () => {
       [catalogServer('browser', { hostId: 'dh-edge', runtimeState: 'running' })]);
 
     expect(await store.connectCatalog('a-atlas', 'browser', 'browser')).toBe(false);
-    expect(ctx.liveError())
+    expect(liveError(ctx))
       .toBe('MCP server browser needs an explicit cross-host URL for this Agent');
   });
 
@@ -253,7 +253,7 @@ describe('AgentMcpStore probing', () => {
     const { store, ctx } = await loaded([server('github')], { test });
 
     expect(await store.test('a-atlas', 'github')).toBe(false);
-    expect(ctx.liveError()).toBe('mcp github: unauthorized');
+    expect(liveError(ctx)).toBe('mcp github: unauthorized');
   });
 
   it('records a probe that could not be made on the row itself', async () => {
@@ -264,7 +264,7 @@ describe('AgentMcpStore probing', () => {
     expect(agents.byId('a-atlas')?.mcp[0]).toMatchObject({
       status: 'error', error: 'gateway timeout', latencyMs: null,
     });
-    expect(ctx.liveError()).toBe('mcp test failed: gateway timeout');
+    expect(liveError(ctx)).toBe('mcp test failed: gateway timeout');
   });
 
   it('refuses to probe on behalf of a profile it does not hold', async () => {

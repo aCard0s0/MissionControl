@@ -3,20 +3,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentMcpStore } from '../core/store/agent-mcp-store';
-import { AgentRemoval } from '../core/store/agent-removal';
-import { AgentSetupStore } from '../core/store/agent-setup-store';
-import { AgentSkillStore } from '../core/store/agent-skill-store';
-import { AgentStore } from '../core/store/agent-store';
-import { HostStore } from '../core/store/host-store';
-import { JobStore } from '../core/store/job-store';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
-import { StoreContext } from '../core/store/store-context';
-import { TemplateStore } from '../core/store/template-store';
 import { AgentProfile, ChatMessage, SessionInfo } from '../core/models';
 import { AgentDetailPage } from './agent-detail';
 import { TestFixture, button, el, fill, press, settle, text } from '../testing/dom';
 import { agent as buildAgent, skill } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 /** The profile every test on this page is about. */
 const agent = (patch: Partial<AgentProfile> = {}): AgentProfile => buildAgent('a-atlas', {
@@ -90,16 +81,7 @@ const render = (store: ReturnType<typeof storeStub>, agentId = 'a-atlas', tab?: 
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: AgentMcpStore, useValue: store.agentMcp },
-      { provide: AgentRemoval, useValue: store.removal },
-      { provide: AgentSetupStore, useValue: store.setup },
-      { provide: AgentSkillStore, useValue: store.skills },
-      { provide: AgentStore, useValue: store.agents },
-      { provide: HostStore, useValue: store.hosts },
-      { provide: JobStore, useValue: store.jobs },
-      { provide: McpCatalogStore, useValue: store.catalog },
-      { provide: StoreContext, useValue: store.ctx },
-      { provide: TemplateStore, useValue: store.templates },
+      ...provideStores(store),
     ],
   });
   // the real router, with navigation recorded — RouterLink in these templates

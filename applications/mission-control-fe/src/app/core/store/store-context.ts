@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { MC_CONFIG, McRuntimeConfig } from '../app-config';
 import { errorMessage } from '../errors';
 import { HermesApi } from '../hermes-api';
@@ -42,12 +42,6 @@ export class StoreContext {
    */
   readonly toasts = signal<readonly Toast[]>([]);
 
-  /** The newest failure still on screen, for callers that want only the words. */
-  readonly liveError = computed(() => this.newest('error'));
-
-  /** The newest confirmation still on screen. */
-  readonly liveNotice = computed(() => this.newest('ok'));
-
   readonly config: McRuntimeConfig = inject(MC_CONFIG);
 
   private nextToastId = 1;
@@ -82,11 +76,6 @@ export class StoreContext {
     const id = this.nextToastId++;
     this.toasts.update(list => [...list, { id, kind, message, at: Date.now() }]);
     setTimeout(() => this.dismiss(id), TOAST_MS);
-  }
-
-  private newest(kind: ToastKind): string | null {
-    const matching = this.toasts().filter(t => t.kind === kind);
-    return matching.length ? matching[matching.length - 1].message : null;
   }
 
   /**

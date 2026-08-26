@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiAgentProfile } from '../hermes-api';
-import { apiContainer, apiProfile, flush, testSlices } from '../../testing/store';
+import { apiContainer, apiProfile, flush, liveError, liveNotice, testSlices } from '../../testing/store';
 
 const mcp = (name: string, status: string) => ({
   id: `m-${name}`, name, transport: 'http', status, tools: 2, latencyMs: 10,
@@ -164,7 +164,7 @@ describe('AgentStore create', () => {
       containerId: 'c-missing', name: 'sre', provider: 'anthropic', model: 'm', apiKey: '',
     })).toBe('');
     expect(create).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('container is no longer available');
+    expect(liveError(ctx)).toBe('container is no longer available');
   });
 
   it('answers an empty id and says why a create failed', async () => {
@@ -176,8 +176,8 @@ describe('AgentStore create', () => {
     expect(await agents.create({
       containerId: 'c-1', name: 'sre', provider: 'anthropic', model: 'm', apiKey: '',
     })).toBe('');
-    expect(ctx.liveError()).toBe('create profile failed: profile exists');
-    expect(ctx.liveNotice()).toBeNull();
+    expect(liveError(ctx)).toBe('create profile failed: profile exists');
+    expect(liveNotice(ctx)).toBeNull();
   });
 
   it('replaces a row a concurrent poll already picked up', async () => {
@@ -210,7 +210,7 @@ describe('AgentStore remove', () => {
 
     expect(await agents.remove('a-atlas')).toBe(false);
     expect(agents.byId('a-atlas')).not.toBeNull();
-    expect(ctx.liveError()).toBe('remove profile failed: profile busy');
+    expect(liveError(ctx)).toBe('remove profile failed: profile busy');
   });
 
   it('says so for a profile it cannot address', async () => {
@@ -219,7 +219,7 @@ describe('AgentStore remove', () => {
 
     expect(await agents.remove('a-ghost')).toBe(false);
     expect(remove).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('profile is no longer available');
+    expect(liveError(ctx)).toBe('profile is no longer available');
   });
 });
 
@@ -275,6 +275,6 @@ describe('AgentStore reads', () => {
     await flush();
 
     expect(integrations).toHaveBeenCalledTimes(1);
-    expect(ctx.liveError()).toBe('integrations refresh failed: container stopped');
+    expect(liveError(ctx)).toBe('integrations refresh failed: container stopped');
   });
 });

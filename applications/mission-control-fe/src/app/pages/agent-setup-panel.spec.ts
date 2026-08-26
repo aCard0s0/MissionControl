@@ -2,11 +2,10 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentSetupStore } from '../core/store/agent-setup-store';
-import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { AgentSetupPanel } from './agent-setup-panel';
 import { buttonWith, el } from '../testing/dom';
 import { agent } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const setupFor = (name: string, patch: object = {}) => ({
   envPath: `/opt/data/profiles/${name}/.env`,
@@ -65,8 +64,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: AgentSetupStore, useValue: store.setup },
-      { provide: TerminalRequestStore, useValue: store.terminal }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   return fixture;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiCronJob } from '../hermes-api';
-import { apiProfile, loadedAgentSlices } from '../../testing/store';
+import { apiProfile, liveError, loadedAgentSlices } from '../../testing/store';
 
 const job = (id: string, patch: Partial<ApiCronJob> = {}): ApiCronJob => ({
   id, name: `job ${id}`, prompt: 'do it', schedule: '0 9 * * *', scheduleKind: 'cron',
@@ -185,7 +185,7 @@ describe('JobStore mutations', () => {
     await jobs.refresh();
 
     expect(await jobs.remove('j-1')).toBe(false);
-    expect(ctx.liveError()).toContain('remove job failed: job is running');
+    expect(liveError(ctx)).toContain('remove job failed: job is running');
     expect(jobs.byId('j-1')).not.toBeNull();
   });
 
@@ -308,10 +308,10 @@ describe('JobStore wire tolerance', () => {
     await jobs.refresh();
 
     await jobs.toggle('on');
-    expect(ctx.liveError()).toBe('pause job failed: scheduler down');
+    expect(liveError(ctx)).toBe('pause job failed: scheduler down');
 
     await jobs.toggle('off');
-    expect(ctx.liveError()).toBe('resume job failed: scheduler down');
+    expect(liveError(ctx)).toBe('resume job failed: scheduler down');
   });
 
   it('refuses to act on a job it does not hold, and says so', async () => {
@@ -321,6 +321,6 @@ describe('JobStore wire tolerance', () => {
 
     expect(await jobs.toggle('j-missing')).toBe(false);
     expect(setEnabled).not.toHaveBeenCalled();
-    expect(ctx.liveError()).toBe('job is no longer available');
+    expect(liveError(ctx)).toBe('job is no longer available');
   });
 });

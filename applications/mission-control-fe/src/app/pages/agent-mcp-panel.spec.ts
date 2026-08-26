@@ -3,16 +3,13 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentMcpStore } from '../core/store/agent-mcp-store';
-import { AgentStore } from '../core/store/agent-store';
-import { HostStore } from '../core/store/host-store';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { AgentProfile, McpCatalogServer, McpServer } from '../core/models';
 import { AgentMcpPanel } from './agent-mcp-panel';
 import { buttonWith, el, type } from '../testing/dom';
 import {
   agent, catalogServer as sharedCatalogServer, mcpServer as server,
 } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 /** The managed catalog entry these tests connect to. */
 const catalogServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer =>
@@ -61,7 +58,7 @@ const render = (store: ReturnType<typeof storeStub>, agent: AgentProfile) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     // the panel links to /mcp-servers, so RouterLink needs a router present
-    providers: [provideRouter([]), { provide: AgentMcpStore, useValue: store.agentMcp }, { provide: AgentStore, useValue: store.agents }, { provide: HostStore, useValue: store.hosts }, { provide: McpCatalogStore, useValue: store.catalog }],
+    providers: [provideRouter([]), ...provideStores(store)],
   });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.agent.set(agent);

@@ -3,13 +3,6 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentStore } from '../core/store/agent-store';
-import { ContainerLifecycle } from '../core/store/container-lifecycle';
-import { ContainerStore } from '../core/store/container-store';
-import { HostStore } from '../core/store/host-store';
-import { ImageCatalogStore } from '../core/store/image-catalog-store';
-import { StoreContext } from '../core/store/store-context';
-import { TerminalRequestStore } from '../core/store/terminal-request-store';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 import { HERMES_BASELINE } from '../core/container-resources';
 import { ContainersPage, normalizeSeedProfiles } from './containers';
@@ -18,6 +11,7 @@ import {
 } from '../testing/dom';
 import { container, dockerHost } from '../testing/models';
 import { ApiContainerActivity } from '../core/api/api-types';
+import { provideStores } from '../testing/store';
 
 describe('normalizeSeedProfiles', () => {
   it('normalizes, deduplicates, and omits the implicit default profile', () => {
@@ -81,13 +75,7 @@ const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.configureTestingModule({
     providers: [
       { provide: Router, useValue: router },
-      { provide: AgentStore, useValue: store.agents },
-      { provide: ContainerLifecycle, useValue: store.lifecycle },
-      { provide: ContainerStore, useValue: store.containers },
-      { provide: HostStore, useValue: store.hosts },
-      { provide: ImageCatalogStore, useValue: store.images },
-      { provide: StoreContext, useValue: store.ctx },
-      { provide: TerminalRequestStore, useValue: store.terminal },
+      ...provideStores(store),
     ],
   });
   const fixture = TestBed.createComponent(ContainersPage);

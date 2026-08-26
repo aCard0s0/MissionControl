@@ -2,13 +2,11 @@ import '@angular/compiler';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ContainerStore } from '../core/store/container-store';
-import { ProviderStore } from '../core/store/provider-store';
-import { TemplateStore } from '../core/store/template-store';
 import { HermesContainer, LlmProvider, ProfileTemplate } from '../core/models';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
 import { TestFixture, el, settle, text } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const llm: LlmProvider[] = [
   { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
@@ -44,7 +42,7 @@ class Host {
 
 const render = (store: ReturnType<typeof storeStub>, t = template()) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: ContainerStore, useValue: store.containers }, { provide: ProviderStore, useValue: store.providers }, { provide: TemplateStore, useValue: store.templates }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.template.set(t);
   fixture.detectChanges();

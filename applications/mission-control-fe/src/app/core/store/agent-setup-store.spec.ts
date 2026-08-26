@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiAgentSetup } from '../hermes-api';
 import { AgentSetup } from '../models';
 import { toAgentSetup } from './wire-mappers';
-import { apiProfile, loadedAgentSlices } from '../../testing/store';
+import { apiProfile, liveError, loadedAgentSlices } from '../../testing/store';
 
 const setup = (patch: Partial<ApiAgentSetup> = {}): ApiAgentSetup => ({
   envPath: '/opt/data/atlas/.env',
@@ -78,7 +78,7 @@ describe('AgentSetupStore credentials', () => {
 
     expect(await store.setup('a-atlas', true)).toBeNull();
     expect(store.setupOf('a-atlas')).toEqual(mapped());
-    expect(ctx.liveError()).toBe('setup load failed: container stopped');
+    expect(liveError(ctx)).toBe('setup load failed: container stopped');
   });
 
   it('answers null for a profile it does not hold', async () => {
@@ -109,7 +109,7 @@ describe('AgentSetupStore credentials', () => {
 
     expect(await store.setEnv('a-atlas', [{ key: 'K', value: 'v' }])).toBeNull();
     expect(store.setupOf('a-atlas')).toEqual(mapped());
-    expect(ctx.liveError()).toBe('env save failed: read-only volume');
+    expect(liveError(ctx)).toBe('env save failed: read-only volume');
   });
 
   it('writes the .env template and caches the result', async () => {
@@ -125,7 +125,7 @@ describe('AgentSetupStore credentials', () => {
     const { store, ctx } = await loaded({ initEnv: vi.fn().mockRejectedValue(new Error('denied')) });
 
     expect(await store.initEnv('a-atlas')).toBeNull();
-    expect(ctx.liveError()).toBe('env init failed: denied');
+    expect(liveError(ctx)).toBe('env init failed: denied');
   });
 
   it('does not write on behalf of a profile it does not hold', async () => {
@@ -198,7 +198,7 @@ describe('AgentSetupStore sessions', () => {
     });
 
     expect(await store.sessions('a-atlas')).toBeNull();
-    expect(ctx.liveError()).toBe('sessions load failed: no session dir');
+    expect(liveError(ctx)).toBe('sessions load failed: no session dir');
   });
 
   // a plain user turn carries no tool call and no reasoning; the viewer binds those fields
@@ -219,7 +219,7 @@ describe('AgentSetupStore sessions', () => {
     });
 
     expect(await store.sessionMessages('a-atlas', 'sess-1')).toBeNull();
-    expect(ctx.liveError()).toBe('session load failed: corrupt transcript');
+    expect(liveError(ctx)).toBe('session load failed: corrupt transcript');
   });
 
   it('deletes a session file, and does nothing for a profile it does not hold', async () => {

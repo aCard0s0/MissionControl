@@ -2,13 +2,11 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentStore } from '../core/store/agent-store';
-import { ContainerStore } from '../core/store/container-store';
-import { JobStore } from '../core/store/job-store';
 import { CronJob } from '../core/models';
 import { CalendarPage } from './calendar';
 import { TestFixture, el, field, fill, press, settle } from '../testing/dom';
 import { cronJob } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 /** A Wednesday, so the Monday-first grid has to lead with the previous month. */
 const TODAY = new Date('2026-04-15T09:00:00Z');
@@ -40,7 +38,7 @@ const storeStub = (jobs: CronJob[] = []) => ({
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
-  TestBed.configureTestingModule({ providers: [{ provide: AgentStore, useValue: store.agents }, { provide: ContainerStore, useValue: store.containers }, { provide: JobStore, useValue: store.jobs }] });
+  TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(CalendarPage);
   fixture.detectChanges();
   return { fixture, store };

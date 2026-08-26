@@ -3,16 +3,13 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { McpCatalogStore } from '../core/store/mcp-catalog-store';
-import { ProviderStore } from '../core/store/provider-store';
-import { StoreContext } from '../core/store/store-context';
-import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate } from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
 import { AGENT_ICONS } from '../shared/agent-icon';
 import { TestFixture, el, press, type } from '../testing/dom';
 import { catalogServer as sharedCatalogServer } from '../testing/models';
+import { provideStores } from '../testing/store';
 
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
   id: 't-1', name: 'ops-sre', icon: '', description: '', category: 'ops', provider: 'anthropic',
@@ -80,7 +77,7 @@ const render = async (
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     // the pane links to /agents, so RouterLink needs a router present
-    providers: [provideRouter([]), { provide: McpCatalogStore, useValue: store.catalog }, { provide: ProviderStore, useValue: store.providers }, { provide: StoreContext, useValue: store.ctx }, { provide: TemplateStore, useValue: store.templates }],
+    providers: [provideRouter([]), ...provideStores(store)],
   });
   const fixture = TestBed.createComponent(Host);
   fixture.componentInstance.draft.set(draft);

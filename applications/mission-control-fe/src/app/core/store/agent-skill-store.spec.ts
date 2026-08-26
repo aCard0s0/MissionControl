@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SkillRef } from '../models';
 import { skill as buildSkill } from '../../testing/models';
-import { apiProfile, loadedAgentSlices } from '../../testing/store';
+import { apiProfile, liveError, loadedAgentSlices } from '../../testing/store';
 
 const skill = (name: string, enabled = true): SkillRef => buildSkill(name, { enabled });
 
@@ -96,7 +96,7 @@ describe('AgentSkillStore', () => {
     const { ctx, store } = await loaded({ content });
 
     expect(await store.content('a-1', skill('ops'))).toBeNull();
-    expect(ctx.liveError()).toContain('load skill failed: no such skill');
+    expect(liveError(ctx)).toContain('load skill failed: no such skill');
   });
 
   it('reports whether an edited body was persisted', async () => {
@@ -112,7 +112,7 @@ describe('AgentSkillStore', () => {
     const { ctx, store } = await loaded({ updateContent });
 
     expect(await store.saveContent('a-1', skill('ops'), '# edited')).toBe(false);
-    expect(ctx.liveError()).toContain('save skill failed: read-only volume');
+    expect(liveError(ctx)).toContain('save skill failed: read-only volume');
   });
 
   it('refuses to read or write a skill on a profile it does not have', async () => {
