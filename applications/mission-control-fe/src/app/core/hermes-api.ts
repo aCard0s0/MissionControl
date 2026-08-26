@@ -15,6 +15,13 @@ import { TemplatesApi } from './api/templates-api';
 //
 // The wire shapes and the per-resource clients live under ./api; this file only
 // wires them onto one object so callers read as `api.agents.updateSoul(...)`.
+//
+// It is also the one door into ./api for everything outside it: files under
+// ./api import their siblings directly, everyone else takes the wire types from
+// here. Both paths reach the same declarations, so a file reaching past this
+// barrel is not wrong so much as a second spelling of one import — and a type
+// that appears under two paths gets moved, re-exported or duplicated by whoever
+// next tidies one of them.
 export * from './api/api-types';
 export type { AgentRef } from './api/agent-ref';
 export type { AgentMcpRequest } from './api/agent-mcp-api';
