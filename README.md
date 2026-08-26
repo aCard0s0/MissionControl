@@ -54,6 +54,14 @@ cd applications/mission-control-server && MC_ALLOW_DEV_KEY=true mvn spring-boot:
 cd applications/mission-control-fe && npm install && npm start
 ```
 
+Each app builds from its own directory — there is no aggregator POM at the root, so `mvn` runs
+under `applications/mission-control-server`:
+
+```bash
+cd applications/mission-control-server && mvn test     # backend suite + coverage gate
+cd applications/mission-control-fe && npm test         # frontend suite
+```
+
 The frontend always talks to the backend — run both, and `npm start` proxies `/api` and `/health` to `:8080`. There is no demo-data mode: an unreachable backend shows an empty dashboard and a banner saying so, rather than inventory nobody can act on.
 
 ## Status
