@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.docker;
 
+import static io.hermes.missioncontrol.docker.ContainerIds.shortId;
+
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +43,7 @@ public class ContainerUpdateService {
    */
   public String update(DockerHostRef host, String containerId, String version) {
     log.info("update requested for container {} on {} -> {}",
-        containerId.substring(0, Math.min(12, containerId.length())), host.id(), version);
+        shortId(containerId), host.id(), version);
     UpgradeResult result = docker.upgrade(host, containerId, version);
     remap(host.id(), result.oldContainerId(), result.newContainerId());
     return result.newContainerId();

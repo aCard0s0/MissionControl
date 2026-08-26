@@ -83,7 +83,16 @@ public record ProfileSpec(
         request.auxiliary());
   }
 
-  private static String blankToNull(String value) {
-    return value == null || value.isBlank() ? null : value;
+  /**
+   * A blank string is an absent value, not an empty one.
+   *
+   * <p>Here rather than once per file: this package normalized the same three inputs — a
+   * webhook field left empty in a form, an MCP endpoint hermes wrote as {@code ""}, a cloned
+   * profile's unset {@code baseUrl} — with four private copies, one of which also trimmed. It
+   * trims: every caller is reading a value a human typed or a config file carried, and a
+   * trailing space is not part of any of them.
+   */
+  static String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
   }
 }

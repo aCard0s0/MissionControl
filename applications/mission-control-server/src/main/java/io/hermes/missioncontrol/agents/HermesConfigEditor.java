@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
+import static io.hermes.missioncontrol.agents.ProfileSpec.blankToNull;
+
 import io.hermes.missioncontrol.agents.api.OutboundWebhookDto;
 import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
@@ -263,9 +265,6 @@ class HermesConfigEditor {
     }
   }
 
-  private static String blankToNull(String value) {
-    return value == null || value.isBlank() ? null : value.trim();
-  }
 
   @SuppressWarnings("unchecked")
   private List<Object> outboundForEdit(Map<Object, Object> root) {

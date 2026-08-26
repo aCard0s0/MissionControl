@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.mcp;
 
+import static io.hermes.missioncontrol.errors.ApiErrors.brief;
+
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -158,7 +160,7 @@ class McpServerRepository {
     jdbc.update("""
         UPDATE mcp_servers SET runtime_state = 'error', operation_state = 'error',
           operation_error = ?, updated_at = ? WHERE id = ?
-        """, brief(message), System.currentTimeMillis(), id);
+        """, brief(message, 500, null), System.currentTimeMillis(), id);
   }
 
   void updateRuntime(String id, String runtimeState) {
@@ -169,7 +171,7 @@ class McpServerRepository {
     jdbc.update("""
         UPDATE mcp_servers SET check_status = ?, check_error = ?, checked_at = ?, latency_ms = ?,
           updated_at = ? WHERE id = ?
-        """, status, brief(error), checkedAt, latencyMs, System.currentTimeMillis(), id);
+        """, status, brief(error, 500, null), checkedAt, latencyMs, System.currentTimeMillis(), id);
   }
 
   void delete(String id) {
@@ -202,11 +204,5 @@ class McpServerRepository {
   private static Long nullableLong(ResultSet rs, String column) throws SQLException {
     long value = rs.getLong(column);
     return rs.wasNull() ? null : value;
-  }
-
-  private static String brief(String value) {
-    if (value == null) return null;
-    String line = value.lines().findFirst().orElse(value);
-    return line.length() > 500 ? line.substring(0, 500) : line;
   }
 }

@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.docker;
 
+import static io.hermes.missioncontrol.docker.ContainerIds.shortId;
+
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.exception.NotFoundException;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
@@ -63,7 +65,4 @@ public class ContainerLifecycle {
     }
   }
 
-  private static String shortId(String containerId) {
-    return containerId == null ? "?" : containerId.substring(0, Math.min(12, containerId.length()));
-  }
 }

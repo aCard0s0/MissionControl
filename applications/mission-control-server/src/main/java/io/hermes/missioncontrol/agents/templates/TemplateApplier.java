@@ -46,7 +46,7 @@ class TemplateApplier {
         containerId, name,
         blankTo(template.provider(), "nous"),
         blankTo(template.model(), "Hermes-4-405B"),
-        null, null, blankToNull(template.baseUrl()), null));
+        null, null, blankTo(template.baseUrl(), null), null));
     try {
       return apply(template, host, containerId, name);
     } catch (RuntimeException failure) {
@@ -127,9 +127,5 @@ class TemplateApplier {
 
   private static String blankTo(String value, String fallback) {
     return value == null || value.isBlank() ? fallback : value;
-  }
-
-  private static String blankToNull(String value) {
-    return value == null || value.isBlank() ? null : value;
   }
 }

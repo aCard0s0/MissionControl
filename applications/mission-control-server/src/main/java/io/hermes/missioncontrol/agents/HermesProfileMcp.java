@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
+import static io.hermes.missioncontrol.agents.ProfileSpec.blankToNull;
+
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.docker.ContainerIdListener;
@@ -266,9 +268,6 @@ class HermesProfileMcp implements ContainerIdListener {
         tools);
   }
 
-  private static String blankToNull(String value) {
-    return value == null || value.isBlank() ? null : value;
-  }
 
   // ── probing ────────────────────────────────────────────────────────────────
 

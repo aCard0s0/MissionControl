@@ -1,5 +1,9 @@
 package io.hermes.missioncontrol.terminal;
 
+import static io.hermes.missioncontrol.docker.ContainerIds.shortId;
+
+import static io.hermes.missioncontrol.errors.ApiErrors.brief;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
@@ -217,7 +221,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
 
         @Override
         public void onError(Throwable t) {
-          log.warn("terminal stream error for {}: {}", shortId(containerId), brief(t.getMessage()));
+          log.warn("terminal stream error for {}: {}", shortId(containerId), brief(t.getMessage(), Integer.MAX_VALUE, "no detail"));
           teardown(shells.remove(session.getId()),
               CloseStatus.SERVER_ERROR.withReason("stream error"), "stream-error");
         }
@@ -234,7 +238,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
       if (e instanceof ConflictException) {
         log.debug("terminal refused for {}: container is not running", shortId(containerId));
       } else {
-        log.warn("terminal setup failed for {}: {}", shortId(containerId), brief(e.getMessage()));
+        log.warn("terminal setup failed for {}: {}", shortId(containerId), brief(e.getMessage(), Integer.MAX_VALUE, "no detail"));
       }
       if (shell != null) {
         teardown(shells.remove(session.getId()),
@@ -361,18 +365,6 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   }
 
 
-  /** The 12-character prefix the Docker CLI and the dashboard both show. A full 64-character
-   *  id in a log line is unreadable and matches nothing an operator has in front of them. */
-  private static String shortId(String containerId) {
-    return containerId == null ? "?" : containerId.substring(0, Math.min(12, containerId.length()));
-  }
-
-  /** Docker error bodies arrive as raw JSON with a trailing newline, which puts a blank line
-   *  into the log after every one of them. */
-  private static String brief(String message) {
-    if (message == null || message.isBlank()) return "no detail";
-    return message.strip().lines().findFirst().orElse("no detail");
-  }
 
   private static String remoteKey(WebSocketSession session) {
     InetSocketAddress addr = session.getRemoteAddress();

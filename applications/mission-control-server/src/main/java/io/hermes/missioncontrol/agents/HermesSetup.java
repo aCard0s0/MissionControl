@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
+import static io.hermes.missioncontrol.agents.ProfileSpec.blankToNull;
+
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyProviderDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
@@ -182,10 +184,6 @@ public class HermesSetup {
 
   private boolean isSet(String value) {
     return value != null && !value.isBlank();
-  }
-
-  private String blankToNull(String value) {
-    return isSet(value) ? value : null;
   }
 
   private int indentOf(String line) {

@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.modelproviders;
 
+import static io.hermes.missioncontrol.errors.ApiErrors.brief;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.errors.ConnectionFailure;
@@ -162,14 +164,14 @@ public class ModelProviderService {
       if (response.statusCode() == 200) {
         pullsOf(row.id()).put(model, new PullStatusDto(model, "done", null));
       } else {
-        pullsOf(row.id()).put(model, new PullStatusDto(model, "error", brief(response.body())));
+        pullsOf(row.id()).put(model, new PullStatusDto(model, "error", brief(response.body(), 200, "request failed")));
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       pullsOf(row.id()).put(model, new PullStatusDto(model, "error", "pull interrupted"));
     } catch (Exception e) {
       log.warn("pull of {} from {} failed: {}", model, row.url(), e.toString());
-      pullsOf(row.id()).put(model, new PullStatusDto(model, "error", brief(e.getMessage())));
+      pullsOf(row.id()).put(model, new PullStatusDto(model, "error", brief(e.getMessage(), 200, "request failed")));
     }
   }
 
@@ -228,15 +230,9 @@ public class ModelProviderService {
     }
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException(
-          "ollama returned HTTP " + response.statusCode() + ": " + brief(response.body()));
+          "ollama returned HTTP " + response.statusCode() + ": " + brief(response.body(), 200, "request failed"));
     }
     return response.body();
-  }
-
-  private static String brief(String message) {
-    if (message == null || message.isBlank()) return "request failed";
-    String firstLine = message.lines().findFirst().orElse(message).trim();
-    return firstLine.length() > 200 ? firstLine.substring(0, 200) : firstLine;
   }
 
   static Long epochMs(String modifiedAt) {

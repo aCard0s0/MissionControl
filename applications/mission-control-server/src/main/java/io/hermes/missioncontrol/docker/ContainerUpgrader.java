@@ -1,5 +1,7 @@
 package io.hermes.missioncontrol.docker;
 
+import static io.hermes.missioncontrol.docker.ContainerIds.shortId;
+
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
@@ -208,9 +210,6 @@ public class ContainerUpgrader {
     return result;
   }
 
-  private static String shortId(String containerId) {
-    return containerId == null ? "?" : containerId.substring(0, Math.min(12, containerId.length()));
-  }
 
   private static void stopBeforeReplace(DockerClient client, ManagedContainerSpec spec) {
     try {
