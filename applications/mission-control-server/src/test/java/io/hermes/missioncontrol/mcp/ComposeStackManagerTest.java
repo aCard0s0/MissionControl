@@ -101,6 +101,35 @@ class ComposeStackManagerTest {
   }
 
   @Test
+  void purgingAVolumeTheDaemonNoLongerHasIsAnsweredRatherThanThrown() {
+    // absence used to be a private exception with no message that nothing outside this class
+    // caught, so an operator who had removed the volume by hand got a 500 with no detail and a
+    // retained row that survived every retry
+    ComposeStackManager manager = managerReturning(command -> {
+      if (isInspect(command)) throw new UpstreamUnavailableException(
+          "Docker Compose operation failed: Error: No such volume: " + command.getLast());
+      return "";
+    });
+
+    assertFalse(manager.purgeVolume("dh-local", ManagedMcpStack.PROJECT + "-postgres-data"));
+    assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
+        "there is nothing left to remove");
+  }
+
+  @Test
+  void anAbsentVolumeStillHasToClearTheNamePrefixGuardFirst() {
+    // "already gone" must not become a way past the check that refuses someone else's volume
+    ComposeStackManager manager = managerReturning(command -> {
+      if (isInspect(command)) throw new UpstreamUnavailableException("Error: No such volume");
+      return "";
+    });
+
+    assertThrows(IllegalArgumentException.class,
+        () -> manager.purgeVolume("dh-local", "postgres_production_data"));
+    assertTrue(commands.isEmpty());
+  }
+
+  @Test
   void purgingRemovesAVolumeThatIsBothCorrectlyNamedAndOwned() {
     String volume = ManagedMcpStack.PROJECT + "-postgres-data";
     ComposeStackManager manager =
@@ -432,6 +461,37 @@ class ComposeStackManagerTest {
         "\tcid-orphan\nmcp-files\tcid-files\nno-tab-at-all\n");
 
     assertEquals(Map.of("mcp-files", "cid-files"), manager.containerIdsByService("dh-local"));
+  }
+
+  @Test
+  void aContainerThatVanishesBetweenBeingListedAndBeingInspectedIsSkipped() {
+    // both of these list container ids and then inspect each one for its owner label. A
+    // container that goes away in between used to raise the private missing-resource type,
+    // which neither caller caught — a cleanup would report a failure with no message for a
+    // container that was already gone
+    ComposeStackManager manager = managerReturning(command -> {
+      if (isInspect(command)) throw new UpstreamUnavailableException("Error response from daemon: not found");
+      return command.contains("ps") ? "cid-vanished\n" : "";
+    });
+
+    manager.removeServices("dh-local", "mcp-files", List.of("mcp-files-database"),
+        Duration.ofMinutes(1));
+
+    assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
+        "there is nothing left to remove");
+  }
+
+  @Test
+  void aComposeServiceWhoseContainerVanishedMidCheckDoesNotBlockTheStack() {
+    ComposeStackManager manager = managerReturning(command -> {
+      if (isInspect(command)) throw new UpstreamUnavailableException("Error response from daemon: not found");
+      return command.contains("ps") ? "cid-vanished\n" : "";
+    });
+
+    // the ownership guard has nothing to refuse, so the run goes ahead
+    manager.execute("dh-local", rendered(), List.of("up", "--no-start"), Duration.ofMinutes(1));
+
+    assertTrue(commands.getLast().contains("up"));
   }
 
   // ── the CLI runner itself ───────────────────────────────────────────────

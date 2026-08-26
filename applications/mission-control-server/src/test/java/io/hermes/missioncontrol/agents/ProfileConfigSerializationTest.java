@@ -259,6 +259,27 @@ class ProfileConfigSerializationTest {
   }
 
   @Test
+  void aBatchedReadIgnoresOutputForAPathItDidNotAskFor() {
+    // the parser keys strictly on what was requested: shell noise, or a marker line for some
+    // other path, cannot invent an entry the caller then reads as a real file
+    MutableContainer container = new MutableContainer();
+    HermesContainerFiles files = new HermesContainerFiles(container.dockerExec) {
+      @Override
+      ExecResult exec(DockerHostRef host, String containerId, List<String> command) {
+        String marker = command.get(4);
+        return new ExecResult(0,
+            "leading noise before any marker\n"
+                + marker + "/opt/data/SOUL.md\nbe useful\n"
+                + marker + "/opt/data/never-asked-for\nsomething else\n", "");
+      }
+    };
+
+    Map<String, String> read = files.readFiles(HOST, CONTAINER, List.of("/opt/data/SOUL.md"));
+
+    assertEquals(Map.of("/opt/data/SOUL.md", "be useful\n"), read);
+  }
+
+  @Test
   void anEmptyBatchAsksTheContainerNothing() {
     MutableContainer container = new MutableContainer();
     HermesContainerFiles files = new HermesContainerFiles(container.dockerExec);

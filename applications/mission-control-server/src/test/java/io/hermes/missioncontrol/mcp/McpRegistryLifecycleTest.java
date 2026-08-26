@@ -298,6 +298,46 @@ class McpRegistryLifecycleTest {
     assertEquals(0, operations.queued());
   }
 
+  @Test
+  void aSaveOfARevisionSomethingElseHasAlreadyMovedPastIsRefused() throws Exception {
+    // both editors opened revision 1. Without the guard the second save lands on top of the
+    // first, the first operator's edit is gone, and both requests reported success.
+    //
+    // The competing write is made from inside the repository, between the read this update took
+    // and the write it is about to make — which is the window, and the only place a test can
+    // stand in it without two threads and a timing assumption.
+    McpServerRepository racing = new McpServerRepository(database.jdbc()) {
+      private boolean raced;
+
+      @Override
+      boolean updateDefinition(String id, String name, String description, String configJson,
+          long revision, long appliedRevision, String operationState, long expectedRevision) {
+        if (!raced) {
+          raced = true;
+          // the other editor's save lands first, taking revision 1 to 2
+          super.updateDefinition(id, "Saved by someone else", description, configJson,
+              expectedRevision + 1, appliedRevision, operationState, expectedRevision);
+        }
+        return super.updateDefinition(id, name, description, configJson, revision,
+            appliedRevision, operationState, expectedRevision);
+      }
+    };
+    McpWiring.Graph raced = McpWiring.graph(racing, retained, links, hosts,
+        mock(DockerGateway.class), compose, LIVE_MODE, new QueuedOperations());
+    try {
+      String id = raced.service().create(external("Remote docs")).id();
+
+      assertEquals(
+          "the MCP server changed while this edit was open; reload it and apply the change again",
+          assertThrows(ResourceConflictException.class,
+              () -> raced.service().update(id, external("My version"))).getMessage());
+      // the winner's save is intact, and the loser was told rather than silently discarded
+      assertEquals("Saved by someone else", raced.service().definition(id).name());
+    } finally {
+      raced.close();
+    }
+  }
+
   // ── delete ──────────────────────────────────────────────────────────────
 
   @Test
@@ -448,6 +488,7 @@ class McpRegistryLifecycleTest {
     // operator says otherwise
     retained.retain("mcp-gone", "Files", "dh-local", "mission-control-mcp-files-data");
     RetainedResourceDto resource = service.retainedResources().getFirst();
+    when(compose.purgeVolume("dh-local", "mission-control-mcp-files-data")).thenReturn(true);
 
     assertEquals("mission-control-mcp-files-data", service.retainedResource(resource.id()).name());
 
@@ -456,6 +497,20 @@ class McpRegistryLifecycleTest {
     verify(compose).purgeVolume("dh-local", "mission-control-mcp-files-data");
     assertTrue(service.retainedResources().isEmpty());
     assertThrows(NoSuchElementException.class, () -> service.retainedResource(resource.id()));
+  }
+
+  @Test
+  void aRetainedVolumeTheDaemonNoLongerHasStillLosesItsRow() {
+    // the operator removed it with `docker volume rm`. This used to answer 500 with no detail
+    // and leave the row in place, so the inventory went on listing a volume that did not exist
+    // and every retry took the same path — there was no way to clear it
+    retained.retain("mcp-gone", "Files", "dh-local", "mission-control-mcp-files-data");
+    RetainedResourceDto resource = service.retainedResources().getFirst();
+    when(compose.purgeVolume("dh-local", "mission-control-mcp-files-data")).thenReturn(false);
+
+    service.purgeRetainedResource(resource.id());
+
+    assertTrue(service.retainedResources().isEmpty());
   }
 
   // ── startup ─────────────────────────────────────────────────────────────

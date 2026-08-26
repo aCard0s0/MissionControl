@@ -212,9 +212,12 @@ class McpComposeLifecycle {
     }
   }
 
-  /** Drops a volume kept behind when its server was deleted. */
-  void purgeVolume(String hostId, String volumeName) {
-    compose.purgeVolume(hostId, volumeName);
+  /** Drops a volume kept behind when its server was deleted.
+   *
+   *  @return false when the daemon no longer has it, which is not a failure — the volume the
+   *      caller wanted gone is gone */
+  boolean purgeVolume(String hostId, String volumeName) {
+    return compose.purgeVolume(hostId, volumeName);
   }
 
   /** Re-renders every managed record on a host: Compose owns whole files, so one record's

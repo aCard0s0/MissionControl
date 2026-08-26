@@ -13,6 +13,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -39,6 +41,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class McpRegistryService {
+
+  private static final Logger log = LoggerFactory.getLogger(McpRegistryService.class);
 
   private final McpServerRepository repository;
   private final RetainedResourceRepository retained;
@@ -280,9 +284,20 @@ public class McpRegistryService {
     return retained.require(id);
   }
 
+  /**
+   * Drops a volume kept behind by a deletion, and the row that remembered it.
+   *
+   * <p>The row goes whether or not the daemon still had the volume. An operator who removed it
+   * by hand used to be stuck: the purge answered 500 with no detail, the row survived, and every
+   * retry took the same path — so the inventory went on listing a volume that did not exist,
+   * with no way to clear it.
+   */
   public void purgeRetainedResource(String id) {
     RetainedResourceDto resource = retained.require(id);
-    lifecycle.purgeVolume(resource.hostId(), resource.name());
+    if (!lifecycle.purgeVolume(resource.hostId(), resource.name())) {
+      log.info("retained volume {} on {} was already gone; dropping the record of it",
+          resource.name(), resource.hostId());
+    }
     retained.delete(id);
   }
 
