@@ -495,10 +495,8 @@ cmd_status() {
   if [[ -z "${found}" ]]; then echo "→ nothing deployed"; fi
 }
 
-# Flags go straight to `docker compose logs`, which already spells them the way
-# this script used to re-parse them (-f/--follow, -n/--tail) and adds --since,
-# --until, -t and --no-log-prefix for free. The leading --tail only sets the
-# default: compose takes the last value, so a caller's own -n still wins.
+# The leading --tail only sets the default: `docker compose logs` takes the last
+# value of a repeated flag, so a caller's own -n still wins.
 cmd_logs() {
   require_docker
   if app_exists; then
@@ -535,8 +533,7 @@ cmd_ollama() {
     return
   fi
 
-  # 'logs' is ours too — the ollama CLI has no such verb. Flags pass through to
-  # `docker compose logs`, same as cmd_logs.
+  # 'logs' is ours too — the ollama CLI has no such verb.
   if [[ "${1:-}" == "logs" ]]; then
     shift
     if ! ollama_exists; then
