@@ -3,11 +3,14 @@ package io.hermes.missioncontrol.mcp;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
 
 /**
  * Renders the deliberately narrow managed-server model into non-secret Compose YAML.
@@ -16,6 +19,12 @@ import org.springframework.stereotype.Component;
  * ownership labels — comes from {@link ManagedMcpStack}, because the reader is always somewhere
  * else: {@link ComposeStackManager} inspects the labels back, {@link McpHealthProbe} and the
  * {@code agents} package join the network.
+ *
+ * <p>The document is built as nested maps and handed to SnakeYAML, which Spring Boot already
+ * ships and this codebase already parses with. It used to be appended to a {@link StringBuilder}
+ * a line at a time behind a hand-rolled {@code quote()} — a second, worse YAML implementation
+ * whose escaping rule was one {@code replace} call, and which could not be checked except by
+ * matching the whitespace it happened to emit.
  */
 @Component
 final class ComposeStackRenderer {
@@ -34,7 +43,7 @@ final class ComposeStackRenderer {
       Map<String, List<String>> volumeNames) {}
 
   Rendered render(List<Deployment> deployments) {
-    StringBuilder yaml = new StringBuilder(deployments.isEmpty() ? "services: {}\n" : "services:\n");
+    Map<String, Object> services = new LinkedHashMap<>();
     Map<String, String> processEnvironment = new LinkedHashMap<>();
     Map<String, List<String>> serviceNames = new LinkedHashMap<>();
     Map<String, List<String>> volumeNames = new LinkedHashMap<>();
@@ -42,129 +51,153 @@ final class ComposeStackRenderer {
 
     for (Deployment deployment : deployments) {
       StoredConfig config = deployment.config();
-      List<String> services = new ArrayList<>();
+      List<String> names = new ArrayList<>();
       List<String> actualVolumes = new ArrayList<>();
+      RenderState state = new RenderState(processEnvironment, declaredVolumeKeys, actualVolumes);
 
       for (StoredSupportService support : config.supportServices()) {
         String supportKey = supportKey(deployment.serviceKey(), support.name());
-        services.add(supportKey);
-        appendService(yaml, deployment, supportKey, support.image(), support.platform(),
-            support.entrypoint(), support.command(),
-            deployment.supportEnvironment().getOrDefault(support.name(), Map.of()),
-            support.volumes(), support.healthcheck(), Map.of(), processEnvironment,
-            declaredVolumeKeys, actualVolumes);
+        names.add(supportKey);
+        services.put(supportKey, service(deployment, supportKey,
+            new ServiceSpec(support.image(), support.platform(), support.entrypoint(),
+                support.command(),
+                deployment.supportEnvironment().getOrDefault(support.name(), Map.of()),
+                support.volumes(), support.healthcheck()),
+            Map.of(), state));
       }
 
-      services.addFirst(deployment.serviceKey());
+      names.addFirst(deployment.serviceKey());
       Map<String, Boolean> dependencies = new LinkedHashMap<>();
       for (StoredSupportService support : config.supportServices()) {
         boolean healthy = support.healthcheck() != null
             && !"NONE".equals(support.healthcheck().test().getFirst());
         dependencies.put(supportKey(deployment.serviceKey(), support.name()), healthy);
       }
-      appendService(yaml, deployment, deployment.serviceKey(), config.image(), config.platform(),
-          config.entrypoint(), config.command(), deployment.mainEnvironment(), config.volumes(),
-          config.healthcheck(), dependencies, processEnvironment, declaredVolumeKeys, actualVolumes);
+      Map<String, Object> main = service(deployment, deployment.serviceKey(),
+          new ServiceSpec(config.image(), config.platform(), config.entrypoint(), config.command(),
+              deployment.mainEnvironment(), config.volumes(), config.healthcheck()),
+          dependencies, state);
       if (config.internalPort() != null) {
-        yaml.append("    expose:\n      - '").append(config.internalPort()).append("'\n");
+        main.put("expose", List.of(String.valueOf(config.internalPort())));
       }
       if (config.publishedPort() != null) {
-        yaml.append("    ports:\n      - '").append(config.publishedPort()).append(":")
-            .append(config.internalPort()).append("'\n");
+        main.put("ports", List.of(config.publishedPort() + ":" + config.internalPort()));
       }
-      serviceNames.put(deployment.id(), List.copyOf(services));
+      services.put(deployment.serviceKey(), main);
+      serviceNames.put(deployment.id(), List.copyOf(names));
       volumeNames.put(deployment.id(), List.copyOf(new LinkedHashSet<>(actualVolumes)));
     }
 
-    yaml.append("networks:\n  mcp:\n    name: '").append(ManagedMcpStack.NETWORK).append("'\n")
-        .append("    driver: bridge\n")
-        .append("    labels:\n")
-        .append("      " + ManagedMcpStack.OWNER_LABEL + ": '").append(ManagedMcpStack.PROJECT).append("'\n");
+    Map<String, Object> document = new LinkedHashMap<>();
+    document.put("services", services);
+    document.put("networks", Map.of("mcp", ordered(
+        "name", ManagedMcpStack.NETWORK,
+        "driver", "bridge",
+        "labels", Map.of(ManagedMcpStack.OWNER_LABEL, ManagedMcpStack.PROJECT))));
     if (!declaredVolumeKeys.isEmpty()) {
-      yaml.append("volumes:\n");
-      for (Map.Entry<String, String> volume : declaredVolumeKeys.entrySet()) {
-        String volumeKey = volume.getKey();
-        yaml.append("  ").append(volumeKey).append(":\n")
-            .append("    name: '").append(actualVolumeName(volumeKey)).append("'\n")
-            .append("    labels:\n")
-            .append("      " + ManagedMcpStack.OWNER_LABEL + ": '").append(ManagedMcpStack.PROJECT).append("'\n")
-            .append("      " + ManagedMcpStack.SERVER_ID_LABEL + ": ").append(quote(volume.getValue())).append("\n");
-      }
+      Map<String, Object> volumes = new LinkedHashMap<>();
+      declaredVolumeKeys.forEach((volumeKey, serverId) -> volumes.put(volumeKey, ordered(
+          "name", actualVolumeName(volumeKey),
+          "labels", ordered(
+              ManagedMcpStack.OWNER_LABEL, ManagedMcpStack.PROJECT,
+              ManagedMcpStack.SERVER_ID_LABEL, serverId))));
+      document.put("volumes", volumes);
     }
-    return new Rendered(yaml.toString(), Map.copyOf(processEnvironment),
+    return new Rendered(dump(document), Map.copyOf(processEnvironment),
         Map.copyOf(serviceNames), Map.copyOf(volumeNames));
   }
 
-  private static void appendService(
-      StringBuilder yaml,
-      Deployment deployment,
-      String serviceKey,
-      String image,
-      String platform,
-      List<String> entrypoint,
-      List<String> command,
-      Map<String, String> environment,
-      List<VolumeSpec> volumes,
-      HealthcheckSpec healthcheck,
-      Map<String, Boolean> dependencies,
+  /** The seven fields a main service and a support service describe identically. */
+  private record ServiceSpec(
+      String image, String platform, List<String> entrypoint, List<String> command,
+      Map<String, String> environment, List<VolumeSpec> volumes, HealthcheckSpec healthcheck) {}
+
+  /** What one render accumulates across every service it visits. */
+  private record RenderState(
       Map<String, String> processEnvironment,
       Map<String, String> declaredVolumeKeys,
-      List<String> actualVolumes) {
-    yaml.append("  ").append(serviceKey).append(":\n")
-        .append("    image: ").append(quote(image)).append("\n")
-        .append("    restart: unless-stopped\n")
-        .append("    labels:\n")
-        .append("      " + ManagedMcpStack.OWNER_LABEL + ": '").append(ManagedMcpStack.PROJECT).append("'\n")
-        .append("      " + ManagedMcpStack.SERVER_ID_LABEL + ": ").append(quote(deployment.id())).append("\n")
-        .append("    networks:\n      - mcp\n");
-    if (platform != null) yaml.append("    platform: ").append(quote(platform)).append("\n");
-    appendList(yaml, "entrypoint", entrypoint);
-    appendList(yaml, "command", command);
+      List<String> actualVolumes) {}
 
-    if (!environment.isEmpty()) {
-      yaml.append("    environment:\n");
-      for (Map.Entry<String, String> entry : environment.entrySet()) {
-        String variable = variableName(deployment.id(), serviceKey, entry.getKey());
-        processEnvironment.put(variable, entry.getValue() == null ? "" : entry.getValue());
-        yaml.append("      ").append(entry.getKey()).append(": \"${").append(variable).append(":-}\"\n");
-      }
+  private static Map<String, Object> service(Deployment deployment, String serviceKey,
+      ServiceSpec spec, Map<String, Boolean> dependencies, RenderState state) {
+    Map<String, Object> service = ordered(
+        "image", spec.image(),
+        "restart", "unless-stopped",
+        "labels", ordered(
+            ManagedMcpStack.OWNER_LABEL, ManagedMcpStack.PROJECT,
+            ManagedMcpStack.SERVER_ID_LABEL, deployment.id()),
+        "networks", List.of("mcp"));
+    if (spec.platform() != null) service.put("platform", spec.platform());
+    putIfAny(service, "entrypoint", spec.entrypoint());
+    putIfAny(service, "command", spec.command());
+
+    if (!spec.environment().isEmpty()) {
+      Map<String, Object> env = new LinkedHashMap<>();
+      spec.environment().forEach((key, value) -> {
+        String variable = variableName(deployment.id(), serviceKey, key);
+        state.processEnvironment().put(variable, value == null ? "" : value);
+        env.put(key, "${" + variable + ":-}");
+      });
+      service.put("environment", env);
     }
 
-    if (!volumes.isEmpty()) {
-      yaml.append("    volumes:\n");
-      for (VolumeSpec volume : volumes) {
+    if (!spec.volumes().isEmpty()) {
+      List<String> mounts = new ArrayList<>();
+      for (VolumeSpec volume : spec.volumes()) {
         String key = volumeKey(deployment.serviceKey(), serviceKey, volume.name());
-        declaredVolumeKeys.put(key, deployment.id());
-        actualVolumes.add(actualVolumeName(key));
-        yaml.append("      - ").append(quote(key + ":" + volume.target())).append("\n");
+        state.declaredVolumeKeys().put(key, deployment.id());
+        state.actualVolumes().add(actualVolumeName(key));
+        mounts.add(key + ":" + volume.target());
       }
+      service.put("volumes", mounts);
     }
 
     if (!dependencies.isEmpty()) {
-      yaml.append("    depends_on:\n");
-      for (Map.Entry<String, Boolean> dependency : dependencies.entrySet()) {
-        yaml.append("      ").append(dependency.getKey()).append(":\n")
-            .append("        condition: ")
-            .append(dependency.getValue() ? "service_healthy" : "service_started").append("\n");
-      }
+      Map<String, Object> depends = new LinkedHashMap<>();
+      dependencies.forEach((name, healthy) -> depends.put(name,
+          Map.of("condition", healthy ? "service_healthy" : "service_started")));
+      service.put("depends_on", depends);
     }
-    appendHealthcheck(yaml, healthcheck);
+    if (spec.healthcheck() != null) service.put("healthcheck", healthcheck(spec.healthcheck()));
+    return service;
   }
 
-  private static void appendHealthcheck(StringBuilder yaml, HealthcheckSpec healthcheck) {
-    if (healthcheck == null) return;
-    yaml.append("    healthcheck:\n      test:\n");
-    for (String part : healthcheck.test()) yaml.append("        - ").append(quote(part)).append("\n");
-    if (healthcheck.interval() != null) yaml.append("      interval: ").append(quote(healthcheck.interval())).append("\n");
-    if (healthcheck.timeout() != null) yaml.append("      timeout: ").append(quote(healthcheck.timeout())).append("\n");
-    if (healthcheck.retries() != null) yaml.append("      retries: ").append(healthcheck.retries()).append("\n");
-    if (healthcheck.startPeriod() != null) yaml.append("      start_period: ").append(quote(healthcheck.startPeriod())).append("\n");
+  private static Map<String, Object> healthcheck(HealthcheckSpec spec) {
+    Map<String, Object> check = ordered("test", List.copyOf(spec.test()));
+    if (spec.interval() != null) check.put("interval", spec.interval());
+    if (spec.timeout() != null) check.put("timeout", spec.timeout());
+    if (spec.retries() != null) check.put("retries", spec.retries());
+    if (spec.startPeriod() != null) check.put("start_period", spec.startPeriod());
+    return check;
   }
 
-  private static void appendList(StringBuilder yaml, String field, List<String> values) {
-    if (values == null || values.isEmpty()) return;
-    yaml.append("    ").append(field).append(":\n");
-    for (String value : values) yaml.append("      - ").append(quote(value)).append("\n");
+  /**
+   * Block style, two-space indent, sequence dashes indented under their key.
+   *
+   * <p>Compose reads either layout; the indented one is what a human diffing a generated stack
+   * against a hand-written one expects to see.
+   */
+  private static String dump(Map<String, Object> document) {
+    DumperOptions options = new DumperOptions();
+    options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+    options.setIndent(2);
+    options.setIndicatorIndent(2);
+    options.setIndentWithIndicator(true);
+    options.setSplitLines(false);
+    return new Yaml(options).dump(document);
+  }
+
+  /** A {@link LinkedHashMap} literal — {@code Map.of} does not keep the order it was written in. */
+  private static Map<String, Object> ordered(Object... keysAndValues) {
+    Map<String, Object> map = new LinkedHashMap<>();
+    for (int i = 0; i < keysAndValues.length; i += 2) {
+      map.put((String) keysAndValues[i], keysAndValues[i + 1]);
+    }
+    return map;
+  }
+
+  private static void putIfAny(Map<String, Object> service, String field, List<String> values) {
+    if (values != null && !values.isEmpty()) service.put(field, List.copyOf(values));
   }
 
   static String supportKey(String main, String support) {
@@ -173,7 +206,9 @@ final class ComposeStackRenderer {
 
   private static String volumeKey(String main, String service, String logicalName) {
     String owner = main.equals(service) ? main : service;
-    return truncate(owner + "-" + logicalName, 63);
+    String key = owner + "-" + logicalName;
+    // Compose/Docker cap a volume name at 63 characters
+    return key.substring(0, Math.min(63, key.length()));
   }
 
   static String actualVolumeName(String volumeKey) {
@@ -184,20 +219,9 @@ final class ComposeStackRenderer {
     try {
       byte[] digest = MessageDigest.getInstance("SHA-256")
           .digest((serverId + "\0" + service + "\0" + key).getBytes(StandardCharsets.UTF_8));
-      StringBuilder hex = new StringBuilder();
-      for (int i = 0; i < 10; i++) hex.append(String.format("%02X", digest[i]));
-      return "MC_MCP_" + hex;
+      return "MC_MCP_" + HexFormat.of().withUpperCase().formatHex(digest, 0, 10);
     } catch (Exception e) {
       throw new IllegalStateException("cannot create Compose variable name", e);
     }
-  }
-
-  private static String truncate(String value, int max) {
-    if (value.length() <= max) return value;
-    return value.substring(0, max);
-  }
-
-  private static String quote(String value) {
-    return "'" + value.replace("'", "''") + "'";
   }
 }
