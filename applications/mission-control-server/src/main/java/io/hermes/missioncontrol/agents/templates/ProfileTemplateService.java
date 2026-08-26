@@ -121,11 +121,6 @@ public class ProfileTemplateService {
     return applier.deployNew(require(id), host, containerId, name);
   }
 
-  /** Layer a template onto an agent that already exists (used by the create flow). */
-  public AgentProfileDto applyExisting(String id, DockerHostRef host, String containerId, String name) {
-    return applier.layerOnto(require(id), host, containerId, name);
-  }
-
   /**
    * Create the caller-configured base profile and apply a template as one owned operation.
    *

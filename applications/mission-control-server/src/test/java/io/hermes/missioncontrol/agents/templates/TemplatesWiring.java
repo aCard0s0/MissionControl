@@ -48,4 +48,14 @@ final class TemplatesWiring {
       HermesSetup setup) {
     return service(repository, cipher, profiles, setup, null);
   }
+
+  /**
+   * The applier on its own, for the two tests that assert what layering onto a caller-owned
+   * profile does. They used to reach it through {@code ProfileTemplateService.applyExisting},
+   * which nothing in production called — the service's own flows go through
+   * {@link TemplateApplier#deployNew} and {@link TemplateApplier#layerOnto} directly.
+   */
+  static TemplateApplier applier(HermesProfiles profiles, HermesSetup setup, SecretCipher cipher) {
+    return new TemplateApplier(profiles, setup, new TemplateSecrets(new SecretsAtRest(cipher)));
+  }
 }

@@ -80,14 +80,15 @@ public class AgentLifecycle {
    * Dropping it first and then failing the profile write — the likelier of the two — would
    * also leave the entry in {@code config.yaml} with nothing recording where it came from.
    *
-   * @return the profile as it stands afterwards, with catalog links overlaid
+   * @return the profile as it stands afterwards, before catalog links are overlaid —
+   *     {@code AgentEndpoints.linked} does that for every profile the API answers with
    */
   public AgentProfileDto removeMcpServer(
       DockerHostRef host, String containerId, String name, String serverName) {
     AgentProfileDto updated = profiles.removeMcpServer(host, containerId, name, serverName);
     cleanUp("catalog link " + serverName + " on agent " + name,
         () -> mcpCatalog.forgetLink(host, containerId, name, serverName));
-    return mcpCatalog.enrich(host, updated);
+    return updated;
   }
 
   /**

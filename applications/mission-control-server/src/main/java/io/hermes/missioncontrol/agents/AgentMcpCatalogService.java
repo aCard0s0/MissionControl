@@ -72,7 +72,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     long now = System.currentTimeMillis();
     links.upsert(new AgentMcpLink(
         host.id(), containerId, profile, alias, source.id(), source.revision(), now, now));
-    return enrich(host, updated);
+    return updated;
   }
 
   public AgentProfileDto sync(
@@ -95,7 +95,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
     links.upsert(new AgentMcpLink(
         host.id(), containerId, profile, alias, source.id(), source.revision(),
         link.createdAt(), System.currentTimeMillis()));
-    return enrich(host, updated);
+    return updated;
   }
 
   public AgentProfileDto unlink(
@@ -105,7 +105,7 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
       throw new NoSuchElementException("MCP entry is not linked to the catalog: " + alias);
     }
     links.delete(host.id(), containerId, profile, alias);
-    return enrich(host, profiles.get(host, containerId, profile));
+    return profiles.get(host, containerId, profile);
   }
 
   public void assertCustom(
@@ -161,6 +161,11 @@ public class AgentMcpCatalogService implements McpServerDeletionListener {
 
   /**
    * Overlays the dashboard-owned catalog link onto each MCP entry the profile reports.
+   *
+   * <p>Called from exactly one place — {@code AgentEndpoints.linked}, which every controller
+   * answering with a profile routes through. It used to be called from here as well, by the
+   * three catalog methods above, which meant the rule "a profile leaves the API enriched" had
+   * two homes and the template deploy route landed in neither.
    *
    * <p>Runs once per profile on every {@code /api/agents} listing, which the dashboard polls,
    * so it reads catalog rows through {@link McpRegistryService#definition} and never

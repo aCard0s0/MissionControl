@@ -1,5 +1,11 @@
 package io.hermes.missioncontrol.agents.web;
 
+import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
+import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
+import static io.hermes.missioncontrol.agents.web.AgentWebFixture.enrichmentIsTransparent;
+import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
+import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
+import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -13,14 +19,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import io.hermes.missioncontrol.agents.api.AgentProfileDto;
-import io.hermes.missioncontrol.agents.api.GatewayDto;
+import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
-import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -34,38 +37,32 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * The template endpoints. Templates are dashboard-owned, so the interesting rule is which
  * of these seven endpoints needs a live Docker host and which must work with every daemon
  * in the fleet down.
+ *
+ * <p>Wired through {@link AgentEndpoints} like the sibling controller tests, because
+ * {@code deploy} answers with an agent profile and every profile the API returns is enriched
+ * with its catalog links on the way out.
  */
 class ProfileTemplatesControllerTest {
 
-  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///var/run/docker.sock");
-
   private ProfileTemplateService service;
   private HostService hosts;
+  private AgentMcpCatalogService mcpCatalog;
   private MockMvc mvc;
 
   @BeforeEach
   void setUp() {
     service = mock(ProfileTemplateService.class);
     hosts = mock(HostService.class);
+    mcpCatalog = mock(AgentMcpCatalogService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new ProfileTemplatesController(service, hosts))
+        .standaloneSetup(new ProfileTemplatesController(service, new AgentEndpoints(hosts, mcpCatalog)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
-  }
-
-  private void hostIsConnected() {
-    when(hosts.requireConnected(HOST.id())).thenReturn(HOST);
   }
 
   private static ProfileTemplateDto template() {
     return new ProfileTemplateDto("pt-1", "researcher", "beaker", "digs", "research", "anthropic", "claude-opus-5",
         null, "/work", "soul", "memory", List.of(), List.of(), List.of(), 1L, 2L);
-  }
-
-  private static AgentProfileDto profile() {
-    return new AgentProfileDto("scout", "c1", "scout", null, "idle", "anthropic",
-        "claude-opus-5", "...abcd", "/work", "soul", "memory", "model: x",
-        List.of(), List.of(), List.of(), GatewayDto.unknown(), 9L);
   }
 
   @Test
@@ -104,8 +101,7 @@ class ProfileTemplatesControllerTest {
 
   @Test
   void captureAndDeployBothRequireAConnectedHostAndStopBeforeTheService() throws Exception {
-    when(hosts.requireConnected(HOST.id()))
-        .thenThrow(new UpstreamUnavailableException("docker host not connected"));
+    hostIsDown(hosts);
 
     mvc.perform(post("/api/profile-templates/capture")
             .contentType(MediaType.APPLICATION_JSON)
@@ -125,10 +121,11 @@ class ProfileTemplatesControllerTest {
 
   @Test
   void captureAndDeployPassTheResolvedHostUrlRatherThanTheHostId() throws Exception {
-    hostIsConnected();
+    hostIsConnected(hosts);
+    enrichmentIsTransparent(mcpCatalog);
     when(service.captureFromAgent(any(), anyString(), anyString(), org.mockito.ArgumentMatchers.any()))
         .thenReturn(template());
-    when(service.deploy(anyString(), any(), anyString(), anyString())).thenReturn(profile());
+    when(service.deploy(anyString(), any(), anyString(), anyString())).thenReturn(profile(PROFILE));
 
     mvc.perform(post("/api/profile-templates/capture")
             .contentType(MediaType.APPLICATION_JSON)
@@ -140,12 +137,33 @@ class ProfileTemplatesControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"hostId\":\"dh-local\",\"containerId\":\"c1\",\"name\":\"scout\"}"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.name").value("scout"));
+        .andExpect(jsonPath("$.name").value(PROFILE));
 
     // the service talks to a daemon, so it needs the url; handing it a host id would
     // fail at the transport layer
     verify(service).captureFromAgent(HOST, "c1", "scout", "researcher");
     verify(service).deploy("pt-1", HOST, "c1", "scout");
+  }
+
+  /**
+   * A deployed profile is a profile, and every profile the API answers with carries its
+   * catalog links. This route used to resolve its own host and hand the applier's result
+   * straight back, so a template deploy was the one profile read that skipped both the link
+   * overlay and the stranded-link sweep that goes with it.
+   */
+  @Test
+  void aDeployedProfileLeavesEnrichedLikeEveryOtherProfileTheApiReturns() throws Exception {
+    hostIsConnected(hosts);
+    when(service.deploy(anyString(), any(), anyString(), anyString())).thenReturn(profile(PROFILE));
+    when(mcpCatalog.enrich(eq(HOST), any())).thenReturn(profile("enriched"));
+
+    mvc.perform(post("/api/profile-templates/pt-1/deploy")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"hostId\":\"dh-local\",\"containerId\":\"c1\",\"name\":\"scout\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("enriched"));
+
+    verify(mcpCatalog).enrich(eq(HOST), any());
   }
 
   @Test

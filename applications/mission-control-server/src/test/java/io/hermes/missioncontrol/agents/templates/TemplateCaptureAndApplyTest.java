@@ -261,11 +261,13 @@ class TemplateCaptureAndApplyTest {
   @Test
   void layeringOntoAnExistingProfileNeverDeletesItOnFailure() {
     // dropping an agent the caller already had is not this code's call
-    templateIs(template(t -> t.skills = List.of("refactor")));
+    ProfileTemplate template = template(t -> t.skills = List.of("refactor"));
     doThrow(new IllegalStateException("skill not found"))
         .when(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
+    TemplateApplier applier = TemplatesWiring.applier(profiles, setup, cipher);
 
-    assertThrows(IllegalStateException.class, () -> service.applyExisting("pt-1", HOST, CONTAINER, "scout"));
+    assertThrows(IllegalStateException.class,
+        () -> applier.layerOnto(template, HOST, CONTAINER, "scout"));
 
     verify(profiles, never()).delete(any(), anyString(), anyString());
     verify(profiles, never()).create(any(), any());
