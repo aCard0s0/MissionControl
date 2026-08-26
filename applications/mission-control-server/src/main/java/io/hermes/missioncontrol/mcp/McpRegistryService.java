@@ -3,7 +3,6 @@ package io.hermes.missioncontrol.mcp;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -139,7 +138,7 @@ public class McpRegistryService {
   // ── definitions ────────────────────────────────────────────────────────────
 
   public McpServerDto create(McpServerRequest request) {
-    Validated validated = McpRequestValidator.validate(request);
+    McpServerRequest validated = McpRequestValidator.validate(request);
     hostsForManaged(validated);
     if (repository.nameExists(validated.name(), null)) {
       throw new ResourceConflictException("an MCP server named '" + validated.name() + "' already exists");
@@ -162,7 +161,7 @@ public class McpRegistryService {
   public McpServerDto update(String id, McpServerRequest request) {
     ServerRow existing = requireRow(id);
     ensureIdle(existing);
-    Validated validated = McpRequestValidator.validate(request);
+    McpServerRequest validated = McpRequestValidator.validate(request);
     // the definition write below is guarded on `existing.revision()`, so this check is only
     // here to answer a mid-operation record with the message it expects rather than the
     // stale-revision one
@@ -351,7 +350,7 @@ public class McpRegistryService {
    * properly by {@code McpComposeLifecycle}, which stops the departed container and moves its
    * volumes to the retained inventory.
    */
-  private static void ensureSupportServicesNotRenamed(StoredConfig previous, Validated validated) {
+  private static void ensureSupportServicesNotRenamed(StoredConfig previous, McpServerRequest validated) {
     Set<String> stored = previous.supportServices().stream()
         .map(StoredSupportService::name).collect(Collectors.toCollection(LinkedHashSet::new));
     Set<String> submitted = validated.supportServices().stream()
@@ -374,7 +373,7 @@ public class McpRegistryService {
   }
 
   /** A managed record must name a host this dashboard knows; resolving the URL proves it. */
-  private void hostsForManaged(Validated value) {
+  private void hostsForManaged(McpServerRequest value) {
     if ("managed".equals(value.kind())) hosts.ref(value.hostId());
   }
 }

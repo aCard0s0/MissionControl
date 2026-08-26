@@ -119,9 +119,11 @@ class AgentMcpCatalogServiceTest {
         org.mockito.ArgumentMatchers.eq("default"), definition.capture());
     assertEquals("http://mcp-tools:1100/mcp", definition.getValue().url());
     assertEquals("Bearer secret", definition.getValue().headers().get("Authorization"));
-    assertEquals("catalog", result.mcp().getFirst().origin());
     verify(links).upsert(org.mockito.ArgumentMatchers.argThat(
         value -> "mcp-1".equals(value.serverId()) && value.syncedRevision() == 7));
+    // connect writes the link row; the overlay that turns it into a catalog-owned entry is
+    // enrich's, which the API applies once on the way out rather than here
+    assertEquals("catalog", service.enrich(HOST, result).mcp().getFirst().origin());
   }
 
   @Test

@@ -3,7 +3,6 @@ package io.hermes.missioncontrol.mcp;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
-import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretsAtRest;
 import java.util.ArrayList;
@@ -39,15 +38,11 @@ class McpConfigStore {
 
   // ── envelope ───────────────────────────────────────────────────────────────
 
+  /** Collections come back non-null: {@link StoredConfig}'s own constructor sees to that, and
+   *  Jackson builds the record through it, so an early/development row is defended too. */
   StoredConfig read(ServerRow row) {
     try {
-      StoredConfig value = json.readValue(row.configJson(), StoredConfig.class);
-      // All collections are written non-null. Defend against early/development rows.
-      return new StoredConfig(value.transport(), value.url(), value.image(), value.platform(),
-          list(value.entrypoint()), list(value.command()), value.stdioCommand(), list(value.args()),
-          value.internalPort(), value.publishedPort(), value.path(), value.crossHostUrl(),
-          list(value.environment()), list(value.headers()), list(value.volumes()), value.healthcheck(),
-          list(value.supportServices()));
+      return json.readValue(row.configJson(), StoredConfig.class);
     } catch (Exception e) {
       throw new ResourceConflictException("stored MCP configuration is unreadable", e);
     }
@@ -63,7 +58,7 @@ class McpConfigStore {
 
   /** Encrypts a validated request into its stored form, carrying over secrets the request
    *  left blank — which is how the UI says "keep the value you already hold". */
-  StoredConfig store(Validated value, StoredConfig existing) {
+  StoredConfig store(McpServerRequest value, StoredConfig existing) {
     List<StoredValue> environment =
         storeValues(value.environment(), existing == null ? List.of() : existing.environment());
     List<StoredValue> headers =
@@ -162,9 +157,5 @@ class McpConfigStore {
       boolean set = value.value() != null;
       return new ConfigValueDto(value.key(), null, true, set, secrets.isRecoverable(value.value()));
     }).toList();
-  }
-
-  private static <T> List<T> list(List<T> value) {
-    return value == null ? List.of() : List.copyOf(value);
   }
 }

@@ -19,7 +19,6 @@ import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.mcp.McpRequestValidator.Validated;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretsAtRest;
@@ -546,7 +545,7 @@ class McpComposeLifecycleTest {
 
   /** A managed record whose one dependency declares a named volume of its own. */
   private String insertManagedWithDatabase(String name) {
-    Validated validated = McpRequestValidator.validate(new McpServerRequest(
+    McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
         name, null, "managed", HOST, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null,
@@ -565,7 +564,7 @@ class McpComposeLifecycleTest {
   }
 
   private String insertExternal(String name) {
-    Validated validated = McpRequestValidator.validate(new McpServerRequest(
+    McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
         name, null, "external", null, "http", "https://example.test/mcp", null, null,
         List.of(), List.of(), null, List.of(), null, null, null, null,
         List.of(), List.of(), List.of(), null, List.of()));
@@ -575,7 +574,7 @@ class McpComposeLifecycleTest {
   private String insert(
       String name, String kind, String hostId, List<VolumeSpec> volumes,
       List<ConfigValueInput> environment, String operationState) {
-    Validated validated = McpRequestValidator.validate(new McpServerRequest(
+    McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
         name, null, kind, hostId, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         environment, List.of(), volumes, null, List.of()));
@@ -586,7 +585,7 @@ class McpComposeLifecycleTest {
   private String insertManagedWithUndecryptableSecret() {
     McpConfigStore otherKey =
         new McpConfigStore(new SecretsAtRest(new SecretCipher("a-different-secret", "", false)), new ObjectMapper());
-    Validated validated = McpRequestValidator.validate(new McpServerRequest(
+    McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
         "Files", null, "managed", HOST, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(new ConfigValueInput("TOKEN", "super-secret", true, false)),

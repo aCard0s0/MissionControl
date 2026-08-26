@@ -96,7 +96,8 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    return lifecycle.removeMcpServer(endpoints.host(hostId), containerId, name, serverName);
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, lifecycle.removeMcpServer(host, containerId, name, serverName));
   }
 
   @PostMapping("/catalog")
@@ -105,7 +106,8 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody ConnectCatalogMcpRequest request) {
-    return mcpCatalog.connect(endpoints.host(hostId), containerId, name, request);
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, mcpCatalog.connect(host, containerId, name, request));
   }
 
   @PostMapping("/{serverName}/sync")
@@ -114,7 +116,8 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    return mcpCatalog.sync(endpoints.host(hostId), containerId, name, serverName);
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, mcpCatalog.sync(host, containerId, name, serverName));
   }
 
   @DeleteMapping("/{serverName}/link")
@@ -123,7 +126,8 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    return mcpCatalog.unlink(endpoints.host(hostId), containerId, name, serverName);
+    DockerHostRef host = endpoints.host(hostId);
+    return endpoints.linked(host, mcpCatalog.unlink(host, containerId, name, serverName));
   }
 
   @PostMapping("/{serverName}/test")

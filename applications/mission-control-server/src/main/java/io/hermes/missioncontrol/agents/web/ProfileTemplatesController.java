@@ -7,7 +7,6 @@ import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.agents.templates.UpsertProfileTemplateRequest;
 import io.hermes.missioncontrol.docker.DockerHostRef;
-import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,17 +18,25 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Reusable agent blueprints — dashboard-owned, applied when deploying agents. */
+/**
+ * Reusable agent blueprints — dashboard-owned, applied when deploying agents.
+ *
+ * <p>Resolves its host through {@link AgentEndpoints} like every other controller in this
+ * package, rather than reaching for {@code HostService} itself. That is what makes
+ * {@link AgentEndpoints#linked} unavoidable: {@link #deploy} answers with an agent profile,
+ * and one returned without its catalog links is both missing them and skipping the stranded-link
+ * sweep every other profile read performs.
+ */
 @RestController
 @RequestMapping("/api/profile-templates")
 public class ProfileTemplatesController {
 
   private final ProfileTemplateService service;
-  private final HostService hosts;
+  private final AgentEndpoints endpoints;
 
-  public ProfileTemplatesController(ProfileTemplateService service, HostService hosts) {
+  public ProfileTemplatesController(ProfileTemplateService service, AgentEndpoints endpoints) {
     this.service = service;
-    this.hosts = hosts;
+    this.endpoints = endpoints;
   }
 
   @GetMapping
@@ -60,7 +67,7 @@ public class ProfileTemplatesController {
 
   @PostMapping("/capture")
   public ProfileTemplateDto capture(@Valid @RequestBody CaptureFromAgentRequest request) {
-    DockerHostRef host = hosts.requireConnected(request.hostId());
+    DockerHostRef host = endpoints.host(request.hostId());
     return service.captureFromAgent(
         host, request.containerId(), request.name(), request.templateName());
   }
@@ -68,8 +75,8 @@ public class ProfileTemplatesController {
   @PostMapping("/{id}/deploy")
   public AgentProfileDto deploy(
       @PathVariable String id, @Valid @RequestBody DeployFromTemplateRequest request) {
-    DockerHostRef host = hosts.requireConnected(request.hostId());
-    return service.deploy(id, host, request.containerId(), request.name());
+    DockerHostRef host = endpoints.host(request.hostId());
+    return endpoints.linked(host, service.deploy(id, host, request.containerId(), request.name()));
   }
 
 }

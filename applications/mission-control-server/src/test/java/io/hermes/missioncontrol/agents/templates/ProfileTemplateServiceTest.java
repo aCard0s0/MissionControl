@@ -194,11 +194,7 @@ class ProfileTemplateServiceTest {
     ProfileTemplate template = new ProfileTemplate(
         "pt-1", "ops", "", "", "ops", "nous", "model", "", "/opt/data", "", "",
         List.of(), List.of(network, stdio), List.of(), 1L, 1L);
-    when(repository.findById("pt-1")).thenReturn(Optional.of(template));
-    ProfileTemplateService runtimeService =
-        TemplatesWiring.service(repository, cipher, profiles, setup);
-
-    runtimeService.applyExisting("pt-1", HOST, "cid", "ops");
+    TemplatesWiring.applier(profiles, setup, cipher).layerOnto(template, HOST, "cid", "ops");
 
     ArgumentCaptor<McpServerDefinition> requests =
         ArgumentCaptor.forClass(McpServerDefinition.class);

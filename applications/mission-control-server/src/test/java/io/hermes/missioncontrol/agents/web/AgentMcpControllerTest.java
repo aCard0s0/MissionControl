@@ -161,9 +161,12 @@ class AgentMcpControllerTest {
   void removingAServerHandsTheResolvedHostToTheLifecycle() throws Exception {
     // the profile write and the link drop, and the order between them, are AgentLifecycleTest's
     hostIsConnected(hosts);
+    enrichmentIsTransparent(mcpCatalog);
     when(lifecycle.removeMcpServer(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
 
-    mvc.perform(delete(MCP + "/" + SERVER)).andExpect(status().isOk());
+    mvc.perform(delete(MCP + "/" + SERVER))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value(PROFILE));
 
     verify(lifecycle).removeMcpServer(HOST, CONTAINER, PROFILE, SERVER);
   }
@@ -180,6 +183,7 @@ class AgentMcpControllerTest {
   @Test
   void theCatalogEndpointsCheckTheHostThenDelegateToTheCatalogService() throws Exception {
     hostIsConnected(hosts);
+    enrichmentIsTransparent(mcpCatalog);
     when(mcpCatalog.connect(eq(HOST), eq(CONTAINER), eq(PROFILE), any(ConnectCatalogMcpRequest.class)))
         .thenReturn(profile(PROFILE));
     when(mcpCatalog.sync(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
