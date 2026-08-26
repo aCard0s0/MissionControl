@@ -145,7 +145,7 @@ image payloads at a model that may reject them.
 
 | Method & path | Body | Notes |
 |---|---|---|
-| `GET /api/models/{provider}` | — | what the picker offers. A list stored by the background refresh wins (`source: catalog`); otherwise the curated `MC_MODELS_*` list (`source: config`). 404 for a provider with neither |
+| `GET /api/models/{provider}` | — | what the picker offers. A list stored by the background refresh wins (`source: catalog`); otherwise the curated `mc.models` list from `application.yml` (`source: config`). 404 for a provider with neither |
 | `POST /api/models/{provider}` | `{ apiKey }` | live fetch from the provider's `/v1/models` (truth source); falls back to the config list on any failure |
 
 **Background model-catalog refresh.** Twice a day (`@Scheduled`, 12h fixed delay, first run ~45s after boot) Mission Control re-reads the model list of every provider whose listing endpoint needs no credential, and stores it. Measured against each endpoint unauthenticated:

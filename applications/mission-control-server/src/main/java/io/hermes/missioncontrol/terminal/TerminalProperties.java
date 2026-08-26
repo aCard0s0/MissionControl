@@ -9,8 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * stream holding JVM-side reader/writer threads, so these bounds keep abandoned
  * or runaway sessions from accumulating threads (the cause of the CPU runaway).
  *
- * <p>The compact constructor supplies defaults for any field left null, so a
- * missing or partial {@code mc.terminal} block still yields a sane config.
+ * <p>The compact constructor is where every default lives. {@code application.yml} names the
+ * MC_TERMINAL_* variables and supplies no values, so an unset one arrives here as null and
+ * defaults once — rather than being answered by a placeholder default that restated the same
+ * number in a second file.
  *
  * @param maxSessions          global cap on concurrent terminals
  * @param maxSessionsPerClient per remote-address cap

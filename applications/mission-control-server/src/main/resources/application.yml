@@ -79,16 +79,23 @@ mc:
   # the dev key is in the source, so anything encrypted with it is publicly readable.
   allow-dev-key: ${MC_ALLOW_DEV_KEY:false}
   # terminal (/ws/terminal docker exec) session limits — bound runaway/abandoned
-  # shells so their JVM-side reader/writer threads cannot accumulate
+  # shells so their JVM-side reader/writer threads cannot accumulate.
+  #
+  # No values here: the defaults are TerminalProperties' own, and stating them in both places
+  # meant two files to change and one of them silently winning. These lines exist only to spell
+  # the MC_TERMINAL_* names, because relaxed binding maps `max-sessions` to MC_TERMINAL_MAXSESSIONS
+  # and would not see the underscored form anyone would actually type. An unset variable resolves
+  # to empty, which binds as null, which is what the record defaults from.
+  #
+  # `user` needs no line: it has no dash, so the environment reaches it directly. The container
+  # user the web shell runs as; MC_TERMINAL_USER= (empty) keeps the image default.
   terminal:
-    max-sessions: ${MC_TERMINAL_MAX_SESSIONS:50}
-    max-sessions-per-client: ${MC_TERMINAL_MAX_SESSIONS_PER_CLIENT:5}
-    idle-timeout: ${MC_TERMINAL_IDLE_TIMEOUT:30m}
-    session-max-lifetime: ${MC_TERMINAL_SESSION_MAX_LIFETIME:8h}
-    heartbeat-interval: ${MC_TERMINAL_HEARTBEAT_INTERVAL:30s}
-    pong-timeout: ${MC_TERMINAL_PONG_TIMEOUT:90s}
-    # container user the web shell runs as; empty keeps the image default
-    user: ${MC_TERMINAL_USER:hermes}
+    max-sessions: ${MC_TERMINAL_MAX_SESSIONS:}
+    max-sessions-per-client: ${MC_TERMINAL_MAX_SESSIONS_PER_CLIENT:}
+    idle-timeout: ${MC_TERMINAL_IDLE_TIMEOUT:}
+    session-max-lifetime: ${MC_TERMINAL_SESSION_MAX_LIFETIME:}
+    heartbeat-interval: ${MC_TERMINAL_HEARTBEAT_INTERVAL:}
+    pong-timeout: ${MC_TERMINAL_PONG_TIMEOUT:}
   # curated model catalog fallbacks, used when no live provider fetch is possible
   # Twice-daily re-read of the providers whose model list needs no credential
   # (OpenRouter, NVIDIA NIM, Nous). Off in tests, which must not reach the internet.
@@ -99,17 +106,21 @@ mc:
     # stored list is what the picker offers and these are only what it starts from
     # — or falls back to for a provider that needs a key (Anthropic, OpenAI).
     #
+    # Written here rather than behind MC_MODELS_* placeholders: a seed list the refresh
+    # replaces on first contact is not something anyone deploys an override for, and five
+    # env vars nothing sets read as five knobs someone has to understand.
+    #
     # Nous Portal is an OAuth account (hermes portal) for inference, but its model
     # LIST is served without a key, so this list is superseded once refreshed.
-    nous: ${MC_MODELS_NOUS:Hermes-4-405B,Hermes-4-70B,Hermes-4-14B}
-    anthropic: ${MC_MODELS_ANTHROPIC:claude-fable-5,claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5-20251001}
-    openai: ${MC_MODELS_OPENAI:gpt-5.2,gpt-5.2-mini,gpt-5.1,gpt-4.1}
+    nous: Hermes-4-405B,Hermes-4-70B,Hermes-4-14B
+    anthropic: claude-fable-5,claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5-20251001
+    openai: gpt-5.2,gpt-5.2-mini,gpt-5.1,gpt-4.1
     # OpenRouter ids are provider/model — the live list (openrouter.ai/api/v1/models)
     # supersedes this when reachable.
-    openrouter: ${MC_MODELS_OPENROUTER:nousresearch/hermes-4-405b,anthropic/claude-opus-4.7,anthropic/claude-sonnet-4,openai/gpt-5.2,google/gemini-2.5-pro,deepseek/deepseek-chat}
+    openrouter: nousresearch/hermes-4-405b,anthropic/claude-opus-4.7,anthropic/claude-sonnet-4,openai/gpt-5.2,google/gemini-2.5-pro,deepseek/deepseek-chat
     # Instruct-tuned entries taken from NVIDIA's own /v1/models, so the picker has
     # something usable in the window before the first refresh lands.
-    nvidia: ${MC_MODELS_NVIDIA:meta/llama-3.3-70b-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5,nvidia/llama-3.1-nemotron-70b-instruct,nvidia/llama-3.1-nemotron-ultra-253b-v1,mistralai/mistral-nemotron}
+    nvidia: meta/llama-3.3-70b-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5,nvidia/llama-3.1-nemotron-70b-instruct,nvidia/llama-3.1-nemotron-ultra-253b-v1,mistralai/mistral-nemotron
 
 logging:
   # One process per container, one application per process: the PID, the application
