@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ApiAgentProfile, ApiAgentSetup, ApiImageTags, ApiMcpCatalogServer,
-  ApiModelProvider, ApiOllamaProvider, ApiProfileTemplate, ApiSession,
+  ApiModelProvider, ApiInferenceEndpoint, ApiProfileTemplate, ApiSession,
 } from '../hermes-api';
 import {
   toAgentProfile, toAgentSetup, toChatMessage, toDockerHost, toImageCatalog, toLlmProvider,
-  toLogEntry, toMcpCatalogServer, toMcpRetainedResource, toModelProvider, toOllamaModel,
+  toLogEntry, toMcpCatalogServer, toMcpRetainedResource, toInferenceEndpoint, toEndpointModel,
   toProfileTemplate, toPullState, toServerInfo, toSessionInfo,
 } from './wire-mappers';
 
@@ -366,24 +366,24 @@ describe('toDockerHost', () => {
   });
 });
 
-describe('toModelProvider', () => {
+describe('toInferenceEndpoint', () => {
   // nothing has failed yet, so an unprobed endpoint is unknown rather than an error
   it('reads an unprobed endpoint as unknown', () => {
-    expect(toModelProvider({ id: 'mp-1', name: 'workstation' })).toEqual({
+    expect(toInferenceEndpoint({ id: 'mp-1', name: 'workstation' })).toEqual({
       id: 'mp-1', name: 'workstation', url: '', kind: 'ollama',
       status: 'unknown', version: null, detail: null,
     });
   });
 
   it('is always an ollama endpoint, whatever the row says', () => {
-    expect(toModelProvider({ id: 'mp-1', kind: 'vllm' } as ApiOllamaProvider).kind).toBe('ollama');
+    expect(toInferenceEndpoint({ id: 'mp-1', kind: 'vllm' } as ApiInferenceEndpoint).kind).toBe('ollama');
   });
 });
 
-describe('toOllamaModel', () => {
+describe('toEndpointModel', () => {
   // ollama's own fields — a model pulled from a bare digest reports no family or size
   it('renders a model that reports only its name', () => {
-    expect(toOllamaModel({ name: 'gemma3:4b' })).toEqual({
+    expect(toEndpointModel({ name: 'gemma3:4b' })).toEqual({
       name: 'gemma3:4b', sizeBytes: 0, family: '', parameterSize: '', modifiedAt: 0,
     });
   });

@@ -46,7 +46,7 @@ const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
   },
   providers: {
     llmProviders: signal(llm),
-    ollamaProviders: signal([]),
+    endpoints: signal([]),
   },
   templates: {
     templates: signal(templates),

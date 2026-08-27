@@ -160,7 +160,17 @@ image payloads at a model that may reject them.
 
 The eight-plus keyed providers keep their curated list; `POST /api/models/{provider}` with a caller-supplied key remains the way to read them live. A provider that fails, or answers 200 with no models, keeps whatever was stored before rather than emptying the picker. Set `MC_MODEL_CATALOG_REFRESH=false` to switch the job off.
 
-## Model providers — ollama registry in SQLite
+## Inference endpoints — self-hosted model servers in SQLite
+
+Endpoints are registered by url and administered over ollama's management API. Agents
+consume them over the OpenAI-compatible `{url}/v1` surface instead, which is why any
+runtime serving that (LM Studio, MLX, vLLM, llama.cpp) already works as a `baseUrl`
+above — it just cannot be *managed* from this page, since pull and delete exist only in
+ollama. The `kind` column is the seam for a second protocol.
+
+The `/api/model-providers` route predates the rename and is kept as-is; the concept it
+serves is an endpoint, not a vendor. Not to be confused with `/api/providers`, which is
+the model **vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API keys.
 
 | Method & path | Body / params | Notes |
 |---|---|---|

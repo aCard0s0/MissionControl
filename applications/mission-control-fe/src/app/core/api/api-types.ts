@@ -18,9 +18,9 @@ export interface ApiDockerHost {
   note?: string | null;
 }
 
-/** A registered ollama endpoint. `status` is the last probe's answer, and a provider that has
+/** A registered inference endpoint. `status` is the last probe's answer, and one that has
  *  not been probed yet reports none. */
-export interface ApiOllamaProvider {
+export interface ApiInferenceEndpoint {
   id: string;
   name?: string;
   url?: string;
@@ -30,9 +30,9 @@ export interface ApiOllamaProvider {
   detail?: string | null;
 }
 
-/** One model on an ollama endpoint, relayed from `GET {url}/api/tags`. Its optional fields are
- *  ollama's own: a model pulled from a bare digest reports no family or parameter size. */
-export interface ApiOllamaModel {
+/** One model on an endpoint, relayed from ollama's `GET {url}/api/tags`. Its optional fields
+ *  are ollama's own: a model pulled from a bare digest reports no family or parameter size. */
+export interface ApiEndpointModel {
   name: string;
   sizeBytes?: number;
   family?: string;

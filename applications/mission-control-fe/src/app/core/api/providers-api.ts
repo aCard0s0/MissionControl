@@ -1,5 +1,5 @@
 import {
-  ApiModelCatalog, ApiModelProvider, ApiOllamaModel, ApiOllamaProvider, ApiPullState,
+  ApiModelCatalog, ApiModelProvider, ApiEndpointModel, ApiInferenceEndpoint, ApiPullState,
 } from './api-types';
 import { ApiHttp, seg } from './http';
 
@@ -7,8 +7,9 @@ import { ApiHttp, seg } from './http';
  * Two related registries:
  * - `/api/providers` + `/api/models` — the LLM provider registry and its model
  *   catalogs, which drive the create-agent and template pickers;
- * - `/api/model-providers` — self-hosted ollama endpoints, whose models Mission
- *   Control can list, pull and delete.
+ * - `/api/model-providers` — self-hosted inference endpoints, whose models Mission
+ *   Control can list, pull and delete. (Route kept for compatibility; the concept is
+ *   an endpoint, not a vendor.)
  */
 export class ProvidersApi {
   constructor(private readonly http: ApiHttp) {}
@@ -27,11 +28,11 @@ export class ProvidersApi {
     return this.http.post(`/api/models/${seg(provider)}`, { apiKey });
   }
 
-  list(): Promise<ApiOllamaProvider[]> {
+  list(): Promise<ApiInferenceEndpoint[]> {
     return this.http.get('/api/model-providers');
   }
 
-  add(name: string, url: string): Promise<ApiOllamaProvider> {
+  add(name: string, url: string): Promise<ApiInferenceEndpoint> {
     return this.http.post('/api/model-providers', { name, url });
   }
 
@@ -39,11 +40,11 @@ export class ProvidersApi {
     return this.http.delete(`/api/model-providers/${seg(id)}`);
   }
 
-  check(id: string): Promise<ApiOllamaProvider> {
+  check(id: string): Promise<ApiInferenceEndpoint> {
     return this.http.post(`/api/model-providers/${seg(id)}/check`);
   }
 
-  models(id: string): Promise<ApiOllamaModel[]> {
+  models(id: string): Promise<ApiEndpointModel[]> {
     return this.http.get(`/api/model-providers/${seg(id)}/models`);
   }
 

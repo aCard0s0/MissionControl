@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.modelproviders;
+package io.hermes.missioncontrol.inference;
 
 /** In-memory state of a model pull triggered through the dashboard. */
 public record PullStatusDto(

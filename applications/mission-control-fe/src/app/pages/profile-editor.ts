@@ -1,5 +1,5 @@
 import {
-  McpCatalogServer, ModelProvider, ProfileTemplate, ProfileTemplateInput, TemplateMcp,
+  McpCatalogServer, InferenceEndpoint, ProfileTemplate, ProfileTemplateInput, TemplateMcp,
 } from '../core/models';
 import { quoteMcpArgs } from '../shared/mcp-args';
 import { providerNameOf, resolveProviderOption } from '../shared/provider-resolve';
@@ -127,7 +127,7 @@ export function profileDraftFrom(template: ProfileTemplate, providerOption: stri
  * endpoint of their own, which wins.
  */
 export function profileDraftToInput(
-  draft: ProfileDraft, ollamaInstances: readonly ModelProvider[],
+  draft: ProfileDraft, ollamaInstances: readonly InferenceEndpoint[],
 ): ProfileTemplateInput {
   const resolved = resolveProviderOption(draft.provider, ollamaInstances);
   return {

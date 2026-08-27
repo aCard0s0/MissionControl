@@ -1,7 +1,7 @@
 import {
   ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
-  ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiOllamaModel, ApiOllamaProvider,
+  ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
   ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
@@ -9,7 +9,7 @@ import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
-  McpTransport, ModelProvider, ModelProviderStatus, OllamaModel, ProfileTemplate, Prompt,
+  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt,
   PullState, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
 } from '../models';
 
@@ -352,7 +352,7 @@ export function toLogEntry(api: ApiLogLine, agentId: string | null): LogEntry {
 }
 
 const HOST_STATUSES: DockerHostStatus[] = ['connected', 'connecting', 'error', 'disconnected'];
-const PROVIDER_STATUSES: ModelProviderStatus[] = ['connected', 'error', 'unknown'];
+const ENDPOINT_STATUSES: InferenceEndpointStatus[] = ['connected', 'error', 'unknown'];
 
 /**
  * A docker daemon.
@@ -377,23 +377,23 @@ export function toDockerHost(api: ApiDockerHost): DockerHost {
   };
 }
 
-/** A registered ollama endpoint. An unprobed one reports no status, which is `unknown` — not
+/** A registered inference endpoint. An unprobed one reports no status, which is `unknown` — not
  *  an error, because nothing has failed yet. */
-export function toModelProvider(api: ApiOllamaProvider): ModelProvider {
+export function toInferenceEndpoint(api: ApiInferenceEndpoint): InferenceEndpoint {
   return {
     id: api.id,
     name: api.name ?? api.id,
     url: api.url ?? '',
     kind: 'ollama',
-    status: oneOf(api.status, PROVIDER_STATUSES, 'unknown'),
+    status: oneOf(api.status, ENDPOINT_STATUSES, 'unknown'),
     version: api.version ?? null,
     detail: api.detail ?? null,
   };
 }
 
-/** One model on an ollama endpoint. The optional fields are ollama's own — a model pulled from
+/** One model on an endpoint. The optional fields are ollama's own — a model pulled from
  *  a bare digest reports no family or parameter size, and the row still has to render. */
-export function toOllamaModel(api: ApiOllamaModel): OllamaModel {
+export function toEndpointModel(api: ApiEndpointModel): EndpointModel {
   return {
     name: api.name,
     sizeBytes: api.sizeBytes ?? 0,

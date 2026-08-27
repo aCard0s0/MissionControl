@@ -9,7 +9,7 @@ import { AgentStore } from '../core/store/agent-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import {
-  AuthProvider, AuxiliaryModel, HermesContainer, ModelProvider,
+  AuthProvider, AuxiliaryModel, HermesContainer, InferenceEndpoint,
 } from '../core/models';
 import { ModelPicker } from '../shared/model-picker';
 import {
@@ -57,7 +57,7 @@ export class AgentCreateDialog {
 
   /** The LLM registry plus one entry per registered ollama instance. */
   protected readonly providerChoices = computed(() =>
-    providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()));
+    providerOptions(this.providers.llmProviders(), this.providers.endpoints()));
 
   protected name = '';
   protected provider = 'nous';
@@ -107,7 +107,7 @@ export class AgentCreateDialog {
     const template = this.templates.byId(id);
     if (!template) return;
     const option = providerOptionFor(
-      template.provider, template.baseUrl, this.providerChoices(), this.providers.ollamaProviders());
+      template.provider, template.baseUrl, this.providerChoices(), this.providers.endpoints());
     if (option) {
       this.provider = option;
       // hand the template's model in as the preferred selection, so the catalog
@@ -179,7 +179,7 @@ export class AgentCreateDialog {
     if (!name || !this.main.model || this.busy()) return;
     if (this.apiKeyRequired() && !this.apiKey.trim()) return;
     if (this.auxIncomplete()) return;
-    const primary = resolveProviderOption(this.provider, this.providers.ollamaProviders());
+    const primary = resolveProviderOption(this.provider, this.providers.endpoints());
     if (!primary) return;
     const auxiliary = this.auxiliaryOverride();
     if (this.auxOverride && !auxiliary) return;   // named an ollama instance that vanished
@@ -216,7 +216,7 @@ export class AgentCreateDialog {
   private auxiliaryOverride(): AuxiliaryModel | undefined {
     if (!this.auxOverride || !this.aux.model.trim()) return undefined;
     if (this.auxProvider === this.provider) return { model: this.aux.model.trim() };
-    const resolved = resolveProviderOption(this.auxProvider, this.providers.ollamaProviders());
+    const resolved = resolveProviderOption(this.auxProvider, this.providers.endpoints());
     if (!resolved) return undefined;
     return {
       provider: resolved.provider,
@@ -238,8 +238,8 @@ export class AgentCreateDialog {
     return this.providerInfo(option)?.hasCatalog ?? false;
   }
 
-  private ollamaInstance(option: string): ModelProvider | null {
-    return this.providers.ollamaProviders().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
+  private ollamaInstance(option: string): InferenceEndpoint | null {
+    return this.providers.endpoints().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
   }
 
   /** Where a picker's suggestions come from: an ollama instance's installed

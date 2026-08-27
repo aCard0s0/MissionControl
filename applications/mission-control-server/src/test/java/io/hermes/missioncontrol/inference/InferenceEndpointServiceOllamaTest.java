@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.modelproviders;
+package io.hermes.missioncontrol.inference;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,7 +16,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
-import io.hermes.missioncontrol.modelproviders.ModelProviderRepository.ProviderRow;
+import io.hermes.missioncontrol.inference.InferenceEndpointRepository.EndpointRow;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -36,11 +36,11 @@ import org.junit.jupiter.api.Test;
  * The half of the ollama integration that talks HTTP, driven against a loopback stub instead of
  * a real ollama.
  *
- * <p>{@link ModelProviderServiceTest} covers the pure parsing; everything here — the probe and
+ * <p>{@link InferenceEndpointServiceTest} covers the pure parsing; everything here — the probe and
  * its cache, the 503 mapping for an unreachable or unhappy server, and the background pull state
  * machine — was previously reachable only with an ollama actually running.
  */
-class ModelProviderServiceOllamaTest {
+class InferenceEndpointServiceOllamaTest {
 
   private static final String ID = "mp-1";
 
@@ -49,16 +49,16 @@ class ModelProviderServiceOllamaTest {
   private final List<String> requests = new CopyOnWriteArrayList<>();
   private final List<String> bodies = new CopyOnWriteArrayList<>();
 
-  private ModelProviderRepository repository;
-  private ModelProviderService service;
+  private InferenceEndpointRepository repository;
+  private InferenceEndpointService service;
 
   @BeforeEach
   void start() throws IOException {
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-    repository = mock(ModelProviderRepository.class);
-    service = new ModelProviderService(repository, new ObjectMapper());
+    repository = mock(InferenceEndpointRepository.class);
+    service = new InferenceEndpointService(repository, new OllamaProtocolClient(new ObjectMapper()));
     providerExists(baseUrl);
   }
 
@@ -74,7 +74,7 @@ class ModelProviderServiceOllamaTest {
   void aReachableProviderIsReportedAsConnectedWithItsVersion() {
     route("/api/version", 200, "{\"version\":\"0.5.1\"}");
 
-    ModelProviderDto provider = service.list().getFirst();
+    InferenceEndpointDto provider = service.list().getFirst();
 
     assertEquals("connected", provider.status());
     assertEquals("0.5.1", provider.version());
@@ -87,7 +87,7 @@ class ModelProviderServiceOllamaTest {
     // an HTTP code the operator cannot act on
     route("/api/version", 500, "internal error");
 
-    ModelProviderDto provider = service.check(ID);
+    InferenceEndpointDto provider = service.check(ID);
 
     assertEquals("error", provider.status());
     assertNull(provider.version());
@@ -100,7 +100,7 @@ class ModelProviderServiceOllamaTest {
     // one dead provider must not take down the provider list
     providerExists("http://127.0.0.1:" + closedPort());
 
-    List<ModelProviderDto> providers = service.list();
+    List<InferenceEndpointDto> providers = service.list();
 
     assertEquals("error", providers.getFirst().status());
     // the detail used to stop at generic advice; it now names why the connect failed
@@ -130,7 +130,7 @@ class ModelProviderServiceOllamaTest {
         {"models":[{"name":"llama3:8b","size":10,"details":{"family":"llama"}}]}
         """);
 
-    List<OllamaModelDto> models = service.models(ID);
+    List<EndpointModelDto> models = service.models(ID);
 
     assertEquals("llama3:8b", models.getFirst().name());
     assertTrue(requests.contains("GET /api/tags"));
@@ -171,11 +171,11 @@ class ModelProviderServiceOllamaTest {
     route("/api/version", 200, "{\"version\":\"0.5.1\"}");
     when(repository.urlExists(baseUrl)).thenReturn(false);
 
-    ModelProviderDto added = service.add("box", baseUrl + "//");
+    InferenceEndpointDto added = service.add("box", baseUrl + "//");
 
     assertEquals("connected", added.status());
     assertEquals(baseUrl, added.url());
-    verify(repository).insert(any(ProviderRow.class));
+    verify(repository).insert(any(EndpointRow.class));
   }
 
   @Test
@@ -288,7 +288,7 @@ class ModelProviderServiceOllamaTest {
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private void providerExists(String url) {
-    ProviderRow row = new ProviderRow(ID, "box", url, "ollama");
+    EndpointRow row = new EndpointRow(ID, "box", url, "ollama");
     when(repository.findById(ID)).thenReturn(Optional.of(row));
     when(repository.findAll()).thenReturn(List.of(row));
     when(repository.urlExists(anyString())).thenReturn(false);

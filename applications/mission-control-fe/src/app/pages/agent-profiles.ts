@@ -126,8 +126,8 @@ export class AgentProfilesPage {
     // a template stores ollama flat; the dropdown lists one option per instance
     const option = providerOptionFor(
       t.provider, t.baseUrl,
-      providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()),
-      this.providers.ollamaProviders());
+      providerOptions(this.providers.llmProviders(), this.providers.endpoints()),
+      this.providers.endpoints());
     this.draft.set(profileDraftFrom(t, option ?? (t.provider || 'nous')));
     this.open.set(true);
   }
