@@ -64,6 +64,7 @@ const llm: LlmProvider[] = [
 
 const instance = (name: string, url: string): InferenceEndpoint => ({
   id: `mp-${name}`, name, url, kind: 'ollama', status: 'connected', version: null, detail: null,
+  canManageModels: true,
 });
 
 const ollama = [instance('workstation', 'http://10.0.0.5:11434')];

@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS model_providers (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   url        TEXT NOT NULL UNIQUE,
-  kind       TEXT NOT NULL CHECK (kind IN ('ollama')),
   created_at INTEGER NOT NULL
 );
 

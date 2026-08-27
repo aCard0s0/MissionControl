@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -10,6 +11,7 @@ import io.hermes.missioncontrol.agents.templates.ProfileTemplate;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateRepository;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -138,5 +140,82 @@ class SchemaUpgradesTest {
     upgrades().apply();
 
     assertTrue(columnsOfProfileTemplates().isEmpty());
+  }
+
+  // ── model_providers.kind, dropped now the protocol is probed ─────────────
+
+  /** {@code model_providers} as it shipped while the protocol was stored. */
+  private void rollBackToTheShapeWithStoredKind() {
+    database.jdbc().execute("DROP TABLE model_providers");
+    database.jdbc().execute("CREATE TABLE model_providers ("
+        + "id TEXT PRIMARY KEY,"
+        + "name TEXT NOT NULL,"
+        + "url TEXT NOT NULL UNIQUE,"
+        + "kind TEXT NOT NULL CHECK (kind IN ('ollama')),"
+        + "created_at INTEGER NOT NULL)");
+  }
+
+  private Set<String> columnsOfModelProviders() {
+    return Set.copyOf(database.jdbc().query("PRAGMA table_info(model_providers)",
+        (rs, n) -> rs.getString("name").toLowerCase(Locale.ROOT)));
+  }
+
+  @Test
+  void theUpgradeDropsKindAndKeepsTheRowsThatHadOne() {
+    rollBackToTheShapeWithStoredKind();
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
+
+    upgrades().apply();
+
+    assertFalse(columnsOfModelProviders().contains("kind"));
+    // the endpoint itself survived: only the stored protocol went
+    assertEquals(List.of("http://box:11434"), database.jdbc().queryForList(
+        "SELECT url FROM model_providers WHERE id = 'mp-1'", String.class));
+  }
+
+  /**
+   * The reason a rebuild is needed at all. SQLite refuses {@code DROP COLUMN} on a column
+   * named in a CHECK — which is precisely the constraint being removed.
+   */
+  @Test
+  void theOldCheckIsGoneSoAnyProtocolCanBeProbedLater() {
+    rollBackToTheShapeWithStoredKind();
+
+    upgrades().apply();
+
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
+        + " VALUES ('mp-2', 'mac', 'http://mac:1234', 1)");
+    assertEquals(1, (int) database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM model_providers", Integer.class));
+  }
+
+  @Test
+  void theUniqueUrlConstraintSurvivesTheRebuild() {
+    rollBackToTheShapeWithStoredKind();
+    upgrades().apply();
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 1)");
+
+    // UNIQUE(url) is what stops one server being registered twice; a rebuild that dropped it
+    // would let duplicates in silently
+    assertThrows(Exception.class, () -> database.jdbc().update(
+        "INSERT INTO model_providers (id, name, url, created_at)"
+            + " VALUES ('mp-2', 'copy', 'http://box:11434', 1)"));
+  }
+
+  @Test
+  void theUpgradeIsIdempotentAndLeavesNoHalfBuiltTable() {
+    rollBackToTheShapeWithStoredKind();
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
+
+    upgrades().apply();
+    upgrades().apply();
+
+    assertEquals(1, (int) database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM model_providers", Integer.class));
+    assertEquals(0, (int) database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM sqlite_master WHERE name = 'model_providers_new'", Integer.class));
   }
 }

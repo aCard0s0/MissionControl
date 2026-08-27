@@ -9,7 +9,7 @@ import { provideStores } from '../testing/store';
 
 const provider = (id: string, name: string): InferenceEndpoint => ({
   id, name, url: `http://${name}:11434`, kind: 'ollama', status: 'connected',
-  version: '0.6.4', detail: null,
+  version: '0.6.4', detail: null, canManageModels: true,
 });
 
 const model = (name: string): EndpointModel =>
@@ -37,14 +37,15 @@ const render = (store: ReturnType<typeof storeStub>) => {
   return { fixture, store };
 };
 
+// every block here drives the pull-status poller, so they all need the fake clock
+beforeEach(() => vi.useFakeTimers());
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
 describe('ModelsPage providers', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   it('reads the provider list when it opens', () => {
     const { store } = render(storeStub());
 
@@ -100,13 +101,6 @@ describe('ModelsPage providers', () => {
 });
 
 describe('ModelsPage model list', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   it('loads a provider\'s models when it is selected', async () => {
     const { fixture, store } = render(storeStub());
 
@@ -127,7 +121,7 @@ describe('ModelsPage model list', () => {
     press(fixture, 'models', '.provider-row');
     await settle(fixture);
 
-    expect(el(fixture).textContent).toContain('No models on this provider');
+    expect(el(fixture).textContent).toContain('No models on this endpoint');
   });
 
   it('surfaces why a read failed', async () => {
@@ -191,13 +185,6 @@ describe('ModelsPage model list', () => {
 });
 
 describe('ModelsPage pulls', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   const open = async (store: ReturnType<typeof storeStub>) => {
     const rendered = render(store);
     press(rendered.fixture, 'models', '.provider-row');
@@ -276,5 +263,85 @@ describe('ModelsPage pulls', () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(store.providers.pullStatus.mock.calls.length).toBe(afterDestroy);
+  });
+});
+
+describe('ModelsPage openai-compatible endpoints', () => {
+  /** LM Studio, MLX, vLLM, llama.cpp: /v1/models lists, and there is nothing else to call. */
+  const openai = (): InferenceEndpoint => ({
+    id: 'mp-2', name: 'lm-studio', url: 'http://mac:1234', kind: 'openai',
+    status: 'connected', version: null, detail: null, canManageModels: false,
+  });
+
+  /** /v1/models reports an id and maybe a timestamp — nothing else. */
+  const thinModel = (name: string): EndpointModel =>
+    ({ name, sizeBytes: 0, family: '', parameterSize: '', modifiedAt: 0 });
+
+  const openStub = async () => {
+    const store = storeStub([openai()]);
+    store.providers.models.mockResolvedValue([thinModel('qwen3-8b')]);
+    const { fixture } = render(store);
+    press(fixture, 'models');
+    await settle(fixture);
+    return { fixture, store };
+  };
+
+  it('shows the kind when the protocol reports no version', () => {
+    const { fixture } = render(storeStub([openai()]));
+
+    expect(el(fixture).textContent).toContain('openai-compatible');
+  });
+
+  it('shows no protocol chip for an endpoint that is not answering', () => {
+    // kind is probed, so a switched-off endpoint simply has none — better than claiming one
+    const off: InferenceEndpoint = {
+      ...openai(), kind: null, status: 'error', detail: 'no model server answered',
+    };
+    const { fixture } = render(storeStub([off]));
+
+    expect(el(fixture).querySelector('.chip')).toBeNull();
+    expect(el(fixture).textContent).toContain('no model server answered');
+  });
+
+  it('lists the models it can see', async () => {
+    const { fixture } = await openStub();
+
+    expect(el(fixture).textContent).toContain('qwen3-8b');
+  });
+
+  it('offers no pull bar, because the protocol has no pull', async () => {
+    const { fixture } = await openStub();
+
+    expect(el(fixture).querySelector('.pull-bar')).toBeNull();
+    expect(el(fixture).textContent).toContain('cannot add or remove them');
+  });
+
+  it('offers no remove button, because the protocol has no delete', async () => {
+    const { fixture } = await openStub();
+
+    const labels = [...el(fixture).querySelectorAll('.model-row button')]
+      .map(b => b.textContent?.trim());
+    expect(labels).not.toContain('remove');
+  });
+
+  it('drops the columns /v1/models cannot fill rather than showing them empty', async () => {
+    const { fixture } = await openStub();
+
+    const head = el(fixture).querySelector('.model-row.head');
+    expect(head).not.toBeNull();
+    expect(head!.textContent).not.toContain('params');
+    expect(head!.textContent).not.toContain('family');
+    // name + modified + actions, where ollama's row has three more
+    expect(head!.querySelectorAll('span').length).toBe(3);
+  });
+
+  it('says models are loaded on the server when there are none', async () => {
+    const store = storeStub([openai()]);
+    store.providers.models.mockResolvedValue([]);
+    const { fixture } = render(store);
+    press(fixture, 'models');
+    await settle(fixture);
+
+    expect(el(fixture).textContent).toContain('load one on the server itself');
   });
 });

@@ -31,13 +31,12 @@ class InferenceEndpointRepositoryTest {
 
   @Test
   void insertedRowComesBackWithEveryFieldIntact() {
-    repository.insert(new EndpointRow("mp-1", "workshop ollama", "http://10.0.0.4:11434", "ollama"));
+    repository.insert(new EndpointRow("mp-1", "workshop ollama", "http://10.0.0.4:11434"));
 
     EndpointRow found = repository.findById("mp-1").orElseThrow();
     assertEquals("mp-1", found.id());
     assertEquals("workshop ollama", found.name());
     assertEquals("http://10.0.0.4:11434", found.url());
-    assertEquals("ollama", found.kind());
   }
 
   @Test
@@ -47,8 +46,8 @@ class InferenceEndpointRepositoryTest {
 
   @Test
   void findAllOrdersByInsertionTime() {
-    repository.insert(new EndpointRow("mp-1", "first", "http://a:11434", "ollama"));
-    repository.insert(new EndpointRow("mp-2", "second", "http://b:11434", "ollama"));
+    repository.insert(new EndpointRow("mp-1", "first", "http://a:11434"));
+    repository.insert(new EndpointRow("mp-2", "second", "http://b:11434"));
 
     assertEquals(List.of("mp-1", "mp-2"),
         repository.findAll().stream().map(EndpointRow::id).toList());
@@ -58,7 +57,7 @@ class InferenceEndpointRepositoryTest {
   void urlExistsTracksInsertsAndDeletes() {
     assertFalse(repository.urlExists("http://a:11434"));
 
-    repository.insert(new EndpointRow("mp-1", "first", "http://a:11434", "ollama"));
+    repository.insert(new EndpointRow("mp-1", "first", "http://a:11434"));
     assertTrue(repository.urlExists("http://a:11434"));
 
     repository.delete("mp-1");
@@ -68,15 +67,9 @@ class InferenceEndpointRepositoryTest {
 
   @Test
   void theSchemaRefusesADuplicateUrl() {
-    repository.insert(new EndpointRow("mp-1", "first", "http://a:11434", "ollama"));
+    repository.insert(new EndpointRow("mp-1", "first", "http://a:11434"));
 
     assertThrows(DataIntegrityViolationException.class,
-        () -> repository.insert(new EndpointRow("mp-2", "copy", "http://a:11434", "ollama")));
-  }
-
-  @Test
-  void theSchemaRefusesAKindOtherThanOllama() {
-    assertThrows(DataIntegrityViolationException.class,
-        () -> repository.insert(new EndpointRow("mp-1", "first", "http://a:11434", "vllm")));
+        () -> repository.insert(new EndpointRow("mp-2", "copy", "http://a:11434")));
   }
 }

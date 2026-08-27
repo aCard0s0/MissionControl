@@ -6,6 +6,7 @@ import { Reveal } from '../shared/reveal';
 import { errorMessage } from '../core/errors';
 import { ago } from '../core/format';
 import { InferenceEndpoint, EndpointModel, PullState } from '../core/models';
+import { ENDPOINT_KIND_LABELS } from '../shared/provider-resolve';
 
 @Component({
   selector: 'mc-models',
@@ -19,6 +20,12 @@ export class ModelsPage {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly ago = ago;
+
+  /** The chip beside an endpoint: its protocol, plus a version when the protocol has one. */
+  protected kindChip(endpoint: InferenceEndpoint): string {
+    const label = (ENDPOINT_KIND_LABELS[endpoint.kind ?? ''] ?? endpoint.kind ?? '').toLowerCase();
+    return endpoint.version ? `${label} ${endpoint.version}` : label;
+  }
 
   protected readonly addingProvider = signal(false);
   protected provName = '';

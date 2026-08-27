@@ -37,12 +37,20 @@ export interface InferenceEndpoint {
   name: string;
   /** base url of the server, e.g. http://host.docker.internal:11434 */
   url: string;
-  /** management wire protocol. One kind today; widen the backend CHECK to add another. */
-  kind: 'ollama';
+  /**
+   * Protocol that answered the last probe — `ollama` speaks /api/*, `openai` is the
+   * OpenAI-compatible /v1 surface everything else serves (LM Studio, MLX, vLLM, llama.cpp).
+   *
+   * <p>null when nothing answered. It is probed rather than stored, so an endpoint that is
+   * switched off simply has no known protocol until it comes back.
+   */
+  kind: 'ollama' | 'openai' | null;
   status: InferenceEndpointStatus;
   version: string | null;      // e.g. "0.6.4"
   /** human-readable reason when the provider is not connected */
   detail: string | null;
+  /** whether models can be pulled and removed from here — ollama only. */
+  canManageModels: boolean;
 }
 
 /**

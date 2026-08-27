@@ -43,7 +43,7 @@ class InferenceEndpointsControllerTest {
 
   private static InferenceEndpointDto provider() {
     return new InferenceEndpointDto("mp-1", "workstation", "http://10.0.0.9:11434", "ollama",
-        "connected", "0.5.7", null);
+        "connected", "0.5.7", null, true);
   }
 
   @Test

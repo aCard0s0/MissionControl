@@ -162,11 +162,40 @@ The eight-plus keyed providers keep their curated list; `POST /api/models/{provi
 
 ## Inference endpoints — self-hosted model servers in SQLite
 
-Endpoints are registered by url and administered over ollama's management API. Agents
-consume them over the OpenAI-compatible `{url}/v1` surface instead, which is why any
-runtime serving that (LM Studio, MLX, vLLM, llama.cpp) already works as a `baseUrl`
-above — it just cannot be *managed* from this page, since pull and delete exist only in
-ollama. The `kind` column is the seam for a second protocol.
+Endpoints are registered by url. Agents never come through this API at all — they consume
+an endpoint over its OpenAI-compatible `{url}/v1` surface, which is why any runtime serving
+that works as a `baseUrl` above regardless of what is registered here. This page is
+*management*, and how much of it an endpoint supports depends on its protocol.
+
+### Kinds
+
+**`kind` is probed, never stored.** Only the url is persisted. Which protocol answers there is
+a property of the server, so it is resolved by the same probe that reports status — cached
+10s — and reported on every response.
+
+| `kind` | Probe | Lists models | Pull / delete |
+|---|---|---|---|
+| `ollama` | `GET {url}/api/version` | `GET {url}/api/tags` — name, params, family, size, modified | yes |
+| `openai` | `GET {url}/v1/models` | `GET {url}/v1/models` — id and optional timestamp only | **no** |
+| `null` | nothing answered | — | — |
+
+`openai` covers LM Studio, MLX (`mlx-lm.server`), vLLM and llama.cpp's server. None of them
+has an HTTP pull or delete — models get onto the box out of band — so those calls are
+refused with 400 rather than attempted, and `canManageModels` on the response tells the
+dashboard to hide the controls.
+
+Detection asks ollama **first**, and the order is load-bearing: ollama serves an
+OpenAI-compatible `/v1` *as well as* its own API, so probing `/v1/models` first would file
+every ollama server as `openai` and silently strip its pull and delete. The order is the
+clients' `@Order`, which is how Spring hands them over.
+
+Because nothing is stored, registering does **not** require the server to be up: an endpoint
+that is switched off is added, reports `status: error` and `kind: null`, and resolves itself
+when it answers. It also cannot go stale — put a different server behind the same url and
+the next probe says so.
+
+Adding a protocol is one `EndpointClient` bean. There is no schema change and no list to
+keep in sync.
 
 The `/api/model-providers` route predates the rename and is kept as-is; the concept it
 serves is an endpoint, not a vendor. Not to be confused with `/api/providers`, which is
@@ -174,13 +203,13 @@ the model **vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API 
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/model-providers` | — | status probed via `GET {url}/api/version` (10s cache) |
-| `POST /api/model-providers` | `{ name, url }` | http(s) urls only; duplicates rejected |
+| `GET /api/model-providers` | — | probe resolves status **and** `kind` (10s cache); `version` is null for `openai` |
+| `POST /api/model-providers` | `{ name, url }` | http(s) urls only; duplicates rejected; a server that is down is still registered |
 | `POST /api/model-providers/{id}/check` | — | fresh probe |
 | `DELETE /api/model-providers/{id}` | — | |
-| `GET /api/model-providers/{id}/models` | — | proxied `GET {url}/api/tags` |
-| `POST /api/model-providers/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls` |
-| `POST /api/model-providers/{id}/models/delete` | `{ name }` | |
+| `GET /api/model-providers/{id}/models` | — | proxied per kind |
+| `POST /api/model-providers/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
+| `POST /api/model-providers/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
 
 ## Images
 

@@ -24,10 +24,13 @@ export interface ApiInferenceEndpoint {
   id: string;
   name?: string;
   url?: string;
-  kind?: 'ollama' | string;
+  /** protocol that answered the last probe; absent when none did. */
+  kind?: 'ollama' | 'openai' | string | null;
   status?: 'connected' | 'error' | 'unknown' | string;
   version?: string | null;
   detail?: string | null;
+  /** ollama only — the OpenAI-compatible protocol has no pull or delete. */
+  canManageModels?: boolean;
 }
 
 /** One model on an endpoint, relayed from ollama's `GET {url}/api/tags`. Its optional fields

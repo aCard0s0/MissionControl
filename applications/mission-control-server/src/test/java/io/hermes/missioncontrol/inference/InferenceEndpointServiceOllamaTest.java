@@ -58,7 +58,11 @@ class InferenceEndpointServiceOllamaTest {
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     repository = mock(InferenceEndpointRepository.class);
-    service = new InferenceEndpointService(repository, new OllamaProtocolClient(new ObjectMapper()));
+    ObjectMapper mapper = new ObjectMapper();
+    // both clients, as Spring wires them — so these tests also cover that an ollama server
+    // (which serves /v1 too) is still detected and dispatched as ollama
+    service = new InferenceEndpointService(repository,
+        List.of(new OllamaProtocolClient(mapper), new OpenAiCompatClient(mapper)));
     providerExists(baseUrl);
   }
 
@@ -91,7 +95,9 @@ class InferenceEndpointServiceOllamaTest {
 
     assertEquals("error", provider.status());
     assertNull(provider.version());
-    assertEquals("ollama not reachable — check the address and that the server is running "
+    // the reason quoted is the FIRST protocol's, which is the one carrying the connect-level
+    // failure; the openai probe that also failed here has nothing more useful to say
+    assertEquals("no model server answered — check the address and that the server is running "
         + "(ollama returned HTTP 500)", provider.detail());
   }
 
@@ -126,6 +132,7 @@ class InferenceEndpointServiceOllamaTest {
 
   @Test
   void installedModelsComeFromTheTagsEndpoint() {
+    ollamaAnswersItsVersion();
     route("/api/tags", 200, """
         {"models":[{"name":"llama3:8b","size":10,"details":{"family":"llama"}}]}
         """);
@@ -138,6 +145,7 @@ class InferenceEndpointServiceOllamaTest {
 
   @Test
   void anUnhappyTagsResponseIsAnUpstreamFailureCarryingOnlyItsFirstLine() {
+    ollamaAnswersItsVersion();
     route("/api/tags", 503, "server busy\nstack trace with /home/ops/secrets in it");
 
     UpstreamUnavailableException failure =
@@ -148,6 +156,7 @@ class InferenceEndpointServiceOllamaTest {
 
   @Test
   void anUnparseableTagsBodyIsAnUpstreamFailureNotAServerError() {
+    ollamaAnswersItsVersion();
     route("/api/tags", 200, "not json at all");
 
     assertEquals("unexpected response from ollama /api/tags",
@@ -161,7 +170,9 @@ class InferenceEndpointServiceOllamaTest {
     UpstreamUnavailableException failure =
         assertThrows(UpstreamUnavailableException.class, () -> service.models(ID));
 
-    assertTrue(failure.getMessage().startsWith("ollama not reachable:"), failure.getMessage());
+    // still a 503; it now comes from resolving the protocol rather than from /api/tags
+    assertTrue(failure.getMessage().contains("no model server is answering"),
+        failure.getMessage());
   }
 
   // ── registry ────────────────────────────────────────────────────────────
@@ -220,6 +231,7 @@ class InferenceEndpointServiceOllamaTest {
 
   @Test
   void aPullIsReportedAsPullingWhileItRunsAndDoneWhenItFinishes() throws Exception {
+    ollamaAnswersItsVersion();
     CountDownLatch release = new CountDownLatch(1);
     server.createContext("/api/pull", exchange -> {
       record(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath(),
@@ -245,6 +257,7 @@ class InferenceEndpointServiceOllamaTest {
 
   @Test
   void aRejectedPullIsRecordedAsAnErrorWithTheFirstLineOfTheResponse() throws Exception {
+    ollamaAnswersItsVersion();
     route("/api/pull", 404, "model not found\nsecond line nobody needs");
 
     service.pull(ID, "nope:latest");
@@ -254,16 +267,18 @@ class InferenceEndpointServiceOllamaTest {
   }
 
   @Test
-  void aPullAgainstAnUnreachableProviderEndsAsAnErrorRatherThanHangingOnPulling() throws Exception {
+  void aPullAgainstAnUnreachableProviderIsRefusedRatherThanQueued() throws Exception {
     providerExists("http://127.0.0.1:" + closedPort());
 
-    service.pull(ID, "llama3:8b");
-
-    assertFalse(awaitStatus("llama3:8b", "error").detail().isBlank());
+    // resolving the protocol fails first, so this never reaches the executor: the caller is
+    // told now instead of watching a chip sit on "pulling" and then turn red
+    assertThrows(UpstreamUnavailableException.class, () -> service.pull(ID, "llama3:8b"));
+    assertTrue(service.pulls(ID).isEmpty());
   }
 
   @Test
   void deletingAModelSendsADeleteCarryingTheModelAndForgetsItsPullState() throws Exception {
+    ollamaAnswersItsVersion();
     route("/api/pull", 200, "{}");
     route("/api/delete", 200, "{}");
     service.pull(ID, "llama3:8b");
@@ -278,6 +293,7 @@ class InferenceEndpointServiceOllamaTest {
 
   @Test
   void aFailedModelDeletionIsAnUpstreamFailure() {
+    ollamaAnswersItsVersion();
     route("/api/delete", 500, "cannot remove: in use");
 
     assertEquals("ollama returned HTTP 500: cannot remove: in use",
@@ -287,8 +303,16 @@ class InferenceEndpointServiceOllamaTest {
 
   // ── fixtures ────────────────────────────────────────────────────────────
 
+  /**
+   * Every operation resolves the protocol first, and for ollama that is {@code /api/version}.
+   * A real server always answers it; the stub only does when a test says so.
+   */
+  private void ollamaAnswersItsVersion() {
+    route("/api/version", 200, "{\"version\":\"0.5.7\"}");
+  }
+
   private void providerExists(String url) {
-    EndpointRow row = new EndpointRow(ID, "box", url, "ollama");
+    EndpointRow row = new EndpointRow(ID, "box", url);
     when(repository.findById(ID)).thenReturn(Optional.of(row));
     when(repository.findAll()).thenReturn(List.of(row));
     when(repository.urlExists(anyString())).thenReturn(false);
