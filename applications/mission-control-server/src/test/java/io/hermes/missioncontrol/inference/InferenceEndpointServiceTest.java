@@ -89,6 +89,28 @@ class InferenceEndpointServiceTest {
   }
 
   @Test
+  void aPsResponseSaysWhatIsResidentAndWhatItCosts() throws Exception {
+    List<RunningModelDto> running = OllamaProtocolClient.parsePs(JSON.readTree("""
+        {"models":[{"name":"llama3:8b","size":5000000000,"size_vram":4661224676}]}
+        """));
+
+    assertEquals("llama3:8b", running.getFirst().name());
+    assertEquals(4661224676L, running.getFirst().sizeVramBytes());
+  }
+
+  @Test
+  void aCpuOnlyLoadStillParses() throws Exception {
+    // no size_vram at all — the row has to render without it rather than dropping the model
+    List<RunningModelDto> running = OllamaProtocolClient.parsePs(JSON.readTree("""
+        {"models":[{"name":"llama3:8b"}]}
+        """));
+
+    assertEquals("llama3:8b", running.getFirst().name());
+    assertNull(running.getFirst().sizeVramBytes());
+    assertTrue(OllamaProtocolClient.parsePs(JSON.readTree("{}")).isEmpty());
+  }
+
+  @Test
   void timestampsConvertToEpochMillis() {
     assertEquals(1_777_630_530_000L, OllamaProtocolClient.epochMs("2026-05-01T10:15:30Z"));
     assertNull(OllamaProtocolClient.epochMs(null));

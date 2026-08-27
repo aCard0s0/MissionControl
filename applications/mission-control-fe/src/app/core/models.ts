@@ -86,6 +86,17 @@ export interface EndpointModel {
   modifiedAt: number;          // epoch ms
 }
 
+/**
+ * A model an endpoint is holding in memory right now (ollama's `GET {url}/api/ps`).
+ *
+ * <p>The other half of "what is in use": {@link EndpointModel} is what costs disk,
+ * this is what costs the VRAM the next model needs.
+ */
+export interface RunningModel {
+  name: string;
+  sizeVramBytes: number;       // 0 when the load is CPU-only, or unreported
+}
+
 /** One tag of the Hermes image as seen from a specific docker host. */
 export interface ImageTag {
   tag: string;

@@ -277,6 +277,18 @@ const cases: Record<string, Case> = {
   'providers.models': {
     call: a => a.providers.models('mp-1'), method: 'GET', url: '/api/model-providers/mp-1/models',
   },
+  'providers.running': {
+    call: a => a.providers.running('mp-1'), method: 'GET',
+    url: '/api/model-providers/mp-1/running',
+  },
+  'providers.loadModel': {
+    call: a => a.providers.loadModel('mp-1', 'llama3'), method: 'POST',
+    url: '/api/model-providers/mp-1/models/load', body: { name: 'llama3' },
+  },
+  'providers.unloadModel': {
+    call: a => a.providers.unloadModel('mp-1', 'llama3'), method: 'POST',
+    url: '/api/model-providers/mp-1/models/unload', body: { name: 'llama3' },
+  },
   'providers.pullModel': {
     call: a => a.providers.pullModel('mp-1', 'llama3'), method: 'POST',
     url: '/api/model-providers/mp-1/models/pull', body: { name: 'llama3' },

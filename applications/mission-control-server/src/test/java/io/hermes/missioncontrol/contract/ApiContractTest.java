@@ -46,6 +46,7 @@ import io.hermes.missioncontrol.models.ModelCatalogDto;
 import io.hermes.missioncontrol.inference.InferenceEndpointDto;
 import io.hermes.missioncontrol.inference.EndpointModelDto;
 import io.hermes.missioncontrol.inference.PullStatusDto;
+import io.hermes.missioncontrol.inference.RunningModelDto;
 import io.hermes.missioncontrol.secrets.SecretRef;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -144,6 +145,7 @@ class ApiContractTest {
     CONTRACT.put("ApiPullState", PullStatusDto.class);
     CONTRACT.put("ApiInferenceEndpoint", InferenceEndpointDto.class);
     CONTRACT.put("ApiEndpointModel", EndpointModelDto.class);
+    CONTRACT.put("ApiRunningModel", RunningModelDto.class);
     // board
     CONTRACT.put("ApiBoardTask", BoardTask.class);
     // prompt library

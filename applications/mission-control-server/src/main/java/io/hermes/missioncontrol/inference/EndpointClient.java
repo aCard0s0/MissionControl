@@ -12,6 +12,8 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * One inference endpoint's wire protocol, plus the HTTP plumbing every implementation needs.
@@ -57,7 +59,18 @@ public abstract class EndpointClient {
   /** Models the endpoint reports. Fields it cannot supply come back null. */
   public abstract List<EndpointModelDto> models(String baseUrl);
 
-  /** Whether {@link #pull} and {@link #deleteModel} do anything here. */
+  /**
+   * Models the endpoint currently holds in memory.
+   *
+   * <p>Empty rather than unsupported: a protocol that cannot say is not the same as one
+   * holding nothing, but the dashboard renders both as "nothing running" and there is no
+   * useful third state to show. Only ollama can answer.
+   */
+  public List<RunningModelDto> running(String baseUrl) {
+    return List.of();
+  }
+
+  /** Whether the management calls below do anything here. */
   public boolean canManageModels() {
     return false;
   }
@@ -75,14 +88,36 @@ public abstract class EndpointClient {
     }
   }
 
-  /** Pulls a model, blocking until done. Only called when {@link #canManageModels()}. */
-  public void pull(String baseUrl, String model) throws Exception {
+  /**
+   * Pulls a model, blocking until done. Only called when {@link #canManageModels()}.
+   *
+   * <p>{@code progress} is fed whatever the protocol reports as it goes — the caller writes
+   * it into the pull state the dashboard polls, so a multi-gigabyte download reads as a
+   * percentage instead of an unchanging "pulling".
+   */
+  public void pull(String baseUrl, String model, Consumer<String> progress) throws Exception {
     throw unsupported("pull models");
   }
 
   /** Removes a model. Only called when {@link #canManageModels()}. */
   public void deleteModel(String baseUrl, String model) {
     throw unsupported("delete models");
+  }
+
+  /**
+   * Loads a model into memory and keeps it there until {@link #unload}.
+   *
+   * <p>Blocks until the server reports it loaded, which for a large model on cold disk is
+   * tens of seconds — the caller holds a request thread for it, because an operator who
+   * pressed start needs to be told whether it worked.
+   */
+  public void load(String baseUrl, String model) {
+    throw unsupported("load models");
+  }
+
+  /** Drops a model out of memory, freeing its VRAM immediately. */
+  public void unload(String baseUrl, String model) {
+    throw unsupported("unload models");
   }
 
   /**
@@ -102,6 +137,15 @@ public abstract class EndpointClient {
   /** The raw exchange. Used by {@link #version}, which must not have its failure wrapped. */
   protected HttpResponse<String> send(HttpRequest request) throws Exception {
     return http.send(request, BodyHandlers.ofString());
+  }
+
+  /**
+   * The same exchange, delivered a line at a time — for a response that arrives over minutes
+   * and is only useful while it does. Buffering a pull's progress stream would report it once,
+   * after the pull it described had already finished.
+   */
+  protected HttpResponse<Stream<String>> sendLines(HttpRequest request) throws Exception {
+    return http.send(request, BodyHandlers.ofLines());
   }
 
   /**

@@ -35,6 +35,7 @@ GET /api/mcp-servers/retained-resources
 GET /api/model-providers
 GET /api/model-providers/mp-1/models
 GET /api/model-providers/mp-1/pulls
+GET /api/model-providers/mp-1/running
 GET /api/models/anthropic
 GET /api/profile-templates
 GET /api/prompts
@@ -66,7 +67,9 @@ POST /api/mcp-servers/mcp-1/start
 POST /api/model-providers
 POST /api/model-providers/mp-1/check
 POST /api/model-providers/mp-1/models/delete
+POST /api/model-providers/mp-1/models/load
 POST /api/model-providers/mp-1/models/pull
+POST /api/model-providers/mp-1/models/unload
 POST /api/models/anthropic
 POST /api/profile-templates
 POST /api/profile-templates/capture

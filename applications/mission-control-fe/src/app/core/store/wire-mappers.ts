@@ -3,14 +3,15 @@ import {
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
   ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSession, ApiSetupApiKey,
-  ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
+  ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
   McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt,
-  PullState, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
+  PullState, RunningModel, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider,
+  SetupMessaging,
 } from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
@@ -404,6 +405,12 @@ export function toEndpointModel(api: ApiEndpointModel): EndpointModel {
     parameterSize: api.parameterSize ?? '',
     modifiedAt: api.modifiedAt ?? 0,
   };
+}
+
+/** One model held in memory. An absent VRAM figure collapses to 0, which the row renders as
+ *  nothing rather than as a zero. */
+export function toRunningModel(api: ApiRunningModel): RunningModel {
+  return { name: api.name, sizeVramBytes: api.sizeVramBytes ?? 0 };
 }
 
 /** One turn of a recorded session. `content` defaults to empty rather than staying absent: a
