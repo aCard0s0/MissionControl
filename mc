@@ -8,7 +8,6 @@
 #   ./mc start                  # deploy behind tailscale (default flavor, HTTPS)
 #   ./mc start --build          # rebuild the image first
 #   ./mc start --ts=off         # plain docker on http://localhost:8080
-#   ./mc start --ollama=on      # also run the optional local model runtime
 #   ./mc help                   # full usage
 set -euo pipefail
 
@@ -21,7 +20,6 @@ PORT="${PORT:-8080}"
 BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
 MC_CONTAINER_FILTER="${MC_CONTAINER_FILTER:-hermes}"
 MC_NO_KEYCHAIN="${MC_NO_KEYCHAIN:-}"
-OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 
 cd "$(dirname "$0")"
 
@@ -46,25 +44,20 @@ Usage: ./mc <command> [flags]
 
 Commands:
   start [--build] [--ts=on|off] [--local|--no-local] [--serve=https|funnel]
-        [--ollama=on|off] [--port=N] [--no-keychain]
+        [--port=N] [--no-keychain]
                      deploy — default --ts=on (behind tailscale, tailnet-only);
                      --ts=off runs the same service without the sidecar, on a
                      published port, and needs no tailnet or auth key;
                      --local adds a loopback host port to the tailscale flavor
                      (overrides LOCAL_PORT_ENABLED in deploy/.env) — it bypasses
                      the tailnet ACL, so it is off by default;
-                     --serve overrides TS_SERVE_MODE for this invocation;
-                     the ollama service is NOT started by default — --ollama=on
-                     brings it up on port ${OLLAMA_PORT}, --ollama=off takes it down
-  stop               stop whichever flavor is running (incl. the ollama service)
+                     --serve overrides TS_SERVE_MODE for this invocation
+  stop               stop whichever flavor is running
   restart [...]      stop + start (same flags as start)
-  status             which flavor is running, container states, port/URL, ollama
+  status             which flavor is running, container states, port/URL
   logs [flags]       app container logs (default: last 100 lines); flags go to
-                     `docker compose logs` — -f, -n N, --since, --until, -t
+                     \`docker compose logs\` — -f, -n N, --since, --until, -t
   shell              interactive sh in the app container
-  ollama up|down     start / remove the optional ollama service on its own
-  ollama [args...]   ollama CLI inside the service container (no args: list);
-                     './mc ollama logs [flags]' shows the service logs
   build              build the image only
   down [--volumes]   stop everything; --volumes also removes the data volumes
                      (and logs the node out of the tailnet first, so the next
@@ -77,18 +70,12 @@ Examples:
   ./mc start --ts=off         # plain docker — http://localhost:${PORT}
   ./mc start --ts=off --port=9000          # plain mode on a custom port
   ./mc start --local          # tailnet + a loopback port on 127.0.0.1:8080
-  ./mc start --ollama=on      # deploy + local model runtime on port ${OLLAMA_PORT}
-  ./mc ollama up              # add the ollama service to a running deploy
-  ./mc ollama pull llama3.2   # pull a model into the ollama service
-  ./mc ollama list            # models available to the agents
-  ./mc ollama logs -f
   ./mc logs -f
   ./mc down --volumes
 
 Env overrides: IMAGE TAG PORT BIND_ADDRESS MC_CONTAINER_FILTER
                PORT/BIND_ADDRESS feed compose's LOCAL_PORT/LOCAL_BIND
                BIND_ADDRESS defaults to 127.0.0.1; remote exposure has no app auth
-               OLLAMA_PORT  (host port for the ollama service, default 11434)
                MC_NO_KEYCHAIN=1  (bypass macOS keychain creds in headless runs)
 EOF
 }
@@ -140,12 +127,11 @@ json.dump(cfg, open(sys.argv[2], "w"))' "${src}" "${DOCKER_CONFIG_TEMP}/config.j
 }
 
 # read-only compose calls must work without deploy/.env — feed the required
-# ${VAR:?} interpolations dummy values (never used to 'up' the tailscale flavor;
-# the ollama service has no required interpolations of its own)
+# ${VAR:?} interpolations dummy values (never used to 'up' the tailscale flavor)
 compose_ro() {
   TS_AUTHKEY="${TS_AUTHKEY:-unset}" MC_SECRET_KEY="${MC_SECRET_KEY_VALUE:-unset}" \
     TS_IMAGE_TAG="${TS_IMAGE_TAG:-unset}" TS_TAILNET="${TS_TAILNET:-unset}" \
-    OLLAMA_PORT="${OLLAMA_PORT}" "${COMPOSE[@]}" "$@"
+    "${COMPOSE[@]}" "$@"
 }
 
 # Read one variable out of deploy/.env without sourcing it — that file holds the
@@ -228,15 +214,12 @@ image_exists()   { docker image inspect "${IMAGE}:${TAG}" >/dev/null 2>&1; }
 # limit (so -XX:MaxRAMPercentage=50 read the host's RAM and sized a ~11 GiB heap
 # instead of 256 MiB), no pids limit, no init and no healthcheck.
 #
-# The ollama service is in the same project but must not flip flavor detection.
 # `ps -aq` counts a stopped container, `ps -q` only a running one.
 svc_exists()  { [[ -n "$(compose_ro ps -aq "$1" 2>/dev/null || true)" ]]; }
 svc_running() { [[ -n "$(compose_ro ps -q  "$1" 2>/dev/null || true)" ]]; }
 
 ts_exists()      { svc_exists tailscale; }
 app_exists()     { svc_exists mission-control; }
-ollama_exists()  { svc_exists ollama; }
-ollama_running() { svc_running ollama; }
 
 build_image() {
   echo "→ building ${IMAGE}:${TAG}"
@@ -326,49 +309,13 @@ start_plain() {  # $1 = --build flag value
   socket_note
 }
 
-# the ollama service publishes OLLAMA_PORT for Hermes agent containers that
-# run on the host daemon outside this stack — skip (don't fail the deploy)
-# when a foreign container already holds the port
-start_ollama() {
-  local holder
-  holder="$(docker ps --format '{{.Names}}|{{.Label "com.docker.compose.project"}}|{{.Ports}}' 2>/dev/null \
-    | grep -F ":${OLLAMA_PORT}->" | grep -v '|mission-control|' | cut -d'|' -f1 | head -n1 || true)"
-  if [[ -n "${holder}" ]]; then
-    echo "⚠ port ${OLLAMA_PORT} is already published by container '${holder}' — not part of this stack."
-    echo "  SKIPPING the ollama service (the rest of the stack is up). Fix either way:"
-    echo "    docker stop ${holder}            # free the port, then './mc start' again"
-    echo "    OLLAMA_PORT=11435 ./mc start     # or run ours on another port"
-    return 0
-  fi
-  echo "→ bringing up the ollama service (port ${OLLAMA_PORT})"
-  maybe_bypass_keychain
-  compose_ro up -d ollama
-  echo "✓ ollama up — register it in the dashboard's Models page:"
-  echo "    http://host.docker.internal:${OLLAMA_PORT}   (from agent containers)"
-  echo "    http://localhost:${OLLAMA_PORT}              (from this machine)"
-}
-
-stop_ollama() {
-  if ollama_exists; then
-    echo "→ removing the ollama service"
-    compose_ro rm -sf ollama
-    echo "✓ ollama removed (models kept in the ollama-models volume)"
-  else
-    echo "→ ollama service not deployed — nothing to remove"
-  fi
-}
-
 cmd_start() {
-  # ollama is opt-in: empty means "leave whatever is there alone", so a plain
-  # './mc start' neither deploys nor tears down the local model runtime
-  local ts="on" build="" ollama="" local_flag="" port_flag="" arg
+  local ts="on" build="" local_flag="" port_flag="" arg
   for arg in "$@"; do
     case "${arg}" in
       --build)     build=1 ;;
       --ts=on)     ts="on" ;;
       --ts=off)    ts="off" ;;
-      --ollama=on)  ollama="on" ;;
-      --ollama=off) ollama="off" ;;
       --local)     local_flag="on" ;;
       --no-local)  local_flag="off" ;;
       --serve=*)   SERVE_MODE_OVERRIDE="${arg#--serve=}" ;;
@@ -392,13 +339,6 @@ cmd_start() {
     fi
     start_plain "${build}"
   fi
-  case "${ollama}" in
-    on)  start_ollama ;;
-    off) stop_ollama ;;
-    *)   if ! ollama_running; then
-           echo "→ ollama: not started (opt in with --ollama=on or './mc ollama up')"
-         fi ;;
-  esac
 }
 
 cmd_stop() {
@@ -408,15 +348,8 @@ cmd_stop() {
     echo "→ taking down the $(ts_exists && echo "tailscale" || echo "plain") flavor"
     stopped=1
   fi
-  if ollama_exists; then
-    echo "→ taking down the ollama service"
-    stopped=1
-  fi
   if [[ -n "${stopped}" ]]; then
-    # --profile ollama puts the ollama service in scope alongside the flavor
-    compose_ro --profile ollama down
-  fi
-  if [[ -n "${stopped}" ]]; then
+    compose_ro down
     echo "✓ stopped"
   else
     echo "→ nothing running"
@@ -474,24 +407,6 @@ cmd_status() {
       echo "  ⚠ no host port published — nothing can reach it; './mc start --ts=off' publishes one"
     fi
   fi
-  if ollama_running; then
-    found=1
-    # the actually-published port, not the env default — the service may have
-    # been started with a different OLLAMA_PORT
-    local oport
-    oport="$(compose_ro port ollama 11434 2>/dev/null | head -n1 | sed 's/.*://' || true)"
-    oport="${oport:-${OLLAMA_PORT}}"
-    echo "→ ollama: running — port ${oport}"
-    local models
-    models="$(compose_ro exec -T ollama ollama list 2>/dev/null | tail -n +2 | wc -l | tr -d '[:space:]' || true)"
-    echo "  models: ${models:-?}  (manage with './mc ollama …')"
-    echo "  register: http://host.docker.internal:${oport} (containers) / http://localhost:${oport} (host)"
-  elif ollama_exists; then
-    found=1
-    echo "→ ollama: stopped — './mc ollama up' brings it back"
-  else
-    echo "→ ollama: absent (opt-in) — './mc ollama up' or './mc start --ollama=on' deploys it"
-  fi
   if [[ -z "${found}" ]]; then echo "→ nothing deployed"; fi
 }
 
@@ -517,46 +432,6 @@ cmd_shell() {
   fi
 }
 
-cmd_ollama() {
-  require_docker
-
-  # 'up'/'down' are ours, not ollama CLI verbs — manage the service itself
-  # without redeploying the dashboard
-  if [[ "${1:-}" == "up" ]]; then
-    [[ $# -eq 1 ]] || { echo "error: './mc ollama up' takes no arguments" >&2; exit 1; }
-    start_ollama
-    return
-  fi
-  if [[ "${1:-}" == "down" ]]; then
-    [[ $# -eq 1 ]] || { echo "error: './mc ollama down' takes no arguments" >&2; exit 1; }
-    stop_ollama
-    return
-  fi
-
-  # 'logs' is ours too — the ollama CLI has no such verb.
-  if [[ "${1:-}" == "logs" ]]; then
-    shift
-    if ! ollama_exists; then
-      echo "error: ollama service not deployed — './mc ollama up' first" >&2
-      exit 1
-    fi
-    compose_ro logs --tail 100 "$@" ollama
-    return
-  fi
-
-  if ! ollama_running; then
-    echo "error: ollama service not running — './mc ollama up' first" >&2
-    exit 1
-  fi
-  if [[ $# -eq 0 ]]; then
-    compose_ro exec -T ollama ollama list
-  elif [[ "$1" == "run" && -t 0 ]]; then
-    compose_ro exec ollama ollama "$@"       # interactive chat needs a TTY
-  else
-    compose_ro exec -T ollama ollama "$@"
-  fi
-}
-
 cmd_down() {
   local wipe="" arg
   for arg in "$@"; do
@@ -569,7 +444,7 @@ cmd_down() {
   require_docker
   if [[ -n "${wipe}" ]]; then
     [[ -t 0 ]] || { echo "error: 'down --volumes' needs an interactive terminal to confirm" >&2; exit 1; }
-    printf "remove the data volumes (mission-control-data, tailscale-state, ollama-models)? this is irreversible [y/N] "
+    printf "remove the data volumes (mission-control-data, tailscale-state)? this is irreversible [y/N] "
     read -r answer
     case "${answer}" in
       y|Y|yes|YES) ;;
@@ -587,11 +462,11 @@ cmd_down() {
       compose_ro exec -T tailscale tailscale logout >/dev/null 2>&1 || true
     fi
     echo "→ taking everything down (incl. volumes)"
-    compose_ro --profile ollama down --volumes 2>/dev/null || true
+    compose_ro down --volumes 2>/dev/null || true
     echo "✓ down — volumes removed"
   else
     echo "→ taking everything down"
-    compose_ro --profile ollama down 2>/dev/null || true
+    compose_ro down 2>/dev/null || true
     echo "✓ down"
   fi
 }
@@ -606,7 +481,6 @@ case "${cmd}" in
   status)       cmd_status ;;
   logs)         cmd_logs "$@" ;;
   shell)        cmd_shell ;;
-  ollama)       cmd_ollama "$@" ;;
   build)        require_docker; build_image ;;
   down)         cmd_down "$@" ;;
   help|-h|--help) usage ;;

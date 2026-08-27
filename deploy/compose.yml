@@ -17,21 +17,10 @@
 # reachable any other way, the deployment is wrong — it mounts the host docker
 # socket and has no authentication of its own.
 #
-# An optional ollama service (profile "ollama") provides a local model runtime.
-# It is opt-in: './mc start' leaves it alone, './mc start --ollama=on' or
-# './mc ollama up' deploys it, './mc ollama down' removes it. Unlike the
-# dashboard it DOES publish a host port (default 11434, override with
-# OLLAMA_PORT): Hermes agent containers run on the host daemon outside this
-# stack and reach it via http://host.docker.internal:11434 (on Linux hosts that
-# name needs --add-host=host.docker.internal:host-gateway, so prefer the host's
-# bridge/LAN ip there). It is independent of tailscale so the plain flavor
-# ('./mc start --ts=off') can run it too.
-#
 # Usage (via the repo-root manager script — this flavor is the default):
 #   cp .env.example .env       # fill in TS_AUTHKEY
 #   ./mc start --build         # build hermes-mission-control:latest + compose up -d
 #   ./mc status                # tailscale health + the exact URL
-#   ./mc ollama pull llama3.2  # manage models in the ollama service
 #   open https://mission-control.<tailnet>.ts.net
 
 # ./mc always passes -p mission-control; this is for a bare `docker compose -f`,
@@ -221,32 +210,6 @@ services:
         max-file: "3"
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["ollama"]               # opt-in — './mc ollama up' activates it
-    ports:
-      # Host port for agent containers outside the stack. This is a real second
-      # door and the tailnet ACL does not guard it, so it is stated in full
-      # rather than left to docker's implicit 0.0.0.0. Narrow OLLAMA_BIND to
-      # 127.0.0.1 where agent containers can still reach it — on Docker Desktop
-      # they can via host.docker.internal; on Linux + host-gateway they cannot.
-      - "${OLLAMA_BIND:-0.0.0.0}:${OLLAMA_PORT:-11434}:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "ollama", "--version"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 15s
-
 volumes:
   tailscale-state:        # node identity — keeping it is why the key is spent once
   mission-control-data:
-  ollama-models:
