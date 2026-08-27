@@ -7,30 +7,31 @@ import { ContainerStore } from './core/store/container-store';
 import { HostStore } from './core/store/host-store';
 import { LiveSync } from './core/store/live-sync';
 import { StoreContext } from './core/store/store-context';
+import { NavIconView } from './shared/nav-icon';
 import { Notifications } from './shared/notifications';
 import { StatusDot } from './shared/status-dot';
 import { TerminalPanel } from './shared/terminal-panel';
 import { uptime } from './core/format';
 
 const NAV = [
-  { path: '/containers', label: 'Containers', exact: false },
-  { path: '/overview', label: 'Overview', exact: false },
-  { path: '/agents', label: 'Agents', exact: false },
-  { path: '/profiles', label: 'Blueprints', exact: false },
-  { path: '/models', label: 'Models', exact: false },
-  { path: '/mcp-servers', label: 'MCP Servers', exact: false },
-  { path: '/prompts', label: 'Prompts', exact: false },
-  { path: '/board', label: 'Ops Board', exact: false },
-  { path: '/calendar', label: 'Calendar', exact: false },
-  { path: '/webhooks', label: 'Webhooks', exact: false },
-  { path: '/reference', label: 'CLI Reference', exact: false },
-  { path: '/server-logs', label: 'Server Logs', exact: false },
+  { path: '/containers', label: 'Containers', icon: 'box', exact: false },
+  { path: '/overview', label: 'Overview', icon: 'chart', exact: false },
+  { path: '/agents', label: 'Agents', icon: 'user', exact: false },
+  { path: '/profiles', label: 'Blueprints', icon: 'layers', exact: false },
+  { path: '/models', label: 'Models', icon: 'chip', exact: false },
+  { path: '/mcp-servers', label: 'MCP Servers', icon: 'plug', exact: false },
+  { path: '/prompts', label: 'Prompts', icon: 'message', exact: false },
+  { path: '/board', label: 'Ops Board', icon: 'board', exact: false },
+  { path: '/calendar', label: 'Calendar', icon: 'calendar', exact: false },
+  { path: '/webhooks', label: 'Webhooks', icon: 'bolt', exact: false },
+  { path: '/reference', label: 'CLI Reference', icon: 'terminal', exact: false },
+  { path: '/server-logs', label: 'Server Logs', icon: 'doc', exact: false },
 ];
 
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Notifications, StatusDot, TerminalPanel],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NavIconView, Notifications, StatusDot, TerminalPanel],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: { '[class.side-collapsed]': 'sideCollapsed()' },
@@ -42,8 +43,6 @@ export class App {
   protected readonly hosts = inject(HostStore);
   protected readonly liveSync = inject(LiveSync);
   protected readonly nav = NAV;
-  /** Two-digit nav index — a tenth entry must not render as "010". */
-  protected readonly navIndex = (i: number): string => String(i + 1).padStart(2, '0');
   protected readonly uptime = uptime;
 
   protected readonly now = signal(new Date());

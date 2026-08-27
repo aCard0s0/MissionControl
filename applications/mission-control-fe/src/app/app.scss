@@ -91,7 +91,7 @@ nav {
     text-decoration: none;
     transition: color .15s, background .15s, border-color .15s;
 
-    .idx { color: var(--faint); font-size: 9px; }
+    .ico { width: 15px; height: 15px; color: var(--faint); flex: none; }
 
     &:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
 
@@ -99,7 +99,7 @@ nav {
       color: var(--acc);
       background: var(--acc-soft);
       border-left-color: var(--acc);
-      .idx { color: var(--acc); opacity: .7; }
+      .ico { color: var(--acc); }
     }
   }
 }
