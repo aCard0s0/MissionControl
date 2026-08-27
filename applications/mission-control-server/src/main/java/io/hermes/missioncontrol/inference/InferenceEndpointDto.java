@@ -5,7 +5,9 @@ public record InferenceEndpointDto(
     String id,
     String name,
     String url,
-    String kind,          // ollama | openai
+    /** Protocol that answered the last probe: ollama | openai, or null if none did.
+     *  Derived, never stored — the server decides what it is, not the row. */
+    String kind,
     String status,        // connected | error
     String version,       // null where the protocol has no version endpoint (openai)
     String detail,

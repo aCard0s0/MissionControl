@@ -4,58 +4,38 @@ import static io.hermes.missioncontrol.errors.ApiErrors.brief;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.hermes.missioncontrol.errors.ConnectionFailure;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Everything that speaks ollama's wire protocol: {@code /api/version}, {@code /api/tags},
- * {@code /api/pull} and {@code /api/delete}.
+ * Ollama's own protocol: {@code /api/version}, {@code /api/tags}, {@code /api/pull} and
+ * {@code /api/delete}. The only kind that can manage models.
  *
- * <p>This is the ONLY ollama-aware class in the package, and keeping it that way is the
- * point of the split. {@link InferenceEndpointService} above it registers endpoints, caches
- * probes and tracks pulls without naming a protocol.
- *
- * <p>Agents never come through here at all: they consume an endpoint over its
- * OpenAI-compatible {@code /v1} surface, which is why LM Studio, MLX, vLLM and llama.cpp
- * already serve them unchanged. What none of those offer is model <em>management</em> —
- * there is no pull or delete outside ollama, and {@code /v1/models} reports an id and
- * nothing else. So a second {@code kind} gets its own client beside this one, with the
- * unsupported operations refused rather than a lowest-common-denominator generalisation
- * of this one.
- *
- * <p>Operator-facing messages here say "ollama" on purpose. They surface verbatim in the
- * dashboard, and naming the actual server is more use than a generic "endpoint".
+ * <p>{@code @Order(1)} is load-bearing, not cosmetic. Ollama serves an OpenAI-compatible
+ * {@code /v1} <em>as well as</em> this, so a detector that asked {@link OpenAiCompatClient}
+ * first would match every ollama server and silently strip its pull and delete. Ollama's own
+ * endpoint is the discriminator, so it has to be asked first.
  */
 @Component
-public class OllamaProtocolClient implements EndpointClient {
-
-  static final String KIND = "ollama";
-
-  private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(3);
-  private static final Duration CALL_TIMEOUT = Duration.ofSeconds(10);
-
-  private final ObjectMapper objectMapper;
-  private final HttpClient http = HttpClient.newBuilder().connectTimeout(PROBE_TIMEOUT).build();
+@Order(1)
+public class OllamaProtocolClient extends EndpointClient {
 
   public OllamaProtocolClient(ObjectMapper objectMapper) {
-    this.objectMapper = objectMapper;
+    super(objectMapper);
   }
 
   @Override
   public String kind() {
-    return KIND;
+    return "ollama";
   }
 
   /** The only kind with one: /api/pull and /api/delete exist nowhere else. */
@@ -64,13 +44,6 @@ public class OllamaProtocolClient implements EndpointClient {
     return true;
   }
 
-  /**
-   * The server's reported version, or null when it reports none.
-   *
-   * <p>Throws raw rather than wrapping: the caller turns the failure into the operator-facing
-   * probe detail, and it needs the original exception for {@code ConnectionFailure.describe}
-   * to tell a refused port from an unresolvable host.
-   */
   @Override
   public String version(String baseUrl) throws Exception {
     HttpResponse<String> response = get(baseUrl + "/api/version", PROBE_TIMEOUT);
@@ -82,7 +55,7 @@ public class OllamaProtocolClient implements EndpointClient {
 
   @Override
   public List<EndpointModelDto> models(String baseUrl) {
-    String body = send(() -> get(baseUrl + "/api/tags", CALL_TIMEOUT));
+    String body = call(() -> get(baseUrl + "/api/tags", CALL_TIMEOUT));
     try {
       return parseTags(objectMapper.readTree(body));
     } catch (Exception e) {
@@ -99,11 +72,11 @@ public class OllamaProtocolClient implements EndpointClient {
   @Override
   public void pull(String baseUrl, String model) throws Exception {
     String body = objectMapper.writeValueAsString(Map.of("model", model, "stream", false));
-    HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/pull"))
-        .header("Content-Type", "application/json")
-        .POST(BodyPublishers.ofString(body))
-        .build();
-    HttpResponse<String> response = http.send(request, BodyHandlers.ofString());
+    HttpResponse<String> response = exchange(
+        HttpRequest.newBuilder(URI.create(baseUrl + "/api/pull"))
+            .header("Content-Type", "application/json")
+            .POST(BodyPublishers.ofString(body))
+            .build());
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException(brief(response.body(), 200, "request failed"));
     }
@@ -111,15 +84,12 @@ public class OllamaProtocolClient implements EndpointClient {
 
   @Override
   public void deleteModel(String baseUrl, String model) {
-    send(() -> {
-      HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/delete"))
-          .timeout(CALL_TIMEOUT)
-          .header("Content-Type", "application/json")
-          .method("DELETE",
-              BodyPublishers.ofString(objectMapper.writeValueAsString(Map.of("model", model))))
-          .build();
-      return http.send(request, BodyHandlers.ofString());
-    });
+    call(() -> exchange(HttpRequest.newBuilder(URI.create(baseUrl + "/api/delete"))
+        .timeout(CALL_TIMEOUT)
+        .header("Content-Type", "application/json")
+        .method("DELETE",
+            BodyPublishers.ofString(objectMapper.writeValueAsString(Map.of("model", model))))
+        .build()));
   }
 
   /** Ollama's {@code /api/tags} body. Every field but the name is optional. */
@@ -144,33 +114,5 @@ public class OllamaProtocolClient implements EndpointClient {
     } catch (Exception ignored) {
       return null;
     }
-  }
-
-  private HttpResponse<String> get(String url, Duration timeout) throws Exception {
-    HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(timeout).GET().build();
-    return http.send(request, BodyHandlers.ofString());
-  }
-
-  private interface OllamaCall {
-    HttpResponse<String> send() throws Exception;
-  }
-
-  /** An unreachable or unhappy ollama is a dependency failure, not a Mission Control bug: 503. */
-  private String send(OllamaCall call) {
-    HttpResponse<String> response;
-    try {
-      response = call.send();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new UpstreamUnavailableException("ollama call interrupted");
-    } catch (Exception e) {
-      throw new UpstreamUnavailableException(
-          "ollama not reachable: " + ConnectionFailure.describe(e));
-    }
-    if (response.statusCode() != 200) {
-      throw new UpstreamUnavailableException("ollama returned HTTP " + response.statusCode()
-          + ": " + brief(response.body(), 200, "request failed"));
-    }
-    return response.body();
   }
 }

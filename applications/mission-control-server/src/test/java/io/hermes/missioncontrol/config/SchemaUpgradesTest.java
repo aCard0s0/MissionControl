@@ -11,6 +11,7 @@ import io.hermes.missioncontrol.agents.templates.ProfileTemplate;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateRepository;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,10 +142,10 @@ class SchemaUpgradesTest {
     assertTrue(columnsOfProfileTemplates().isEmpty());
   }
 
-  // ── model_providers.kind, widened for a second endpoint protocol ─────────
+  // ── model_providers.kind, dropped now the protocol is probed ─────────────
 
-  /** {@code model_providers} as it shipped when ollama was the only endpoint kind. */
-  private void rollBackToTheOllamaOnlyKindCheck() {
+  /** {@code model_providers} as it shipped while the protocol was stored. */
+  private void rollBackToTheShapeWithStoredKind() {
     database.jdbc().execute("DROP TABLE model_providers");
     database.jdbc().execute("CREATE TABLE model_providers ("
         + "id TEXT PRIMARY KEY,"
@@ -154,67 +155,66 @@ class SchemaUpgradesTest {
         + "created_at INTEGER NOT NULL)");
   }
 
-  private void insertEndpoint(String id, String url, String kind) {
-    database.jdbc().update(
-        "INSERT INTO model_providers (id, name, url, kind, created_at) VALUES (?, ?, ?, ?, ?)",
-        id, id, url, kind, 1L);
+  private Set<String> columnsOfModelProviders() {
+    return Set.copyOf(database.jdbc().query("PRAGMA table_info(model_providers)",
+        (rs, n) -> rs.getString("name").toLowerCase(Locale.ROOT)));
   }
 
   @Test
-  void anOllamaOnlyDatabaseRejectsTheNewKindBeforeTheUpgrade() {
-    rollBackToTheOllamaOnlyKindCheck();
-
-    // the symptom this upgrade exists to remove: a bare CHECK failure on a valid insert
-    assertThrows(Exception.class, () -> insertEndpoint("mp-1", "http://mac:1234", "openai"));
-  }
-
-  @Test
-  void theUpgradeWidensTheKindCheckAndKeepsExistingRows() {
-    rollBackToTheOllamaOnlyKindCheck();
-    insertEndpoint("mp-1", "http://box:11434", "ollama");
+  void theUpgradeDropsKindAndKeepsTheRowsThatHadOne() {
+    rollBackToTheShapeWithStoredKind();
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
 
     upgrades().apply();
 
-    // the row that was there before survived the rebuild, unchanged
-    assertEquals(List.of("ollama"), database.jdbc().queryForList(
-        "SELECT kind FROM model_providers WHERE id = 'mp-1'", String.class));
-    // and the kind that used to be rejected now inserts
-    insertEndpoint("mp-2", "http://mac:1234", "openai");
-    assertEquals(2, (int) database.jdbc().queryForObject(
+    assertFalse(columnsOfModelProviders().contains("kind"));
+    // the endpoint itself survived: only the stored protocol went
+    assertEquals(List.of("http://box:11434"), database.jdbc().queryForList(
+        "SELECT url FROM model_providers WHERE id = 'mp-1'", String.class));
+  }
+
+  /**
+   * The reason a rebuild is needed at all. SQLite refuses {@code DROP COLUMN} on a column
+   * named in a CHECK — which is precisely the constraint being removed.
+   */
+  @Test
+  void theOldCheckIsGoneSoAnyProtocolCanBeProbedLater() {
+    rollBackToTheShapeWithStoredKind();
+
+    upgrades().apply();
+
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
+        + " VALUES ('mp-2', 'mac', 'http://mac:1234', 1)");
+    assertEquals(1, (int) database.jdbc().queryForObject(
         "SELECT COUNT(*) FROM model_providers", Integer.class));
   }
 
   @Test
-  void theRebuiltTableStillRefusesAKindNoClientHandles() {
-    rollBackToTheOllamaOnlyKindCheck();
-
-    upgrades().apply();
-
-    assertThrows(Exception.class, () -> insertEndpoint("mp-3", "http://x", "not-a-protocol"));
-  }
-
-  @Test
   void theUniqueUrlConstraintSurvivesTheRebuild() {
-    rollBackToTheOllamaOnlyKindCheck();
+    rollBackToTheShapeWithStoredKind();
     upgrades().apply();
-    insertEndpoint("mp-1", "http://box:11434", "ollama");
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 1)");
 
-    // UNIQUE(url) is what stops the same server being registered twice; a rebuild that
-    // dropped it would let duplicates in silently
-    assertThrows(Exception.class, () -> insertEndpoint("mp-2", "http://box:11434", "openai"));
+    // UNIQUE(url) is what stops one server being registered twice; a rebuild that dropped it
+    // would let duplicates in silently
+    assertThrows(Exception.class, () -> database.jdbc().update(
+        "INSERT INTO model_providers (id, name, url, created_at)"
+            + " VALUES ('mp-2', 'copy', 'http://box:11434', 1)"));
   }
 
   @Test
-  void theUpgradeIsIdempotent() {
-    rollBackToTheOllamaOnlyKindCheck();
-    insertEndpoint("mp-1", "http://box:11434", "ollama");
+  void theUpgradeIsIdempotentAndLeavesNoHalfBuiltTable() {
+    rollBackToTheShapeWithStoredKind();
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
 
     upgrades().apply();
     upgrades().apply();
 
     assertEquals(1, (int) database.jdbc().queryForObject(
         "SELECT COUNT(*) FROM model_providers", Integer.class));
-    // the second pass must not have left a half-built table lying around
     assertEquals(0, (int) database.jdbc().queryForObject(
         "SELECT COUNT(*) FROM sqlite_master WHERE name = 'model_providers_new'", Integer.class));
   }

@@ -100,9 +100,6 @@
     grid-template-columns: minmax(140px, 1.4fr) 80px 80px 100px auto;
     span:nth-child(3) { display: none; }   // drop family column
   }
-  .models-panel .model-row.thin {
-    grid-template-columns: minmax(140px, 1.4fr) 100px auto;
-  }
 }
 
 @media (max-width: 760px) {

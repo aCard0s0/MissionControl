@@ -1,25 +1,18 @@
 package io.hermes.missioncontrol.inference;
 
-import static io.hermes.missioncontrol.errors.ApiErrors.brief;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.hermes.missioncontrol.errors.ConnectionFailure;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * The OpenAI-compatible {@code /v1} surface — the one thing every local runtime serves.
  * LM Studio, MLX (mlx-lm.server), vLLM and llama.cpp's server all answer here, and so does
- * ollama, which is why detection tries ollama's own API first.
+ * ollama, which is why this is {@code @Order(2)}: see the note on {@link OllamaProtocolClient}.
  *
  * <p>Listing only, deliberately. {@code GET /v1/models} is the whole management surface this
  * protocol has: there is no pull and no delete anywhere in it, and models are put on the box
@@ -32,23 +25,16 @@ import org.springframework.stereotype.Component;
  * those columns for this kind.
  */
 @Component
-public class OpenAiCompatClient implements EndpointClient {
-
-  static final String KIND = "openai";
-
-  private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(3);
-  private static final Duration CALL_TIMEOUT = Duration.ofSeconds(10);
-
-  private final ObjectMapper objectMapper;
-  private final HttpClient http = HttpClient.newBuilder().connectTimeout(PROBE_TIMEOUT).build();
+@Order(2)
+public class OpenAiCompatClient extends EndpointClient {
 
   public OpenAiCompatClient(ObjectMapper objectMapper) {
-    this.objectMapper = objectMapper;
+    super(objectMapper);
   }
 
   @Override
   public String kind() {
-    return KIND;
+    return "openai";
   }
 
   /**
@@ -59,29 +45,16 @@ public class OpenAiCompatClient implements EndpointClient {
   public String version(String baseUrl) throws Exception {
     HttpResponse<String> response = get(baseUrl + "/v1/models", PROBE_TIMEOUT);
     if (response.statusCode() != 200) {
-      throw new UpstreamUnavailableException("endpoint returned HTTP " + response.statusCode());
+      throw new UpstreamUnavailableException("openai returned HTTP " + response.statusCode());
     }
     return null;
   }
 
   @Override
   public List<EndpointModelDto> models(String baseUrl) {
-    HttpResponse<String> response;
+    String body = call(() -> get(baseUrl + "/v1/models", CALL_TIMEOUT));
     try {
-      response = get(baseUrl + "/v1/models", CALL_TIMEOUT);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new UpstreamUnavailableException("endpoint call interrupted");
-    } catch (Exception e) {
-      throw new UpstreamUnavailableException(
-          "endpoint not reachable: " + ConnectionFailure.describe(e));
-    }
-    if (response.statusCode() != 200) {
-      throw new UpstreamUnavailableException("endpoint returned HTTP " + response.statusCode()
-          + ": " + brief(response.body(), 200, "request failed"));
-    }
-    try {
-      return parseModels(objectMapper.readTree(response.body()));
+      return parseModels(objectMapper.readTree(body));
     } catch (Exception e) {
       throw new UpstreamUnavailableException("unexpected response from /v1/models");
     }
@@ -103,10 +76,5 @@ public class OpenAiCompatClient implements EndpointClient {
       models.add(new EndpointModelDto(id, null, null, null, created));
     }
     return models;
-  }
-
-  private HttpResponse<String> get(String url, Duration timeout) throws Exception {
-    HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(timeout).GET().build();
-    return http.send(request, BodyHandlers.ofString());
   }
 }

@@ -384,7 +384,7 @@ export function toInferenceEndpoint(api: ApiInferenceEndpoint): InferenceEndpoin
     id: api.id,
     name: api.name ?? api.id,
     url: api.url ?? '',
-    kind: api.kind === 'openai' ? 'openai' : 'ollama',
+    kind: api.kind === 'ollama' || api.kind === 'openai' ? api.kind : null,
     status: oneOf(api.status, ENDPOINT_STATUSES, 'unknown'),
     version: api.version ?? null,
     detail: api.detail ?? null,

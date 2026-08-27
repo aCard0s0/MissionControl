@@ -370,14 +370,18 @@ describe('toInferenceEndpoint', () => {
   // nothing has failed yet, so an unprobed endpoint is unknown rather than an error
   it('reads an unprobed endpoint as unknown', () => {
     expect(toInferenceEndpoint({ id: 'mp-1', name: 'workstation' })).toEqual({
-      id: 'mp-1', name: 'workstation', url: '', kind: 'ollama',
+      id: 'mp-1', name: 'workstation', url: '',
       // a backend too old to send the flag cannot pull either, so false is the safe read
-      status: 'unknown', version: null, detail: null, canManageModels: false,
+      // no protocol answered yet, so there is none to report — not a guess at ollama
+      status: 'unknown', version: null, detail: null, kind: null, canManageModels: false,
     });
   });
 
-  it('is always an ollama endpoint, whatever the row says', () => {
-    expect(toInferenceEndpoint({ id: 'mp-1', kind: 'vllm' } as ApiInferenceEndpoint).kind).toBe('ollama');
+  it('reports only a protocol it recognises, and null for anything else', () => {
+    expect(toInferenceEndpoint({ id: 'mp-1', kind: 'openai' } as ApiInferenceEndpoint).kind)
+      .toBe('openai');
+    // a kind this build has no client for is not something the page can render controls for
+    expect(toInferenceEndpoint({ id: 'mp-1', kind: 'vllm' } as ApiInferenceEndpoint).kind).toBeNull();
   });
 });
 

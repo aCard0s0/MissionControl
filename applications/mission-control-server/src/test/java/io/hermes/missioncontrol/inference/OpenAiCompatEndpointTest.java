@@ -144,29 +144,41 @@ class OpenAiCompatEndpointTest {
   }
 
   @Test
-  void theStoredKindIsWhateverWasDetected() {
+  void theProtocolIsReportedButNotStored() {
     route("/v1/models", 200, MODELS_BODY);
-    service.add("lm-studio", baseUrl);
 
+    assertEquals("openai", service.add("lm-studio", baseUrl).kind());
+
+    // the row carries a url and nothing about the protocol: what answers there is the
+    // server's business and is re-probed, so it cannot go stale behind a swapped server
     ArgumentCaptor<EndpointRow> saved = ArgumentCaptor.forClass(EndpointRow.class);
     verify(repository).insert(saved.capture());
-    assertEquals("openai", saved.getValue().kind());
+    assertEquals(baseUrl, saved.getValue().url());
+    assertEquals(3, EndpointRow.class.getRecordComponents().length);
   }
 
+  /**
+   * Registering must not require the server to be up. A Mac that is asleep is still an
+   * endpoint you want listed — it reports an error until it answers, and the probe works out
+   * what it is then. Detecting at insert time is exactly what made this impossible before.
+   */
   @Test
-  void aUrlWhereNeitherProtocolAnswersIsRefusedOnAdd() {
+  void anEndpointThatAnswersNothingIsStillRegisteredAndReportsWhy() {
     // the stub is listening but serves neither /api/version nor /v1/models
-    IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> service.add("nothing", baseUrl));
-    assertTrue(failure.getMessage().contains("no model server answered"), failure.getMessage());
-    verify(repository, org.mockito.Mockito.never()).insert(any());
+    InferenceEndpointDto added = service.add("switched-off", baseUrl);
+
+    verify(repository).insert(any());
+    assertEquals("error", added.status());
+    assertNull(added.kind(), "nothing answered, so the protocol is unknown — not guessed");
+    assertFalse(added.canManageModels());
+    assertTrue(added.detail().contains("no model server answered"), added.detail());
   }
 
   // ── capability ──────────────────────────────────────────────────────────
 
   @Test
   void modelsAreListedThroughV1ForAnOpenaiEndpoint() {
-    endpointExists("openai");
+    endpointExists();
     route("/v1/models", 200, MODELS_BODY);
 
     List<EndpointModelDto> models = service.models(ID);
@@ -177,7 +189,8 @@ class OpenAiCompatEndpointTest {
 
   @Test
   void pullIsRefusedForAnOpenaiEndpointRatherThanAttempted() {
-    endpointExists("openai");
+    endpointExists();
+    route("/v1/models", 200, MODELS_BODY);   // detected as openai
 
     IllegalArgumentException failure =
         assertThrows(IllegalArgumentException.class, () -> service.pull(ID, "qwen3-8b"));
@@ -185,54 +198,54 @@ class OpenAiCompatEndpointTest {
     assertTrue(failure.getMessage().contains("cannot add or remove models"), failure.getMessage());
     // refused on the request thread: no pull state, so no chip promising work that never runs
     assertTrue(service.pulls(ID).isEmpty());
-    assertTrue(requests.isEmpty(), "nothing should have been sent upstream: " + requests);
+    // the /v1/models detection probe is expected; no pull or delete followed it
+    assertEquals(List.of("GET /v1/models"), requests);
   }
 
   @Test
   void deleteIsRefusedForAnOpenaiEndpointRatherThanAttempted() {
-    endpointExists("openai");
+    endpointExists();
+    route("/v1/models", 200, MODELS_BODY);   // detected as openai
 
     IllegalArgumentException failure =
         assertThrows(IllegalArgumentException.class, () -> service.deleteModel(ID, "qwen3-8b"));
 
     assertTrue(failure.getMessage().contains("cannot delete models"), failure.getMessage());
-    assertTrue(requests.isEmpty(), "nothing should have been sent upstream: " + requests);
+    // the /v1/models detection probe is expected; no pull or delete followed it
+    assertEquals(List.of("GET /v1/models"), requests);
   }
 
   @Test
   void anUnhappyV1IsADependencyFailureNotABug() {
-    endpointExists("openai");
+    endpointExists();
     route("/v1/models", 503, "overloaded");
 
+    // /v1/models is also the detector, so a 503 there means the protocol never resolves
     assertTrue(assertThrows(UpstreamUnavailableException.class, () -> service.models(ID))
-        .getMessage().startsWith("endpoint returned HTTP 503"));
+        .getMessage().contains("no model server is answering"));
   }
 
   @Test
   void aBodyThatIsNotJsonIsReportedAsAnUnexpectedResponse() {
-    endpointExists("openai");
+    endpointExists();
     route("/v1/models", 200, "<html>not json</html>");
 
     assertEquals("unexpected response from /v1/models",
         assertThrows(UpstreamUnavailableException.class, () -> service.models(ID)).getMessage());
   }
 
-  /**
-   * A kind no client handles means a downgrade left rows the running build cannot serve.
-   * Falling back to ollama would fire ollama calls at something that is not ollama.
-   */
   @Test
-  void aRowWhoseKindHasNoClientFailsLoudly() {
-    endpointExists("some-future-runtime");
+  void listingAnEndpointThatIsNotAnsweringIsA503NotAnInternalError() {
+    endpointExists();   // the stub serves neither protocol
 
-    assertTrue(assertThrows(IllegalStateException.class, () -> service.models(ID))
-        .getMessage().contains("this build cannot serve"));
+    assertTrue(assertThrows(UpstreamUnavailableException.class, () -> service.models(ID))
+        .getMessage().contains("no model server is answering"));
   }
 
   // ── fixtures ────────────────────────────────────────────────────────────
 
-  private void endpointExists(String kind) {
-    EndpointRow row = new EndpointRow(ID, "box", baseUrl, kind);
+  private void endpointExists() {
+    EndpointRow row = new EndpointRow(ID, "box", baseUrl);
     when(repository.findById(ID)).thenReturn(Optional.of(row));
     when(repository.findAll()).thenReturn(List.of(row));
   }

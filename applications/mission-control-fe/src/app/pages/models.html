@@ -17,11 +17,7 @@
         <mc-status [status]="p.status" [live]="p.status === 'connected'" />
         <span class="pname">{{ p.name }}</span>
         <span class="purl faint">{{ p.url }}</span>
-        @if (p.version) {
-          <span class="chip off">{{ p.kind }} {{ p.version }}</span>
-        } @else {
-          <span class="chip off">{{ p.kind === 'openai' ? 'openai-compatible' : p.kind }}</span>
-        }
+        @if (p.kind) { <span class="chip off">{{ kindChip(p) }}</span> }
         @if (p.detail) { <span class="pnote faint">— {{ p.detail }}</span> }
         <span class="spacer"></span>
         <button class="btn sm primary" (click)="select(p.id)">models</button>
@@ -42,8 +38,9 @@
         <code>localhost</code> inside a container is not the mac host
       </p>
       <p class="lock-hint">
-        the protocol is detected on add: ollama (<code>/api/version</code>) or any
-        OpenAI-compatible server (<code>/v1/models</code>) — LM Studio, MLX, vLLM, llama.cpp
+        the protocol is probed, not configured: ollama (<code>/api/version</code>) or any
+        OpenAI-compatible server (<code>/v1/models</code>) — LM Studio, MLX, vLLM, llama.cpp.
+        An endpoint that is switched off can still be added; it reports an error until it answers
       </p>
     }
   </div>

@@ -312,6 +312,17 @@ describe('ModelsPage openai-compatible endpoints', () => {
     expect(el(fixture).textContent).toContain('openai-compatible');
   });
 
+  it('shows no protocol chip for an endpoint that is not answering', () => {
+    // kind is probed, so a switched-off endpoint simply has none — better than claiming one
+    const off: InferenceEndpoint = {
+      ...openai(), kind: null, status: 'error', detail: 'no model server answered',
+    };
+    const { fixture } = render(storeStub([off]));
+
+    expect(el(fixture).querySelector('.chip')).toBeNull();
+    expect(el(fixture).textContent).toContain('no model server answered');
+  });
+
   it('lists the models it can see', async () => {
     const { fixture } = await openStub();
 

@@ -24,7 +24,8 @@ export interface ApiInferenceEndpoint {
   id: string;
   name?: string;
   url?: string;
-  kind?: 'ollama' | 'openai' | string;
+  /** protocol that answered the last probe; absent when none did. */
+  kind?: 'ollama' | 'openai' | string | null;
   status?: 'connected' | 'error' | 'unknown' | string;
   version?: string | null;
   detail?: string | null;

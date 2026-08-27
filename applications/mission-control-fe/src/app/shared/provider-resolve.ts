@@ -16,8 +16,8 @@ import { LlmProvider, InferenceEndpoint, ProfileTemplate } from '../core/models'
  */
 export const OLLAMA_PREFIX = 'ollama: ';
 
-/** What the picker calls each endpoint kind. */
-const KIND_LABELS: Record<string, string> = {
+/** What each endpoint protocol is called in the UI. The Models page lower-cases it. */
+export const ENDPOINT_KIND_LABELS: Record<string, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI-compatible',
 };
@@ -38,7 +38,7 @@ export function providerOptions(
     ...llm.map(provider => ({ value: provider.key, label: provider.label })),
     ...endpoints.map(endpoint => ({
       value: OLLAMA_PREFIX + endpoint.name,
-      label: (KIND_LABELS[endpoint.kind] ?? endpoint.kind) + ': ' + endpoint.name,
+      label: (ENDPOINT_KIND_LABELS[endpoint.kind ?? ''] ?? endpoint.kind) + ': ' + endpoint.name,
     })),
   ];
 }
