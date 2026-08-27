@@ -89,29 +89,24 @@ class InferenceEndpointServiceTest {
   }
 
   @Test
-  void aPsResponseSaysWhatIsResidentAndUntilWhen() throws Exception {
+  void aPsResponseSaysWhatIsResidentAndWhatItCosts() throws Exception {
     List<RunningModelDto> running = OllamaProtocolClient.parsePs(JSON.readTree("""
-        {"models":[{"name":"llama3:8b","size":5000000000,"size_vram":4661224676,
-                    "expires_at":"2026-05-01T10:15:30Z"}]}
+        {"models":[{"name":"llama3:8b","size":5000000000,"size_vram":4661224676}]}
         """));
 
-    RunningModelDto model = running.getFirst();
-    assertEquals("llama3:8b", model.name());
-    assertEquals(4661224676L, model.sizeVramBytes());
-    assertEquals(1_777_630_530_000L, model.expiresAt());
+    assertEquals("llama3:8b", running.getFirst().name());
+    assertEquals(4661224676L, running.getFirst().sizeVramBytes());
   }
 
   @Test
-  void aPinnedOrCpuOnlyLoadStillParses() throws Exception {
-    // a model pinned with keep_alive -1 reports no usable expiry, and a CPU-only load no
-    // VRAM — the row has to render without either rather than dropping the model
+  void aCpuOnlyLoadStillParses() throws Exception {
+    // no size_vram at all — the row has to render without it rather than dropping the model
     List<RunningModelDto> running = OllamaProtocolClient.parsePs(JSON.readTree("""
         {"models":[{"name":"llama3:8b"}]}
         """));
 
     assertEquals("llama3:8b", running.getFirst().name());
     assertNull(running.getFirst().sizeVramBytes());
-    assertNull(running.getFirst().expiresAt());
     assertTrue(OllamaProtocolClient.parsePs(JSON.readTree("{}")).isEmpty());
   }
 

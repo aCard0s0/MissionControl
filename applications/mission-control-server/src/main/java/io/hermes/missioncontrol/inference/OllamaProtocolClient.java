@@ -33,11 +33,7 @@ import org.springframework.stereotype.Component;
 @Order(1)
 public class OllamaProtocolClient extends EndpointClient {
 
-  /**
-   * A load reads the weights off disk before it answers, so it outlasts a normal call by an
-   * order of magnitude. Still bounded: a request thread waiting forever on a wedged server is
-   * worse than one that gives up and lets the operator press start again.
-   */
+  /** A load reads the weights off disk first; bounded so a wedged server frees the thread. */
   private static final Duration LOAD_TIMEOUT = Duration.ofMinutes(3);
 
   public OllamaProtocolClient(ObjectMapper objectMapper) {
@@ -194,14 +190,13 @@ public class OllamaProtocolClient extends EndpointClient {
     return models;
   }
 
-  /** Ollama's {@code /api/ps} body — what it is holding in memory, and until when. */
+  /** Ollama's {@code /api/ps} body — what it is holding in memory, and what that costs. */
   static List<RunningModelDto> parsePs(JsonNode body) {
     List<RunningModelDto> running = new ArrayList<>();
     for (JsonNode node : body.path("models")) {
       running.add(new RunningModelDto(
           node.path("name").asText(),
-          node.has("size_vram") ? node.path("size_vram").asLong() : null,
-          epochMs(node.path("expires_at").asText(null))));
+          node.has("size_vram") ? node.path("size_vram").asLong() : null));
     }
     return running;
   }

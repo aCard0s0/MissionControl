@@ -407,14 +407,10 @@ export function toEndpointModel(api: ApiEndpointModel): EndpointModel {
   };
 }
 
-/** One model held in memory. Nulls collapse to 0 — the row renders a missing VRAM figure and
- *  a pinned model's absent expiry the same way, as "no number to show". */
+/** One model held in memory. An absent VRAM figure collapses to 0, which the row renders as
+ *  nothing rather than as a zero. */
 export function toRunningModel(api: ApiRunningModel): RunningModel {
-  return {
-    name: api.name,
-    sizeVramBytes: api.sizeVramBytes ?? 0,
-    expiresAt: api.expiresAt ?? 0,
-  };
+  return { name: api.name, sizeVramBytes: api.sizeVramBytes ?? 0 };
 }
 
 /** One turn of a recorded session. `content` defaults to empty rather than staying absent: a

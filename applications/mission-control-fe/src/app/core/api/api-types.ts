@@ -43,13 +43,11 @@ export interface ApiEndpointModel {
   modifiedAt?: number;
 }
 
-/** One model the endpoint is holding in memory, from ollama's `GET {url}/api/ps`. Both
- *  optional fields are ollama's own: a pinned model reports no expiry, a CPU-only load no
- *  VRAM. Endpoints that cannot report this send an empty list. */
+/** One model the endpoint is holding in memory, from ollama's `GET {url}/api/ps`. A CPU-only
+ *  load reports no VRAM, and an endpoint that cannot report this at all sends an empty list. */
 export interface ApiRunningModel {
   name: string;
-  sizeVramBytes?: number | null;
-  expiresAt?: number | null;
+  sizeVramBytes?: number;
 }
 
 /** One turn of a recorded session, read out of the agent's own state.db. */

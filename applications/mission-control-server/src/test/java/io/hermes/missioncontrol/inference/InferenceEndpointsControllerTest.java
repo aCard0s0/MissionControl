@@ -121,13 +121,12 @@ class InferenceEndpointsControllerTest {
   @Test
   void runningReportsWhatTheEndpointHoldsInMemory() throws Exception {
     when(providers.running("mp-1"))
-        .thenReturn(List.of(new RunningModelDto("qwen3:8b", 5_100_000_000L, 99L)));
+        .thenReturn(List.of(new RunningModelDto("qwen3:8b", 5_100_000_000L)));
 
     mvc.perform(get("/api/model-providers/mp-1/running"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].name").value("qwen3:8b"))
-        .andExpect(jsonPath("$[0].sizeVramBytes").value(5_100_000_000L))
-        .andExpect(jsonPath("$[0].expiresAt").value(99));
+        .andExpect(jsonPath("$[0].sizeVramBytes").value(5_100_000_000L));
   }
 
   @Test

@@ -5,15 +5,12 @@ import { ProviderStore } from '../core/store/provider-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { errorMessage } from '../core/errors';
-import { ago, until } from '../core/format';
+import { ago } from '../core/format';
 import { InferenceEndpoint, EndpointModel, PullState, RunningModel } from '../core/models';
 import { ENDPOINT_KIND_LABELS } from '../shared/provider-resolve';
 
 /** How often the open panel re-reads what is loaded and what is pulling. */
 const POLL_MS = 3000;
-
-/** Beyond this, an expiry is a pin rather than a countdown — see {@link ModelsPage.expiry}. */
-const EXPIRY_HORIZON_MS = 86_400_000;
 
 @Component({
   selector: 'mc-models',
@@ -143,36 +140,32 @@ export class ModelsPage {
   }
 
   /**
-   * Agents configured to run this model.
+   * Agents configured to run this model, or null when none is — so the row renders no chip.
    *
    * <p>Matched on the model name alone. An agent pointed at an endpoint stores a bare `ollama`
    * provider plus a `base_url`, and that url is not part of the profile the dashboard reads —
    * so the honest join available here is by name. Two endpoints serving the same tag therefore
    * both claim the agent, which over-reports rather than hiding a real user.
    */
-  protected usedBy(name: string): string[] {
-    return this.agents.agents().filter(a => a.model === name).map(a => a.name);
-  }
-
-  /** When a load lets go. A pinned model reports no expiry, and ollama dates a pin so far out
-   *  that a countdown would read as noise — both say "until stopped" instead. */
-  protected expiry(model: RunningModel): string {
-    return model.expiresAt && model.expiresAt - Date.now() < EXPIRY_HORIZON_MS
-      ? `unloads ${until(model.expiresAt)}`
-      : 'loaded until stopped';
+  protected usedBy(name: string): string[] | null {
+    const used = this.agents.agents().filter(a => a.model === name).map(a => a.name);
+    return used.length ? used : null;
   }
 
   protected gb(bytes: number): string {
     return `${(bytes / 1e9).toFixed(1)} GB`;
   }
 
-  /** On-disk total, which is what an endpoint's models actually cost when idle. */
-  protected diskBytes(): number {
-    return this.models().reduce((total, model) => total + model.sizeBytes, 0);
-  }
-
-  protected vramBytes(): number {
-    return this.running().reduce((total, model) => total + model.sizeVramBytes, 0);
+  /** What this endpoint costs: what it lists, what that takes on disk, and what of it is
+   *  resident. A figure nothing reports is left out — /v1/models carries no sizes at all. */
+  protected totals(endpoint: InferenceEndpoint): string {
+    const disk = this.models().reduce((total, model) => total + model.sizeBytes, 0);
+    const vram = this.running().reduce((total, model) => total + model.sizeVramBytes, 0);
+    const parts = [`${this.models().length} listed`];
+    if (disk) parts.push(`${this.gb(disk)} on disk`);
+    if (endpoint.canManageModels) parts.push(`${this.running().length} loaded`);
+    if (vram) parts.push(`${this.gb(vram)} in memory`);
+    return parts.join(' · ');
   }
 
   // ── start, stop, pull, remove ───────────────────────────────────────────
@@ -181,7 +174,7 @@ export class ModelsPage {
    *  rather than on what was asked for. */
   protected async setLoaded(name: string, loaded: boolean): Promise<void> {
     const id = this.selectedId();
-    if (!id || this.busyModel()) return;
+    if (!id) return;   // the other rows' buttons are disabled while one is busy
     this.busyModel.set(name);
     try {
       await (loaded ? this.providers.loadModel(id, name) : this.providers.unloadModel(id, name));

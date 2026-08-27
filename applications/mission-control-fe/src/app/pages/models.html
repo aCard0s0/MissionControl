@@ -55,9 +55,7 @@
   <div class="panel models-panel" data-reveal>
     <div class="panel-h">
       MODELS — {{ p.name }}
-      <span class="totals mono faint">
-        {{ models().length }} listed@if (diskBytes()) { · {{ gb(diskBytes()) }} on disk }@if (p.canManageModels) { · {{ running().length }} loaded@if (vramBytes()) { · {{ gb(vramBytes()) }} in memory }}
-      </span>
+      <span class="totals mono faint">{{ totals(p) }}</span>
       <span class="spacer"></span>
       <button class="btn sm ghost" [disabled]="modelsLoading()" (click)="refresh(p.id)">
         {{ modelsLoading() ? 'loading…' : 'refresh' }}
@@ -96,16 +94,12 @@
             }
             <span class="c-use">
               @if (loaded(m.name); as r) {
-                <span class="chip on" [title]="expiry(r)">
-                  loaded@if (r.sizeVramBytes) { · {{ gb(r.sizeVramBytes) }} }
-                </span>
+                <span class="chip on">loaded@if (r.sizeVramBytes) { · {{ gb(r.sizeVramBytes) }} }</span>
               }
               @if (usedBy(m.name); as used) {
-                @if (used.length) {
-                  <span class="chip info" [title]="'set as the model of ' + used.join(', ')">
-                    {{ used.length === 1 ? used[0] : used.length + ' agents' }}
-                  </span>
-                }
+                <span class="chip info" [title]="'set as the model of ' + used.join(', ')">
+                  {{ used.length === 1 ? used[0] : used.length + ' agents' }}
+                </span>
               }
             </span>
             <span class="c-mod faint">{{ ago(m.modifiedAt) }}</span>

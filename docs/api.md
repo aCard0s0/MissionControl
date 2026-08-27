@@ -209,7 +209,7 @@ the model **vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API 
 | `POST /api/model-providers/{id}/check` | — | fresh probe |
 | `DELETE /api/model-providers/{id}` | — | |
 | `GET /api/model-providers/{id}/models` | — | proxied per kind |
-| `GET /api/model-providers/{id}/running` | — | what is loaded in memory, with VRAM and expiry; `[]` where the protocol cannot say |
+| `GET /api/model-providers/{id}/running` | — | what is loaded in memory, and the VRAM it holds; `[]` where the protocol cannot say |
 | `POST /api/model-providers/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
 | `POST /api/model-providers/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
 | `POST /api/model-providers/{id}/models/load` | `{ name }` | pins the model in memory (`keep_alive: -1`); **blocks** while the weights load, up to 3 min; **400 unless `canManageModels`** |

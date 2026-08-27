@@ -237,8 +237,7 @@ class InferenceEndpointServiceOllamaTest {
   void whatIsResidentComesFromThePsEndpoint() {
     ollamaAnswersItsVersion();
     route("/api/ps", 200, """
-        {"models":[{"name":"llama3:8b","size_vram":5100000000,
-                    "expires_at":"2026-05-01T10:15:30Z"}]}
+        {"models":[{"name":"llama3:8b","size_vram":5100000000}]}
         """);
 
     RunningModelDto running = service.running(ID).getFirst();

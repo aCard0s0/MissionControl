@@ -279,8 +279,8 @@ describe('ModelsPage pulls', () => {
 });
 
 describe('ModelsPage what is in use', () => {
-  const resident = (name: string, sizeVramBytes = 5.2e9, expiresAt = 0): RunningModel =>
-    ({ name, sizeVramBytes, expiresAt });
+  const resident = (name: string, sizeVramBytes = 5.2e9): RunningModel =>
+    ({ name, sizeVramBytes });
 
   const open = async (store: ReturnType<typeof storeStub>) => {
     const rendered = render(store);

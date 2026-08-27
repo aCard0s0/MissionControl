@@ -95,7 +95,6 @@ export interface EndpointModel {
 export interface RunningModel {
   name: string;
   sizeVramBytes: number;       // 0 when the load is CPU-only, or unreported
-  expiresAt: number;           // epoch ms; 0 when pinned until an explicit stop
 }
 
 /** One tag of the Hermes image as seen from a specific docker host. */
