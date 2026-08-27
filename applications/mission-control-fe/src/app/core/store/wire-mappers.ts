@@ -384,15 +384,18 @@ export function toInferenceEndpoint(api: ApiInferenceEndpoint): InferenceEndpoin
     id: api.id,
     name: api.name ?? api.id,
     url: api.url ?? '',
-    kind: 'ollama',
+    kind: api.kind === 'openai' ? 'openai' : 'ollama',
     status: oneOf(api.status, ENDPOINT_STATUSES, 'unknown'),
     version: api.version ?? null,
     detail: api.detail ?? null,
+    // default false: an old backend that does not send the flag cannot pull either
+    canManageModels: api.canManageModels === true,
   };
 }
 
-/** One model on an endpoint. The optional fields are ollama's own — a model pulled from
- *  a bare digest reports no family or parameter size, and the row still has to render. */
+/** One model on an endpoint. The optional fields are ollama's own — /v1/models supplies none
+ *  of them, and a model pulled from a bare digest reports no family or parameter size either,
+ *  so the row still has to render without them. */
 export function toEndpointModel(api: ApiEndpointModel): EndpointModel {
   return {
     name: api.name,

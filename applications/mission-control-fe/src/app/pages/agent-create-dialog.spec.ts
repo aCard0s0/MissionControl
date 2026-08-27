@@ -20,7 +20,7 @@ const llm: LlmProvider[] = [
 
 const ollama: InferenceEndpoint[] = [{
   id: 'mp-1', name: 'workstation', url: 'http://10.0.0.5:11434', kind: 'ollama',
-  status: 'connected', version: null, detail: null,
+  status: 'connected', version: null, detail: null, canManageModels: true,
 }];
 
 const container: HermesContainer = buildContainer('c-1', { name: 'hermes-prod', shortId: 'c1' });

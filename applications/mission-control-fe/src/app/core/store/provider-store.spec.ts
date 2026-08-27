@@ -5,7 +5,7 @@ import { flush, liveError, testSlices } from '../../testing/store';
 
 const provider = (id: string, patch: Partial<InferenceEndpoint> = {}): InferenceEndpoint => ({
   id, name: id, url: `http://${id}:11434`, kind: 'ollama', status: 'connected',
-  version: '0.6.4', detail: null, ...patch,
+  version: '0.6.4', detail: null, canManageModels: true, ...patch,
 });
 
 const store = (providers: Record<string, unknown>) => {

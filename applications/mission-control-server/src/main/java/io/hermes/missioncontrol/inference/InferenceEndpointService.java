@@ -4,6 +4,8 @@ import static io.hermes.missioncontrol.errors.ApiErrors.brief;
 
 import io.hermes.missioncontrol.errors.ConnectionFailure;
 import io.hermes.missioncontrol.inference.InferenceEndpointRepository.EndpointRow;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -39,7 +41,8 @@ public class InferenceEndpointService {
   private record Probe(String status, String version, String detail, long at) {}
 
   private final InferenceEndpointRepository repository;
-  private final OllamaProtocolClient ollama;
+  /** kind -> client, in detection order. See {@link #detectKind}. */
+  private final Map<String, EndpointClient> clients;
   private final Map<String, Probe> probeCache = new ConcurrentHashMap<>();
   // endpointId -> model -> status; pulls survive only for the lifetime of the process
   private final Map<String, Map<String, PullStatusDto>> pullState = new ConcurrentHashMap<>();
@@ -49,10 +52,54 @@ public class InferenceEndpointService {
     return thread;
   });
 
+  /**
+   * Clients arrive as beans and are keyed by kind. Ordered ollama-first, which
+   * {@link #detectKind} depends on — see the note there.
+   */
   public InferenceEndpointService(InferenceEndpointRepository repository,
-      OllamaProtocolClient ollama) {
+      List<EndpointClient> clients) {
     this.repository = repository;
-    this.ollama = ollama;
+    this.clients = clients.stream()
+        .sorted(Comparator.comparingInt(c -> OllamaProtocolClient.KIND.equals(c.kind()) ? 0 : 1))
+        .collect(LinkedHashMap::new, (m, c) -> m.put(c.kind(), c), LinkedHashMap::putAll);
+  }
+
+  /**
+   * The client for a stored row.
+   *
+   * <p>Throws rather than falling back: a row whose kind has no client means a downgrade left
+   * data the running build cannot serve, and quietly treating it as ollama would fire ollama
+   * calls at something that is not ollama.
+   */
+  private EndpointClient clientFor(EndpointRow row) {
+    EndpointClient client = clients.get(row.kind());
+    if (client == null) {
+      throw new IllegalStateException(
+          "endpoint " + row.id() + " has kind '" + row.kind() + "', which this build cannot serve");
+    }
+    return client;
+  }
+
+  /**
+   * Which protocol answers at a url, decided by asking.
+   *
+   * <p>Order is load-bearing: ollama serves an OpenAI-compatible {@code /v1} <em>as well as</em>
+   * its own API, so probing {@code /v1/models} first would label every ollama server "openai"
+   * and silently strip its pull and delete. Ollama's own endpoint is the discriminator, so it
+   * has to be asked first — which is what the constructor's ordering guarantees.
+   */
+  private String detectKind(String url) {
+    for (EndpointClient client : clients.values()) {
+      try {
+        client.version(url);
+        return client.kind();
+      } catch (Exception ignored) {
+        // not this protocol — try the next
+      }
+    }
+    throw new IllegalArgumentException(
+        "no model server answered at that url — expected ollama (/api/version) or an "
+            + "OpenAI-compatible endpoint (/v1/models)");
   }
 
   @jakarta.annotation.PreDestroy
@@ -75,7 +122,8 @@ public class InferenceEndpointService {
       throw new IllegalArgumentException("a provider with this url already exists");
     }
     EndpointRow row = new EndpointRow(
-        "mp-" + UUID.randomUUID().toString().substring(0, 8), name, normalized, "ollama");
+        "mp-" + UUID.randomUUID().toString().substring(0, 8), name, normalized,
+        detectKind(normalized));
     repository.insert(row);
     return toDto(row, probe(row, true));
   }
@@ -88,7 +136,8 @@ public class InferenceEndpointService {
   }
 
   public List<EndpointModelDto> models(String id) {
-    return ollama.models(require(id).url());
+    EndpointRow row = require(id);
+    return clientFor(row).models(row.url());
   }
 
   /**
@@ -111,6 +160,9 @@ public class InferenceEndpointService {
 
   public void pull(String id, String model) {
     EndpointRow row = require(id);
+    // Refuse on the request thread. Submitted first, the same refusal would surface a minute
+    // later as an error chip on a pull that never had a chance of starting.
+    clientFor(row).requireModelManagement();
     pullsOf(row.id()).put(model, new PullStatusDto(model, "pulling", null));
     pullExecutor.submit(() -> runPull(row, model));
   }
@@ -121,14 +173,14 @@ public class InferenceEndpointService {
 
   public void deleteModel(String id, String model) {
     EndpointRow row = require(id);
-    ollama.deleteModel(row.url(), model);
+    clientFor(row).deleteModel(row.url(), model);
     pullsOf(row.id()).remove(model);
   }
 
   /** State is reported through /pulls rather than returned: the call outlives the request. */
   private void runPull(EndpointRow row, String model) {
     try {
-      ollama.pull(row.url(), model);
+      clientFor(row).pull(row.url(), model);
       pullsOf(row.id()).put(model, new PullStatusDto(model, "done", null));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -156,20 +208,24 @@ public class InferenceEndpointService {
     }
     Probe fresh;
     try {
-      fresh = new Probe("connected", ollama.version(row.url()), null, System.currentTimeMillis());
+      fresh = new Probe("connected", clientFor(row).version(row.url()), null,
+          System.currentTimeMillis());
     } catch (Exception e) {
       String reason = ConnectionFailure.describe(e);
       log.warn("probe of {} ({}) failed: {}", row.id(), row.url(), reason);
       fresh = new Probe("error", null,
-          "ollama not reachable — check the address and that the server is running (" + reason + ")",
+          row.kind() + " not reachable — check the address and that the server is running ("
+              + reason + ")",
           System.currentTimeMillis());
     }
     probeCache.put(row.id(), fresh);
     return fresh;
   }
 
-  private static InferenceEndpointDto toDto(EndpointRow row, Probe probe) {
+  private InferenceEndpointDto toDto(EndpointRow row, Probe probe) {
+    EndpointClient client = clients.get(row.kind());
     return new InferenceEndpointDto(row.id(), row.name(), row.url(), row.kind(),
-        probe.status(), probe.version(), probe.detail());
+        probe.status(), probe.version(), probe.detail(),
+        client != null && client.canManageModels());
   }
 }

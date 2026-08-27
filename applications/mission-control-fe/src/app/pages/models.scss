@@ -50,6 +50,13 @@
     font-size: 11.5px;
     border-bottom: 1px solid var(--line);
 
+    // an openai-compatible endpoint reports only an id and a timestamp: /v1/models carries
+    // no params, family or size, so those three columns are not rendered at all rather than
+    // left as three empty cells
+    &.thin {
+      grid-template-columns: minmax(160px, 1.4fr) 110px auto;
+    }
+
     &.head {
       font-size: 9.5px;
       letter-spacing: .12em;
@@ -88,9 +95,13 @@
 }
 
 @media (max-width: 1024px) {
-  .models-panel .model-row {
+  // nth-child here counts the wide row's columns, so it must not reach a thin one
+  .models-panel .model-row:not(.thin) {
     grid-template-columns: minmax(140px, 1.4fr) 80px 80px 100px auto;
     span:nth-child(3) { display: none; }   // drop family column
+  }
+  .models-panel .model-row.thin {
+    grid-template-columns: minmax(140px, 1.4fr) 100px auto;
   }
 }
 
@@ -108,10 +119,15 @@
   }
 
   .models-panel {
-    .model-row {
+    .model-row:not(.thin) {
       grid-template-columns: 1fr 80px auto;
       span:nth-child(2), span:nth-child(5) { display: none; }   // drop params + modified
       &.head span:nth-child(2), &.head span:nth-child(5) { display: none; }
+    }
+    // already only name/modified/actions — drop modified and it is name + actions
+    .model-row.thin {
+      grid-template-columns: 1fr auto;
+      span:nth-child(2) { display: none; }
     }
     .pull-bar { grid-template-columns: 1fr; }
   }

@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -138,5 +139,83 @@ class SchemaUpgradesTest {
     upgrades().apply();
 
     assertTrue(columnsOfProfileTemplates().isEmpty());
+  }
+
+  // ── model_providers.kind, widened for a second endpoint protocol ─────────
+
+  /** {@code model_providers} as it shipped when ollama was the only endpoint kind. */
+  private void rollBackToTheOllamaOnlyKindCheck() {
+    database.jdbc().execute("DROP TABLE model_providers");
+    database.jdbc().execute("CREATE TABLE model_providers ("
+        + "id TEXT PRIMARY KEY,"
+        + "name TEXT NOT NULL,"
+        + "url TEXT NOT NULL UNIQUE,"
+        + "kind TEXT NOT NULL CHECK (kind IN ('ollama')),"
+        + "created_at INTEGER NOT NULL)");
+  }
+
+  private void insertEndpoint(String id, String url, String kind) {
+    database.jdbc().update(
+        "INSERT INTO model_providers (id, name, url, kind, created_at) VALUES (?, ?, ?, ?, ?)",
+        id, id, url, kind, 1L);
+  }
+
+  @Test
+  void anOllamaOnlyDatabaseRejectsTheNewKindBeforeTheUpgrade() {
+    rollBackToTheOllamaOnlyKindCheck();
+
+    // the symptom this upgrade exists to remove: a bare CHECK failure on a valid insert
+    assertThrows(Exception.class, () -> insertEndpoint("mp-1", "http://mac:1234", "openai"));
+  }
+
+  @Test
+  void theUpgradeWidensTheKindCheckAndKeepsExistingRows() {
+    rollBackToTheOllamaOnlyKindCheck();
+    insertEndpoint("mp-1", "http://box:11434", "ollama");
+
+    upgrades().apply();
+
+    // the row that was there before survived the rebuild, unchanged
+    assertEquals(List.of("ollama"), database.jdbc().queryForList(
+        "SELECT kind FROM model_providers WHERE id = 'mp-1'", String.class));
+    // and the kind that used to be rejected now inserts
+    insertEndpoint("mp-2", "http://mac:1234", "openai");
+    assertEquals(2, (int) database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM model_providers", Integer.class));
+  }
+
+  @Test
+  void theRebuiltTableStillRefusesAKindNoClientHandles() {
+    rollBackToTheOllamaOnlyKindCheck();
+
+    upgrades().apply();
+
+    assertThrows(Exception.class, () -> insertEndpoint("mp-3", "http://x", "not-a-protocol"));
+  }
+
+  @Test
+  void theUniqueUrlConstraintSurvivesTheRebuild() {
+    rollBackToTheOllamaOnlyKindCheck();
+    upgrades().apply();
+    insertEndpoint("mp-1", "http://box:11434", "ollama");
+
+    // UNIQUE(url) is what stops the same server being registered twice; a rebuild that
+    // dropped it would let duplicates in silently
+    assertThrows(Exception.class, () -> insertEndpoint("mp-2", "http://box:11434", "openai"));
+  }
+
+  @Test
+  void theUpgradeIsIdempotent() {
+    rollBackToTheOllamaOnlyKindCheck();
+    insertEndpoint("mp-1", "http://box:11434", "ollama");
+
+    upgrades().apply();
+    upgrades().apply();
+
+    assertEquals(1, (int) database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM model_providers", Integer.class));
+    // the second pass must not have left a half-built table lying around
+    assertEquals(0, (int) database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM sqlite_master WHERE name = 'model_providers_new'", Integer.class));
   }
 }

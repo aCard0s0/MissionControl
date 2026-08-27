@@ -6,13 +6,21 @@ import { LlmProvider, InferenceEndpoint, ProfileTemplate } from '../core/models'
 // lives here rather than in either page.
 
 /**
- * The dropdown-option prefix for a registered endpoint (`ollama: <name>`).
+ * The dropdown-option prefix for a registered endpoint, and the bare marker it collapses to.
  *
- * <p>Stays spelled "ollama" deliberately: the collapsed value this maps to is hermes' own
- * provider key (`hermes_cli/models.py`) and is persisted in saved templates, so it is not
- * ours to rename. A second endpoint `kind` gets its own prefix beside this one.
+ * <p>Spelled "ollama" for every kind, deliberately. It is NOT a hermes provider key — hermes
+ * has no `ollama` provider at all, and drops the name entirely once a `base_url` is set
+ * (HermesModelConfig.modelConfigEntries). It is Mission Control's own marker, persisted in
+ * saved templates, meaning "an endpoint, resolve it by base url". Renaming it would orphan
+ * every stored template for nothing, so a second kind reuses it rather than adding a prefix.
  */
 export const OLLAMA_PREFIX = 'ollama: ';
+
+/** What the picker calls each endpoint kind. */
+const KIND_LABELS: Record<string, string> = {
+  ollama: 'Ollama',
+  openai: 'OpenAI-compatible',
+};
 
 /** One entry in a provider dropdown. */
 export interface ProviderOption {
@@ -30,7 +38,7 @@ export function providerOptions(
     ...llm.map(provider => ({ value: provider.key, label: provider.label })),
     ...endpoints.map(endpoint => ({
       value: OLLAMA_PREFIX + endpoint.name,
-      label: 'Ollama: ' + endpoint.name,
+      label: (KIND_LABELS[endpoint.kind] ?? endpoint.kind) + ': ' + endpoint.name,
     })),
   ];
 }

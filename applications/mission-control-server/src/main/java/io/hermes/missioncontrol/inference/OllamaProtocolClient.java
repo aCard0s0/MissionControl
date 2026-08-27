@@ -39,7 +39,9 @@ import org.springframework.stereotype.Component;
  * dashboard, and naming the actual server is more use than a generic "endpoint".
  */
 @Component
-public class OllamaProtocolClient {
+public class OllamaProtocolClient implements EndpointClient {
+
+  static final String KIND = "ollama";
 
   private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(3);
   private static final Duration CALL_TIMEOUT = Duration.ofSeconds(10);
@@ -51,6 +53,17 @@ public class OllamaProtocolClient {
     this.objectMapper = objectMapper;
   }
 
+  @Override
+  public String kind() {
+    return KIND;
+  }
+
+  /** The only kind with one: /api/pull and /api/delete exist nowhere else. */
+  @Override
+  public boolean canManageModels() {
+    return true;
+  }
+
   /**
    * The server's reported version, or null when it reports none.
    *
@@ -58,7 +71,8 @@ public class OllamaProtocolClient {
    * probe detail, and it needs the original exception for {@code ConnectionFailure.describe}
    * to tell a refused port from an unresolvable host.
    */
-  String version(String baseUrl) throws Exception {
+  @Override
+  public String version(String baseUrl) throws Exception {
     HttpResponse<String> response = get(baseUrl + "/api/version", PROBE_TIMEOUT);
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException("ollama returned HTTP " + response.statusCode());
@@ -66,7 +80,8 @@ public class OllamaProtocolClient {
     return objectMapper.readTree(response.body()).path("version").asText(null);
   }
 
-  List<EndpointModelDto> models(String baseUrl) {
+  @Override
+  public List<EndpointModelDto> models(String baseUrl) {
     String body = send(() -> get(baseUrl + "/api/tags", CALL_TIMEOUT));
     try {
       return parseTags(objectMapper.readTree(body));
@@ -81,7 +96,8 @@ public class OllamaProtocolClient {
    * <p>Deliberately no read timeout — a pull runs for minutes. The caller runs this off the
    * request thread and reports progress through its own pull state.
    */
-  void pull(String baseUrl, String model) throws Exception {
+  @Override
+  public void pull(String baseUrl, String model) throws Exception {
     String body = objectMapper.writeValueAsString(Map.of("model", model, "stream", false));
     HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/pull"))
         .header("Content-Type", "application/json")
@@ -93,7 +109,8 @@ public class OllamaProtocolClient {
     }
   }
 
-  void deleteModel(String baseUrl, String model) {
+  @Override
+  public void deleteModel(String baseUrl, String model) {
     send(() -> {
       HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/delete"))
           .timeout(CALL_TIMEOUT)

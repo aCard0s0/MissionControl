@@ -58,7 +58,11 @@ class InferenceEndpointServiceOllamaTest {
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     repository = mock(InferenceEndpointRepository.class);
-    service = new InferenceEndpointService(repository, new OllamaProtocolClient(new ObjectMapper()));
+    ObjectMapper mapper = new ObjectMapper();
+    // both clients, as Spring wires them — so these tests also cover that an ollama server
+    // (which serves /v1 too) is still detected and dispatched as ollama
+    service = new InferenceEndpointService(repository,
+        List.of(new OllamaProtocolClient(mapper), new OpenAiCompatClient(mapper)));
     providerExists(baseUrl);
   }
 

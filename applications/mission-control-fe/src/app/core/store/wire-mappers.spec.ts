@@ -371,7 +371,8 @@ describe('toInferenceEndpoint', () => {
   it('reads an unprobed endpoint as unknown', () => {
     expect(toInferenceEndpoint({ id: 'mp-1', name: 'workstation' })).toEqual({
       id: 'mp-1', name: 'workstation', url: '', kind: 'ollama',
-      status: 'unknown', version: null, detail: null,
+      // a backend too old to send the flag cannot pull either, so false is the safe read
+      status: 'unknown', version: null, detail: null, canManageModels: false,
     });
   });
 
