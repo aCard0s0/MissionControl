@@ -28,6 +28,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -208,6 +209,9 @@ class InferenceEndpointServiceOllamaTest {
     assertThrows(NoSuchElementException.class, () -> service.pull(ID, "llama3:8b"));
     assertThrows(NoSuchElementException.class, () -> service.pulls(ID));
     assertThrows(NoSuchElementException.class, () -> service.deleteModel(ID, "llama3:8b"));
+    assertThrows(NoSuchElementException.class, () -> service.running(ID));
+    assertThrows(NoSuchElementException.class, () -> service.load(ID, "llama3:8b"));
+    assertThrows(NoSuchElementException.class, () -> service.unload(ID, "llama3:8b"));
   }
 
   @Test
@@ -225,6 +229,59 @@ class InferenceEndpointServiceOllamaTest {
     // and the cached probe is gone, so the next read of a re-added provider is fresh
     service.list();
     assertEquals(2, probes.get());
+  }
+
+  // ── what is loaded, and start / stop ────────────────────────────────────
+
+  @Test
+  void whatIsResidentComesFromThePsEndpoint() {
+    ollamaAnswersItsVersion();
+    route("/api/ps", 200, """
+        {"models":[{"name":"llama3:8b","size_vram":5100000000,
+                    "expires_at":"2026-05-01T10:15:30Z"}]}
+        """);
+
+    RunningModelDto running = service.running(ID).getFirst();
+
+    assertEquals("llama3:8b", running.name());
+    assertEquals(5_100_000_000L, running.sizeVramBytes());
+    assertTrue(requests.contains("GET /api/ps"), requests.toString());
+  }
+
+  @Test
+  void anUnparseablePsBodyIsAnUpstreamFailureNotAServerError() {
+    ollamaAnswersItsVersion();
+    route("/api/ps", 200, "not json at all");
+
+    assertEquals("unexpected response from ollama /api/ps",
+        assertThrows(UpstreamUnavailableException.class, () -> service.running(ID)).getMessage());
+  }
+
+  @Test
+  void startPinsAModelInMemoryAndStopFreesItImmediately() {
+    ollamaAnswersItsVersion();
+    route("/api/generate", 200, "{\"done\":true}");
+
+    service.load(ID, "llama3:8b");
+    service.unload(ID, "llama3:8b");
+
+    // keep_alive is the whole mechanism, and the two values are the feature: -1 holds the
+    // model until something says otherwise, 0 frees the VRAM now. Ollama's default five
+    // minutes would let a start the operator pressed wear off while they watched the row.
+    assertTrue(bodies.contains("{\"model\":\"llama3:8b\",\"keep_alive\":-1,\"stream\":false}"),
+        bodies.toString());
+    assertTrue(bodies.contains("{\"model\":\"llama3:8b\",\"keep_alive\":0,\"stream\":false}"),
+        bodies.toString());
+  }
+
+  @Test
+  void aModelThatCannotBeLoadedIsAnUpstreamFailureCarryingTheReason() {
+    ollamaAnswersItsVersion();
+    route("/api/generate", 500, "model requires more system memory than is available");
+
+    assertEquals("ollama returned HTTP 500: model requires more system memory than is available",
+        assertThrows(UpstreamUnavailableException.class,
+            () -> service.load(ID, "llama3:70b")).getMessage());
   }
 
   // ── pulls ───────────────────────────────────────────────────────────────
@@ -252,7 +309,46 @@ class InferenceEndpointServiceOllamaTest {
     release.countDown();
     assertEquals("done", awaitStatus("llama3:8b", "done").status());
     assertTrue(bodies.stream().anyMatch(body -> body.contains("\"model\":\"llama3:8b\"")
-        && body.contains("\"stream\":false")), bodies.toString());
+        && body.contains("\"stream\":true")), bodies.toString());
+  }
+
+  @Test
+  void aStreamedPullReportsHowFarItHasGotWhileItRuns() throws Exception {
+    ollamaAnswersItsVersion();
+    CountDownLatch release = new CountDownLatch(1);
+    server.createContext("/api/pull", exchange -> {
+      record("POST /api/pull", new String(exchange.getRequestBody().readAllBytes(), UTF_8));
+      exchange.sendResponseHeaders(200, 0);   // chunked, so the body arrives in pieces
+      try (var out = exchange.getResponseBody()) {
+        out.write("{\"status\":\"downloading\",\"total\":100,\"completed\":47}\n".getBytes(UTF_8));
+        out.flush();
+        release.await(5, TimeUnit.SECONDS);
+        out.write("{\"status\":\"success\"}\n".getBytes(UTF_8));
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    });
+
+    service.pull(ID, "llama3:8b");
+
+    // the whole point of streaming: several gigabytes take minutes, and an unstreamed pull
+    // could report nothing but "pulling" for all of them
+    assertEquals("pulling", awaitDetail("llama3:8b", "47% · downloading").status());
+    release.countDown();
+    assertEquals("done", awaitStatus("llama3:8b", "done").status());
+  }
+
+  @Test
+  void aPullThatFailsInsideAStreamedTwoHundredStillEndsAsAnError() throws Exception {
+    ollamaAnswersItsVersion();
+    // ollama commits to a 200 the moment it starts streaming, so a manifest that does not
+    // exist arrives in the body. Unread, the chip would sit on "pulling" for ever.
+    route("/api/pull", 200,
+        "{\"status\":\"pulling manifest\"}\n{\"error\":\"file does not exist\"}\n");
+
+    service.pull(ID, "nope:latest");
+
+    assertEquals("file does not exist", awaitStatus("nope:latest", "error").detail());
   }
 
   @Test
@@ -367,13 +463,23 @@ class InferenceEndpointServiceOllamaTest {
   }
 
   private PullStatusDto awaitStatus(String model, String expected) throws InterruptedException {
+    return await(model, status -> expected.equals(status.status()), expected);
+  }
+
+  /** Progress is reported through `detail`, so a mid-pull assertion waits on that instead. */
+  private PullStatusDto awaitDetail(String model, String expected) throws InterruptedException {
+    return await(model, status -> expected.equals(status.detail()), "detail " + expected);
+  }
+
+  private PullStatusDto await(String model, Predicate<PullStatusDto> settled, String expected)
+      throws InterruptedException {
     long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
     while (System.nanoTime() < deadline) {
       PullStatusDto current = service.pulls(ID).stream()
           .filter(status -> model.equals(status.model()))
           .findFirst()
           .orElse(null);
-      if (current != null && expected.equals(current.status())) return current;
+      if (current != null && settled.test(current)) return current;
       Thread.sleep(20);
     }
     throw new AssertionError("pull of " + model + " never reached " + expected

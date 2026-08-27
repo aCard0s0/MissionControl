@@ -104,6 +104,23 @@ public class InferenceEndpointService {
     return clientOf(row).models(row.url());
   }
 
+  /** What the endpoint is holding in memory — empty for a protocol that cannot say. */
+  public List<RunningModelDto> running(String id) {
+    EndpointRow row = require(id);
+    return clientOf(row).running(row.url());
+  }
+
+  /** Loads a model and pins it. Blocks: the weights come off disk before ollama answers. */
+  public void load(String id, String model) {
+    EndpointRow row = require(id);
+    clientOf(row).load(row.url(), model);
+  }
+
+  public void unload(String id, String model) {
+    EndpointRow row = require(id);
+    clientOf(row).unload(row.url(), model);
+  }
+
   /**
    * The url as stored: scheme-checked and stripped of trailing slashes, so the same host
    * typed two ways is one row rather than two.
@@ -145,7 +162,10 @@ public class InferenceEndpointService {
   /** State is reported through /pulls rather than returned: the call outlives the request. */
   private void runPull(EndpointClient client, EndpointRow row, String model) {
     try {
-      client.pull(row.url(), model);
+      // progress lands in `detail`, which the dashboard already renders — a pull reads as
+      // "47% · pulling <digest>" rather than sitting on a bare "pulling" for ten minutes
+      client.pull(row.url(), model,
+          progress -> pullsOf(row.id()).put(model, new PullStatusDto(model, "pulling", progress)));
       pullsOf(row.id()).put(model, new PullStatusDto(model, "done", null));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

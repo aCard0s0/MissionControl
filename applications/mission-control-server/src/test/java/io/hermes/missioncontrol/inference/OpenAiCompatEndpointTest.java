@@ -212,6 +212,21 @@ class OpenAiCompatEndpointTest {
   }
 
   @Test
+  void startAndStopAreRefusedButWhatIsResidentIsSimplyEmpty() {
+    endpointExists();
+    route("/v1/models", 200, MODELS_BODY);   // detected as openai
+
+    assertTrue(assertThrows(IllegalArgumentException.class, () -> service.load(ID, "qwen3-8b"))
+        .getMessage().contains("cannot load models"));
+    assertTrue(assertThrows(IllegalArgumentException.class, () -> service.unload(ID, "qwen3-8b"))
+        .getMessage().contains("cannot unload models"));
+    // empty rather than refused: "cannot report" and "nothing resident" read the same on the
+    // page, and a 400 here would make the panel's poll toast on every tick
+    assertTrue(service.running(ID).isEmpty());
+    assertEquals(List.of("GET /v1/models"), requests);
+  }
+
+  @Test
   void anUnhappyV1IsADependencyFailureNotABug() {
     endpointExists();
     route("/v1/models", 503, "overloaded");

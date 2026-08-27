@@ -1,14 +1,16 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { LlmProvider, InferenceEndpoint, EndpointModel, PullState } from '../models';
+import { LlmProvider, InferenceEndpoint, EndpointModel, PullState, RunningModel } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
-import { toLlmProvider, toInferenceEndpoint, toEndpointModel, toPullState } from './wire-mappers';
+import {
+  toLlmProvider, toInferenceEndpoint, toEndpointModel, toPullState, toRunningModel,
+} from './wire-mappers';
 
 /**
  * Two registries the UI keeps side by side, and they are not the same axis:
  * - `llmProviders` — model *vendors* who can serve an Agent, and their catalogs;
  * - `endpoints` — self-hosted inference endpoints (a URL you run) whose models
- *   Mission Control can list, pull and delete.
+ *   Mission Control can list, pull, delete, load and unload.
  */
 @Injectable({ providedIn: 'root' })
 export class ProviderStore {
@@ -64,6 +66,24 @@ export class ProviderStore {
         this.ctx.toastFailure('model list', e);
         return [];
       });
+  }
+
+  /** What the endpoint is holding in memory. Empty on failure — the panel polls this, so a
+   *  transient read must not toast on every tick. */
+  running(id: string): Promise<RunningModel[]> {
+    return this.ctx.api.providers.running(id)
+      .then(list => list.map(toRunningModel))
+      .catch(() => []);
+  }
+
+  loadModel(id: string, name: string): Promise<void> {
+    return this.ctx.api.providers.loadModel(id, name)
+      .catch(e => this.ctx.toastFailure('model load', e));
+  }
+
+  unloadModel(id: string, name: string): Promise<void> {
+    return this.ctx.api.providers.unloadModel(id, name)
+      .catch(e => this.ctx.toastFailure('model unload', e));
   }
 
   pullModel(id: string, name: string): Promise<void> {

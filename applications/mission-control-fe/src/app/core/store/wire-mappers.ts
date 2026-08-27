@@ -3,14 +3,15 @@ import {
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
   ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSession, ApiSetupApiKey,
-  ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
+  ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
   McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt,
-  PullState, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider, SetupMessaging,
+  PullState, RunningModel, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider,
+  SetupMessaging,
 } from '../models';
 
 // Backend payload → domain model. Pure functions, deliberately tolerant of
@@ -403,6 +404,16 @@ export function toEndpointModel(api: ApiEndpointModel): EndpointModel {
     family: api.family ?? '',
     parameterSize: api.parameterSize ?? '',
     modifiedAt: api.modifiedAt ?? 0,
+  };
+}
+
+/** One model held in memory. Nulls collapse to 0 — the row renders a missing VRAM figure and
+ *  a pinned model's absent expiry the same way, as "no number to show". */
+export function toRunningModel(api: ApiRunningModel): RunningModel {
+  return {
+    name: api.name,
+    sizeVramBytes: api.sizeVramBytes ?? 0,
+    expiresAt: api.expiresAt ?? 0,
   };
 }
 

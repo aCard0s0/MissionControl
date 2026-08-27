@@ -2,9 +2,9 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InferenceEndpoint, EndpointModel, PullState } from '../core/models';
+import { AgentProfile, InferenceEndpoint, EndpointModel, PullState, RunningModel } from '../core/models';
 import { ModelsPage } from './models';
-import { el, press, settle, type } from '../testing/dom';
+import { el, press, settle, text, type } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
 const provider = (id: string, name: string): InferenceEndpoint => ({
@@ -15,7 +15,14 @@ const provider = (id: string, name: string): InferenceEndpoint => ({
 const model = (name: string): EndpointModel =>
   ({ name, sizeBytes: 4.3e9, family: 'gemma3', parameterSize: '4.3B', modifiedAt: 1 });
 
-const storeStub = (providers: InferenceEndpoint[] = [provider('mp-1', 'workstation')]) => ({
+/** Enough of a profile for the in-use join, which reads only the name and the model. */
+const agent = (name: string, model: string) =>
+  ({ name, model } as AgentProfile);
+
+const storeStub = (
+  providers: InferenceEndpoint[] = [provider('mp-1', 'workstation')],
+  agents: AgentProfile[] = [],
+) => ({
   providers: {
     endpoints: signal(providers),
     refresh: vi.fn().mockResolvedValue(undefined),
@@ -26,7 +33,11 @@ const storeStub = (providers: InferenceEndpoint[] = [provider('mp-1', 'workstati
     pullModel: vi.fn().mockResolvedValue(undefined),
     deleteModel: vi.fn().mockResolvedValue(undefined),
     pullStatus: vi.fn().mockResolvedValue([] as PullState[]),
+    running: vi.fn().mockResolvedValue([] as RunningModel[]),
+    loadModel: vi.fn().mockResolvedValue(undefined),
+    unloadModel: vi.fn().mockResolvedValue(undefined),
   },
+  agents: { agents: signal(agents) },
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -171,13 +182,17 @@ describe('ModelsPage model list', () => {
     expect(store.providers.deleteModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
   });
 
-  it('forgets the selection when the selected provider is removed', async () => {
+  it('asks twice before removing an endpoint, and forgets the selection when it goes', async () => {
     const { fixture, store } = render(storeStub());
     press(fixture, 'models', '.provider-row');
     await settle(fixture);
     expect(el(fixture).querySelector('.models-panel')).not.toBeNull();
 
+    // one click un-registers it and silently breaks the base_url of every agent using it
     press(fixture, 'remove', '.provider-row');
+    expect(store.providers.remove).not.toHaveBeenCalled();
+
+    press(fixture, 'confirm', '.provider-row');
 
     expect(store.providers.remove).toHaveBeenCalledWith('mp-1');
     expect(el(fixture).querySelector('.models-panel')).toBeNull();
@@ -203,29 +218,26 @@ describe('ModelsPage pulls', () => {
     expect(el(fixture).querySelector<HTMLInputElement>('.pull-bar .input')!.value).toBe('');
   });
 
-  it('shows what each pull is doing', async () => {
+  it('shows how far each pull has got, not just that it is pulling', async () => {
     const store = storeStub();
-    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: '40%' }]);
+    store.providers.pullStatus
+      .mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: '47% · downloading' }]);
     const { fixture } = await open(store);
 
-    expect(el(fixture).textContent).toContain('gemma3:4b · pulling');
+    expect(text(fixture)).toContain('gemma3:4b · pulling · 47% · downloading');
   });
 
-  it('keeps polling while a pull is running, and stops once it is not', async () => {
+  it('keeps polling for as long as the panel is open, pull or no pull', async () => {
+    // both halves move without the operator: a pull reports progress, and an agent's own
+    // call loads a model and lets it expire again
     const store = storeStub();
-    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
     const afterOpen = store.providers.pullStatus.mock.calls.length;
 
     await settle(fixture, 3_000);
+
     expect(store.providers.pullStatus.mock.calls.length).toBeGreaterThan(afterOpen);
-
-    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
-    await settle(fixture, 3_000);
-    const afterDone = store.providers.pullStatus.mock.calls.length;
-
-    await settle(fixture, 30_000);
-    expect(store.providers.pullStatus.mock.calls.length).toBe(afterDone);
+    expect(store.providers.running.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('re-reads the model list once a pull finishes', async () => {
@@ -240,9 +252,10 @@ describe('ModelsPage pulls', () => {
     expect(store.providers.models.mock.calls.length).toBeGreaterThan(afterOpen);
   });
 
-  it('gives up polling when the pull status cannot be read', async () => {
+  it('rides out a failed poll instead of going quiet', async () => {
+    // the next tick is the retry — a panel that stopped polling on one bad read would sit
+    // there showing a stale loaded set with no sign that it had given up
     const store = storeStub();
-    store.providers.pullStatus.mockResolvedValueOnce([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
     store.providers.pullStatus.mockRejectedValue(new Error('provider gone'));
 
@@ -250,12 +263,11 @@ describe('ModelsPage pulls', () => {
     const afterFailure = store.providers.pullStatus.mock.calls.length;
     await settle(fixture, 9_000);
 
-    expect(store.providers.pullStatus.mock.calls.length).toBe(afterFailure);
+    expect(store.providers.pullStatus.mock.calls.length).toBeGreaterThan(afterFailure);
   });
 
   it('stops polling once the page is gone', async () => {
     const store = storeStub();
-    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
 
     fixture.destroy();
@@ -263,6 +275,68 @@ describe('ModelsPage pulls', () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(store.providers.pullStatus.mock.calls.length).toBe(afterDestroy);
+  });
+});
+
+describe('ModelsPage what is in use', () => {
+  const resident = (name: string, sizeVramBytes = 5.2e9, expiresAt = 0): RunningModel =>
+    ({ name, sizeVramBytes, expiresAt });
+
+  const open = async (store: ReturnType<typeof storeStub>) => {
+    const rendered = render(store);
+    press(rendered.fixture, 'models', '.provider-row');
+    await settle(rendered.fixture);
+    return rendered;
+  };
+
+  it('marks a resident model with the memory it holds, and totals both costs', async () => {
+    const store = storeStub();
+    store.providers.running.mockResolvedValue([resident('gemma3:4b')]);
+    const { fixture } = await open(store);
+
+    expect(text(fixture)).toContain('loaded · 5.2 GB');
+    // disk is what an idle model costs, memory is what it costs the next one to load
+    expect(text(fixture)).toContain('4.3 GB on disk');
+    expect(text(fixture)).toContain('1 loaded · 5.2 GB in memory');
+  });
+
+  it('starts a model and re-reads what is resident rather than assuming it worked', async () => {
+    const store = storeStub();
+    const { fixture } = await open(store);
+    const afterOpen = store.providers.running.mock.calls.length;
+
+    press(fixture, 'start', '.model-row:not(.head)');
+    await settle(fixture);
+
+    expect(store.providers.loadModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.providers.running.mock.calls.length).toBeGreaterThan(afterOpen);
+  });
+
+  it('offers stop, not start, for a model already in memory', async () => {
+    const store = storeStub();
+    store.providers.running.mockResolvedValue([resident('gemma3:4b')]);
+    const { fixture } = await open(store);
+
+    press(fixture, 'stop', '.model-row:not(.head)');
+    await settle(fixture);
+
+    expect(store.providers.unloadModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.providers.loadModel).not.toHaveBeenCalled();
+  });
+
+  it('names the agent a model is configured on, so remove is not a surprise', async () => {
+    const store = storeStub([provider('mp-1', 'workstation')], [agent('atlas', 'gemma3:4b')]);
+    const { fixture } = await open(store);
+
+    expect(text(fixture)).toContain('atlas');
+  });
+
+  it('counts the agents instead of listing them once there is more than one', async () => {
+    const store = storeStub([provider('mp-1', 'workstation')],
+      [agent('atlas', 'gemma3:4b'), agent('nova', 'gemma3:4b'), agent('vega', 'other:1b')]);
+    const { fixture } = await open(store);
+
+    expect(text(fixture)).toContain('2 agents');
   });
 });
 
@@ -313,7 +387,7 @@ describe('ModelsPage openai-compatible endpoints', () => {
     const { fixture } = await openStub();
 
     expect(el(fixture).querySelector('.pull-bar')).toBeNull();
-    expect(el(fixture).textContent).toContain('cannot add or remove them');
+    expect(el(fixture).textContent).toContain('cannot add, remove or load them');
   });
 
   it('offers no remove button, because the protocol has no delete', async () => {
@@ -331,8 +405,15 @@ describe('ModelsPage openai-compatible endpoints', () => {
     expect(head).not.toBeNull();
     expect(head!.textContent).not.toContain('params');
     expect(head!.textContent).not.toContain('family');
-    // name + modified + actions, where ollama's row has three more
-    expect(head!.querySelectorAll('span').length).toBe(3);
+    // name + in use + modified + actions, where ollama's row has three more
+    expect(head!.querySelectorAll('span').length).toBe(4);
+  });
+
+  it('does not poll an endpoint that cannot say what is loaded or pulling', async () => {
+    const { store } = await openStub();
+
+    expect(store.providers.running).not.toHaveBeenCalled();
+    expect(store.providers.pullStatus).not.toHaveBeenCalled();
   });
 
   it('says models are loaded on the server when there are none', async () => {

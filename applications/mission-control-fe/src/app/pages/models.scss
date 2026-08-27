@@ -41,9 +41,13 @@
 .models-panel {
   margin-bottom: 12px;
 
+  // what the endpoint costs, beside its name: listed models, disk, and what is resident
+  .totals { font-size: 9.5px; letter-spacing: .06em; margin-left: 10px; }
+
   .model-row {
+    // name | params | family | size | in use | modified | actions
     display: grid;
-    grid-template-columns: minmax(160px, 1.4fr) 90px 110px 80px 110px auto;
+    grid-template-columns: minmax(150px, 1.4fr) 78px 96px 74px minmax(130px, 1fr) 96px auto;
     align-items: center;
     gap: 12px;
     padding: 6px 0;
@@ -54,7 +58,7 @@
     // no params, family or size, so those three columns are not rendered at all rather than
     // left as three empty cells
     &.thin {
-      grid-template-columns: minmax(160px, 1.4fr) 110px auto;
+      grid-template-columns: minmax(150px, 1.4fr) minmax(130px, 1fr) 96px auto;
     }
 
     &.head {
@@ -66,7 +70,9 @@
     &:last-of-type { border-bottom: none; }
 
     .mname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .m-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    // loaded state and the agents pointed at it — two chips, wrapping before they clip
+    .c-use { display: flex; flex-wrap: wrap; gap: 5px; }
+    .m-actions { display: flex; justify-content: flex-end; gap: 6px; align-items: center; }
   }
 
   .pull-bar {
@@ -94,11 +100,15 @@
   .lock-hint { margin: 0; }
 }
 
+// Columns drop by class rather than by position: a hidden cell leaves the grid, so the
+// template-columns list has to shrink with it — and counting nth-child through two row
+// shapes is how the previous version of this file earned its warning comment.
 @media (max-width: 1024px) {
-  // nth-child here counts the wide row's columns, so it must not reach a thin one
-  .models-panel .model-row:not(.thin) {
-    grid-template-columns: minmax(140px, 1.4fr) 80px 80px 100px auto;
-    span:nth-child(3) { display: none; }   // drop family column
+  .models-panel .model-row {
+    .c-family { display: none; }
+    &:not(.thin) {
+      grid-template-columns: minmax(140px, 1.4fr) 74px 74px minmax(120px, 1fr) 90px auto;
+    }
   }
 }
 
@@ -116,15 +126,10 @@
   }
 
   .models-panel {
-    .model-row:not(.thin) {
-      grid-template-columns: 1fr 80px auto;
-      span:nth-child(2), span:nth-child(5) { display: none; }   // drop params + modified
-      &.head span:nth-child(2), &.head span:nth-child(5) { display: none; }
-    }
-    // already only name/modified/actions — drop modified and it is name + actions
-    .model-row.thin {
-      grid-template-columns: 1fr auto;
-      span:nth-child(2) { display: none; }
+    .model-row {
+      .c-params, .c-mod { display: none; }
+      &:not(.thin) { grid-template-columns: 1fr 70px minmax(110px, 1fr) auto; }
+      &.thin { grid-template-columns: 1fr minmax(110px, 1fr) auto; }
     }
     .pull-bar { grid-template-columns: 1fr; }
   }

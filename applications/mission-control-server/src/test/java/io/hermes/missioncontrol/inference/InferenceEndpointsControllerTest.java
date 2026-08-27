@@ -89,18 +89,45 @@ class InferenceEndpointsControllerTest {
   }
 
   @Test
-  void aBlankModelNameIsRejectedOnBothPullAndModelDelete() throws Exception {
-    mvc.perform(post("/api/model-providers/mp-1/models/pull")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"name\":\"  \"}"))
-        .andExpect(status().isBadRequest());
-
-    mvc.perform(post("/api/model-providers/mp-1/models/delete")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"name\":\"\"}"))
-        .andExpect(status().isBadRequest());
+  void aBlankModelNameIsRejectedOnEveryModelRoute() throws Exception {
+    for (String route : List.of("pull", "delete", "load", "unload")) {
+      mvc.perform(post("/api/model-providers/mp-1/models/" + route)
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("{\"name\":\"  \"}"))
+          .andExpect(status().isBadRequest());
+    }
 
     verifyNoInteractions(providers);
+  }
+
+  @Test
+  void startAndStopTrimTheModelNameAndAnswerOnlyOnceTheServerHas() throws Exception {
+    mvc.perform(post("/api/model-providers/mp-1/models/load")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"  qwen3:8b  \"}"))
+        // 200 rather than the pull's 202: a load is worth waiting for, because the operator
+        // pressed start and an accepted-but-failed load looks identical to a slow one
+        .andExpect(status().isOk());
+
+    mvc.perform(post("/api/model-providers/mp-1/models/unload")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"qwen3:8b\"}"))
+        .andExpect(status().isOk());
+
+    verify(providers).load("mp-1", "qwen3:8b");
+    verify(providers).unload("mp-1", "qwen3:8b");
+  }
+
+  @Test
+  void runningReportsWhatTheEndpointHoldsInMemory() throws Exception {
+    when(providers.running("mp-1"))
+        .thenReturn(List.of(new RunningModelDto("qwen3:8b", 5_100_000_000L, 99L)));
+
+    mvc.perform(get("/api/model-providers/mp-1/running"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].name").value("qwen3:8b"))
+        .andExpect(jsonPath("$[0].sizeVramBytes").value(5_100_000_000L))
+        .andExpect(jsonPath("$[0].expiresAt").value(99));
   }
 
   @Test

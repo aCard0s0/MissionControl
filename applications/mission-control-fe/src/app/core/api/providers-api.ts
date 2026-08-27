@@ -1,5 +1,6 @@
 import {
   ApiModelCatalog, ApiModelProvider, ApiEndpointModel, ApiInferenceEndpoint, ApiPullState,
+  ApiRunningModel,
 } from './api-types';
 import { ApiHttp, seg } from './http';
 
@@ -8,8 +9,8 @@ import { ApiHttp, seg } from './http';
  * - `/api/providers` + `/api/models` — the LLM provider registry and its model
  *   catalogs, which drive the create-agent and template pickers;
  * - `/api/model-providers` — self-hosted inference endpoints, whose models Mission
- *   Control can list, pull and delete. (Route kept for compatibility; the concept is
- *   an endpoint, not a vendor.)
+ *   Control can list, pull, delete and load into memory. (Route kept for compatibility;
+ *   the concept is an endpoint, not a vendor.)
  */
 export class ProvidersApi {
   constructor(private readonly http: ApiHttp) {}
@@ -46,6 +47,20 @@ export class ProvidersApi {
 
   models(id: string): Promise<ApiEndpointModel[]> {
     return this.http.get(`/api/model-providers/${seg(id)}/models`);
+  }
+
+  /** What the endpoint is holding in memory. Empty for a protocol that cannot report it. */
+  running(id: string): Promise<ApiRunningModel[]> {
+    return this.http.get(`/api/model-providers/${seg(id)}/running`);
+  }
+
+  /** Loads a model and pins it there. Slow by nature — the weights come off disk first. */
+  loadModel(id: string, name: string): Promise<void> {
+    return this.http.post(`/api/model-providers/${seg(id)}/models/load`, { name });
+  }
+
+  unloadModel(id: string, name: string): Promise<void> {
+    return this.http.post(`/api/model-providers/${seg(id)}/models/unload`, { name });
   }
 
   pullModel(id: string, name: string): Promise<void> {

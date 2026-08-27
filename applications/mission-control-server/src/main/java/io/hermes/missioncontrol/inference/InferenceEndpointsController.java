@@ -52,6 +52,22 @@ public class InferenceEndpointsController {
     return providers.models(id);
   }
 
+  @GetMapping("/{id}/running")
+  public List<RunningModelDto> running(@PathVariable String id) {
+    return providers.running(id);
+  }
+
+  /** Loads a model into memory. Blocking, and slow by nature — see the client. */
+  @PostMapping("/{id}/models/load")
+  public void load(@PathVariable String id, @Valid @RequestBody ModelNameRequest request) {
+    providers.load(id, request.name().trim());
+  }
+
+  @PostMapping("/{id}/models/unload")
+  public void unload(@PathVariable String id, @Valid @RequestBody ModelNameRequest request) {
+    providers.unload(id, request.name().trim());
+  }
+
   @PostMapping("/{id}/models/pull")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public void pull(@PathVariable String id, @Valid @RequestBody ModelNameRequest request) {

@@ -173,16 +173,17 @@ that works as a `baseUrl` above regardless of what is registered here. This page
 a property of the server, so it is resolved by the same probe that reports status — cached
 10s — and reported on every response.
 
-| `kind` | Probe | Lists models | Pull / delete |
+| `kind` | Probe | Lists models | Manages models |
 |---|---|---|---|
-| `ollama` | `GET {url}/api/version` | `GET {url}/api/tags` — name, params, family, size, modified | yes |
+| `ollama` | `GET {url}/api/version` | `GET {url}/api/tags` — name, params, family, size, modified | yes — pull, delete, load, unload, and `GET {url}/api/ps` for what is resident |
 | `openai` | `GET {url}/v1/models` | `GET {url}/v1/models` — id and optional timestamp only | **no** |
 | `null` | nothing answered | — | — |
 
 `openai` covers LM Studio, MLX (`mlx-lm.server`), vLLM and llama.cpp's server. None of them
-has an HTTP pull or delete — models get onto the box out of band — so those calls are
-refused with 400 rather than attempted, and `canManageModels` on the response tells the
-dashboard to hide the controls.
+has an HTTP pull, delete or load — models get onto the box and into memory out of band — so
+those calls are refused with 400 rather than attempted, and `canManageModels` on the response
+tells the dashboard to hide the controls. `GET …/running` is the one exception: it answers
+`[]` rather than 400, because "cannot report" and "nothing resident" render the same.
 
 Detection asks ollama **first**, and the order is load-bearing: ollama serves an
 OpenAI-compatible `/v1` *as well as* its own API, so probing `/v1/models` first would file
@@ -208,8 +209,20 @@ the model **vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API 
 | `POST /api/model-providers/{id}/check` | — | fresh probe |
 | `DELETE /api/model-providers/{id}` | — | |
 | `GET /api/model-providers/{id}/models` | — | proxied per kind |
+| `GET /api/model-providers/{id}/running` | — | what is loaded in memory, with VRAM and expiry; `[]` where the protocol cannot say |
 | `POST /api/model-providers/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
 | `POST /api/model-providers/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
+| `POST /api/model-providers/{id}/models/load` | `{ name }` | pins the model in memory (`keep_alive: -1`); **blocks** while the weights load, up to 3 min; **400 unless `canManageModels`** |
+| `POST /api/model-providers/{id}/models/unload` | `{ name }` | frees its VRAM immediately; **400 unless `canManageModels`** |
+
+A pull is streamed from ollama, so `GET …/pulls` reports `detail` as `47% · pulling <digest>`
+while it runs and as the failure reason if it fails. A pull that has begun streaming is a 200
+whatever happens next — an unknown model arrives as `{"error": …}` inside the body — so that
+line is the only thing distinguishing a failed pull from a slow one.
+
+Load pins with `keep_alive: -1` rather than ollama's default five minutes: it is a button an
+operator pressed, and a start that wears off while they watch the row reads as a bug. Unload
+is the other half of that.
 
 ## Images
 
