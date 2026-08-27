@@ -87,12 +87,8 @@ class OpenAiCompatEndpointTest {
     assertNull(first.parameterSize());
     // created is unix SECONDS on the wire; modifiedAt is millis
     assertEquals(1_750_000_000_000L, first.modifiedAt());
-  }
 
-  @Test
-  void aModelWithoutCreatedStillRenders() throws Exception {
-    List<EndpointModelDto> models =
-        OpenAiCompatClient.parseModels(new ObjectMapper().readTree(MODELS_BODY));
+    // LM Studio and llama.cpp both omit created; the row still has to render
     assertEquals("nomic-embed-text", models.get(1).name());
     assertNull(models.get(1).modifiedAt());
   }

@@ -46,7 +46,7 @@ public class OllamaProtocolClient extends EndpointClient {
 
   @Override
   public String version(String baseUrl) throws Exception {
-    HttpResponse<String> response = get(baseUrl + "/api/version", PROBE_TIMEOUT);
+    HttpResponse<String> response = send(request(baseUrl + "/api/version", PROBE_TIMEOUT));
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException("ollama returned HTTP " + response.statusCode());
     }
@@ -55,7 +55,7 @@ public class OllamaProtocolClient extends EndpointClient {
 
   @Override
   public List<EndpointModelDto> models(String baseUrl) {
-    String body = call(() -> get(baseUrl + "/api/tags", CALL_TIMEOUT));
+    String body = call(request(baseUrl + "/api/tags", CALL_TIMEOUT));
     try {
       return parseTags(objectMapper.readTree(body));
     } catch (Exception e) {
@@ -72,11 +72,10 @@ public class OllamaProtocolClient extends EndpointClient {
   @Override
   public void pull(String baseUrl, String model) throws Exception {
     String body = objectMapper.writeValueAsString(Map.of("model", model, "stream", false));
-    HttpResponse<String> response = exchange(
-        HttpRequest.newBuilder(URI.create(baseUrl + "/api/pull"))
-            .header("Content-Type", "application/json")
-            .POST(BodyPublishers.ofString(body))
-            .build());
+    HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(baseUrl + "/api/pull"))
+        .header("Content-Type", "application/json")
+        .POST(BodyPublishers.ofString(body))
+        .build());
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException(brief(response.body(), 200, "request failed"));
     }
@@ -84,12 +83,14 @@ public class OllamaProtocolClient extends EndpointClient {
 
   @Override
   public void deleteModel(String baseUrl, String model) {
-    call(() -> exchange(HttpRequest.newBuilder(URI.create(baseUrl + "/api/delete"))
+    call(HttpRequest.newBuilder(URI.create(baseUrl + "/api/delete"))
         .timeout(CALL_TIMEOUT)
         .header("Content-Type", "application/json")
+        // createObjectNode().toString() rather than writeValueAsString: same {"model":"…"},
+        // without the checked exception that would have to be caught and rethrown here
         .method("DELETE",
-            BodyPublishers.ofString(objectMapper.writeValueAsString(Map.of("model", model))))
-        .build()));
+            BodyPublishers.ofString(objectMapper.createObjectNode().put("model", model).toString()))
+        .build());
   }
 
   /** Ollama's {@code /api/tags} body. Every field but the name is optional. */

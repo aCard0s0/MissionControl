@@ -43,7 +43,7 @@ public class OpenAiCompatClient extends EndpointClient {
    */
   @Override
   public String version(String baseUrl) throws Exception {
-    HttpResponse<String> response = get(baseUrl + "/v1/models", PROBE_TIMEOUT);
+    HttpResponse<String> response = send(request(baseUrl + "/v1/models", PROBE_TIMEOUT));
     if (response.statusCode() != 200) {
       throw new UpstreamUnavailableException("openai returned HTTP " + response.statusCode());
     }
@@ -52,7 +52,7 @@ public class OpenAiCompatClient extends EndpointClient {
 
   @Override
   public List<EndpointModelDto> models(String baseUrl) {
-    String body = call(() -> get(baseUrl + "/v1/models", CALL_TIMEOUT));
+    String body = call(request(baseUrl + "/v1/models", CALL_TIMEOUT));
     try {
       return parseModels(objectMapper.readTree(body));
     } catch (Exception e) {

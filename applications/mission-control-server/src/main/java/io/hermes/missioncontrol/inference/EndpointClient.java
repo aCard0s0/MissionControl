@@ -62,7 +62,13 @@ public abstract class EndpointClient {
     return false;
   }
 
-  /** Throws unless this endpoint can manage models, so callers can refuse before starting. */
+  /**
+   * Throws unless this endpoint can manage models.
+   *
+   * <p>Only {@code pull} needs this. It is submitted to an executor, so without an up-front
+   * check its refusal would arrive as an error chip a minute later instead of as a failed
+   * request. {@code deleteModel} runs inline, where the default below refuses it directly.
+   */
   public void requireModelManagement() {
     if (!canManageModels()) {
       throw unsupported("add or remove models");
@@ -89,29 +95,26 @@ public abstract class EndpointClient {
             + "management API; add or remove models on the server itself");
   }
 
-  protected HttpResponse<String> get(String url, Duration timeout) throws Exception {
-    return exchange(HttpRequest.newBuilder(URI.create(url)).timeout(timeout).GET().build());
+  protected static HttpRequest request(String url, Duration timeout) {
+    return HttpRequest.newBuilder(URI.create(url)).timeout(timeout).GET().build();
   }
 
-  protected HttpResponse<String> exchange(HttpRequest request) throws Exception {
+  /** The raw exchange. Used by {@link #version}, which must not have its failure wrapped. */
+  protected HttpResponse<String> send(HttpRequest request) throws Exception {
     return http.send(request, BodyHandlers.ofString());
   }
 
-  protected interface Call {
-    HttpResponse<String> send() throws Exception;
-  }
-
   /**
-   * Runs a call and returns its body, turning anything short of a 200 into a 503.
+   * Sends a request and returns its body, turning anything short of a 200 into a 503.
    *
    * <p>An unreachable or unhappy endpoint is a dependency failure, not a Mission Control bug.
    * Messages name the protocol rather than saying "endpoint", because an operator reading
    * "ollama returned HTTP 500" in the dashboard learns more than one reading "endpoint".
    */
-  protected String call(Call call) {
+  protected String call(HttpRequest request) {
     HttpResponse<String> response;
     try {
-      response = call.send();
+      response = send(request);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new UpstreamUnavailableException(kind() + " call interrupted");

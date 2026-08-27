@@ -37,14 +37,15 @@ const render = (store: ReturnType<typeof storeStub>) => {
   return { fixture, store };
 };
 
+// every block here drives the pull-status poller, so they all need the fake clock
+beforeEach(() => vi.useFakeTimers());
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
 describe('ModelsPage providers', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   it('reads the provider list when it opens', () => {
     const { store } = render(storeStub());
 
@@ -100,13 +101,6 @@ describe('ModelsPage providers', () => {
 });
 
 describe('ModelsPage model list', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   it('loads a provider\'s models when it is selected', async () => {
     const { fixture, store } = render(storeStub());
 
@@ -191,13 +185,6 @@ describe('ModelsPage model list', () => {
 });
 
 describe('ModelsPage pulls', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   const open = async (store: ReturnType<typeof storeStub>) => {
     const rendered = render(store);
     press(rendered.fixture, 'models', '.provider-row');
@@ -280,13 +267,6 @@ describe('ModelsPage pulls', () => {
 });
 
 describe('ModelsPage openai-compatible endpoints', () => {
-  beforeEach(() => vi.useFakeTimers());
-
-  afterEach(() => {
-    vi.clearAllTimers();
-    vi.useRealTimers();
-  });
-
   /** LM Studio, MLX, vLLM, llama.cpp: /v1/models lists, and there is nothing else to call. */
   const openai = (): InferenceEndpoint => ({
     id: 'mp-2', name: 'lm-studio', url: 'http://mac:1234', kind: 'openai',
