@@ -90,7 +90,7 @@ private void route(String path, int status, String body) {
 For "the host is unreachable", open a `ServerSocket(0)`, take its port and close it — a
 connection there is refused immediately, with no DNS lookup and no waiting.
 
-In use: `ModelProviderServiceOllamaTest`, `McpHealthProbeRequestTest`, `ModelCatalogLiveTest`.
+In use: `InferenceEndpointServiceOllamaTest`, `McpHealthProbeRequestTest`, `ModelCatalogLiveTest`.
 
 ## 3. Queue-only `ExecutorService` for async orchestration
 

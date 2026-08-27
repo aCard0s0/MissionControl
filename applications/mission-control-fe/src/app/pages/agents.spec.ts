@@ -27,7 +27,7 @@ const storeStub = (agents: AgentProfile[]) => ({
   templates: { templates: signal([]), byId: () => null },
   providers: {
     llmProviders: signal([]),
-    ollamaProviders: signal([]),
+    endpoints: signal([]),
     modelCatalog: vi.fn().mockResolvedValue([]),
     modelCatalogLive: vi.fn().mockResolvedValue([]),
     models: vi.fn().mockResolvedValue([]),

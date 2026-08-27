@@ -29,7 +29,7 @@ const storeStub = (templates: ProfileTemplate[] = [], catalog: McpCatalogServer[
   },
   providers: {
     llmProviders: signal([]),
-    ollamaProviders: signal([]),
+    endpoints: signal([]),
   },
   templates: {
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,

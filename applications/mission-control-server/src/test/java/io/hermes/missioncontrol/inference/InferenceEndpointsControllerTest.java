@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.modelproviders;
+package io.hermes.missioncontrol.inference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,22 +27,22 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /** The ollama-provider endpoints: trimming, validation, and the two delete routes. */
-class ModelProvidersControllerTest {
+class InferenceEndpointsControllerTest {
 
-  private ModelProviderService providers;
+  private InferenceEndpointService providers;
   private MockMvc mvc;
 
   @BeforeEach
   void setUp() {
-    providers = mock(ModelProviderService.class);
+    providers = mock(InferenceEndpointService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new ModelProvidersController(providers))
+        .standaloneSetup(new InferenceEndpointsController(providers))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
 
-  private static ModelProviderDto provider() {
-    return new ModelProviderDto("mp-1", "workstation", "http://10.0.0.9:11434", "ollama",
+  private static InferenceEndpointDto provider() {
+    return new InferenceEndpointDto("mp-1", "workstation", "http://10.0.0.9:11434", "ollama",
         "connected", "0.5.7", null);
   }
 
@@ -120,7 +120,7 @@ class ModelProvidersControllerTest {
   @Test
   void modelsAndPullsAreReadOnlyAndReturnTheServiceLists() throws Exception {
     when(providers.models("mp-1"))
-        .thenReturn(List.of(new OllamaModelDto("qwen3:8b", 5_100_000_000L, "qwen3", "8B", 99L)));
+        .thenReturn(List.of(new EndpointModelDto("qwen3:8b", 5_100_000_000L, "qwen3", "8B", 99L)));
     when(providers.pulls("mp-1")).thenReturn(List.of(new PullStatusDto("qwen3:8b", "done", null)));
 
     mvc.perform(get("/api/model-providers/mp-1/models"))
@@ -150,7 +150,7 @@ class ModelProvidersControllerTest {
   }
 
   @Test
-  void checkReturnsTheRefreshedProviderRow() throws Exception {
+  void checkReturnsTheRefreshedEndpointRow() throws Exception {
     when(providers.check("mp-1")).thenReturn(provider());
 
     mvc.perform(post("/api/model-providers/mp-1/check"))

@@ -1,56 +1,56 @@
 import { describe, expect, it } from 'vitest';
-import { LlmProvider, ModelProvider, ProfileTemplate } from '../core/models';
+import { LlmProvider, InferenceEndpoint, ProfileTemplate } from '../core/models';
 import {
-  OLLAMA_PREFIX, ollamaBaseUrl, ollamaOptionForBaseUrl, providerNameOf, providerOptionFor,
+  OLLAMA_PREFIX, endpointBaseUrl, endpointOptionForBaseUrl, providerNameOf, providerOptionFor,
   providerOptions, resolveProviderOption, templateProvidesKey,
 } from './provider-resolve';
 
 // A template stores ollama as a bare provider plus a baseUrl; the picker lists
 // one option per registered instance. Getting this wrong prefills a provider
 // whose model list comes from a different machine.
-describe('ollamaOptionForBaseUrl', () => {
+describe('endpointOptionForBaseUrl', () => {
   const instances = [
     { name: 'workstation', url: 'http://10.0.0.5:11434' },
     { name: 'laptop', url: 'http://127.0.0.1:11434' },
   ];
 
   it('matches a stored baseUrl back to the instance that serves it', () => {
-    expect(ollamaOptionForBaseUrl('http://127.0.0.1:11434', instances))
+    expect(endpointOptionForBaseUrl('http://127.0.0.1:11434', instances))
       .toBe(OLLAMA_PREFIX + 'laptop');
   });
 
   it('ignores an OpenAI-compatible /v1 suffix, which is how the url is persisted', () => {
-    expect(ollamaOptionForBaseUrl('http://10.0.0.5:11434/v1', instances))
+    expect(endpointOptionForBaseUrl('http://10.0.0.5:11434/v1', instances))
       .toBe(OLLAMA_PREFIX + 'workstation');
-    expect(ollamaOptionForBaseUrl('http://10.0.0.5:11434/v1/', instances))
+    expect(endpointOptionForBaseUrl('http://10.0.0.5:11434/v1/', instances))
       .toBe(OLLAMA_PREFIX + 'workstation');
   });
 
   it('ignores trailing slashes on either side of the comparison', () => {
-    expect(ollamaOptionForBaseUrl('http://10.0.0.5:11434///', instances))
+    expect(endpointOptionForBaseUrl('http://10.0.0.5:11434///', instances))
       .toBe(OLLAMA_PREFIX + 'workstation');
-    expect(ollamaOptionForBaseUrl('http://x:1', [{ name: 'x', url: 'http://x:1//' }]))
+    expect(endpointOptionForBaseUrl('http://x:1', [{ name: 'x', url: 'http://x:1//' }]))
       .toBe(OLLAMA_PREFIX + 'x');
   });
 
   it('falls back to the first instance rather than leaving the picker unset', () => {
     // an unmatched url means the instance was renamed or removed; an empty
     // selection would let the form submit a provider with no endpoint
-    expect(ollamaOptionForBaseUrl('http://gone:11434', instances))
+    expect(endpointOptionForBaseUrl('http://gone:11434', instances))
       .toBe(OLLAMA_PREFIX + 'workstation');
-    expect(ollamaOptionForBaseUrl('', instances)).toBe(OLLAMA_PREFIX + 'workstation');
+    expect(endpointOptionForBaseUrl('', instances)).toBe(OLLAMA_PREFIX + 'workstation');
   });
 
   it('returns null when no ollama instance is registered at all', () => {
-    expect(ollamaOptionForBaseUrl('http://10.0.0.5:11434', [])).toBeNull();
-    expect(ollamaOptionForBaseUrl('', [])).toBeNull();
+    expect(endpointOptionForBaseUrl('http://10.0.0.5:11434', [])).toBeNull();
+    expect(endpointOptionForBaseUrl('', [])).toBeNull();
   });
 
   it('does not treat a different port or host as the same instance', () => {
     const single = [{ name: 'a', url: 'http://10.0.0.5:11434' }];
     // falls back to 'a' either way, but the match must not be what selected it
-    expect(ollamaOptionForBaseUrl('http://10.0.0.5:11435', single)).toBe(OLLAMA_PREFIX + 'a');
-    expect(ollamaOptionForBaseUrl('http://10.0.0.6:11434', [
+    expect(endpointOptionForBaseUrl('http://10.0.0.5:11435', single)).toBe(OLLAMA_PREFIX + 'a');
+    expect(endpointOptionForBaseUrl('http://10.0.0.6:11434', [
       { name: 'first', url: 'http://nope:1' }, { name: 'second', url: 'http://10.0.0.6:11434' },
     ])).toBe(OLLAMA_PREFIX + 'second');
   });
@@ -62,7 +62,7 @@ const llm: LlmProvider[] = [
     envVar: 'ANTHROPIC_API_KEY' },
 ];
 
-const instance = (name: string, url: string): ModelProvider => ({
+const instance = (name: string, url: string): InferenceEndpoint => ({
   id: `mp-${name}`, name, url, kind: 'ollama', status: 'connected', version: null, detail: null,
 });
 
@@ -91,7 +91,7 @@ describe('resolveProviderOption', () => {
   it('flattens an ollama option into the bare provider plus its /v1 endpoint', () => {
     expect(resolveProviderOption('ollama: workstation', ollama))
       .toEqual({ provider: 'ollama', baseUrl: 'http://10.0.0.5:11434/v1' });
-    expect(ollamaBaseUrl({ url: 'http://10.0.0.5:11434///' })).toBe('http://10.0.0.5:11434/v1');
+    expect(endpointBaseUrl({ url: 'http://10.0.0.5:11434///' })).toBe('http://10.0.0.5:11434/v1');
   });
 
   it('refuses an ollama instance that is no longer registered', () => {

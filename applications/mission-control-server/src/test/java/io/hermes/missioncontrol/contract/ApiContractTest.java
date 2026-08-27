@@ -43,9 +43,9 @@ import io.hermes.missioncontrol.mcp.RetainedResourceDto;
 import io.hermes.missioncontrol.mcp.SupportServiceDto;
 import io.hermes.missioncontrol.mcp.VolumeSpec;
 import io.hermes.missioncontrol.models.ModelCatalogDto;
-import io.hermes.missioncontrol.modelproviders.ModelProviderDto;
-import io.hermes.missioncontrol.modelproviders.OllamaModelDto;
-import io.hermes.missioncontrol.modelproviders.PullStatusDto;
+import io.hermes.missioncontrol.inference.InferenceEndpointDto;
+import io.hermes.missioncontrol.inference.EndpointModelDto;
+import io.hermes.missioncontrol.inference.PullStatusDto;
 import io.hermes.missioncontrol.secrets.SecretRef;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -142,8 +142,8 @@ class ApiContractTest {
     // models / providers
     CONTRACT.put("ApiModelCatalog", ModelCatalogDto.class);
     CONTRACT.put("ApiPullState", PullStatusDto.class);
-    CONTRACT.put("ApiOllamaProvider", ModelProviderDto.class);
-    CONTRACT.put("ApiOllamaModel", OllamaModelDto.class);
+    CONTRACT.put("ApiInferenceEndpoint", InferenceEndpointDto.class);
+    CONTRACT.put("ApiEndpointModel", EndpointModelDto.class);
     // board
     CONTRACT.put("ApiBoardTask", BoardTask.class);
     // prompt library

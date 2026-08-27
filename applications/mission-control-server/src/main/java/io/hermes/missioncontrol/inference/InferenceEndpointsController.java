@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.modelproviders;
+package io.hermes.missioncontrol.inference;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -15,30 +15,30 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/model-providers")
-public class ModelProvidersController {
+public class InferenceEndpointsController {
 
   public record CreateModelProviderRequest(@NotBlank String name, @NotBlank String url) {}
 
   public record ModelNameRequest(@NotBlank String name) {}
 
-  private final ModelProviderService providers;
+  private final InferenceEndpointService providers;
 
-  public ModelProvidersController(ModelProviderService providers) {
+  public InferenceEndpointsController(InferenceEndpointService providers) {
     this.providers = providers;
   }
 
   @GetMapping
-  public List<ModelProviderDto> list() {
+  public List<InferenceEndpointDto> list() {
     return providers.list();
   }
 
   @PostMapping
-  public ModelProviderDto add(@Valid @RequestBody CreateModelProviderRequest request) {
+  public InferenceEndpointDto add(@Valid @RequestBody CreateModelProviderRequest request) {
     return providers.add(request.name().trim(), request.url().trim());
   }
 
   @PostMapping("/{id}/check")
-  public ModelProviderDto check(@PathVariable String id) {
+  public InferenceEndpointDto check(@PathVariable String id) {
     return providers.check(id);
   }
 
@@ -48,7 +48,7 @@ public class ModelProvidersController {
   }
 
   @GetMapping("/{id}/models")
-  public List<OllamaModelDto> models(@PathVariable String id) {
+  public List<EndpointModelDto> models(@PathVariable String id) {
     return providers.models(id);
   }
 

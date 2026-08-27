@@ -5,7 +5,7 @@ import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { errorMessage } from '../core/errors';
 import { ago } from '../core/format';
-import { ModelProvider, OllamaModel, PullState } from '../core/models';
+import { InferenceEndpoint, EndpointModel, PullState } from '../core/models';
 
 @Component({
   selector: 'mc-models',
@@ -25,7 +25,7 @@ export class ModelsPage {
   protected provUrl = '';
 
   protected readonly selectedId = signal<string | null>(null);
-  protected readonly models = signal<OllamaModel[]>([]);
+  protected readonly models = signal<EndpointModel[]>([]);
   protected readonly modelsLoading = signal(false);
   protected readonly modelsError = signal<string | null>(null);
 
@@ -66,9 +66,9 @@ export class ModelsPage {
     this.providers.remove(id);
   }
 
-  protected selected(): ModelProvider | null {
+  protected selected(): InferenceEndpoint | null {
     const id = this.selectedId();
-    return this.providers.ollamaProviders().find(p => p.id === id) ?? null;
+    return this.providers.endpoints().find(p => p.id === id) ?? null;
   }
 
   protected select(id: string): void {

@@ -1,11 +1,17 @@
-import { LlmProvider, ModelProvider, ProfileTemplate } from '../core/models';
+import { LlmProvider, InferenceEndpoint, ProfileTemplate } from '../core/models';
 
 // Which provider a profile runs on is picked from a dropdown, but stored as the
 // pair hermes actually needs. Both the create-agent dialog and the profile
 // template editor have to agree on that translation, in both directions, so it
 // lives here rather than in either page.
 
-/** The dropdown-option prefix for a registered ollama instance (`ollama: <name>`). */
+/**
+ * The dropdown-option prefix for a registered endpoint (`ollama: <name>`).
+ *
+ * <p>Stays spelled "ollama" deliberately: the collapsed value this maps to is hermes' own
+ * provider key (`hermes_cli/models.py`) and is persisted in saved templates, so it is not
+ * ours to rename. A second endpoint `kind` gets its own prefix beside this one.
+ */
 export const OLLAMA_PREFIX = 'ollama: ';
 
 /** One entry in a provider dropdown. */
@@ -14,23 +20,24 @@ export interface ProviderOption {
   label: string;
 }
 
-/** Every provider a profile can be pointed at: the LLM registry as the backend
- *  reports it, plus one entry per registered ollama instance. */
+/** Every provider a profile can be pointed at: the LLM vendor registry as the backend
+ *  reports it, plus one entry per registered inference endpoint. */
 export function providerOptions(
   llm: readonly LlmProvider[],
-  ollama: readonly ModelProvider[],
+  endpoints: readonly InferenceEndpoint[],
 ): ProviderOption[] {
   return [
     ...llm.map(provider => ({ value: provider.key, label: provider.label })),
-    ...ollama.map(provider => ({
-      value: OLLAMA_PREFIX + provider.name,
-      label: 'Ollama: ' + provider.name,
+    ...endpoints.map(endpoint => ({
+      value: OLLAMA_PREFIX + endpoint.name,
+      label: 'Ollama: ' + endpoint.name,
     })),
   ];
 }
 
-/** The OpenAI-compatible endpoint hermes talks to an ollama instance through. */
-export function ollamaBaseUrl(instance: { url: string }): string {
+/** The OpenAI-compatible base url hermes talks to an endpoint through — the one surface
+ *  every local runtime serves, which is why agents are already runtime-agnostic. */
+export function endpointBaseUrl(instance: { url: string }): string {
   return instance.url.replace(/\/+$/, '') + '/v1';
 }
 
@@ -42,7 +49,7 @@ export function ollamaBaseUrl(instance: { url: string }): string {
  * instance, so a prefilled provider and model never end up mismatched. Returns
  * null when there are no registered ollama instances.
  */
-export function ollamaOptionForBaseUrl(
+export function endpointOptionForBaseUrl(
   baseUrl: string,
   instances: ReadonlyArray<{ name: string; url: string }>,
 ): string | null {
@@ -68,11 +75,11 @@ export function providerNameOf(option: string): string {
  */
 export function resolveProviderOption(
   option: string,
-  instances: readonly ModelProvider[],
+  instances: readonly InferenceEndpoint[],
 ): { provider: string; baseUrl?: string } | null {
   if (!option.startsWith(OLLAMA_PREFIX)) return { provider: option };
   const instance = instances.find(p => OLLAMA_PREFIX + p.name === option);
-  return instance ? { provider: 'ollama', baseUrl: ollamaBaseUrl(instance) } : null;
+  return instance ? { provider: 'ollama', baseUrl: endpointBaseUrl(instance) } : null;
 }
 
 /** The reverse: the dropdown option a stored (provider, baseUrl) pair selects,
@@ -82,10 +89,10 @@ export function providerOptionFor(
   provider: string,
   baseUrl: string,
   options: readonly ProviderOption[],
-  instances: readonly ModelProvider[],
+  instances: readonly InferenceEndpoint[],
 ): string | null {
   if (options.some(option => option.value === provider)) return provider;
-  if (provider === 'ollama') return ollamaOptionForBaseUrl(baseUrl, instances);
+  if (provider === 'ollama') return endpointOptionForBaseUrl(baseUrl, instances);
   return null;
 }
 

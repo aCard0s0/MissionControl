@@ -3,7 +3,7 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  AuthProvider, HermesContainer, LlmProvider, ModelProvider, NewAgent, ProfileTemplate,
+  AuthProvider, HermesContainer, LlmProvider, InferenceEndpoint, NewAgent, ProfileTemplate,
 } from '../core/models';
 import { AgentCreateDialog } from './agent-create-dialog';
 import { TestFixture, choose, el, field, fill, settle, text } from '../testing/dom';
@@ -18,7 +18,7 @@ const llm: LlmProvider[] = [
     envVar: 'CUSTOM_API_KEY' },
 ];
 
-const ollama: ModelProvider[] = [{
+const ollama: InferenceEndpoint[] = [{
   id: 'mp-1', name: 'workstation', url: 'http://10.0.0.5:11434', kind: 'ollama',
   status: 'connected', version: null, detail: null,
 }];
@@ -38,7 +38,7 @@ const storeStub = (opts: {
   return {
     providers: {
       llmProviders: signal(llm),
-      ollamaProviders: signal(ollama),
+      endpoints: signal(ollama),
       modelCatalog: vi.fn().mockResolvedValue(opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5']),
       modelCatalogLive: vi.fn().mockResolvedValue(['live-model']),
       models: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
@@ -452,7 +452,7 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
     await choose(fixture, 'auxiliary provider', OLLAMA);
     await fill(fixture, 'auxiliary model', 'gemma3:4b');
 
-    store.providers.ollamaProviders.set([]);
+    store.providers.endpoints.set([]);
     await submit(fixture);
 
     expect(store.agents.create).not.toHaveBeenCalled();

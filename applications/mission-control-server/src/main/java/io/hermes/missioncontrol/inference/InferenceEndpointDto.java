@@ -1,7 +1,7 @@
-package io.hermes.missioncontrol.modelproviders;
+package io.hermes.missioncontrol.inference;
 
 /** Matches the frontend ModelProvider model. */
-public record ModelProviderDto(
+public record InferenceEndpointDto(
     String id,
     String name,
     String url,

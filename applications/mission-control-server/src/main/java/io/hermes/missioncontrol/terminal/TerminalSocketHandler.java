@@ -112,7 +112,7 @@ public class TerminalSocketHandler extends AbstractWebSocketHandler {
   /** Both concurrency caps, reserved and released as one — see {@link TerminalSessionLimiter}. */
   private final TerminalSessionLimiter slots;
 
-  // idle/heartbeat reaper — single daemon thread, mirrors ModelProviderService's executor pattern
+  // idle/heartbeat reaper — single daemon thread, mirrors InferenceEndpointService's executor pattern
   private final ScheduledExecutorService reaper = Executors.newSingleThreadScheduledExecutor(r -> {
     Thread t = new Thread(r, "terminal-reaper");
     t.setDaemon(true);

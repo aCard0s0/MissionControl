@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { McpCatalogServer, ModelProvider, ProfileTemplate } from '../core/models';
+import { McpCatalogServer, InferenceEndpoint, ProfileTemplate } from '../core/models';
 import {
   ProfileDraft, catalogTemplateSnapshot, detachedTemplateMcp, envKeyValid, newProfileDraft,
   profileDraftFrom, profileDraftToInput, profileDraftValid, skillIdValid,
@@ -46,7 +46,7 @@ describe('Agent Profile MCP catalog snapshots', () => {
   });
 });
 
-const ollama: ModelProvider[] = [{
+const ollama: InferenceEndpoint[] = [{
   id: 'mp-1', name: 'workstation', url: 'http://10.0.0.5:11434', kind: 'ollama',
   status: 'connected', version: null, detail: null,
 }];

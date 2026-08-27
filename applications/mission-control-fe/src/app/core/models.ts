@@ -23,16 +23,23 @@ export interface DockerHost {
   note: string | null;
 }
 
-export type ModelProviderStatus = 'connected' | 'error' | 'unknown';
+export type InferenceEndpointStatus = 'connected' | 'error' | 'unknown';
 
-/** A self-hosted model server (ollama) Mission Control can pull models on. */
-export interface ModelProvider {
+/**
+ * A self-hosted model server Mission Control administers.
+ *
+ * <p>Agents reach it over its OpenAI-compatible `/v1` surface, so anything serving that —
+ * ollama, LM Studio, MLX, vLLM, llama.cpp — can back one, local or remote. Only the
+ * list/pull/delete management on this page is protocol-specific, which is what `kind` marks.
+ */
+export interface InferenceEndpoint {
   id: string;
   name: string;
-  /** base url of the ollama server, e.g. http://host.docker.internal:11434 */
+  /** base url of the server, e.g. http://host.docker.internal:11434 */
   url: string;
+  /** management wire protocol. One kind today; widen the backend CHECK to add another. */
   kind: 'ollama';
-  status: ModelProviderStatus;
+  status: InferenceEndpointStatus;
   version: string | null;      // e.g. "0.6.4"
   /** human-readable reason when the provider is not connected */
   detail: string | null;
@@ -41,7 +48,7 @@ export interface ModelProvider {
 /**
  * One entry in the registry of who can serve a model to an Agent.
  *
- * <p>Distinct from {@link ModelProvider}, which is a self-hosted ollama endpoint Mission
+ * <p>Distinct from {@link InferenceEndpoint}, which is a self-hosted server Mission
  * Control administers. This is a capability description: what to call it in a picker, whether
  * it wants an API key or an OAuth login, and which env var hermes reads that key from.
  */
@@ -55,15 +62,15 @@ export interface LlmProvider {
   envVar: string | null;
 }
 
-/** A model pull in progress on an ollama provider, as its last poll reported it. */
+/** A model pull in progress on an endpoint, as its last poll reported it. */
 export interface PullState {
   model: string;
   status: 'pulling' | 'done' | 'error';
   detail: string | null;
 }
 
-/** A model available on an ollama provider (from GET {url}/api/tags). */
-export interface OllamaModel {
+/** A model available on an endpoint (from ollama's GET {url}/api/tags). */
+export interface EndpointModel {
   name: string;                // e.g. "gemma3:4b"
   sizeBytes: number;
   family: string;              // e.g. "gemma3"

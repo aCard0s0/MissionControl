@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ModelProvider } from '../models';
+import { InferenceEndpoint } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
 import { flush, liveError, testSlices } from '../../testing/store';
 
-const provider = (id: string, patch: Partial<ModelProvider> = {}): ModelProvider => ({
+const provider = (id: string, patch: Partial<InferenceEndpoint> = {}): InferenceEndpoint => ({
   id, name: id, url: `http://${id}:11434`, kind: 'ollama', status: 'connected',
   version: '0.6.4', detail: null, ...patch,
 });
@@ -47,7 +47,7 @@ describe('ProviderStore ollama endpoints', () => {
 
     await built.store.refresh();
 
-    expect(built.store.ollamaProviders().map(p => p.id)).toEqual(['mp-1']);
+    expect(built.store.endpoints().map(p => p.id)).toEqual(['mp-1']);
     expect(liveError(built.ctx)).toBeNull();
   });
 
@@ -60,7 +60,7 @@ describe('ProviderStore ollama endpoints', () => {
     await flush();
 
     expect(add).toHaveBeenCalledWith('lab', 'http://ollama:11434');
-    expect(built.store.ollamaProviders().map(p => p.id)).toEqual(['mp-new']);
+    expect(built.store.endpoints().map(p => p.id)).toEqual(['mp-new']);
   });
 
   it('reports an add the backend refused', async () => {
@@ -86,17 +86,17 @@ describe('ProviderStore ollama endpoints', () => {
   });
 
   it('blanks the status while a check runs, then shows what came back', async () => {
-    let land!: (value: ModelProvider) => void;
-    const check = vi.fn().mockReturnValue(new Promise<ModelProvider>(r => { land = r; }));
+    let land!: (value: InferenceEndpoint) => void;
+    const check = vi.fn().mockReturnValue(new Promise<InferenceEndpoint>(r => { land = r; }));
     const built = store({ list: vi.fn().mockResolvedValue([provider('mp-1')]), check });
     await built.store.refresh();
 
     built.store.check('mp-1');
-    expect(built.store.ollamaProviders()[0].status).toBe('unknown');
+    expect(built.store.endpoints()[0].status).toBe('unknown');
 
     land(provider('mp-1', { status: 'error', detail: 'connection refused' }));
     await flush();
-    expect(built.store.ollamaProviders()[0].status).toBe('error');
+    expect(built.store.endpoints()[0].status).toBe('error');
   });
 
   it('falls back to a full re-read when a check itself fails', async () => {

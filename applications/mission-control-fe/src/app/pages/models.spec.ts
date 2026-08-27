@@ -2,22 +2,22 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ModelProvider, OllamaModel, PullState } from '../core/models';
+import { InferenceEndpoint, EndpointModel, PullState } from '../core/models';
 import { ModelsPage } from './models';
 import { el, press, settle, type } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
-const provider = (id: string, name: string): ModelProvider => ({
+const provider = (id: string, name: string): InferenceEndpoint => ({
   id, name, url: `http://${name}:11434`, kind: 'ollama', status: 'connected',
   version: '0.6.4', detail: null,
 });
 
-const model = (name: string): OllamaModel =>
+const model = (name: string): EndpointModel =>
   ({ name, sizeBytes: 4.3e9, family: 'gemma3', parameterSize: '4.3B', modifiedAt: 1 });
 
-const storeStub = (providers: ModelProvider[] = [provider('mp-1', 'workstation')]) => ({
+const storeStub = (providers: InferenceEndpoint[] = [provider('mp-1', 'workstation')]) => ({
   providers: {
-    ollamaProviders: signal(providers),
+    endpoints: signal(providers),
     refresh: vi.fn().mockResolvedValue(undefined),
     add: vi.fn(),
     remove: vi.fn(),
@@ -62,12 +62,12 @@ describe('ModelsPage providers', () => {
   it('says so when nothing is registered', () => {
     const { fixture } = render(storeStub([]));
 
-    expect(el(fixture).textContent).toContain('No model providers registered');
+    expect(el(fixture).textContent).toContain('No endpoints registered');
   });
 
   it('refuses a provider without a name or an http endpoint', async () => {
     const { fixture, store } = render(storeStub());
-    press(fixture, '+ model provider');
+    press(fixture, '+ endpoint');
     const add = () => el(fixture).querySelector<HTMLButtonElement>('.provider-add .btn')!;
     expect(add().disabled).toBe(true);
 
@@ -143,9 +143,9 @@ describe('ModelsPage model list', () => {
 
   it('drops a read that lands after another provider was selected', async () => {
     const store = storeStub([provider('mp-1', 'workstation'), provider('mp-2', 'laptop')]);
-    let answerFirst: (models: OllamaModel[]) => void = () => { /* replaced below */ };
+    let answerFirst: (models: EndpointModel[]) => void = () => { /* replaced below */ };
     store.providers.models.mockImplementationOnce(
-      () => new Promise<OllamaModel[]>(resolve => { answerFirst = resolve; }));
+      () => new Promise<EndpointModel[]>(resolve => { answerFirst = resolve; }));
     store.providers.models.mockResolvedValue([model('llama3:8b')]);
     const { fixture } = render(store);
 

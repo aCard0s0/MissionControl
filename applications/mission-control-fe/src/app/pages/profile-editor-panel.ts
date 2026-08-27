@@ -69,7 +69,7 @@ export class ProfileEditorPanel {
   private readonly openGroups = signal<ReadonlySet<string>>(new Set());
 
   protected readonly providerChoices = computed(() =>
-    providerOptions(this.providers.llmProviders(), this.providers.ollamaProviders()));
+    providerOptions(this.providers.llmProviders(), this.providers.endpoints()));
 
   /** Categories already in use, offered as a datalist so the library stays tidy
    *  without turning the field into a fixed list. */
@@ -236,7 +236,7 @@ export class ProfileEditorPanel {
     if (!this.canSave() || this.saving()) return;
     this.saving.set(true);
     const id = await this.templates.save(
-      profileDraftToInput(draft, this.providers.ollamaProviders()), draft.id ?? undefined);
+      profileDraftToInput(draft, this.providers.endpoints()), draft.id ?? undefined);
     this.saving.set(false);
     if (!id) return;
     draft.id = id;

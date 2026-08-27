@@ -1,14 +1,14 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { LlmProvider, ModelProvider, OllamaModel, PullState } from '../models';
+import { LlmProvider, InferenceEndpoint, EndpointModel, PullState } from '../models';
 import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
-import { toLlmProvider, toModelProvider, toOllamaModel, toPullState } from './wire-mappers';
+import { toLlmProvider, toInferenceEndpoint, toEndpointModel, toPullState } from './wire-mappers';
 
 /**
- * Two provider registries the UI keeps side by side:
- * - `llmProviders` — who can serve a model to an Agent, and their catalogs;
- * - `ollamaProviders` — self-hosted ollama endpoints whose models Mission
- *   Control can list, pull and delete.
+ * Two registries the UI keeps side by side, and they are not the same axis:
+ * - `llmProviders` — model *vendors* who can serve an Agent, and their catalogs;
+ * - `endpoints` — self-hosted inference endpoints (a URL you run) whose models
+ *   Mission Control can list, pull and delete.
  */
 @Injectable({ providedIn: 'root' })
 export class ProviderStore {
@@ -16,7 +16,7 @@ export class ProviderStore {
    *  the bootstrap mirror, refreshed from the backend in live mode. */
   readonly llmProviders = signal<LlmProvider[]>(DEFAULT_LLM_PROVIDERS);
 
-  readonly ollamaProviders = signal<ModelProvider[]>([]);
+  readonly endpoints = signal<InferenceEndpoint[]>([]);
 
   private readonly ctx = inject(StoreContext);
 
@@ -30,7 +30,7 @@ export class ProviderStore {
 
   async refresh(): Promise<void> {
     try {
-      this.ollamaProviders.set((await this.ctx.api.providers.list()).map(toModelProvider));
+      this.endpoints.set((await this.ctx.api.providers.list()).map(toInferenceEndpoint));
     } catch { /* transient backend hiccup — keep last known state */ }
   }
 
@@ -47,19 +47,19 @@ export class ProviderStore {
   }
 
   check(id: string): void {
-    this.ollamaProviders.update(ps => ps.map(p => p.id === id ? { ...p, status: 'unknown' as const } : p));
+    this.endpoints.update(ps => ps.map(p => p.id === id ? { ...p, status: 'unknown' as const } : p));
     this.ctx.api.providers.check(id)
-      .then(provider => this.ollamaProviders.update(
-        ps => ps.map(p => p.id === id ? toModelProvider(provider) : p)))
+      .then(provider => this.endpoints.update(
+        ps => ps.map(p => p.id === id ? toInferenceEndpoint(provider) : p)))
       .catch(e => {
         this.ctx.toastFailure('provider check', e);
         this.refresh();
       });
   }
 
-  models(id: string): Promise<OllamaModel[]> {
+  models(id: string): Promise<EndpointModel[]> {
     return this.ctx.api.providers.models(id)
-      .then(list => list.map(toOllamaModel))
+      .then(list => list.map(toEndpointModel))
       .catch(e => {
         this.ctx.toastFailure('model list', e);
         return [];

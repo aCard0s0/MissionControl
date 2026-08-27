@@ -4,15 +4,15 @@
     <h2>Models</h2>
   </div>
   <button class="btn primary" (click)="addingProvider.set(!addingProvider())">
-    {{ addingProvider() ? 'cancel' : '+ model provider' }}
+    {{ addingProvider() ? 'cancel' : '+ endpoint' }}
   </button>
 </div>
 
-<!-- ollama registries Mission Control can pull models from -->
+<!-- self-hosted inference endpoints Mission Control can pull models from -->
 <div class="panel providers" data-reveal>
-  <div class="panel-h">MODEL PROVIDERS</div>
+  <div class="panel-h">INFERENCE ENDPOINTS</div>
   <div class="panel-b">
-    @for (p of providers.ollamaProviders(); track p.id) {
+    @for (p of providers.endpoints(); track p.id) {
       <div class="provider-row mono" [class.sel]="p.id === selectedId()">
         <mc-status [status]="p.status" [live]="p.status === 'connected'" />
         <span class="pname">{{ p.name }}</span>
@@ -25,7 +25,7 @@
         <button class="btn sm danger ghost" (click)="removeProvider(p.id)">remove</button>
       </div>
     } @empty {
-      <p class="mono dim">No model providers registered — add an ollama endpoint above.</p>
+      <p class="mono dim">No endpoints registered — add an ollama server above.</p>
     }
     @if (addingProvider()) {
       <div class="provider-add">
