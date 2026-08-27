@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentProfile, InferenceEndpoint, EndpointModel, PullState, RunningModel } from '../core/models';
 import { ModelsPage } from './models';
-import { el, press, settle, text, type } from '../testing/dom';
+import { el, press, settle, text, type, type TestFixture } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
 const provider = (id: string, name: string): InferenceEndpoint => ({
@@ -39,6 +39,12 @@ const storeStub = (
   },
   agents: { agents: signal(agents) },
 });
+
+/** Clicks an endpoint row, which is what opens and closes its model panel. */
+const openRow = (fixture: TestFixture, index = 0) => {
+  el(fixture).querySelectorAll<HTMLElement>('.provider-row')[index].click();
+  fixture.detectChanges();
+};
 
 const render = (store: ReturnType<typeof storeStub>) => {
   TestBed.resetTestingModule();
@@ -102,20 +108,23 @@ describe('ModelsPage providers', () => {
       .toHaveBeenCalledWith('mac', 'http://host.docker.internal:11434');
   });
 
-  it('sends a connectivity check for one provider', () => {
+  it('sends a connectivity check without opening the row it is on', () => {
     const { fixture, store } = render(storeStub());
 
     press(fixture, 'check', '.provider-row');
 
     expect(store.providers.check).toHaveBeenCalledWith('mp-1');
+    // the row is the control that opens the panel, so its buttons have to stop the click —
+    // checking an endpoint must not load a model list as a side effect
+    expect(el(fixture).querySelector('.models-panel')).toBeNull();
   });
 });
 
 describe('ModelsPage model list', () => {
-  it('loads a provider\'s models when it is selected', async () => {
+  it('loads a provider\'s models when its row is clicked', async () => {
     const { fixture, store } = render(storeStub());
 
-    press(fixture, 'models', '.provider-row');
+    openRow(fixture);
     await settle(fixture);
 
     expect(store.providers.models).toHaveBeenCalledWith('mp-1');
@@ -124,12 +133,23 @@ describe('ModelsPage model list', () => {
     expect(el(fixture).textContent).toContain('4.3 GB');
   });
 
+  it('closes the panel when the open row is clicked again', async () => {
+    const { fixture } = render(storeStub());
+    openRow(fixture);
+    await settle(fixture);
+    expect(el(fixture).querySelector('.models-panel')).not.toBeNull();
+
+    openRow(fixture);
+
+    expect(el(fixture).querySelector('.models-panel')).toBeNull();
+  });
+
   it('says the provider is empty rather than looking still busy', async () => {
     const store = storeStub();
     store.providers.models.mockResolvedValue([]);
     const { fixture } = render(store);
 
-    press(fixture, 'models', '.provider-row');
+    openRow(fixture);
     await settle(fixture);
 
     expect(el(fixture).textContent).toContain('No models on this endpoint');
@@ -140,7 +160,7 @@ describe('ModelsPage model list', () => {
     store.providers.models.mockRejectedValue(new Error('connection refused'));
     const { fixture } = render(store);
 
-    press(fixture, 'models', '.provider-row');
+    openRow(fixture);
     await settle(fixture);
 
     expect(el(fixture).textContent).toContain('models unavailable — connection refused');
@@ -154,11 +174,8 @@ describe('ModelsPage model list', () => {
     store.providers.models.mockResolvedValue([model('llama3:8b')]);
     const { fixture } = render(store);
 
-    press(fixture, 'models', '.provider-row');                      // workstation, pending
-    const rows = el(fixture).querySelectorAll('.provider-row');
-    Array.from(rows[1].querySelectorAll('button'))
-      .find(b => (b.textContent ?? '').trim() === 'models')!.click();   // laptop
-    fixture.detectChanges();
+    openRow(fixture);        // workstation, pending
+    openRow(fixture, 1);     // laptop
     await settle(fixture);
 
     answerFirst([model('stale:1b')]);
@@ -170,7 +187,7 @@ describe('ModelsPage model list', () => {
 
   it('asks twice before deleting a model', async () => {
     const { fixture, store } = render(storeStub());
-    press(fixture, 'models', '.provider-row');
+    openRow(fixture);
     await settle(fixture);
 
     press(fixture, 'remove', '.model-row:not(.head)');
@@ -184,7 +201,7 @@ describe('ModelsPage model list', () => {
 
   it('asks twice before removing an endpoint, and forgets the selection when it goes', async () => {
     const { fixture, store } = render(storeStub());
-    press(fixture, 'models', '.provider-row');
+    openRow(fixture);
     await settle(fixture);
     expect(el(fixture).querySelector('.models-panel')).not.toBeNull();
 
@@ -202,7 +219,7 @@ describe('ModelsPage model list', () => {
 describe('ModelsPage pulls', () => {
   const open = async (store: ReturnType<typeof storeStub>) => {
     const rendered = render(store);
-    press(rendered.fixture, 'models', '.provider-row');
+    openRow(rendered.fixture);
     await settle(rendered.fixture);
     return rendered;
   };
@@ -284,7 +301,7 @@ describe('ModelsPage what is in use', () => {
 
   const open = async (store: ReturnType<typeof storeStub>) => {
     const rendered = render(store);
-    press(rendered.fixture, 'models', '.provider-row');
+    openRow(rendered.fixture);
     await settle(rendered.fixture);
     return rendered;
   };
@@ -355,7 +372,7 @@ describe('ModelsPage openai-compatible endpoints', () => {
     const store = storeStub([openai()]);
     store.providers.models.mockResolvedValue([thinModel('qwen3-8b')]);
     const { fixture } = render(store);
-    press(fixture, 'models');
+    openRow(fixture);
     await settle(fixture);
     return { fixture, store };
   };
@@ -405,8 +422,8 @@ describe('ModelsPage openai-compatible endpoints', () => {
     expect(head).not.toBeNull();
     expect(head!.textContent).not.toContain('params');
     expect(head!.textContent).not.toContain('family');
-    // name + in use + modified + actions, where ollama's row has three more
-    expect(head!.querySelectorAll('span').length).toBe(4);
+    // name + in use + modified: no actions cell either, since none of them can render
+    expect(head!.querySelectorAll('span').length).toBe(3);
   });
 
   it('does not poll an endpoint that cannot say what is loaded or pulling', async () => {
@@ -420,7 +437,7 @@ describe('ModelsPage openai-compatible endpoints', () => {
     const store = storeStub([openai()]);
     store.providers.models.mockResolvedValue([]);
     const { fixture } = render(store);
-    press(fixture, 'models');
+    openRow(fixture);
     await settle(fixture);
 
     expect(el(fixture).textContent).toContain('load one on the server itself');

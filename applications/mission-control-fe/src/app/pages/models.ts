@@ -77,13 +77,7 @@ export class ModelsPage {
 
   protected removeProvider(id: string): void {
     this.removingProvider.set(null);
-    if (this.selectedId() === id) {
-      this.stopPolling();
-      this.selectedId.set(null);
-      this.models.set([]);
-      this.pulls.set([]);
-      this.running.set([]);
-    }
+    if (this.selectedId() === id) this.collapse();
     this.providers.remove(id);
   }
 
@@ -92,8 +86,24 @@ export class ModelsPage {
     return this.providers.endpoints().find(p => p.id === id) ?? null;
   }
 
-  protected select(id: string): void {
-    if (this.selectedId() === id) return;
+  /** The row is the control: opening one endpoint's models closes whichever was open. */
+  protected toggle(id: string): void {
+    if (this.selectedId() === id) {
+      this.collapse();
+      return;
+    }
+    this.select(id);
+  }
+
+  private collapse(): void {
+    this.stopPolling();
+    this.selectedId.set(null);
+    this.models.set([]);
+    this.pulls.set([]);
+    this.running.set([]);
+  }
+
+  private select(id: string): void {
     this.stopPolling();
     this.selectedId.set(id);
     this.models.set([]);
