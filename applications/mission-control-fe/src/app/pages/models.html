@@ -13,20 +13,29 @@
   <div class="panel-h">INFERENCE ENDPOINTS</div>
   <div class="panel-b">
     @for (p of providers.endpoints(); track p.id) {
-      <div class="provider-row mono" [class.sel]="p.id === selectedId()">
+      <!-- the whole row toggles its model panel; the buttons on it stop the click so they
+           do not open a panel as a side effect of checking or removing an endpoint -->
+      <div class="provider-row mono" role="button" tabindex="0"
+           [class.sel]="p.id === selectedId()"
+           [attr.aria-expanded]="p.id === selectedId()"
+           (click)="toggle(p.id)" (keyup.enter)="toggle(p.id)" (keyup.space)="toggle(p.id)">
+        <span class="chev faint">{{ p.id === selectedId() ? '▾' : '▸' }}</span>
         <mc-status [status]="p.status" [live]="p.status === 'connected'" />
         <span class="pname">{{ p.name }}</span>
         <span class="purl faint">{{ p.url }}</span>
         @if (p.kind) { <span class="chip off">{{ kindChip(p) }}</span> }
         @if (p.detail) { <span class="pnote faint">— {{ p.detail }}</span> }
         <span class="spacer"></span>
-        <button class="btn sm primary" (click)="select(p.id)">models</button>
-        <button class="btn sm ghost" (click)="providers.check(p.id)">check</button>
+        <button class="btn sm ghost"
+                (click)="$event.stopPropagation(); providers.check(p.id)">check</button>
         @if (removingProvider() === p.id) {
-          <button class="btn sm danger" (click)="removeProvider(p.id)">confirm</button>
-          <button class="btn sm ghost" (click)="removingProvider.set(null)">cancel</button>
+          <button class="btn sm danger"
+                  (click)="$event.stopPropagation(); removeProvider(p.id)">confirm</button>
+          <button class="btn sm ghost"
+                  (click)="$event.stopPropagation(); removingProvider.set(null)">cancel</button>
         } @else {
-          <button class="btn sm danger ghost" (click)="removingProvider.set(p.id)">remove</button>
+          <button class="btn sm danger ghost"
+                  (click)="$event.stopPropagation(); removingProvider.set(p.id)">remove</button>
         }
       </div>
     } @empty {
@@ -82,7 +91,7 @@
           }
           <span class="c-use">in use</span>
           <span class="c-mod">modified</span>
-          <span class="m-actions"></span>
+          @if (p.canManageModels) { <span class="m-actions"></span> }
         </div>
         @for (m of models(); track m.name) {
           <div class="model-row mono" [class.thin]="!p.canManageModels">
@@ -103,8 +112,8 @@
               }
             </span>
             <span class="c-mod faint">{{ ago(m.modifiedAt) }}</span>
-            <span class="m-actions">
-              @if (p.canManageModels) {
+            @if (p.canManageModels) {
+              <span class="m-actions">
                 @if (busyModel() === m.name) {
                   <span class="faint">working…</span>
                 } @else if (loaded(m.name)) {
@@ -120,8 +129,8 @@
                 } @else {
                   <button class="btn sm danger ghost" (click)="removingModel.set(m.name)">remove</button>
                 }
-              }
-            </span>
+              </span>
+            }
           </div>
         }
       }

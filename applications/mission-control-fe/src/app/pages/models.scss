@@ -19,6 +19,10 @@
     padding: 6px 0;
     font-size: 11.5px;
     border-left: 2px solid transparent;
+    cursor: pointer;
+    &:hover { background: var(--panel-2, rgba(255, 255, 255, .03)); }
+    &:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
+    .chev { width: 8px; font-size: 9px; }
     .pname { font-weight: 600; min-width: 90px; }
     .purl { font-size: 10.5px; }
     .pnote { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -44,10 +48,15 @@
   // what the endpoint costs, beside its name: listed models, disk, and what is resident
   .totals { font-size: 9.5px; letter-spacing: .06em; margin-left: 10px; }
 
+  // Every row is its own grid container, so a track that sizes to its own content lines up
+  // with nothing: `auto` made the head's empty actions cell 0px wide and the body's 150px,
+  // which shifted every header off its values. Hence a fixed actions column, and minmax(0,…)
+  // rather than a bare fr — a model name long enough to have a wide min-content would
+  // otherwise widen its own row's first track instead of ellipsing.
   .model-row {
     // name | params | family | size | in use | modified | actions
     display: grid;
-    grid-template-columns: minmax(150px, 1.4fr) 78px 96px 74px minmax(130px, 1fr) 96px auto;
+    grid-template-columns: minmax(0, 1fr) 78px 96px 74px 220px 96px 152px;
     align-items: center;
     gap: 12px;
     padding: 6px 0;
@@ -57,8 +66,10 @@
     // an openai-compatible endpoint reports only an id and a timestamp: /v1/models carries
     // no params, family or size, so those three columns are not rendered at all rather than
     // left as three empty cells
+    // no actions at all here, so the row ends at `modified` rather than reserving space for
+    // buttons that never render
     &.thin {
-      grid-template-columns: minmax(150px, 1.4fr) minmax(130px, 1fr) 96px auto;
+      grid-template-columns: minmax(0, 1fr) 220px 96px;
     }
 
     &.head {
@@ -107,7 +118,7 @@
   .models-panel .model-row {
     .c-family { display: none; }
     &:not(.thin) {
-      grid-template-columns: minmax(140px, 1.4fr) 74px 74px minmax(120px, 1fr) 90px auto;
+      grid-template-columns: minmax(0, 1fr) 74px 74px 180px 90px 152px;
     }
   }
 }
@@ -128,8 +139,8 @@
   .models-panel {
     .model-row {
       .c-params, .c-mod { display: none; }
-      &:not(.thin) { grid-template-columns: 1fr 70px minmax(110px, 1fr) auto; }
-      &.thin { grid-template-columns: 1fr minmax(110px, 1fr) auto; }
+      &:not(.thin) { grid-template-columns: minmax(0, 1fr) 70px 140px 152px; }
+      &.thin { grid-template-columns: minmax(0, 1fr) 140px; }
     }
     .pull-bar { grid-template-columns: 1fr; }
   }
