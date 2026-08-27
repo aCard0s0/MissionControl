@@ -1,0 +1,66 @@
+<svg viewBox="0 0 16 16" aria-hidden="true">
+  @switch (key()) {
+    @case ('box') {
+      <path d="M8 1.9 L14 5 V11 L8 14.1 L2 11 V5 Z" />
+      <path d="M2 5 L8 8.1 L14 5" />
+      <path d="M8 8.1 V14.1" />
+    }
+    @case ('chart') {
+      <path d="M2.6 13.4 H13.4" />
+      <path d="M5 13.4 V8.4" />
+      <path d="M8 13.4 V4.6" />
+      <path d="M11 13.4 V10.2" />
+    }
+    @case ('user') {
+      <circle cx="8" cy="5.6" r="2.7" />
+      <path d="M2.9 13.6 C3.6 11 5.6 9.6 8 9.6 C10.4 9.6 12.4 11 13.1 13.6" />
+    }
+    @case ('layers') {
+      <path d="M8 1.9 L14.1 5 L8 8.1 L1.9 5 Z" />
+      <path d="M2.9 8 L8 10.6 L13.1 8" />
+      <path d="M2.9 11 L8 13.6 L13.1 11" />
+    }
+    @case ('chip') {
+      <rect x="4.4" y="4.4" width="7.2" height="7.2" rx="1.2" />
+      <path d="M6.6 1.9 V4.4" /><path d="M9.4 1.9 V4.4" />
+      <path d="M6.6 11.6 V14.1" /><path d="M9.4 11.6 V14.1" />
+      <path d="M1.9 6.6 H4.4" /><path d="M1.9 9.4 H4.4" />
+      <path d="M11.6 6.6 H14.1" /><path d="M11.6 9.4 H14.1" />
+    }
+    @case ('plug') {
+      <path d="M6 2.2 V5.4" />
+      <path d="M10 2.2 V5.4" />
+      <path d="M4.4 5.4 H11.6 V8 A3.6 3.6 0 0 1 4.4 8 Z" />
+      <path d="M8 11.6 V13.8" />
+    }
+    @case ('message') {
+      <rect x="2.6" y="3" width="10.8" height="8" rx="1.4" />
+      <path d="M5.6 11 V13.7 L8.7 11" />
+    }
+    @case ('board') {
+      <rect x="2.2" y="2.6" width="11.6" height="10.8" rx="1.3" />
+      <path d="M6.1 2.6 V13.4" />
+      <path d="M9.9 2.6 V13.4" />
+    }
+    @case ('calendar') {
+      <rect x="2.4" y="3.4" width="11.2" height="10.2" rx="1.3" />
+      <path d="M2.4 6.4 H13.6" />
+      <path d="M5.6 1.9 V4" />
+      <path d="M10.4 1.9 V4" />
+    }
+    @case ('bolt') {
+      <path d="M9.2 1.8 L4.2 8.7 H7.7 L7 14.2 L12 7.3 H8.5 Z" />
+    }
+    @case ('terminal') {
+      <rect x="2.3" y="3" width="11.4" height="10" rx="1.5" />
+      <path d="M5 6.6 L7 8.6 L5 10.6" />
+      <path d="M8.6 10.6 H11.2" />
+    }
+    @default {
+      <path d="M3.4 2.4 H9.4 L12.6 5.6 V13.6 H3.4 Z" />
+      <path d="M9.4 2.4 V5.6 H12.6" />
+      <path d="M5.6 8.4 H10.4" />
+      <path d="M5.6 11 H10.4" />
+    }
+  }
+</svg>

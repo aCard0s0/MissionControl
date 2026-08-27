@@ -9,10 +9,10 @@
   </div>
 
   <nav>
-    @for (item of nav; track item.path; let i = $index) {
+    @for (item of nav; track item.path) {
       <a [routerLink]="item.path" routerLinkActive="active"
          [routerLinkActiveOptions]="{ exact: item.exact }" (click)="closeSide()">
-        <span class="idx">{{ navIndex(i) }}</span>{{ item.label }}
+        <mc-nav-icon class="ico" [icon]="item.icon" />{{ item.label }}
       </a>
     }
   </nav>

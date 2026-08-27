@@ -75,7 +75,7 @@ describe('App shell', () => {
     const { fixture } = render(storeStub([container('hermes-prod')]));
 
     const links = Array.from(el(fixture).querySelectorAll('nav a'))
-      .map(a => (a.textContent ?? '').replace(/^\d\d/, '').trim());
+      .map(a => (a.textContent ?? '').trim());
     expect(links).toEqual([
       'Containers', 'Overview', 'Agents', 'Blueprints', 'Models',
       'MCP Servers', 'Prompts', 'Ops Board', 'Calendar', 'Webhooks',
@@ -83,13 +83,13 @@ describe('App shell', () => {
     ]);
   });
 
-  it('numbers the tenth destination 10, not 010', () => {
+  it('gives every destination its own glyph, and no numbers', () => {
     const { fixture } = render(storeStub([container('hermes-prod')]));
 
-    const indices = Array.from(el(fixture).querySelectorAll('nav a .idx'))
-      .map(span => (span.textContent ?? '').trim());
-    expect(indices.at(0)).toBe('01');
-    expect(indices.at(9)).toBe('10');
+    const links = Array.from(el(fixture).querySelectorAll('nav a'));
+    const drawn = links.map(a => a.querySelectorAll('mc-nav-icon svg path, mc-nav-icon svg rect, mc-nav-icon svg circle').length);
+    expect(drawn.every(n => n > 0)).toBe(true);
+    expect(links.map(a => (a.textContent ?? '').trim()).join(' ')).not.toMatch(/\d/);
   });
 
   it('shows the fleet counts and the clock in UTC', () => {
