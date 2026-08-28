@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/HermesCron.java
 ---
 
@@ -50,7 +50,7 @@ fires them.
 
 - **Hits:** `HermesCron`, `HermesCli` (shared helpers), `AgentCronController`,
   `pages/calendar.ts`, `core/store/job-store.ts` — which polls on a **30 s** period, the slowest
-  useful one, because reading is one exec per profile (`core/store/live-sync.ts:24`).
+  useful one, because reading is one exec per profile (`core/store/live-sync.ts:25`).
 - **Does not hit:** [Webhook subscription](webhook-subscription.md). Both are per-profile hermes
   features read the same way, and both go through `HermesCli`, but they share no state.
 

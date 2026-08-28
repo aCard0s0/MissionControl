@@ -25,12 +25,24 @@ final class RepoDocs {
     return findUpwards("docs/api.md", "../docs/api.md");
   }
 
+  /** The edit map — cards that cite source by `path:line`. */
+  static Path mapDir() {
+    return findUpwards("docs/map", "../docs/map");
+  }
+
+  /** The repo root, for resolving the paths a card cites. */
+  static Path repoRoot() {
+    Path map = mapDir();
+    return map == null ? null : map.getParent().getParent();
+  }
+
   private static Path findUpwards(String... candidates) {
     Path dir = Path.of("").toAbsolutePath();
     for (int depth = 0; depth < 5 && dir != null; depth++, dir = dir.getParent()) {
       for (String candidate : candidates) {
         Path file = dir.resolve(candidate);
-        if (Files.isRegularFile(file)) return file;
+        // a directory is a legitimate target too — docs/map is one
+        if (Files.exists(file)) return file;
       }
     }
     return null;

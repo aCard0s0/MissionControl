@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/HermesWebhooks.java
 ---
 

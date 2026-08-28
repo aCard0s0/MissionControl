@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/prompts/
 ---
 
@@ -13,19 +13,19 @@ Dashboard-owned text an operator keeps for later, with a category, notes and tag
 `prompts` table, served at **`/api/prompts`**.
 
 **Nothing inside a Hermes container reads it** — the schema says so where it is defined
-(`schema.sql:120`). It is a library for the human, not a config surface.
+(`schema.sql:124`). It is a library for the human, not a config surface.
 
 ## Why this shape
 
 The interesting part is the second table. `prompt_meta` records that the sample prompt **has
 already been seeded, so one an operator deleted does not come back on the next boot**
-(`schema.sql:136`). Seeding on "is the table empty?" would resurrect it; seeding on a recorded
+(`schema.sql:139`). Seeding on "is the table empty?" would resurrect it; seeding on a recorded
 flag does not.
 
 ## Shape
 
-- `prompts` — `schema.sql:122`; `tags` is a JSON array in TEXT; index on `category` (`:133`)
-- `prompt_meta` — `schema.sql:137`, key/value
+- `prompts` — `schema.sql:126`; `tags` is a JSON array in TEXT; index on `category` (`:133`)
+- `prompt_meta` — `schema.sql:141`, key/value
 - Seeder: `prompts/PromptSeeder.java`
 
 ## Connected to

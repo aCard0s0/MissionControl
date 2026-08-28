@@ -78,6 +78,8 @@ is most of the value.
 | ✓ | [API contract](dashboard/api-contract.md) | `applications/api-contract.txt` | generated; both sides assert on it; CI fails on drift. |
 | ✓ | [Secret](dashboard/secret.md) | `secrets/SecretsAtRest.java` | four rules, one envelope at a time, two callers. |
 | ✓ | [Terminal session](dashboard/terminal-session.md) | `shared/terminal-session.ts` | one xterm ↔ one `docker exec`. The column floor. |
+| ✓ | [Scrim](dashboard/scrim.md) | `shared/scrim.ts` | the backdrop: click-outside and Escape. The only way any dialog is dismissed. |
+| · | Field caption | `styles.scss` (`.field-cap`) | a caption over what a `<label>` cannot name; the group carries `aria-labelledby`. |
 | ✓ | [Board task](dashboard/board-task.md) | `board/` | kanban card keyed by container id. Repointed on upgrade. |
 | ✓ | [Prompt](dashboard/prompt.md) | `prompts/` | operator's text library. Nothing in a container reads it. |
 | · | Server log buffer | `web/ServerLogBuffer.java` | in-memory ring behind `/api/server/logs`. |
@@ -88,6 +90,7 @@ is most of the value.
 | · | API error | `errors/Api{Errors,ExceptionHandler}.java` | one error shape; `ConnectionFailure`, `ResourceConflictException`. |
 | · | Store context | `core/store/store-context.ts` | FE backend status + toasts. |
 | · | Wire mappers | `core/store/wire-mappers.ts` | the one place API shapes become FE models. |
+| · | Contract tests | `contract/{RouteContractTest,ApiDocCoverageTest,RepoDocs}.java` | the wire agrees with the client, and every route is written down. |
 
 ## Not nouns — read these instead
 

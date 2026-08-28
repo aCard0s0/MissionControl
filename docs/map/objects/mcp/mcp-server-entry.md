@@ -3,7 +3,7 @@ type: object
 cluster: mcp
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/mcp/McpRegistryService.java
 ---
 
@@ -36,13 +36,13 @@ under the lock plus a full container listing, and per host only one of each (`:7
 
 ## Shape
 
-`mcp_servers` — `schema.sql:55`. `name` is `COLLATE NOCASE UNIQUE`; `service_key` and `seed_key`
+`mcp_servers` — `schema.sql:59`. `name` is `COLLATE NOCASE UNIQUE`; `service_key` and `seed_key`
 are UNIQUE; `config_json` carries the whole allowlisted container config.
 
 Three state columns, three enums: `desired_state`, `runtime_state`
 (`RUNNING|STOPPED|MISSING|ERROR|UNAVAILABLE|UNKNOWN` — `mcp/McpRuntimeState.java:16`),
 `operation_state` (`PROVISIONING|RECONCILING|STARTING|STOPPING|APPLYING|DELETING|IDLE|ERROR` —
-`mcp/McpOperationState.java:79`).
+`mcp/McpOperationState.java:22`).
 
 **Config is allowlisted** (`mcp/McpRequestValidator.java:105`): image, list-form command,
 environment, ports, support services, named volumes. Host binds, host networking, privileged

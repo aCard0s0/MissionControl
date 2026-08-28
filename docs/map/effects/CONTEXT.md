@@ -20,6 +20,8 @@ disagree, **the card is the one to fix**.
 | a poll period or a new poll | [hydrate-poll](../processes/hydrate-poll.md) | a poll is load on one endpoint; if that endpoint refreshes MCP runtime state it contends for the host lock. |
 | anything named `provider` or `model` | [models/CONTEXT.md](../objects/models/CONTEXT.md) | four different nouns, and only one of them has a table. `/api/model-providers` and `model_providers` were that confusion; both are now `inference-endpoints` / `inference_endpoints`. |
 | a webhook or listener port | [webhook-subscription](../objects/agents/webhook-subscription.md) | `published` is always `false` and must stay so. One listener port per **container**, not per profile. |
+| a dialog, or anything modal | [scrim](../objects/dashboard/scrim.md) | one directive backs all fifteen backdrops. Click-outside is filtered by target, not by `stopPropagation`, and Escape is bound on the document. Nothing traps focus yet. |
+| a form control's caption | [scrim](../objects/dashboard/scrim.md) — the `.field-cap` note | a `<label>` names one control. A caption over a button row or a picker is `role="group"` + `aria-labelledby`; `for` pointing at one arbitrary button would announce something false. |
 | the terminal | [terminal-session](../objects/dashboard/terminal-session.md) | read `architecture.md`'s terminal section first. `pruneLayout` depends on dockview internals; the pin `~8.2.0` is load-bearing. |
 | an `MC_*` variable | `config/AppProperties.java`, [../../architecture.md](../../architecture.md) | the table in `architecture.md` is the documented contract; `RuntimeConfigController` re-serves some of it to the FE at `/config.js`. |
 | a log level or message | [../../architecture.md](../../architecture.md), "Logging" | conditions that hold across polls are reported **once**. The fleet view's exclusion warnings were once 93% of all log output. |
@@ -56,8 +58,8 @@ this table when you find it.
 
 ## Hazard: `grep -r` double-hits
 
-`.claude/worktrees/` holds a live git worktree — a second full copy of this repo. Now gitignored,
-still on disk.
+Claude Code puts worktrees under `.claude/worktrees/`, and a worktree is a second full copy of
+this repo. None is on disk right now; one appears whenever a session opens a branch that way.
 
 ```bash
 grep -rn 'thing' --exclude-dir=node_modules --exclude-dir=target \

@@ -8,6 +8,7 @@ the secret envelope, and the generated route contract.
 | [api-contract](api-contract.md) | generated. Both sides assert against it. **Never hand-edit.** |
 | [secret](secret.md) | the four rules every stored credential obeys. Shared by two packages for a reason. |
 | [terminal-session](terminal-session.md) | one xterm ↔ one `docker exec`. Read the architecture doc first. |
+| [scrim](scrim.md) | the backdrop behind every dialog. Click-outside and Escape, in one directive. |
 | [board-task](board-task.md) | kanban card, scoped to a container id. |
 | [prompt](prompt.md) | operator's text library. Nothing in a container reads it. |
 

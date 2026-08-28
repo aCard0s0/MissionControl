@@ -27,9 +27,11 @@ several of them record a defect that motivated the current shape — `ManagedCon
 `ProfileSpec`, `HermesCli`, `ContainerUpdateService.remap`. Read the comment before the
 method. Where a comment and the code disagree, the code wins and the card says so.
 
-**`grep -r` double-hits.** `.claude/worktrees/` holds a live git worktree — a second full copy
-of this repo. It is now gitignored, but it is still on disk and every recursive grep finds
-every match twice, in two different files that look equally real.
+**`grep -r` can double-hit.** Claude Code puts worktrees under `.claude/worktrees/`, and a
+worktree is a second full copy of this repo: every recursive grep then finds every match twice,
+in two files that look equally real. There is none on disk right now and the directory is
+gitignored, but one appears whenever a session opens a branch that way — so exclude it by
+habit rather than checking first.
 
 ```bash
 grep -rn 'thing' --exclude-dir=node_modules --exclude-dir=target \

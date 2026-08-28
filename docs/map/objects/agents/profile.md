@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/ProfilePaths.java
 ---
 
@@ -71,7 +71,7 @@ Name validity: `isValidName`, `:101`, pattern from `ProfileSpec.NAME_PATTERN`.
 
 - **Hits:** every `agents/` service and all nine controllers in `agents/web/`; the Agents page
   and all four panels (`pages/agent-{detail,mcp,setup,skills}-panel.ts`);
-  `core/store/agent-*.ts`; the 12 s agents poll (`core/store/live-sync.ts:21`).
+  `core/store/agent-*.ts`; the 12 s agents poll (`core/store/live-sync.ts:22`).
 - **Does not hit:** the container's own lifecycle. A profile is a directory in a volume —
   creating or removing one does not restart anything, though a *gateway* may need to be running
   for the profile to actually do work.
