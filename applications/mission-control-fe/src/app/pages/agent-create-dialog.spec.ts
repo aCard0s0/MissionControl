@@ -39,8 +39,9 @@ const storeStub = (opts: {
     providers: {
       llmProviders: signal(llm),
       endpoints: signal(ollama),
-      modelCatalog: vi.fn().mockResolvedValue(opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5']),
-      modelCatalogLive: vi.fn().mockResolvedValue(['live-model']),
+      modelCatalog: vi.fn().mockResolvedValue(
+        { models: opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5'], source: 'catalog' }),
+      modelCatalogLive: vi.fn().mockResolvedValue({ models: ['live-model'], source: 'live' }),
       models: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
     },
     templates: {

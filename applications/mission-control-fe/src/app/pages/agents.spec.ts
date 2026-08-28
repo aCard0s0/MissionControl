@@ -28,8 +28,8 @@ const storeStub = (agents: AgentProfile[]) => ({
   providers: {
     llmProviders: signal([]),
     endpoints: signal([]),
-    modelCatalog: vi.fn().mockResolvedValue([]),
-    modelCatalogLive: vi.fn().mockResolvedValue([]),
+    modelCatalog: vi.fn().mockResolvedValue({ models: [], source: 'catalog' }),
+    modelCatalogLive: vi.fn().mockResolvedValue({ models: [], source: 'live' }),
     models: vi.fn().mockResolvedValue([]),
   },
   setup: { authProviders: vi.fn().mockResolvedValue([]) },

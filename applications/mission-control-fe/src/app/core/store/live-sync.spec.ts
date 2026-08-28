@@ -577,7 +577,9 @@ describe('live registries', () => {
     const fromConfig = await store.providers.modelCatalog('anthropic');
     const fromKey = await store.providers.modelCatalogLive('anthropic', 'sk-ant-x');
 
-    expect(fromConfig).toContain('claude-fable-5');
+    expect(fromConfig.models).toContain('claude-fable-5');
+    // and it says so, rather than passing the offline copy off as the provider's own list
+    expect(fromConfig.source).toBe('bundled');
     expect(fromKey).toEqual(fromConfig);
   });
 

@@ -1,5 +1,7 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { LlmProvider, InferenceEndpoint, EndpointModel, PullState, RunningModel } from '../models';
+import {
+  LlmProvider, InferenceEndpoint, EndpointModel, ModelCatalog, PullState, RunningModel,
+} from '../models';
 import { FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
 import {
@@ -107,20 +109,23 @@ export class ProviderStore {
       .catch(() => []);
   }
 
-  /** Models a provider key can serve, from the backend's configured catalog. */
-  async modelCatalog(provider: string): Promise<string[]> {
-    const fallback = FALLBACK_MODELS[provider] ?? [];
+  /** Models a provider key can serve, from the backend's configured catalog. Carries the
+   *  backend's own `source` through, and labels the offline fallback `bundled` — a shipped
+   *  list and a list read from the provider are indistinguishable in a dropdown otherwise. */
+  async modelCatalog(provider: string): Promise<ModelCatalog> {
     try {
-      return (await this.ctx.api.providers.modelCatalog(provider)).models;
+      const answered = await this.ctx.api.providers.modelCatalog(provider);
+      return { models: answered.models, source: answered.source };
     } catch {
-      return fallback;
+      return { models: FALLBACK_MODELS[provider] ?? [], source: 'bundled' };
     }
   }
 
   /** Fetch the catalog straight from the provider API using a key. */
-  async modelCatalogLive(provider: string, apiKey: string): Promise<string[]> {
+  async modelCatalogLive(provider: string, apiKey: string): Promise<ModelCatalog> {
     try {
-      return (await this.ctx.api.providers.modelCatalogLive(provider, apiKey)).models;
+      const answered = await this.ctx.api.providers.modelCatalogLive(provider, apiKey);
+      return { models: answered.models, source: answered.source };
     } catch {
       return this.modelCatalog(provider);
     }

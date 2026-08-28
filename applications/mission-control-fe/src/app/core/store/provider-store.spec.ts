@@ -135,34 +135,41 @@ describe('ProviderStore models', () => {
     expect(liveError(built.ctx)).toBeNull();
   });
 
-  it('serves the configured catalog for a provider key', async () => {
-    const built = store({ modelCatalog: vi.fn().mockResolvedValue({ models: ['m-1', 'm-2'] }) });
+  it('serves the configured catalog for a provider key, and says where it came from', async () => {
+    const built = store({
+      modelCatalog: vi.fn().mockResolvedValue({ models: ['m-1', 'm-2'], source: 'catalog' }),
+    });
 
-    expect(await built.store.modelCatalog('anthropic')).toEqual(['m-1', 'm-2']);
+    expect(await built.store.modelCatalog('anthropic'))
+      .toEqual({ models: ['m-1', 'm-2'], source: 'catalog' });
   });
 
-  it('falls back to the bundled list when the catalog cannot be read', async () => {
+  it('marks the bundled fallback as bundled, so a page cannot show it as the real catalog', async () => {
     const [key] = Object.keys(FALLBACK_MODELS);
     const built = store({ modelCatalog: vi.fn().mockRejectedValue(new Error('offline')) });
 
-    expect(await built.store.modelCatalog(key)).toEqual(FALLBACK_MODELS[key]);
-    expect(await built.store.modelCatalog('unknown-provider')).toEqual([]);
+    expect(await built.store.modelCatalog(key))
+      .toEqual({ models: FALLBACK_MODELS[key], source: 'bundled' });
+    expect(await built.store.modelCatalog('unknown-provider'))
+      .toEqual({ models: [], source: 'bundled' });
   });
 
   it('reads the live catalog with the operator\'s key', async () => {
-    const modelCatalogLive = vi.fn().mockResolvedValue({ models: ['live-1'] });
+    const modelCatalogLive = vi.fn().mockResolvedValue({ models: ['live-1'], source: 'live' });
     const built = store({ modelCatalogLive });
 
-    expect(await built.store.modelCatalogLive('anthropic', 'sk-x')).toEqual(['live-1']);
+    expect(await built.store.modelCatalogLive('anthropic', 'sk-x'))
+      .toEqual({ models: ['live-1'], source: 'live' });
     expect(modelCatalogLive).toHaveBeenCalledWith('anthropic', 'sk-x');
   });
 
   it('falls back to the configured catalog when the key is rejected', async () => {
     const built = store({
       modelCatalogLive: vi.fn().mockRejectedValue(new Error('401')),
-      modelCatalog: vi.fn().mockResolvedValue({ models: ['configured'] }),
+      modelCatalog: vi.fn().mockResolvedValue({ models: ['configured'], source: 'config' }),
     });
 
-    expect(await built.store.modelCatalogLive('anthropic', 'bad-key')).toEqual(['configured']);
+    expect(await built.store.modelCatalogLive('anthropic', 'bad-key'))
+      .toEqual({ models: ['configured'], source: 'config' });
   });
 });

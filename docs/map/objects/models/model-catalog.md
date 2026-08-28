@@ -39,9 +39,14 @@ trailing `\| string` is what lets `catalog` type-check without being named.
 [docs/api.md:148](../../../api.md) **has it right** (`source: catalog` / `source: config`), so the
 record comment and the FE union are the two that are incomplete, not the doc.
 
-**And no consumer reads the field.** `core/store/provider-store.ts:109` and `:118` take `.models`
-and discard the rest, so the affordance the service comment describes — "how the page can tell an
-operator whether it" — never reaches a page. Either surface it or drop it.
+The frontend carries it through as `ModelCatalog` (`core/models.ts`) and shows it as a hint on
+the model field — `ModelPicker.sourceLabel` (`shared/model-picker.ts:28`). It adds a fourth value
+of its own, **`bundled`**, for the offline `FALLBACK_MODELS` list used when the backend cannot be
+reached at all: a shipped list and a list read from the provider are identical in a dropdown, and
+picking a model the provider no longer serves fails much later, at the agent's first turn.
+
+`live` is deliberately **not** labelled — the operator supplied the key that fetched it — and
+neither is an empty list, nor an endpoint's own installed models.
 
 ## Connected to
 

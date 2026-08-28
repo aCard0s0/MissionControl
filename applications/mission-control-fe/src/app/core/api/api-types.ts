@@ -337,7 +337,9 @@ export interface ApiSession {
 export interface ApiModelCatalog {
   provider: string;
   models: string[];
-  source: 'config' | 'live' | string;
+  /** Closed on purpose: a trailing `| string` used to let `catalog` type-check without
+   *  being named, which is how the union came to list two of the backend's three values. */
+  source: 'catalog' | 'config' | 'live';
 }
 
 export interface ApiPullState {

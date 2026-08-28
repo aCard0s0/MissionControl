@@ -9,7 +9,7 @@ import { AgentStore } from '../core/store/agent-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import {
-  AuthProvider, AuxiliaryModel, HermesContainer, InferenceEndpoint,
+  AuthProvider, AuxiliaryModel, HermesContainer, InferenceEndpoint, ModelCatalog,
 } from '../core/models';
 import { ModelPicker } from '../shared/model-picker';
 import {
@@ -243,15 +243,20 @@ export class AgentCreateDialog {
   }
 
   /** Where a picker's suggestions come from: an ollama instance's installed
-   *  models, a cloud provider's catalog, or nothing for a free-text provider. */
-  private catalogFor(option: string): Promise<string[]> {
+   *  models, a cloud provider's catalog, or nothing for a free-text provider.
+   *
+   *  Only the provider catalog carries a `source` worth showing. An endpoint's
+   *  installed models were just read off the box the operator picked, and an empty
+   *  list has nothing to say about where it came from. */
+  private catalogFor(option: string): Promise<ModelCatalog> {
     if (option.startsWith(OLLAMA_PREFIX)) {
       const instance = this.ollamaInstance(option);
       return instance
-        ? this.providers.models(instance.id).then(list => list.map(m => m.name))
-        : Promise.resolve([]);
+        ? this.providers.models(instance.id)
+            .then(list => ({ models: list.map(m => m.name), source: null }))
+        : Promise.resolve({ models: [], source: null });
     }
-    if (!this.hasCatalog(option)) return Promise.resolve([]);
+    if (!this.hasCatalog(option)) return Promise.resolve({ models: [], source: null });
     return this.providers.modelCatalog(option);
   }
 }

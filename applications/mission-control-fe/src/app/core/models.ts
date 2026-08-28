@@ -70,6 +70,28 @@ export interface LlmProvider {
   envVar: string | null;
 }
 
+/**
+ * Where a model list came from. The backend sends the first three; `bundled` is this
+ * client's own offline copy, used when the backend could not be reached at all.
+ *
+ * <p>It is on the wire so a page can say which list an operator is looking at. Worth
+ * showing rather than hiding: a shipped list and a list read from the provider look
+ * identical in a dropdown, and picking a model the provider no longer serves fails much
+ * later, at the agent's first turn.
+ */
+export type ModelSource = 'catalog' | 'config' | 'live' | 'bundled';
+
+/**
+ * The models one provider can serve, and where that list came from.
+ *
+ * <p>`source` is null when there is no provenance to report — an endpoint's own installed
+ * models, or the empty list a free-text provider gets. The backend always sends one.
+ */
+export interface ModelCatalog {
+  models: string[];
+  source: ModelSource | null;
+}
+
 /** A model pull in progress on an endpoint, as its last poll reported it. */
 export interface PullState {
   model: string;
