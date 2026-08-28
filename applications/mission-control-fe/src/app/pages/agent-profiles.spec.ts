@@ -46,8 +46,8 @@ const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
   },
   providers: {
     llmProviders: signal(llm),
-    endpoints: signal([]),
   },
+  endpoints: { endpoints: signal([]) },
   templates: {
     templates: signal(templates),
     categories: signal([...new Set(templates.map(x => x.category).filter(Boolean))].sort()),

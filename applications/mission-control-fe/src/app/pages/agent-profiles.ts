@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import { ProfileTemplate } from '../core/models';
@@ -34,6 +35,7 @@ import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-edito
 })
 export class AgentProfilesPage {
   protected readonly providers = inject(ProviderStore);
+  protected readonly endpoints = inject(InferenceEndpointStore);
   protected readonly templates = inject(TemplateStore);
   private readonly router = inject(Router);
   protected readonly ago = ago;
@@ -126,8 +128,8 @@ export class AgentProfilesPage {
     // a template stores ollama flat; the dropdown lists one option per instance
     const option = providerOptionFor(
       t.provider, t.baseUrl,
-      providerOptions(this.providers.llmProviders(), this.providers.endpoints()),
-      this.providers.endpoints());
+      providerOptions(this.providers.llmProviders(), this.endpoints.endpoints()),
+      this.endpoints.endpoints());
     this.draft.set(profileDraftFrom(t, option ?? (t.provider || 'nous')));
     this.open.set(true);
   }

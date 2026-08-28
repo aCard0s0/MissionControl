@@ -1,18 +1,16 @@
 import { inject, Injectable, signal } from '@angular/core';
-import {
-  LlmProvider, InferenceEndpoint, EndpointModel, ModelCatalog, PullState, RunningModel,
-} from '../models';
+import { LlmProvider, ModelCatalog } from '../models';
 import { FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
-import {
-  toLlmProvider, toInferenceEndpoint, toEndpointModel, toPullState, toRunningModel,
-} from './wire-mappers';
+import { toLlmProvider } from './wire-mappers';
 
 /**
- * Two registries the UI keeps side by side, and they are not the same axis:
- * - `llmProviders` — model *vendors* who can serve an Agent, and their catalogs;
- * - `endpoints` — self-hosted inference endpoints (a URL you run) whose models
- *   Mission Control can list, pull, delete, load and unload.
+ * The registry of model *vendors* who can serve an Agent, and the model catalogs behind
+ * them. A vendor is a capability description: what to call it in a picker, whether it wants
+ * an API key or an OAuth login, and which models it offers.
+ *
+ * <p>The self-hosted servers an operator runs are {@link InferenceEndpointStore}. The
+ * create-agent picker offers both in one dropdown — that merge is `providerOptions()`.
  */
 @Injectable({ providedIn: 'root' })
 export class ProviderStore {
@@ -22,8 +20,6 @@ export class ProviderStore {
    *  mirror used to live here and had drifted to 12 of the registry's 32 entries,
    *  offering a short list nobody could tell from the real one. */
   readonly llmProviders = signal<LlmProvider[]>([]);
-
-  readonly endpoints = signal<InferenceEndpoint[]>([]);
 
   private readonly ctx = inject(StoreContext);
 
@@ -35,78 +31,6 @@ export class ProviderStore {
     try {
       this.llmProviders.set((await this.ctx.api.providers.registry()).map(toLlmProvider));
     } catch { /* no registry — the picker stays empty, like every other store */ }
-  }
-
-  async refresh(): Promise<void> {
-    try {
-      this.endpoints.set((await this.ctx.api.providers.list()).map(toInferenceEndpoint));
-    } catch { /* transient backend hiccup — keep last known state */ }
-  }
-
-  add(name: string, url: string): void {
-    this.ctx.api.providers.add(name, url)
-      .then(() => this.refresh())
-      .catch(e => this.ctx.toastFailure('add provider', e));
-  }
-
-  remove(id: string): void {
-    this.ctx.api.providers.remove(id)
-      .then(() => this.refresh())
-      .catch(e => this.ctx.toastFailure('remove provider', e));
-  }
-
-  check(id: string): void {
-    this.endpoints.update(ps => ps.map(p => p.id === id ? { ...p, status: 'unknown' as const } : p));
-    this.ctx.api.providers.check(id)
-      .then(provider => this.endpoints.update(
-        ps => ps.map(p => p.id === id ? toInferenceEndpoint(provider) : p)))
-      .catch(e => {
-        this.ctx.toastFailure('provider check', e);
-        this.refresh();
-      });
-  }
-
-  models(id: string): Promise<EndpointModel[]> {
-    return this.ctx.api.providers.models(id)
-      .then(list => list.map(toEndpointModel))
-      .catch(e => {
-        this.ctx.toastFailure('model list', e);
-        return [];
-      });
-  }
-
-  /** What the endpoint is holding in memory. Empty on failure — the panel polls this, so a
-   *  transient read must not toast on every tick. */
-  running(id: string): Promise<RunningModel[]> {
-    return this.ctx.api.providers.running(id)
-      .then(list => list.map(toRunningModel))
-      .catch(() => []);
-  }
-
-  loadModel(id: string, name: string): Promise<void> {
-    return this.ctx.api.providers.loadModel(id, name)
-      .catch(e => this.ctx.toastFailure('model load', e));
-  }
-
-  unloadModel(id: string, name: string): Promise<void> {
-    return this.ctx.api.providers.unloadModel(id, name)
-      .catch(e => this.ctx.toastFailure('model unload', e));
-  }
-
-  pullModel(id: string, name: string): Promise<void> {
-    return this.ctx.api.providers.pullModel(id, name)
-      .catch(e => this.ctx.toastFailure('pull', e));
-  }
-
-  deleteModel(id: string, name: string): Promise<void> {
-    return this.ctx.api.providers.deleteModel(id, name)
-      .catch(e => this.ctx.toastFailure('model delete', e));
-  }
-
-  pullStatus(id: string): Promise<PullState[]> {
-    return this.ctx.api.providers.pullStatus(id)
-      .then(list => list.map(toPullState))
-      .catch(() => []);
   }
 
   /** Models a provider key can serve, from the backend's configured catalog. Carries the

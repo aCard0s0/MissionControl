@@ -586,14 +586,14 @@ describe('live registries', () => {
   it('answers an empty model list rather than throwing at a page', async () => {
     const store = await loaded();
     stubBackend(store.ctx, {
-      providers: {
+      endpoints: {
         models: vi.fn().mockRejectedValue(new Error('ollama down')),
         pullStatus: vi.fn().mockRejectedValue(new Error('ollama down')),
       },
     });
 
-    expect(await store.providers.models('mp-local')).toEqual([]);
-    expect(await store.providers.pullStatus('mp-local')).toEqual([]);
+    expect(await store.endpoints.models('mp-local')).toEqual([]);
+    expect(await store.endpoints.pullStatus('mp-local')).toEqual([]);
     expect(liveError(store.ctx)).toBe('model list failed: ollama down');
   });
 

@@ -1,19 +1,13 @@
-import {
-  ApiModelCatalog, ApiModelProvider, ApiEndpointModel, ApiInferenceEndpoint, ApiPullState,
-  ApiRunningModel,
-} from './api-types';
+import { ApiModelCatalog, ApiModelProvider } from './api-types';
 import { ApiHttp, seg } from './http';
 
 /**
- * Two related registries:
- * - `/api/providers` + `/api/models` — the LLM provider registry and its model
- *   catalogs, which drive the create-agent and template pickers;
- * - `/api/inference-endpoints` — self-hosted inference endpoints, whose models Mission
- *   Control can list, pull, delete and load into memory.
+ * `/api/providers` + `/api/models` — the LLM vendor registry and its model catalogs,
+ * which drive the create-agent and template pickers.
  *
- * The two axes are not variants of each other: a provider is an upstream vendor and a
- * capability description, an endpoint is a URL you run. This class still spans both; the
- * method names read `providers.*` for the endpoint calls, which is the next thing to fix.
+ * <p>A provider here is an upstream vendor: what to call it, whether it wants an API key
+ * or an OAuth login, and which models it serves. The self-hosted servers an operator runs
+ * are {@link InferenceEndpointsApi}, a different axis entirely.
  */
 export class ProvidersApi {
   constructor(private readonly http: ApiHttp) {}
@@ -30,51 +24,5 @@ export class ProvidersApi {
   /** Reads the catalog straight from the provider API using a caller-held key. */
   modelCatalogLive(provider: string, apiKey: string): Promise<ApiModelCatalog> {
     return this.http.post(`/api/models/${seg(provider)}`, { apiKey });
-  }
-
-  list(): Promise<ApiInferenceEndpoint[]> {
-    return this.http.get('/api/inference-endpoints');
-  }
-
-  add(name: string, url: string): Promise<ApiInferenceEndpoint> {
-    return this.http.post('/api/inference-endpoints', { name, url });
-  }
-
-  remove(id: string): Promise<void> {
-    return this.http.delete(`/api/inference-endpoints/${seg(id)}`);
-  }
-
-  check(id: string): Promise<ApiInferenceEndpoint> {
-    return this.http.post(`/api/inference-endpoints/${seg(id)}/check`);
-  }
-
-  models(id: string): Promise<ApiEndpointModel[]> {
-    return this.http.get(`/api/inference-endpoints/${seg(id)}/models`);
-  }
-
-  /** What the endpoint is holding in memory. Empty for a protocol that cannot report it. */
-  running(id: string): Promise<ApiRunningModel[]> {
-    return this.http.get(`/api/inference-endpoints/${seg(id)}/running`);
-  }
-
-  /** Loads a model and pins it there. Slow by nature — the weights come off disk first. */
-  loadModel(id: string, name: string): Promise<void> {
-    return this.http.post(`/api/inference-endpoints/${seg(id)}/models/load`, { name });
-  }
-
-  unloadModel(id: string, name: string): Promise<void> {
-    return this.http.post(`/api/inference-endpoints/${seg(id)}/models/unload`, { name });
-  }
-
-  pullModel(id: string, name: string): Promise<void> {
-    return this.http.post(`/api/inference-endpoints/${seg(id)}/models/pull`, { name });
-  }
-
-  pullStatus(id: string): Promise<ApiPullState[]> {
-    return this.http.get(`/api/inference-endpoints/${seg(id)}/pulls`);
-  }
-
-  deleteModel(id: string, name: string): Promise<void> {
-    return this.http.post(`/api/inference-endpoints/${seg(id)}/models/delete`, { name });
   }
 }

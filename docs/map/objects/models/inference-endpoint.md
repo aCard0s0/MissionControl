@@ -55,9 +55,11 @@ Derived per probe — `inference/InferenceEndpointDto.java:4`:
 
 ## If you change this
 
-- **Hits:** the Models page (`pages/models.ts`); `EndpointClient` implementations
-  (`OllamaProtocolClient`, `OpenAiCompatClient`); the probe cache; `inference_endpoints` in
-  `schema.sql`; the `/api/inference-endpoints` rows in `applications/api-contract.txt`.
+- **Hits:** the Models page (`pages/models.ts`) — which uses *only* this noun;
+  `core/store/inference-endpoint-store.ts` and `core/api/inference-endpoints-api.ts`;
+  `EndpointClient` implementations (`OllamaProtocolClient`, `OpenAiCompatClient`); the probe
+  cache; `inference_endpoints` in `schema.sql`; the `/api/inference-endpoints` rows in
+  `applications/api-contract.txt`.
 - **Does not hit:** [Provider](provider-registry.md) or [Model catalog](model-catalog.md). A
   new inference endpoint adds no vendor and no catalog entry. It also does not hit any Agent
   until a profile's `baseUrl` is pointed at it — the endpoint does not know about profiles.
@@ -67,7 +69,7 @@ Derived per probe — `inference/InferenceEndpointDto.java:4`:
 | Surface | Role |
 |---|---|
 | `/api/inference-endpoints` | reads / writes |
-| FE `pages/models.ts`, `core/store/provider-store.ts` | reads / writes — the store is still named for the old noun; see [CONTEXT.md](CONTEXT.md) |
+| FE `pages/models.ts`, `core/store/inference-endpoint-store.ts` | reads / writes |
 | the endpoint's own daemon | probed; and written for pull/delete when ollama |
 
 ## See

@@ -15,6 +15,11 @@ rename that looks obvious from one card is wrong from another. The one rename th
 went the other way: `model-providers` / `model_providers` → `inference-endpoints` /
 `inference_endpoints`, because that pair genuinely named the wrong noun.
 
-The frontend mirrors the confusion four more ways: `core/api/providers-api.ts`,
-`core/store/provider-store.ts`, `core/store/provider-defaults.ts`, `shared/provider-resolve.ts`.
-Check which noun each one means before editing it.
+On the frontend the two axes are now two classes each — `core/api/providers-api.ts` +
+`core/store/provider-store.ts` for vendors, `core/api/inference-endpoints-api.ts` +
+`core/store/inference-endpoint-store.ts` for endpoints. The Models page uses only the endpoint
+half; the create-agent picker offers both in one dropdown, and that merge is
+`shared/provider-resolve.ts`'s `providerOptions()` — one function, not a shared store.
+
+`core/store/provider-defaults.ts` still carries `provider` in its name and holds only
+`FALLBACK_MODELS`, the offline model lists mirroring `application.yml`.

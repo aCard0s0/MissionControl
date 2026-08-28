@@ -263,41 +263,41 @@ const cases: Record<string, Case> = {
     call: a => a.providers.modelCatalogLive('anthropic', 'sk-x'), method: 'POST',
     url: '/api/models/anthropic', body: { apiKey: 'sk-x' },
   },
-  'providers.list': { call: a => a.providers.list(), method: 'GET', url: '/api/inference-endpoints' },
-  'providers.add': {
-    call: a => a.providers.add('lab', 'http://ollama:11434'), method: 'POST',
+  'endpoints.list': { call: a => a.endpoints.list(), method: 'GET', url: '/api/inference-endpoints' },
+  'endpoints.add': {
+    call: a => a.endpoints.add('lab', 'http://ollama:11434'), method: 'POST',
     url: '/api/inference-endpoints', body: { name: 'lab', url: 'http://ollama:11434' },
   },
-  'providers.remove': {
-    call: a => a.providers.remove('mp-1'), method: 'DELETE', url: '/api/inference-endpoints/mp-1',
+  'endpoints.remove': {
+    call: a => a.endpoints.remove('mp-1'), method: 'DELETE', url: '/api/inference-endpoints/mp-1',
   },
-  'providers.check': {
-    call: a => a.providers.check('mp-1'), method: 'POST', url: '/api/inference-endpoints/mp-1/check',
+  'endpoints.check': {
+    call: a => a.endpoints.check('mp-1'), method: 'POST', url: '/api/inference-endpoints/mp-1/check',
   },
-  'providers.models': {
-    call: a => a.providers.models('mp-1'), method: 'GET', url: '/api/inference-endpoints/mp-1/models',
+  'endpoints.models': {
+    call: a => a.endpoints.models('mp-1'), method: 'GET', url: '/api/inference-endpoints/mp-1/models',
   },
-  'providers.running': {
-    call: a => a.providers.running('mp-1'), method: 'GET',
+  'endpoints.running': {
+    call: a => a.endpoints.running('mp-1'), method: 'GET',
     url: '/api/inference-endpoints/mp-1/running',
   },
-  'providers.loadModel': {
-    call: a => a.providers.loadModel('mp-1', 'llama3'), method: 'POST',
+  'endpoints.loadModel': {
+    call: a => a.endpoints.loadModel('mp-1', 'llama3'), method: 'POST',
     url: '/api/inference-endpoints/mp-1/models/load', body: { name: 'llama3' },
   },
-  'providers.unloadModel': {
-    call: a => a.providers.unloadModel('mp-1', 'llama3'), method: 'POST',
+  'endpoints.unloadModel': {
+    call: a => a.endpoints.unloadModel('mp-1', 'llama3'), method: 'POST',
     url: '/api/inference-endpoints/mp-1/models/unload', body: { name: 'llama3' },
   },
-  'providers.pullModel': {
-    call: a => a.providers.pullModel('mp-1', 'llama3'), method: 'POST',
+  'endpoints.pullModel': {
+    call: a => a.endpoints.pullModel('mp-1', 'llama3'), method: 'POST',
     url: '/api/inference-endpoints/mp-1/models/pull', body: { name: 'llama3' },
   },
-  'providers.pullStatus': {
-    call: a => a.providers.pullStatus('mp-1'), method: 'GET', url: '/api/inference-endpoints/mp-1/pulls',
+  'endpoints.pullStatus': {
+    call: a => a.endpoints.pullStatus('mp-1'), method: 'GET', url: '/api/inference-endpoints/mp-1/pulls',
   },
-  'providers.deleteModel': {
-    call: a => a.providers.deleteModel('mp-1', 'llama3'), method: 'POST',
+  'endpoints.deleteModel': {
+    call: a => a.endpoints.deleteModel('mp-1', 'llama3'), method: 'POST',
     url: '/api/inference-endpoints/mp-1/models/delete', body: { name: 'llama3' },
   },
 
