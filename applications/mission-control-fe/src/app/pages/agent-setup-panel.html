@@ -96,8 +96,8 @@
             @if (msgOpen() === m.tokenVar) {
               <div class="msg-config">
                 <div class="msg-field">
-                  <label class="mono faint">{{ m.tokenVar }}</label>
-                  <input class="input" type="password" [(ngModel)]="envDrafts[m.tokenVar]" placeholder="token" />
+                  <label class="mono faint" [attr.for]="'env-' + m.tokenVar">{{ m.tokenVar }}</label>
+                  <input [attr.id]="'env-' + m.tokenVar" class="input" type="password" [(ngModel)]="envDrafts[m.tokenVar]" placeholder="token" />
                   <button class="btn sm primary"
                           [disabled]="!envDrafts[m.tokenVar]?.trim() || envBusy() === m.tokenVar"
                           (click)="setEnv(m.tokenVar)">{{ envBusy() === m.tokenVar ? '…' : 'set' }}</button>
@@ -107,9 +107,9 @@
                 </div>
                 @if (m.homeVar; as hv) {
                   <div class="msg-field">
-                    <label class="mono faint">{{ hv }}</label>
+                    <label class="mono faint" [attr.for]="'env-' + hv">{{ hv }}</label>
                     @if (m.homeChannel) { <span class="chip off mono">{{ m.homeChannel }}</span> }
-                    <input class="input" [(ngModel)]="envDrafts[hv]" placeholder="home channel" />
+                    <input [attr.id]="'env-' + hv" class="input" [(ngModel)]="envDrafts[hv]" placeholder="home channel" />
                     <button class="btn sm primary"
                             [disabled]="!envDrafts[hv]?.trim() || envBusy() === hv"
                             (click)="setEnv(hv)">{{ envBusy() === hv ? '…' : 'set' }}</button>

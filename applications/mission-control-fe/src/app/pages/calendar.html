@@ -62,10 +62,10 @@
       @if (creating() || editing()) {
         <div class="form">
           <div class="form-title mono">{{ editing() ? 'EDIT JOB' : 'NEW JOB' }}</div>
-          <div class="field"><label>name</label><input class="input" [(ngModel)]="fName" placeholder="Morning briefing" /></div>
+          <div class="field"><label for="job-name">name</label><input id="job-name" class="input" [(ngModel)]="fName" placeholder="Morning briefing" /></div>
           <div class="field">
-            <label>schedule — cron, "every 30m", "every monday 9am", ISO</label>
-            <input class="input" [(ngModel)]="fSchedule" placeholder="0 7 * * 1-5" />
+            <label for="job-schedule-cron-every">schedule — cron, "every 30m", "every monday 9am", ISO</label>
+            <input id="job-schedule-cron-every" class="input" [(ngModel)]="fSchedule" placeholder="0 7 * * 1-5" />
             <div class="presets">
               @for (p of presets; track p.value) {
                 <button type="button" class="chip preset" [class.on]="fSchedule === p.value"
@@ -88,15 +88,15 @@
               </div>
             }
           </div>
-          <div class="field"><label>prompt</label><textarea class="input" rows="3" [(ngModel)]="fPrompt" placeholder="What should the agent do?"></textarea></div>
+          <div class="field"><label for="job-prompt">prompt</label><textarea id="job-prompt" class="input" rows="3" [(ngModel)]="fPrompt" placeholder="What should the agent do?"></textarea></div>
           <div class="row">
             <div class="field">
-              <label>assigned agent</label>
-              <select class="select" [(ngModel)]="fAgent">
+              <label for="job-assigned-agent">assigned agent</label>
+              <select id="job-assigned-agent" class="select" [(ngModel)]="fAgent">
                 @for (a of agents.forSelectedContainer(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
               </select>
             </div>
-            <div class="field"><label>deliver to</label><input class="input" [(ngModel)]="fDeliver" placeholder="slack #ops" /></div>
+            <div class="field"><label for="job-deliver-to">deliver to</label><input id="job-deliver-to" class="input" [(ngModel)]="fDeliver" placeholder="slack #ops" /></div>
           </div>
           <div class="form-actions">
             <button class="btn ghost" (click)="cancelForm()">cancel</button>

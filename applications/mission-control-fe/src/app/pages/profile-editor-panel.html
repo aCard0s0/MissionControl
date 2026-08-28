@@ -9,24 +9,28 @@
   <div class="editor-b">
     <div class="row identity">
       <div class="field icon-field">
-        <label>icon</label>
+        <!-- a <label> can only name a form control, and this opens a picker — so the caption
+             is a span and the button carries its own accessible name -->
+        <span class="field-cap" id="bp-icon-cap">icon</span>
         <button class="icon-btn" type="button" (click)="iconOpen.set(!iconOpen())"
                 [attr.aria-expanded]="iconOpen()"
+                [attr.aria-label]="'icon — ' + (form.icon || 'default')"
+                aria-describedby="bp-icon-cap"
                 [title]="form.icon || 'default'">
           <mc-agent-icon [icon]="form.icon" />
         </button>
       </div>
       <div class="field">
-        <label>name</label>
-        <input class="input" [(ngModel)]="form.name" placeholder="ops-sre" />
+        <label for="bp-name">name</label>
+        <input id="bp-name" class="input" [(ngModel)]="form.name" placeholder="ops-sre" />
       </div>
       <div class="field">
-        <label>description</label>
-        <input class="input" [(ngModel)]="form.description" placeholder="what this agent does" />
+        <label for="bp-description">description</label>
+        <input id="bp-description" class="input" [(ngModel)]="form.description" placeholder="what this agent does" />
       </div>
       <div class="field">
-        <label>category</label>
-        <input class="input" [(ngModel)]="form.category" list="mc-blueprint-categories"
+        <label for="bp-category">category</label>
+        <input id="bp-category" class="input" [(ngModel)]="form.category" list="mc-blueprint-categories"
                placeholder="general" />
         <datalist id="mc-blueprint-categories">
           @for (c of templateCategories(); track c) { <option [value]="c"></option> }
@@ -48,14 +52,14 @@
 
     <div class="row">
       <div class="field">
-        <label>provider</label>
-        <select class="select" [(ngModel)]="form.provider">
+        <label for="bp-provider">provider</label>
+        <select id="bp-provider" class="select" [(ngModel)]="form.provider">
           @for (p of providerChoices(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
         </select>
       </div>
       <div class="field">
-        <label>model</label>
-        <input class="input" [(ngModel)]="form.model" placeholder="Hermes-4-405B" />
+        <label for="bp-model">model</label>
+        <input id="bp-model" class="input" [(ngModel)]="form.model" placeholder="Hermes-4-405B" />
       </div>
     </div>
 
@@ -71,12 +75,12 @@
         <div class="group-b">
           <div class="row">
             <div class="field">
-              <label>base url — optional (ollama / custom endpoints)</label>
-              <input class="input" [(ngModel)]="form.baseUrl" placeholder="http://host:11434/v1" />
+              <label for="bp-base-url-ollama">base url — optional (ollama / custom endpoints)</label>
+              <input id="bp-base-url-ollama" class="input" [(ngModel)]="form.baseUrl" placeholder="http://host:11434/v1" />
             </div>
             <div class="field">
-              <label>working dir</label>
-              <input class="input" [(ngModel)]="form.cwd" placeholder="/opt/data" />
+              <label for="bp-working-dir">working dir</label>
+              <input id="bp-working-dir" class="input" [(ngModel)]="form.cwd" placeholder="/opt/data" />
             </div>
           </div>
         </div>

@@ -240,8 +240,8 @@
         <div class="modal-b">
           <p class="dim">Deletes <span class="mono">{{ a.name }}</span> — its config, memory, sessions, skills, jobs, and webhooks. Cannot be undone.</p>
           <div class="field">
-            <label>type <span class="mono">{{ a.name }}</span> to confirm</label>
-            <input class="input" [(ngModel)]="confirmText" [placeholder]="a.name" />
+            <label for="agent-type-confirm">type <span class="mono">{{ a.name }}</span> to confirm</label>
+            <input id="agent-type-confirm" class="input" [(ngModel)]="confirmText" [placeholder]="a.name" />
           </div>
           <div class="modal-actions">
             <button class="btn ghost" (click)="removing.set(false)">cancel</button>
@@ -259,8 +259,8 @@
         <div class="modal-b">
           <p class="dim">Snapshots <span class="mono">{{ a.name }}</span>'s soul, memory, skills, and MCP servers into a reusable profile. Key values aren't copied — only which keys are required.</p>
           <div class="field">
-            <label>template name</label>
-            <input class="input" [(ngModel)]="captureName" [placeholder]="a.name + '-template'" />
+            <label for="agent-template-name">template name</label>
+            <input id="agent-template-name" class="input" [(ngModel)]="captureName" [placeholder]="a.name + '-template'" />
           </div>
           <div class="modal-actions">
             <button class="btn ghost" (click)="capturing.set(false)">cancel</button>
@@ -282,8 +282,8 @@
               will finish
             }. Lift it with <span class="mono">resume</span>; no restart is involved.</p>
           <div class="field">
-            <label>reason <span class="faint">— shown to anyone who messages the agent</span></label>
-            <input class="input" [(ngModel)]="pauseReason" placeholder="optional" />
+            <label for="agent-reason-shown-anyone">reason <span class="faint">— shown to anyone who messages the agent</span></label>
+            <input id="agent-reason-shown-anyone" class="input" [(ngModel)]="pauseReason" placeholder="optional" />
           </div>
           <div class="modal-actions">
             <button class="btn ghost" (click)="pauseOpen.set(false)">cancel</button>

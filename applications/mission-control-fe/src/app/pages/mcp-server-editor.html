@@ -10,12 +10,12 @@
     <div class="modal-b">
       <div class="form-grid two">
         <div class="field">
-          <label>display name</label>
-          <input class="input" [(ngModel)]="form.name" placeholder="Playwright" autofocus />
+          <label for="mcp-display-name">display name</label>
+          <input id="mcp-display-name" class="input" [(ngModel)]="form.name" placeholder="Playwright" autofocus />
         </div>
         <div class="field">
-          <label>type</label>
-          <select class="select" [(ngModel)]="form.kind" [disabled]="!!form.id" (ngModelChange)="kindChanged()">
+          <label for="mcp-type">type</label>
+          <select id="mcp-type" class="select" [(ngModel)]="form.kind" [disabled]="!!form.id" (ngModelChange)="kindChanged()">
             <option value="managed">managed container</option>
             <option value="external">external HTTP/SSE</option>
             <option value="stdio">stdio definition</option>
@@ -23,16 +23,16 @@
         </div>
       </div>
       <div class="field">
-        <label>description</label>
-        <input class="input" [(ngModel)]="form.description" placeholder="What this server provides" />
+        <label for="mcp-description">description</label>
+        <input id="mcp-description" class="input" [(ngModel)]="form.description" placeholder="What this server provides" />
       </div>
 
       @if (form.kind === 'managed') {
         <div class="section-label mono">CONTAINER</div>
         <div class="form-grid two">
           <div class="field">
-            <label>Docker host</label>
-            <select class="select" [(ngModel)]="form.hostId" [disabled]="form.hostLocked">
+            <label for="mcp-docker-host">Docker host</label>
+            <select id="mcp-docker-host" class="select" [(ngModel)]="form.hostId" [disabled]="form.hostLocked">
               @for (host of hosts.hosts(); track host.id) {
                 <option [value]="host.id">{{ host.name }} — {{ host.status }}</option>
               }
@@ -40,72 +40,72 @@
             @if (form.hostLocked) { <span class="field-note">duplicate this server to change host</span> }
           </div>
           <div class="field">
-            <label>image</label>
-            <input class="input" [(ngModel)]="form.image" placeholder="mcp/playwright:latest" />
+            <label for="mcp-image">image</label>
+            <input id="mcp-image" class="input" [(ngModel)]="form.image" placeholder="mcp/playwright:latest" />
           </div>
           <div class="field">
-            <label>platform — optional</label>
-            <input class="input" [(ngModel)]="form.platform" placeholder="linux/amd64" />
+            <label for="mcp-platform">platform — optional</label>
+            <input id="mcp-platform" class="input" [(ngModel)]="form.platform" placeholder="linux/amd64" />
           </div>
           <div class="field">
-            <label>transport</label>
-            <select class="select" [(ngModel)]="form.transport">
+            <label for="mcp-transport">transport</label>
+            <select id="mcp-transport" class="select" [(ngModel)]="form.transport">
               <option value="http">HTTP</option>
               <option value="sse">SSE</option>
             </select>
           </div>
           <div class="field">
-            <label>internal port</label>
-            <input class="input" type="number" min="1" max="65535" [(ngModel)]="form.internalPort" />
+            <label for="mcp-internal-port">internal port</label>
+            <input id="mcp-internal-port" class="input" type="number" min="1" max="65535" [(ngModel)]="form.internalPort" />
           </div>
           <div class="field">
-            <label>endpoint path</label>
-            <input class="input" [(ngModel)]="form.path" placeholder="/mcp" />
+            <label for="mcp-endpoint-path">endpoint path</label>
+            <input id="mcp-endpoint-path" class="input" [(ngModel)]="form.path" placeholder="/mcp" />
           </div>
           <div class="field">
-            <label>published port — optional</label>
-            <input class="input" type="number" min="1" max="65535" [(ngModel)]="form.publishedPort" placeholder="internal only" />
+            <label for="mcp-published-port">published port — optional</label>
+            <input id="mcp-published-port" class="input" type="number" min="1" max="65535" [(ngModel)]="form.publishedPort" placeholder="internal only" />
           </div>
           <div class="field">
-            <label>cross-host URL — optional</label>
-            <input class="input" [(ngModel)]="form.crossHostUrl" placeholder="https://mcp.example.net/mcp" />
+            <label for="mcp-cross-host-url">cross-host URL — optional</label>
+            <input id="mcp-cross-host-url" class="input" [(ngModel)]="form.crossHostUrl" placeholder="https://mcp.example.net/mcp" />
           </div>
         </div>
         <div class="form-grid two">
           <div class="field">
-            <label>entrypoint — one item per line</label>
-            <textarea class="input code-list" rows="3" [(ngModel)]="form.entrypoint" placeholder="node"></textarea>
+            <label for="mcp-entrypoint-one-item">entrypoint — one item per line</label>
+            <textarea id="mcp-entrypoint-one-item" class="input code-list" rows="3" [(ngModel)]="form.entrypoint" placeholder="node"></textarea>
           </div>
           <div class="field">
-            <label>command — one item per line</label>
-            <textarea class="input code-list" rows="3" [(ngModel)]="form.command" placeholder="server.js&#10;--port&#10;1100"></textarea>
+            <label for="mcp-command-one-item">command — one item per line</label>
+            <textarea id="mcp-command-one-item" class="input code-list" rows="3" [(ngModel)]="form.command" placeholder="server.js&#10;--port&#10;1100"></textarea>
           </div>
         </div>
       } @else if (form.kind === 'external') {
         <div class="section-label mono">ENDPOINT</div>
         <div class="form-grid transport-url">
           <div class="field">
-            <label>transport</label>
-            <select class="select" [(ngModel)]="form.transport">
+            <label for="mcp-transport-2">transport</label>
+            <select id="mcp-transport-2" class="select" [(ngModel)]="form.transport">
               <option value="http">HTTP</option>
               <option value="sse">SSE</option>
             </select>
           </div>
           <div class="field">
-            <label>URL</label>
-            <input class="input" [(ngModel)]="form.url" placeholder="https://mcp.example.net/mcp" />
+            <label for="mcp-url">URL</label>
+            <input id="mcp-url" class="input" [(ngModel)]="form.url" placeholder="https://mcp.example.net/mcp" />
           </div>
         </div>
       } @else {
         <div class="section-label mono">STDIO COMMAND</div>
         <div class="form-grid two">
           <div class="field">
-            <label>executable</label>
-            <input class="input" [(ngModel)]="form.stdioCommand" placeholder="npx" />
+            <label for="mcp-executable">executable</label>
+            <input id="mcp-executable" class="input" [(ngModel)]="form.stdioCommand" placeholder="npx" />
           </div>
           <div class="field">
-            <label>arguments — one per line</label>
-            <textarea class="input code-list" rows="3" [(ngModel)]="form.args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem"></textarea>
+            <label for="mcp-arguments-one-per">arguments — one per line</label>
+            <textarea id="mcp-arguments-one-per" class="input code-list" rows="3" [(ngModel)]="form.args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem"></textarea>
           </div>
         </div>
       }
@@ -164,14 +164,14 @@
         @if (form.healthcheck; as health) {
           <div class="health-grid">
             <div class="field health-command">
-              <label>test — one item per line; first is CMD, CMD-SHELL, or NONE</label>
-              <textarea class="input code-list" rows="3" [ngModel]="health.test.join('\n')"
+              <label for="mcp-test-one-item">test — one item per line; first is CMD, CMD-SHELL, or NONE</label>
+              <textarea id="mcp-test-one-item" class="input code-list" rows="3" [ngModel]="health.test.join('\n')"
                         (ngModelChange)="health.test = splitLines($event)"></textarea>
             </div>
-            <div class="field"><label>interval</label><input class="input" [(ngModel)]="health.interval" placeholder="30s" /></div>
-            <div class="field"><label>timeout</label><input class="input" [(ngModel)]="health.timeout" placeholder="5s" /></div>
-            <div class="field"><label>retries</label><input class="input" type="number" min="1" max="100" [(ngModel)]="health.retries" /></div>
-            <div class="field"><label>start period</label><input class="input" [(ngModel)]="health.startPeriod" placeholder="5s" /></div>
+            <div class="field"><label for="mcp-interval">interval</label><input id="mcp-interval" class="input" [(ngModel)]="health.interval" placeholder="30s" /></div>
+            <div class="field"><label for="mcp-timeout">timeout</label><input id="mcp-timeout" class="input" [(ngModel)]="health.timeout" placeholder="5s" /></div>
+            <div class="field"><label for="mcp-retries">retries</label><input id="mcp-retries" class="input" type="number" min="1" max="100" [(ngModel)]="health.retries" /></div>
+            <div class="field"><label for="mcp-start-period">start period</label><input id="mcp-start-period" class="input" [(ngModel)]="health.startPeriod" placeholder="5s" /></div>
           </div>
         }
 
@@ -188,26 +188,27 @@
             </div>
             <div class="form-grid two">
               <div class="field">
-                <label>service name</label>
-                <input class="input" [(ngModel)]="service.name" placeholder="database"
+                <label [attr.for]="'mcp-support-' + serviceIndex">service name</label>
+                <input [attr.id]="'mcp-support-' + serviceIndex" class="input"
+                       [(ngModel)]="service.name" placeholder="database"
                        [readonly]="service.stored" />
                 @if (service.stored) {
                   <small class="faint">Fixed once saved — this is the hostname the server reaches
                     it by and the prefix of its volumes. Remove and re-add to replace it.</small>
                 }
               </div>
-              <div class="field"><label>image</label><input class="input" [(ngModel)]="service.image" placeholder="postgres:16-alpine" /></div>
-              <div class="field"><label>platform — optional</label><input class="input" [(ngModel)]="service.platform" placeholder="linux/amd64" /></div>
+              <div class="field"><label for="mcp-image-2">image</label><input id="mcp-image-2" class="input" [(ngModel)]="service.image" placeholder="postgres:16-alpine" /></div>
+              <div class="field"><label for="mcp-platform-2">platform — optional</label><input id="mcp-platform-2" class="input" [(ngModel)]="service.platform" placeholder="linux/amd64" /></div>
             </div>
             <div class="form-grid two">
               <div class="field">
-                <label>entrypoint — one item per line</label>
-                <textarea class="input code-list" rows="2" [ngModel]="(service.entrypoint ?? []).join('\n')"
+                <label for="mcp-entrypoint-one-item-2">entrypoint — one item per line</label>
+                <textarea id="mcp-entrypoint-one-item-2" class="input code-list" rows="2" [ngModel]="(service.entrypoint ?? []).join('\n')"
                           (ngModelChange)="service.entrypoint = splitLines($event)"></textarea>
               </div>
               <div class="field">
-                <label>command — one item per line</label>
-                <textarea class="input code-list" rows="2" [ngModel]="(service.command ?? []).join('\n')"
+                <label for="mcp-command-one-item-2">command — one item per line</label>
+                <textarea id="mcp-command-one-item-2" class="input code-list" rows="2" [ngModel]="(service.command ?? []).join('\n')"
                           (ngModelChange)="service.command = splitLines($event)"></textarea>
               </div>
             </div>
@@ -244,14 +245,14 @@
             @if (service.healthcheck; as supportHealth) {
               <div class="health-grid">
                 <div class="field health-command">
-                  <label>test — one item per line</label>
-                  <textarea class="input code-list" rows="2" [ngModel]="supportHealth.test.join('\n')"
+                  <label for="mcp-test-one-item-2">test — one item per line</label>
+                  <textarea id="mcp-test-one-item-2" class="input code-list" rows="2" [ngModel]="supportHealth.test.join('\n')"
                             (ngModelChange)="supportHealth.test = splitLines($event)"></textarea>
                 </div>
-                <div class="field"><label>interval</label><input class="input" [(ngModel)]="supportHealth.interval" /></div>
-                <div class="field"><label>timeout</label><input class="input" [(ngModel)]="supportHealth.timeout" /></div>
-                <div class="field"><label>retries</label><input class="input" type="number" min="1" max="100" [(ngModel)]="supportHealth.retries" /></div>
-                <div class="field"><label>start period</label><input class="input" [(ngModel)]="supportHealth.startPeriod" /></div>
+                <div class="field"><label for="mcp-interval-2">interval</label><input id="mcp-interval-2" class="input" [(ngModel)]="supportHealth.interval" /></div>
+                <div class="field"><label for="mcp-timeout-2">timeout</label><input id="mcp-timeout-2" class="input" [(ngModel)]="supportHealth.timeout" /></div>
+                <div class="field"><label for="mcp-retries-2">retries</label><input id="mcp-retries-2" class="input" type="number" min="1" max="100" [(ngModel)]="supportHealth.retries" /></div>
+                <div class="field"><label for="mcp-start-period-2">start period</label><input id="mcp-start-period-2" class="input" [(ngModel)]="supportHealth.startPeriod" /></div>
               </div>
             }
           </div>
