@@ -12,7 +12,7 @@
 <div class="panel providers" data-reveal>
   <div class="panel-h">INFERENCE ENDPOINTS</div>
   <div class="panel-b">
-    @for (p of providers.endpoints(); track p.id) {
+    @for (p of endpoints.endpoints(); track p.id) {
       <!-- the whole row toggles its model panel; the buttons on it stop the click so they
            do not open a panel as a side effect of checking or removing an endpoint -->
       <div class="provider-row mono" role="button" tabindex="0"
@@ -27,7 +27,7 @@
         @if (p.detail) { <span class="pnote faint">— {{ p.detail }}</span> }
         <span class="spacer"></span>
         <button class="btn sm ghost"
-                (click)="$event.stopPropagation(); providers.check(p.id)">check</button>
+                (click)="$event.stopPropagation(); endpoints.check(p.id)">check</button>
         @if (removingProvider() === p.id) {
           <button class="btn sm danger"
                   (click)="$event.stopPropagation(); removeProvider(p.id)">confirm</button>

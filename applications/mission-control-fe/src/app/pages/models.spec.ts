@@ -7,7 +7,7 @@ import { ModelsPage } from './models';
 import { el, press, settle, text, type, type TestFixture } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
-const provider = (id: string, name: string): InferenceEndpoint => ({
+const endpoint = (id: string, name: string): InferenceEndpoint => ({
   id, name, url: `http://${name}:11434`, kind: 'ollama', status: 'connected',
   version: '0.6.4', detail: null, canManageModels: true,
 });
@@ -20,11 +20,11 @@ const agent = (name: string, model: string) =>
   ({ name, model } as AgentProfile);
 
 const storeStub = (
-  providers: InferenceEndpoint[] = [provider('mp-1', 'workstation')],
+  endpoints: InferenceEndpoint[] = [endpoint('mp-1', 'workstation')],
   agents: AgentProfile[] = [],
 ) => ({
-  providers: {
-    endpoints: signal(providers),
+  endpoints: {
+    endpoints: signal(endpoints),
     refresh: vi.fn().mockResolvedValue(undefined),
     add: vi.fn(),
     remove: vi.fn(),
@@ -66,7 +66,7 @@ describe('ModelsPage providers', () => {
   it('reads the provider list when it opens', () => {
     const { store } = render(storeStub());
 
-    expect(store.providers.refresh).toHaveBeenCalled();
+    expect(store.endpoints.refresh).toHaveBeenCalled();
   });
 
   it('lists each provider with the endpoint an agent would reach it on', () => {
@@ -104,7 +104,7 @@ describe('ModelsPage providers', () => {
     expect(add().disabled).toBe(false);
     add().click();
 
-    expect(store.providers.add)
+    expect(store.endpoints.add)
       .toHaveBeenCalledWith('mac', 'http://host.docker.internal:11434');
   });
 
@@ -113,7 +113,7 @@ describe('ModelsPage providers', () => {
 
     press(fixture, 'check', '.provider-row');
 
-    expect(store.providers.check).toHaveBeenCalledWith('mp-1');
+    expect(store.endpoints.check).toHaveBeenCalledWith('mp-1');
     // the row is the control that opens the panel, so its buttons have to stop the click —
     // checking an endpoint must not load a model list as a side effect
     expect(el(fixture).querySelector('.models-panel')).toBeNull();
@@ -127,7 +127,7 @@ describe('ModelsPage model list', () => {
     openRow(fixture);
     await settle(fixture);
 
-    expect(store.providers.models).toHaveBeenCalledWith('mp-1');
+    expect(store.endpoints.models).toHaveBeenCalledWith('mp-1');
     expect(el(fixture).textContent).toContain('MODELS — workstation');
     expect(el(fixture).textContent).toContain('gemma3:4b');
     expect(el(fixture).textContent).toContain('4.3 GB');
@@ -146,7 +146,7 @@ describe('ModelsPage model list', () => {
 
   it('says the provider is empty rather than looking still busy', async () => {
     const store = storeStub();
-    store.providers.models.mockResolvedValue([]);
+    store.endpoints.models.mockResolvedValue([]);
     const { fixture } = render(store);
 
     openRow(fixture);
@@ -157,7 +157,7 @@ describe('ModelsPage model list', () => {
 
   it('surfaces why a read failed', async () => {
     const store = storeStub();
-    store.providers.models.mockRejectedValue(new Error('connection refused'));
+    store.endpoints.models.mockRejectedValue(new Error('connection refused'));
     const { fixture } = render(store);
 
     openRow(fixture);
@@ -167,11 +167,11 @@ describe('ModelsPage model list', () => {
   });
 
   it('drops a read that lands after another provider was selected', async () => {
-    const store = storeStub([provider('mp-1', 'workstation'), provider('mp-2', 'laptop')]);
+    const store = storeStub([endpoint('mp-1', 'workstation'), endpoint('mp-2', 'laptop')]);
     let answerFirst: (models: EndpointModel[]) => void = () => { /* replaced below */ };
-    store.providers.models.mockImplementationOnce(
+    store.endpoints.models.mockImplementationOnce(
       () => new Promise<EndpointModel[]>(resolve => { answerFirst = resolve; }));
-    store.providers.models.mockResolvedValue([model('llama3:8b')]);
+    store.endpoints.models.mockResolvedValue([model('llama3:8b')]);
     const { fixture } = render(store);
 
     openRow(fixture);        // workstation, pending
@@ -191,12 +191,12 @@ describe('ModelsPage model list', () => {
     await settle(fixture);
 
     press(fixture, 'remove', '.model-row:not(.head)');
-    expect(store.providers.deleteModel).not.toHaveBeenCalled();
+    expect(store.endpoints.deleteModel).not.toHaveBeenCalled();
 
     press(fixture, 'confirm', '.model-row:not(.head)');
     await settle(fixture);
 
-    expect(store.providers.deleteModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.endpoints.deleteModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
   });
 
   it('asks twice before removing an endpoint, and forgets the selection when it goes', async () => {
@@ -207,11 +207,11 @@ describe('ModelsPage model list', () => {
 
     // one click un-registers it and silently breaks the base_url of every agent using it
     press(fixture, 'remove', '.provider-row');
-    expect(store.providers.remove).not.toHaveBeenCalled();
+    expect(store.endpoints.remove).not.toHaveBeenCalled();
 
     press(fixture, 'confirm', '.provider-row');
 
-    expect(store.providers.remove).toHaveBeenCalledWith('mp-1');
+    expect(store.endpoints.remove).toHaveBeenCalledWith('mp-1');
     expect(el(fixture).querySelector('.models-panel')).toBeNull();
   });
 });
@@ -231,13 +231,13 @@ describe('ModelsPage pulls', () => {
     press(fixture, 'pull model', '.pull-bar');
     await settle(fixture);
 
-    expect(store.providers.pullModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.endpoints.pullModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
     expect(el(fixture).querySelector<HTMLInputElement>('.pull-bar .input')!.value).toBe('');
   });
 
   it('shows how far each pull has got, not just that it is pulling', async () => {
     const store = storeStub();
-    store.providers.pullStatus
+    store.endpoints.pullStatus
       .mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: '47% · downloading' }]);
     const { fixture } = await open(store);
 
@@ -249,24 +249,24 @@ describe('ModelsPage pulls', () => {
     // call loads a model and lets it expire again
     const store = storeStub();
     const { fixture } = await open(store);
-    const afterOpen = store.providers.pullStatus.mock.calls.length;
+    const afterOpen = store.endpoints.pullStatus.mock.calls.length;
 
     await settle(fixture, 3_000);
 
-    expect(store.providers.pullStatus.mock.calls.length).toBeGreaterThan(afterOpen);
-    expect(store.providers.running.mock.calls.length).toBeGreaterThan(1);
+    expect(store.endpoints.pullStatus.mock.calls.length).toBeGreaterThan(afterOpen);
+    expect(store.endpoints.running.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('re-reads the model list once a pull finishes', async () => {
     const store = storeStub();
-    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
+    store.endpoints.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'pulling', detail: null }]);
     const { fixture } = await open(store);
-    const afterOpen = store.providers.models.mock.calls.length;
+    const afterOpen = store.endpoints.models.mock.calls.length;
 
-    store.providers.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
+    store.endpoints.pullStatus.mockResolvedValue([{ model: 'gemma3:4b', status: 'done', detail: null }]);
     await settle(fixture, 3_000);
 
-    expect(store.providers.models.mock.calls.length).toBeGreaterThan(afterOpen);
+    expect(store.endpoints.models.mock.calls.length).toBeGreaterThan(afterOpen);
   });
 
   it('rides out a failed poll instead of going quiet', async () => {
@@ -274,13 +274,13 @@ describe('ModelsPage pulls', () => {
     // there showing a stale loaded set with no sign that it had given up
     const store = storeStub();
     const { fixture } = await open(store);
-    store.providers.pullStatus.mockRejectedValue(new Error('provider gone'));
+    store.endpoints.pullStatus.mockRejectedValue(new Error('provider gone'));
 
     await settle(fixture, 3_000);
-    const afterFailure = store.providers.pullStatus.mock.calls.length;
+    const afterFailure = store.endpoints.pullStatus.mock.calls.length;
     await settle(fixture, 9_000);
 
-    expect(store.providers.pullStatus.mock.calls.length).toBeGreaterThan(afterFailure);
+    expect(store.endpoints.pullStatus.mock.calls.length).toBeGreaterThan(afterFailure);
   });
 
   it('stops polling once the page is gone', async () => {
@@ -288,10 +288,10 @@ describe('ModelsPage pulls', () => {
     const { fixture } = await open(store);
 
     fixture.destroy();
-    const afterDestroy = store.providers.pullStatus.mock.calls.length;
+    const afterDestroy = store.endpoints.pullStatus.mock.calls.length;
     await vi.advanceTimersByTimeAsync(30_000);
 
-    expect(store.providers.pullStatus.mock.calls.length).toBe(afterDestroy);
+    expect(store.endpoints.pullStatus.mock.calls.length).toBe(afterDestroy);
   });
 });
 
@@ -308,7 +308,7 @@ describe('ModelsPage what is in use', () => {
 
   it('marks a resident model with the memory it holds, and totals both costs', async () => {
     const store = storeStub();
-    store.providers.running.mockResolvedValue([resident('gemma3:4b')]);
+    store.endpoints.running.mockResolvedValue([resident('gemma3:4b')]);
     const { fixture } = await open(store);
 
     expect(text(fixture)).toContain('loaded · 5.2 GB');
@@ -320,36 +320,36 @@ describe('ModelsPage what is in use', () => {
   it('starts a model and re-reads what is resident rather than assuming it worked', async () => {
     const store = storeStub();
     const { fixture } = await open(store);
-    const afterOpen = store.providers.running.mock.calls.length;
+    const afterOpen = store.endpoints.running.mock.calls.length;
 
     press(fixture, 'start', '.model-row:not(.head)');
     await settle(fixture);
 
-    expect(store.providers.loadModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
-    expect(store.providers.running.mock.calls.length).toBeGreaterThan(afterOpen);
+    expect(store.endpoints.loadModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.endpoints.running.mock.calls.length).toBeGreaterThan(afterOpen);
   });
 
   it('offers stop, not start, for a model already in memory', async () => {
     const store = storeStub();
-    store.providers.running.mockResolvedValue([resident('gemma3:4b')]);
+    store.endpoints.running.mockResolvedValue([resident('gemma3:4b')]);
     const { fixture } = await open(store);
 
     press(fixture, 'stop', '.model-row:not(.head)');
     await settle(fixture);
 
-    expect(store.providers.unloadModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
-    expect(store.providers.loadModel).not.toHaveBeenCalled();
+    expect(store.endpoints.unloadModel).toHaveBeenCalledWith('mp-1', 'gemma3:4b');
+    expect(store.endpoints.loadModel).not.toHaveBeenCalled();
   });
 
   it('names the agent a model is configured on, so remove is not a surprise', async () => {
-    const store = storeStub([provider('mp-1', 'workstation')], [agent('atlas', 'gemma3:4b')]);
+    const store = storeStub([endpoint('mp-1', 'workstation')], [agent('atlas', 'gemma3:4b')]);
     const { fixture } = await open(store);
 
     expect(text(fixture)).toContain('atlas');
   });
 
   it('counts the agents instead of listing them once there is more than one', async () => {
-    const store = storeStub([provider('mp-1', 'workstation')],
+    const store = storeStub([endpoint('mp-1', 'workstation')],
       [agent('atlas', 'gemma3:4b'), agent('nova', 'gemma3:4b'), agent('vega', 'other:1b')]);
     const { fixture } = await open(store);
 
@@ -370,7 +370,7 @@ describe('ModelsPage openai-compatible endpoints', () => {
 
   const openStub = async () => {
     const store = storeStub([openai()]);
-    store.providers.models.mockResolvedValue([thinModel('qwen3-8b')]);
+    store.endpoints.models.mockResolvedValue([thinModel('qwen3-8b')]);
     const { fixture } = render(store);
     openRow(fixture);
     await settle(fixture);
@@ -429,13 +429,13 @@ describe('ModelsPage openai-compatible endpoints', () => {
   it('does not poll an endpoint that cannot say what is loaded or pulling', async () => {
     const { store } = await openStub();
 
-    expect(store.providers.running).not.toHaveBeenCalled();
-    expect(store.providers.pullStatus).not.toHaveBeenCalled();
+    expect(store.endpoints.running).not.toHaveBeenCalled();
+    expect(store.endpoints.pullStatus).not.toHaveBeenCalled();
   });
 
   it('says models are loaded on the server when there are none', async () => {
     const store = storeStub([openai()]);
-    store.providers.models.mockResolvedValue([]);
+    store.endpoints.models.mockResolvedValue([]);
     const { fixture } = render(store);
     openRow(fixture);
     await settle(fixture);

@@ -4,6 +4,7 @@ import { BoardStore } from './board-store';
 import { ContainerStore } from './container-store';
 import { HostStore } from './host-store';
 import { ImageCatalogStore } from './image-catalog-store';
+import { InferenceEndpointStore } from './inference-endpoint-store';
 import { JobStore } from './job-store';
 import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
@@ -64,6 +65,7 @@ export class LiveSync {
   private readonly mcp = inject(McpCatalogStore);
   private readonly prompts = inject(PromptStore);
   private readonly providers = inject(ProviderStore);
+  private readonly endpoints = inject(InferenceEndpointStore);
   private readonly images = inject(ImageCatalogStore);
   private readonly jobs = inject(JobStore);
   private readonly webhooks = inject(WebhookStore);
@@ -83,7 +85,7 @@ export class LiveSync {
     if (this.started) return;
     this.started = true;
     await Promise.all([
-      this.hosts.refresh(), this.providers.refresh(), this.providers.refreshRegistry(),
+      this.hosts.refresh(), this.endpoints.refresh(), this.providers.refreshRegistry(),
       this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
       this.prompts.refresh(),
       this.mcp.refresh(), this.mcp.refreshRetainedResources(),

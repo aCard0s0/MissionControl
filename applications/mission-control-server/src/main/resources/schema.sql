@@ -22,7 +22,11 @@ CREATE TABLE IF NOT EXISTS board_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_board_tasks_container ON board_tasks (container_id);
 
-CREATE TABLE IF NOT EXISTS model_providers (
+-- Self-hosted inference endpoints an operator registered: ollama, or anything
+-- OpenAI-compatible. Only the URL is stored — which protocol answers there is a
+-- property of the server and is probed, so it is never written down. Shipped as
+-- `model_providers`; SchemaUpgrades moves an older database across.
+CREATE TABLE IF NOT EXISTS inference_endpoints (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   url        TEXT NOT NULL UNIQUE,

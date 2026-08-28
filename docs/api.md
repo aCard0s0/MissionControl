@@ -97,6 +97,15 @@ host networking, privileged mode, devices, and capabilities are not accepted.
 | `PUT …/{name}/webhooks/outbound/{index}` | same as POST | rewrites the target at that position; an inline `secret:` set by hand is preserved |
 | `DELETE …/{name}/webhooks/outbound/{index}` | — | 404 on a stale index rather than rewriting its neighbour |
 | `PUT  …/{name}/config` | `{ configYaml }` | full config.yaml replace — validated as a YAML mapping (400 otherwise); platform tokens (slack, whatsapp, honcho, …) and `model.default` / `model.base_url` overrides live here |
+| `GET  …/{name}/setup` | — | the profile's `.env` and what `hermes status` makes of it; degrades to the `.env` alone when status cannot run |
+| `PUT  …/{name}/env` | `{ entries: [{ key, value }] }` | batch `.env` write; **a blank value removes the variable** |
+| `POST …/{name}/env/init` | — | seeds the `.env` only if the profile has none; answers with the setup either way |
+| `GET  …/{containerId}/auth-providers` | — | which vendors this **container** holds credentials for. Container-scoped, not per profile: credentials live in the data volume, so it answers from the `default` profile and takes no name |
+| `GET  …/{name}/skills/{skillName}/content` | — | `{ name, path, body, files }` — the skill's own markdown, plus the other files in its directory |
+| `PUT  …/{name}/skills/{skillName}/content` | `{ body }` | rewrites that markdown |
+| `GET  …/{name}/sessions` | — | recorded conversations, read from the profile's own SQLite store |
+| `GET  …/{name}/sessions/{sessionId}` | — | that conversation's messages, passed through as raw JSON |
+| `DELETE …/{name}/sessions/{sessionId}` | — | forgets one conversation |
 
 Every agent DTO also carries `gateway`: the profile's own view of itself out of
 `gateway_state.json` — `state`/`desiredState` (which differ while it drains),
@@ -141,10 +150,67 @@ endpoint. `vision` is deliberately left on `auto`: its chain skips a main model
 known to be text-only and falls back to OpenRouter/Nous, so pinning it would aim
 image payloads at a model that may reject them.
 
+## Scheduled jobs and inbound webhooks — hermes' own, driven the way profiles are
+
+Both are per profile while their pages are per container, so each listing fans out over the
+container's profiles. **Reads come from the files hermes owns; writes go through its CLI** —
+hermes parses the schedule expression, mints the job id, computes the next run and generates
+each route's HMAC secret, so a write composed here would be a second implementation of its
+rules. The reasoning is in
+[architecture.md](architecture.md#scheduled-jobs-and-inbound-webhooks).
+
+Every cron mutation answers with the **whole schedule as hermes now holds it**, so the
+dashboard never guesses what a create or an edit produced.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET  …/{name}/cron` | — | read from `<profile>/cron/jobs.json`, not from the table `hermes cron list` prints. Reports when the gateway is down: hermes stores jobs either way, but nothing fires them |
+| `POST …/{name}/cron` | `{ schedule, prompt, name?, deliver?, repeat?, skills? }` | `schedule` and `prompt` are what hermes needs; blank optionals are left off the command line |
+| `PATCH …/{name}/cron/{jobId}` | same fields, all optional | a null is left alone |
+| `POST …/{name}/cron/{jobId}/pause` | — | holds this **job**; not the profile-wide `…/{name}/pause` above |
+| `POST …/{name}/cron/{jobId}/resume` | — | the counterpart to the row above |
+| `POST …/{name}/cron/{jobId}/run` | — | asks for the job on the next scheduler tick rather than waiting for its schedule |
+| `DELETE …/{name}/cron/{jobId}` | — | |
+
+Only a `cron` schedule carries an expression — `once` stores a timestamp and `interval` a
+minute count — so the UI shows hermes' own display string, the one form every kind has.
+
+Inbound routes live in `<profile>/webhook_subscriptions.json`, keyed by route name. **Mission
+Control never carries webhook traffic and publishes no port for it**, so nothing here is an
+endpoint a provider would call; `WebhookPlatformDto.published` is always `false` and the page
+says a route is unreachable until an operator maps the port themselves.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET  …/{name}/webhooks` | — | routes plus the listener's state. Secrets appear only as a masked tail |
+| `PUT  …/{name}/webhooks/platform` | `{ enabled, host?, port? }` | turns the listener on or off and says where it binds. **One listener port per container, not per profile**: profiles share a network namespace, so this refuses a port another profile already holds and walks a defaulted one up from 8644 |
+| `POST …/{name}/webhooks` | `{ name, prompt?, description?, events?, skills?, deliver?, deliverChatId?, deliverOnly? }` | only `name` is required — hermes generates the HMAC secret, so no secret ever travels through the dashboard to reach it |
+| `GET  …/{name}/webhooks/{route}/secret` | — | the full HMAC secret the sending provider needs. **Its own endpoint on purpose**: a secret must not ride along in the listing the dashboard polls |
+| `POST …/{name}/webhooks/{route}/test` | — | fires hermes' own test POST at the route |
+| `DELETE …/{name}/webhooks/{route}` | — | |
+
+## Profile templates — reusable agent blueprints, dashboard-owned
+
+The one concept in this area with no home inside hermes, so it lives in SQLite. Template API
+keys and captured MCP config values are encrypted at rest under `MC_SECRET_KEY`; a blank
+secret on an update means *keep the one you hold*, because the editor never receives
+ciphertext to send back.
+
+| Method & path | Body | Notes |
+|---|---|---|
+| `GET /api/profile-templates` | — | |
+| `GET /api/profile-templates/{id}` | — | |
+| `POST /api/profile-templates` | `{ name, icon?, description?, category?, provider?, model?, baseUrl?, cwd?, soul?, memory?, skills?, mcpServers?, secrets? }` | |
+| `PUT /api/profile-templates/{id}` | same as POST | |
+| `DELETE /api/profile-templates/{id}` | — | |
+| `POST /api/profile-templates/capture` | `{ hostId, containerId, name, templateName? }` | builds a template out of a live profile |
+| `POST /api/profile-templates/{id}/deploy` | `{ hostId, containerId, name? }` | creates the profile and answers with it — enriched with its catalog links like every other profile this API returns |
+
 ## Model catalogs — what the create-agent form offers
 
 | Method & path | Body | Notes |
 |---|---|---|
+| `GET /api/providers` | — | the LLM **vendor** registry: `{ key, label, needsKey, oauth, hasCatalog, envVar }` per vendor. Compiled in, not stored — it mirrors hermes' own `CANONICAL_PROVIDERS` order and provider records, and a database row would let it drift from the CLI it has to agree with. The picker, the "needs an API key?" rule and the provider→catalog decision all read this one list |
 | `GET /api/models/{provider}` | — | what the picker offers. A list stored by the background refresh wins (`source: catalog`); otherwise the curated `mc.models` list from `application.yml` (`source: config`). 404 for a provider with neither |
 | `POST /api/models/{provider}` | `{ apiKey }` | live fetch from the provider's `/v1/models` (truth source); falls back to the config list on any failure |
 
@@ -198,22 +264,24 @@ the next probe says so.
 Adding a protocol is one `EndpointClient` bean. There is no schema change and no list to
 keep in sync.
 
-The `/api/model-providers` route predates the rename and is kept as-is; the concept it
-serves is an endpoint, not a vendor. Not to be confused with `/api/providers`, which is
-the model **vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API keys.
+The route and the table are `inference-endpoints` / `inference_endpoints`. Both shipped as
+`model-providers` / `model_providers` and were renamed once the concept had a name — an
+endpoint is a url you run, not a vendor. `SchemaUpgrades` carries an older database across
+and drops the old table. Not to be confused with `/api/providers`, which is the model
+**vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API keys.
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/model-providers` | — | probe resolves status **and** `kind` (10s cache); `version` is null for `openai` |
-| `POST /api/model-providers` | `{ name, url }` | http(s) urls only; duplicates rejected; a server that is down is still registered |
-| `POST /api/model-providers/{id}/check` | — | fresh probe |
-| `DELETE /api/model-providers/{id}` | — | |
-| `GET /api/model-providers/{id}/models` | — | proxied per kind |
-| `GET /api/model-providers/{id}/running` | — | what is loaded in memory, and the VRAM it holds; `[]` where the protocol cannot say |
-| `POST /api/model-providers/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
-| `POST /api/model-providers/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
-| `POST /api/model-providers/{id}/models/load` | `{ name }` | pins the model in memory (`keep_alive: -1`); **blocks** while the weights load, up to 3 min; **400 unless `canManageModels`** |
-| `POST /api/model-providers/{id}/models/unload` | `{ name }` | frees its VRAM immediately; **400 unless `canManageModels`** |
+| `GET /api/inference-endpoints` | — | probe resolves status **and** `kind` (10s cache); `version` is null for `openai` |
+| `POST /api/inference-endpoints` | `{ name, url }` | http(s) urls only; duplicates rejected; a server that is down is still registered |
+| `POST /api/inference-endpoints/{id}/check` | — | fresh probe |
+| `DELETE /api/inference-endpoints/{id}` | — | |
+| `GET /api/inference-endpoints/{id}/models` | — | proxied per kind |
+| `GET /api/inference-endpoints/{id}/running` | — | what is loaded in memory, and the VRAM it holds; `[]` where the protocol cannot say |
+| `POST /api/inference-endpoints/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
+| `POST /api/inference-endpoints/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
+| `POST /api/inference-endpoints/{id}/models/load` | `{ name }` | pins the model in memory (`keep_alive: -1`); **blocks** while the weights load, up to 3 min; **400 unless `canManageModels`** |
+| `POST /api/inference-endpoints/{id}/models/unload` | `{ name }` | frees its VRAM immediately; **400 unless `canManageModels`** |
 
 A pull is streamed from ollama, so `GET …/pulls` reports `detail` as `47% · pulling <digest>`
 while it runs and as the failure reason if it fails. A pull that has begun streaming is a 200
@@ -292,7 +360,5 @@ A fresh install is seeded with one sample prompt, once — the marker lives in
 
 ## Roadmap (not implemented)
 
-- Hermes cron jobs and webhooks introspection; would light up the Calendar and
-  Webhooks pages in live mode.
 - SSE/WebSocket streaming for logs and stats (currently polled).
 - TLS for remote daemons; authentication for the dashboard itself.

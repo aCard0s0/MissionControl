@@ -4,7 +4,7 @@ Operations dashboard for [Hermes Agent](https://hermes-agent.nousresearch.com/) 
 
 > Read and visualize almost everything. Edit only the smallest safe config surface.
 
-Documentation: [docs/architecture.md](docs/architecture.md) · [docs/api.md](docs/api.md) · [docs/testing.md](docs/testing.md) · [docs/mission_control_guidelines.md](docs/mission_control_guidelines.md)
+Documentation: [docs/map/](docs/map/) (edit map — start here) · [docs/architecture.md](docs/architecture.md) · [docs/api.md](docs/api.md) · [docs/testing.md](docs/testing.md) · [docs/mission_control_guidelines.md](docs/mission_control_guidelines.md)
 
 ## Modules
 

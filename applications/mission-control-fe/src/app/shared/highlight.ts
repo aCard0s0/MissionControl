@@ -38,10 +38,19 @@ export function countMatches(text: string | null | undefined, query: string): nu
   return n;
 }
 
-/** Primitive rendering used by the JSON tree (must match json-tree's primText). */
-function primText(value: unknown): string {
+/**
+ * How a primitive is rendered in the JSON tree: strings quoted and escaped, everything
+ * else stringified.
+ *
+ * <p>Exported and shared rather than written out in both places. `mc-json-tree` renders
+ * with it and {@link countJsonMatches} counts against it, so the two agreeing is what makes
+ * the toolbar's count match the marks in the DOM. They used to be separate copies held
+ * together by a comment, which nothing checked — a divergence would not have failed a test,
+ * it would have quietly made the count wrong.
+ */
+export function primText(value: unknown): string {
   if (value === null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'string') return JSON.stringify(value);   // quoted + escaped
   return String(value);
 }
 

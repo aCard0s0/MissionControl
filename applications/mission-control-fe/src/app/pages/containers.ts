@@ -22,6 +22,7 @@ import {
 } from '../core/image-policy';
 import { HermesContainer, ImageTag } from '../core/models';
 import { ApiContainerActivity } from '../core/hermes-api';
+import { Scrim } from '../shared/scrim';
 
 export function normalizeSeedProfiles(value: string): string[] {
   return Array.from(new Set(value.split(',')
@@ -32,7 +33,7 @@ export function normalizeSeedProfiles(value: string): string[] {
 @Component({
   selector: 'mc-containers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, StatusDot, Sparkline, Reveal, TerminalIcon],
+  imports: [FormsModule, StatusDot, Sparkline, Reveal, TerminalIcon, Scrim],
   templateUrl: './containers.html',
   styleUrl: './containers.scss',
 })

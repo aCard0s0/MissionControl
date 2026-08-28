@@ -4,6 +4,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { StoreContext } from '../core/store/store-context';
 import { TemplateStore } from '../core/store/template-store';
@@ -49,6 +50,7 @@ export class ProfileEditorPanel {
   protected readonly catalog = inject(McpCatalogStore);
   private readonly ctx = inject(StoreContext);
   private readonly providers = inject(ProviderStore);
+  private readonly endpoints = inject(InferenceEndpointStore);
   private readonly templates = inject(TemplateStore);
   protected readonly saving = signal(false);
 
@@ -69,7 +71,7 @@ export class ProfileEditorPanel {
   private readonly openGroups = signal<ReadonlySet<string>>(new Set());
 
   protected readonly providerChoices = computed(() =>
-    providerOptions(this.providers.llmProviders(), this.providers.endpoints()));
+    providerOptions(this.providers.llmProviders(), this.endpoints.endpoints()));
 
   /** Categories already in use, offered as a datalist so the library stays tidy
    *  without turning the field into a fixed list. */
@@ -236,7 +238,7 @@ export class ProfileEditorPanel {
     if (!this.canSave() || this.saving()) return;
     this.saving.set(true);
     const id = await this.templates.save(
-      profileDraftToInput(draft, this.providers.endpoints()), draft.id ?? undefined);
+      profileDraftToInput(draft, this.endpoints.endpoints()), draft.id ?? undefined);
     this.saving.set(false);
     if (!id) return;
     draft.id = id;

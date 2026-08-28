@@ -8,6 +8,7 @@ import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import { ProfileTemplate } from '../core/models';
 import { templateProvidesKey } from '../shared/provider-resolve';
+import { Scrim } from '../shared/scrim';
 
 /**
  * Deploys one blueprint into a container as a new agent. The only judgement it
@@ -19,7 +20,7 @@ import { templateProvidesKey } from '../shared/provider-resolve';
 @Component({
   selector: 'mc-profile-deploy-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, Scrim],
   templateUrl: './profile-deploy-dialog.html',
   styleUrl: './profile-deploy-dialog.scss',
 })

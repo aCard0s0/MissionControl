@@ -6,6 +6,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { clock } from '../core/format';
 import { ChatMessage, SessionInfo } from '../core/models';
 import { JsonTree } from '../shared/json-tree';
+import { Scrim } from '../shared/scrim';
 import { countJsonMatches, countMatches, highlightHtml } from '../shared/highlight';
 
 /** canonical role order for the toolbar filter chips */
@@ -38,7 +39,7 @@ interface RenderedMessage {
 @Component({
   selector: 'mc-session-viewer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [JsonTree],
+  imports: [JsonTree, Scrim],
   templateUrl: './session-viewer.html',
   styleUrl: './session-viewer.scss',
 })

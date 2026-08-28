@@ -135,16 +135,16 @@
 }
 
 @if (removing(); as server) {
-  <div class="scrim" (click)="removeBusy() ? null : removing.set(null)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="removeBusy() ? null : removing.set(null)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h crit-h">REMOVE MCP SERVER</div>
       <div class="modal-b">
         <p class="dim">
           Linked Agent entries will be disabled and unlinked first. Managed containers will be removed, while named volumes remain in Retained Data.
         </p>
         <div class="field">
-          <label>type <span class="mono">{{ server.name }}</span> to confirm</label>
-          <input class="input" [(ngModel)]="removeConfirm" [placeholder]="server.name" />
+          <label for="mcps-type-confirm">type <span class="mono">{{ server.name }}</span> to confirm</label>
+          <input id="mcps-type-confirm" class="input" [(ngModel)]="removeConfirm" [placeholder]="server.name" />
         </div>
         <div class="modal-actions">
           <button class="btn ghost" [disabled]="removeBusy()" (click)="removing.set(null)">cancel</button>
@@ -158,14 +158,14 @@
 }
 
 @if (purging(); as resource) {
-  <div class="scrim" (click)="purgeBusy() ? null : purging.set(null)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="purgeBusy() ? null : purging.set(null)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h crit-h">PURGE RETAINED DATA</div>
       <div class="modal-b">
         <p class="dim">This permanently deletes named volume <span class="mono">{{ resource.name }}</span>. This cannot be undone.</p>
         <div class="field">
-          <label>type <span class="mono">{{ resource.name }}</span> to confirm</label>
-          <input class="input" [(ngModel)]="purgeConfirm" [placeholder]="resource.name" />
+          <label for="mcps-type-confirm-2">type <span class="mono">{{ resource.name }}</span> to confirm</label>
+          <input id="mcps-type-confirm-2" class="input" [(ngModel)]="purgeConfirm" [placeholder]="resource.name" />
         </div>
         <div class="modal-actions">
           <button class="btn ghost" [disabled]="purgeBusy()" (click)="purging.set(null)">cancel</button>

@@ -6,15 +6,17 @@ import { FormsModule } from '@angular/forms';
 import { ActivityStore } from '../core/store/activity-store';
 import { AgentSetupStore } from '../core/store/agent-setup-store';
 import { AgentStore } from '../core/store/agent-store';
+import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import {
-  AuthProvider, AuxiliaryModel, HermesContainer, InferenceEndpoint,
+  AuthProvider, AuxiliaryModel, HermesContainer, InferenceEndpoint, ModelCatalog,
 } from '../core/models';
 import { ModelPicker } from '../shared/model-picker';
 import {
   OLLAMA_PREFIX, providerOptions, providerOptionFor, resolveProviderOption, templateProvidesKey,
 } from '../shared/provider-resolve';
+import { Scrim } from '../shared/scrim';
 
 /**
  * The new-agent form. Everything it collects is provider-shaped: which provider
@@ -28,7 +30,7 @@ import {
 @Component({
   selector: 'mc-agent-create-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, Scrim],
   templateUrl: './agent-create-dialog.html',
   styleUrl: './agent-create-dialog.scss',
 })
@@ -43,6 +45,7 @@ export class AgentCreateDialog {
   protected readonly agents = inject(AgentStore);
   protected readonly templates = inject(TemplateStore);
   private readonly providers = inject(ProviderStore);
+  private readonly endpoints = inject(InferenceEndpointStore);
   private readonly setup = inject(AgentSetupStore);
   private readonly activity = inject(ActivityStore);
 
@@ -57,7 +60,7 @@ export class AgentCreateDialog {
 
   /** The LLM registry plus one entry per registered ollama instance. */
   protected readonly providerChoices = computed(() =>
-    providerOptions(this.providers.llmProviders(), this.providers.endpoints()));
+    providerOptions(this.providers.llmProviders(), this.endpoints.endpoints()));
 
   protected name = '';
   protected provider = 'nous';
@@ -107,7 +110,7 @@ export class AgentCreateDialog {
     const template = this.templates.byId(id);
     if (!template) return;
     const option = providerOptionFor(
-      template.provider, template.baseUrl, this.providerChoices(), this.providers.endpoints());
+      template.provider, template.baseUrl, this.providerChoices(), this.endpoints.endpoints());
     if (option) {
       this.provider = option;
       // hand the template's model in as the preferred selection, so the catalog
@@ -179,7 +182,7 @@ export class AgentCreateDialog {
     if (!name || !this.main.model || this.busy()) return;
     if (this.apiKeyRequired() && !this.apiKey.trim()) return;
     if (this.auxIncomplete()) return;
-    const primary = resolveProviderOption(this.provider, this.providers.endpoints());
+    const primary = resolveProviderOption(this.provider, this.endpoints.endpoints());
     if (!primary) return;
     const auxiliary = this.auxiliaryOverride();
     if (this.auxOverride && !auxiliary) return;   // named an ollama instance that vanished
@@ -216,7 +219,7 @@ export class AgentCreateDialog {
   private auxiliaryOverride(): AuxiliaryModel | undefined {
     if (!this.auxOverride || !this.aux.model.trim()) return undefined;
     if (this.auxProvider === this.provider) return { model: this.aux.model.trim() };
-    const resolved = resolveProviderOption(this.auxProvider, this.providers.endpoints());
+    const resolved = resolveProviderOption(this.auxProvider, this.endpoints.endpoints());
     if (!resolved) return undefined;
     return {
       provider: resolved.provider,
@@ -239,19 +242,24 @@ export class AgentCreateDialog {
   }
 
   private ollamaInstance(option: string): InferenceEndpoint | null {
-    return this.providers.endpoints().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
+    return this.endpoints.endpoints().find(p => OLLAMA_PREFIX + p.name === option) ?? null;
   }
 
   /** Where a picker's suggestions come from: an ollama instance's installed
-   *  models, a cloud provider's catalog, or nothing for a free-text provider. */
-  private catalogFor(option: string): Promise<string[]> {
+   *  models, a cloud provider's catalog, or nothing for a free-text provider.
+   *
+   *  Only the provider catalog carries a `source` worth showing. An endpoint's
+   *  installed models were just read off the box the operator picked, and an empty
+   *  list has nothing to say about where it came from. */
+  private catalogFor(option: string): Promise<ModelCatalog> {
     if (option.startsWith(OLLAMA_PREFIX)) {
       const instance = this.ollamaInstance(option);
       return instance
-        ? this.providers.models(instance.id).then(list => list.map(m => m.name))
-        : Promise.resolve([]);
+        ? this.endpoints.models(instance.id)
+            .then(list => ({ models: list.map(m => m.name), source: null }))
+        : Promise.resolve({ models: [], source: null });
     }
-    if (!this.hasCatalog(option)) return Promise.resolve([]);
+    if (!this.hasCatalog(option)) return Promise.resolve({ models: [], source: null });
     return this.providers.modelCatalog(option);
   }
 }

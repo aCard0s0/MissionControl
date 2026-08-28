@@ -78,7 +78,8 @@
     }
     @for (t of visible(); track t.id) {
       <div class="panel tmpl" [class.active]="draft().id === t.id" [class.open]="cardOpen(t.id)"
-           (click)="edit(t)">
+           role="button" tabindex="0" (click)="edit(t)"
+           (keydown.enter)="edit(t)" (keydown.space)="edit(t); $event.preventDefault()">
         <div class="panel-h">
           <button class="disc" type="button" [attr.aria-expanded]="cardOpen(t.id)"
                   [title]="cardOpen(t.id) ? 'close details' : 'show details'"

@@ -39,29 +39,29 @@
     <div class="panel-b">
       <div class="row">
         <div class="field">
-          <label>title</label>
-          <input class="input" [(ngModel)]="fTitle" placeholder="Triage an unhealthy container" />
+          <label for="prompt-title">title</label>
+          <input id="prompt-title" class="input" [(ngModel)]="fTitle" placeholder="Triage an unhealthy container" />
         </div>
         <div class="field">
-          <label>category</label>
-          <input class="input" [(ngModel)]="fCategory" list="mc-prompt-categories" placeholder="general" />
+          <label for="prompt-category">category</label>
+          <input id="prompt-category" class="input" [(ngModel)]="fCategory" list="mc-prompt-categories" placeholder="general" />
           <datalist id="mc-prompt-categories">
             @for (c of prompts.categories(); track c) { <option [value]="c"></option> }
           </datalist>
         </div>
       </div>
       <div class="field">
-        <label>tags</label>
-        <input class="input" [(ngModel)]="fTags" placeholder="ops, triage" />
+        <label for="prompt-tags">tags</label>
+        <input id="prompt-tags" class="input" [(ngModel)]="fTags" placeholder="ops, triage" />
       </div>
       <div class="field">
-        <label>notes</label>
-        <textarea class="input notes" rows="2" [(ngModel)]="fNotes"
+        <label for="prompt-notes">notes</label>
+        <textarea id="prompt-notes" class="input notes" rows="2" [(ngModel)]="fNotes"
                   placeholder="when to reach for this, and what to change before you send it"></textarea>
       </div>
       <div class="field">
-        <label>prompt</label>
-        <textarea class="input body" rows="12" [(ngModel)]="fBody"
+        <label for="prompt-prompt">prompt</label>
+        <textarea id="prompt-prompt" class="input body" rows="12" [(ngModel)]="fBody"
                   placeholder="the text you want to keep"></textarea>
       </div>
       <p class="lock-hint">

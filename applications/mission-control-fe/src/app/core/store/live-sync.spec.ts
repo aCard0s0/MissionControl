@@ -82,7 +82,7 @@ describe('LiveSync bootstrap', () => {
         id: 'dh-remote', name: 'remote', url: 'tcp://10.0.0.2:2375', kind: 'remote',
         status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, note: null,
       }],
-      '/api/model-providers': [],
+      '/api/inference-endpoints': [],
       '/api/providers': [{ key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true, envVar: 'ANTHROPIC_API_KEY' }],
       '/api/containers': [CONTAINER],
       '/api/board/tasks': [{ id: 't1', containerId: 'c-live', agentId: null, title: 'Ship it', column: 'queued', priority: 'high', tags: null, createdAt: 1 }],
@@ -577,21 +577,23 @@ describe('live registries', () => {
     const fromConfig = await store.providers.modelCatalog('anthropic');
     const fromKey = await store.providers.modelCatalogLive('anthropic', 'sk-ant-x');
 
-    expect(fromConfig).toContain('claude-fable-5');
+    expect(fromConfig.models).toContain('claude-fable-5');
+    // and it says so, rather than passing the offline copy off as the provider's own list
+    expect(fromConfig.source).toBe('bundled');
     expect(fromKey).toEqual(fromConfig);
   });
 
   it('answers an empty model list rather than throwing at a page', async () => {
     const store = await loaded();
     stubBackend(store.ctx, {
-      providers: {
+      endpoints: {
         models: vi.fn().mockRejectedValue(new Error('ollama down')),
         pullStatus: vi.fn().mockRejectedValue(new Error('ollama down')),
       },
     });
 
-    expect(await store.providers.models('mp-local')).toEqual([]);
-    expect(await store.providers.pullStatus('mp-local')).toEqual([]);
+    expect(await store.endpoints.models('mp-local')).toEqual([]);
+    expect(await store.endpoints.pullStatus('mp-local')).toEqual([]);
     expect(liveError(store.ctx)).toBe('model list failed: ollama down');
   });
 

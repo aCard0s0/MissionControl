@@ -1,4 +1,5 @@
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
+import { ModelCatalog, ModelSource } from '../core/models';
 
 /**
  * One model field plus the suggestions behind it. The field is free text backed
@@ -18,6 +19,22 @@ export class ModelPicker {
   readonly suggestions = signal<string[]>([]);
   readonly loading = signal(false);
 
+  /** Where the current suggestions came from; null before the first load. */
+  readonly source = signal<ModelSource | null>(null);
+
+  /** The provenance as a field hint, or null when there is nothing worth saying —
+   *  an empty list has no source to report, and `live` means the operator's own key
+   *  just answered, which they already know because they typed it. */
+  readonly sourceLabel = computed(() => {
+    if (!this.suggestions().length) return null;
+    switch (this.source()) {
+      case 'catalog': return 'from the provider';
+      case 'config': return 'shipped list';
+      case 'bundled': return 'offline copy — backend unreachable';
+      default: return null;
+    }
+  });
+
   private seq = 0;
 
   /**
@@ -28,19 +45,23 @@ export class ModelPicker {
    * models would be wrong, and the current list for a plain refresh.
    */
   async load(
-    fetch: Promise<string[]>,
+    fetch: Promise<ModelCatalog>,
     opts: { preferred?: string; keepOnError?: boolean } = {},
   ): Promise<void> {
     const seq = ++this.seq;
     this.loading.set(true);
     let list: string[];
+    let source: ModelSource | null;
     try {
-      list = await fetch;
+      ({ models: list, source } = await fetch);
     } catch {
+      // keepOnError holds the current list, so it keeps the label that described it
       list = opts.keepOnError ? this.suggestions() : [];
+      source = opts.keepOnError ? this.source() : null;
     }
     if (seq !== this.seq) return;   // a newer load superseded this one
     this.suggestions.set(list);
+    this.source.set(source);
     this.loading.set(false);
     if (opts.preferred) this.model = opts.preferred;
     else if (list.length && !list.includes(this.model)) this.model = list[0];
@@ -51,6 +72,7 @@ export class ModelPicker {
     this.seq++;
     this.model = '';
     this.suggestions.set([]);
+    this.source.set(null);
     this.loading.set(false);
   }
 }

@@ -248,7 +248,9 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 5px;
-  label {
+  // `.field-cap` is the same caption over something a <label> cannot name — a row of
+  // preset buttons, a picker that opens — where the group carries aria-labelledby instead.
+  label, .field-cap {
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.12em;

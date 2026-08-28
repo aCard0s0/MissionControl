@@ -1,18 +1,18 @@
-<div class="scrim" (click)="closed.emit()">
-  <div class="modal" (click)="$event.stopPropagation()">
+<div class="scrim" mcScrim (dismiss)="closed.emit()">
+  <div class="modal" role="dialog" aria-modal="true">
     <div class="panel-h">deploy — {{ template().name }}</div>
     <div class="modal-b">
       <p class="dim">Creates a new agent in the chosen container and applies this blueprint —
         soul, memory, skills, MCP servers, and keys.</p>
       <div class="field">
-        <label>target container</label>
-        <select class="select" [(ngModel)]="containerId">
+        <label for="deploy-target-container">target container</label>
+        <select id="deploy-target-container" class="select" [(ngModel)]="containerId">
           @for (c of containers.containers(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
         </select>
       </div>
       <div class="field">
-        <label>agent name</label>
-        <input class="input" [(ngModel)]="name" placeholder="ops-bot" />
+        <label for="deploy-agent-name">agent name</label>
+        <input id="deploy-agent-name" class="input" [(ngModel)]="name" placeholder="ops-bot" />
       </div>
       @if (!containers.containers().length) {
         <p class="lock-hint">no containers available — deploy one from the Containers page first.</p>

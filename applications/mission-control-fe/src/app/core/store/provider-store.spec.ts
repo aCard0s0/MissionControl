@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { InferenceEndpoint } from '../models';
-import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
-import { flush, liveError, testSlices } from '../../testing/store';
-
-const provider = (id: string, patch: Partial<InferenceEndpoint> = {}): InferenceEndpoint => ({
-  id, name: id, url: `http://${id}:11434`, kind: 'ollama', status: 'connected',
-  version: '0.6.4', detail: null, canManageModels: true, ...patch,
-});
+import { FALLBACK_MODELS } from './provider-defaults';
+import { testSlices } from '../../testing/store';
 
 const store = (providers: Record<string, unknown>) => {
   const { ctx, providers: store } = testSlices({ providers });
@@ -14,11 +8,11 @@ const store = (providers: Record<string, unknown>) => {
 };
 
 describe('ProviderStore LLM registry', () => {
-  it('starts on the bootstrap mirror so the pickers work before the backend answers', () => {
-    expect(store({}).store.llmProviders()).toEqual(DEFAULT_LLM_PROVIDERS);
+  it('starts empty — the backend registry is the only one', () => {
+    expect(store({}).store.llmProviders()).toEqual([]);
   });
 
-  it('replaces the mirror with the backend registry', async () => {
+  it('fills the picker from the backend registry', async () => {
     const registry = [{ key: 'nous', label: 'Nous', needsKey: true, oauth: false, hasCatalog: true, envVar: 'NOUS_API_KEY' }];
     const built = store({ registry: vi.fn().mockResolvedValue(registry) });
 
@@ -27,145 +21,51 @@ describe('ProviderStore LLM registry', () => {
     expect(built.store.llmProviders()).toEqual(registry);
   });
 
-  it('keeps the mirror when the registry is unreachable or empty', async () => {
+  it('resolves rather than throwing when the registry is unreachable, so the rest of the initial load survives', async () => {
     const failing = store({ registry: vi.fn().mockRejectedValue(new Error('offline')) });
-    const empty = store({ registry: vi.fn().mockResolvedValue([]) });
 
-    await failing.store.refreshRegistry();
-    await empty.store.refreshRegistry();
+    await expect(failing.store.refreshRegistry()).resolves.toBeUndefined();
 
-    expect(failing.store.llmProviders()).toEqual(DEFAULT_LLM_PROVIDERS);
-    expect(empty.store.llmProviders()).toEqual(DEFAULT_LLM_PROVIDERS);
-  });
-});
-
-describe('ProviderStore ollama endpoints', () => {
-  it('keeps the last inventory when a poll fails, rather than blanking it', async () => {
-    const list = vi.fn().mockResolvedValueOnce([provider('mp-1')]).mockRejectedValue(new Error('down'));
-    const built = store({ list });
-    await built.store.refresh();
-
-    await built.store.refresh();
-
-    expect(built.store.endpoints().map(p => p.id)).toEqual(['mp-1']);
-    expect(liveError(built.ctx)).toBeNull();
-  });
-
-  it('re-reads the list after adding one, since the backend assigns the id', async () => {
-    const add = vi.fn().mockResolvedValue(provider('mp-new'));
-    const list = vi.fn().mockResolvedValue([provider('mp-new')]);
-    const built = store({ add, list });
-
-    built.store.add('lab', 'http://ollama:11434');
-    await flush();
-
-    expect(add).toHaveBeenCalledWith('lab', 'http://ollama:11434');
-    expect(built.store.endpoints().map(p => p.id)).toEqual(['mp-new']);
-  });
-
-  it('reports an add the backend refused', async () => {
-    const built = store({ add: vi.fn().mockRejectedValue(new Error('duplicate url')) });
-
-    built.store.add('lab', 'http://ollama:11434');
-    await flush();
-
-    expect(liveError(built.ctx)).toBe('add provider failed: duplicate url');
-  });
-
-  it('re-reads the list after removing one, and reports a refused remove', async () => {
-    const list = vi.fn().mockResolvedValue([]);
-    const ok = store({ remove: vi.fn().mockResolvedValue(undefined), list });
-    const bad = store({ remove: vi.fn().mockRejectedValue(new Error('in use')) });
-
-    ok.store.remove('mp-1');
-    bad.store.remove('mp-1');
-    await flush();
-
-    expect(list).toHaveBeenCalled();
-    expect(liveError(bad.ctx)).toBe('remove provider failed: in use');
-  });
-
-  it('blanks the status while a check runs, then shows what came back', async () => {
-    let land!: (value: InferenceEndpoint) => void;
-    const check = vi.fn().mockReturnValue(new Promise<InferenceEndpoint>(r => { land = r; }));
-    const built = store({ list: vi.fn().mockResolvedValue([provider('mp-1')]), check });
-    await built.store.refresh();
-
-    built.store.check('mp-1');
-    expect(built.store.endpoints()[0].status).toBe('unknown');
-
-    land(provider('mp-1', { status: 'error', detail: 'connection refused' }));
-    await flush();
-    expect(built.store.endpoints()[0].status).toBe('error');
-  });
-
-  it('falls back to a full re-read when a check itself fails', async () => {
-    const list = vi.fn().mockResolvedValue([provider('mp-1')]);
-    const built = store({ list, check: vi.fn().mockRejectedValue(new Error('timeout')) });
-    await built.store.refresh();
-
-    built.store.check('mp-1');
-    await flush();
-
-    expect(liveError(built.ctx)).toBe('provider check failed: timeout');
-    expect(list).toHaveBeenCalledTimes(2);
+    expect(failing.store.llmProviders()).toEqual([]);
   });
 });
 
 describe('ProviderStore models', () => {
-  it('answers an empty list and says why a model listing failed', async () => {
-    const built = store({ models: vi.fn().mockRejectedValue(new Error('no such provider')) });
+  it('serves the configured catalog for a provider key, and says where it came from', async () => {
+    const built = store({
+      modelCatalog: vi.fn().mockResolvedValue({ models: ['m-1', 'm-2'], source: 'catalog' }),
+    });
 
-    expect(await built.store.models('mp-1')).toEqual([]);
-    expect(liveError(built.ctx)).toBe('model list failed: no such provider');
+    expect(await built.store.modelCatalog('anthropic'))
+      .toEqual({ models: ['m-1', 'm-2'], source: 'catalog' });
   });
 
-  it('reports a failed pull and a failed delete by name', async () => {
-    const pull = store({ pullModel: vi.fn().mockRejectedValue(new Error('disk full')) });
-    const del = store({ deleteModel: vi.fn().mockRejectedValue(new Error('model in use')) });
-
-    await pull.store.pullModel('mp-1', 'llama3');
-    await del.store.deleteModel('mp-1', 'llama3');
-
-    expect(liveError(pull.ctx)).toBe('pull failed: disk full');
-    expect(liveError(del.ctx)).toBe('model delete failed: model in use');
-  });
-
-  it('treats pull progress as best-effort — a failed poll is not an error', async () => {
-    const built = store({ pullStatus: vi.fn().mockRejectedValue(new Error('gone')) });
-
-    expect(await built.store.pullStatus('mp-1')).toEqual([]);
-    expect(liveError(built.ctx)).toBeNull();
-  });
-
-  it('serves the configured catalog for a provider key', async () => {
-    const built = store({ modelCatalog: vi.fn().mockResolvedValue({ models: ['m-1', 'm-2'] }) });
-
-    expect(await built.store.modelCatalog('anthropic')).toEqual(['m-1', 'm-2']);
-  });
-
-  it('falls back to the bundled list when the catalog cannot be read', async () => {
+  it('marks the bundled fallback as bundled, so a page cannot show it as the real catalog', async () => {
     const [key] = Object.keys(FALLBACK_MODELS);
     const built = store({ modelCatalog: vi.fn().mockRejectedValue(new Error('offline')) });
 
-    expect(await built.store.modelCatalog(key)).toEqual(FALLBACK_MODELS[key]);
-    expect(await built.store.modelCatalog('unknown-provider')).toEqual([]);
+    expect(await built.store.modelCatalog(key))
+      .toEqual({ models: FALLBACK_MODELS[key], source: 'bundled' });
+    expect(await built.store.modelCatalog('unknown-provider'))
+      .toEqual({ models: [], source: 'bundled' });
   });
 
   it('reads the live catalog with the operator\'s key', async () => {
-    const modelCatalogLive = vi.fn().mockResolvedValue({ models: ['live-1'] });
+    const modelCatalogLive = vi.fn().mockResolvedValue({ models: ['live-1'], source: 'live' });
     const built = store({ modelCatalogLive });
 
-    expect(await built.store.modelCatalogLive('anthropic', 'sk-x')).toEqual(['live-1']);
+    expect(await built.store.modelCatalogLive('anthropic', 'sk-x'))
+      .toEqual({ models: ['live-1'], source: 'live' });
     expect(modelCatalogLive).toHaveBeenCalledWith('anthropic', 'sk-x');
   });
 
   it('falls back to the configured catalog when the key is rejected', async () => {
     const built = store({
       modelCatalogLive: vi.fn().mockRejectedValue(new Error('401')),
-      modelCatalog: vi.fn().mockResolvedValue({ models: ['configured'] }),
+      modelCatalog: vi.fn().mockResolvedValue({ models: ['configured'], source: 'config' }),
     });
 
-    expect(await built.store.modelCatalogLive('anthropic', 'bad-key')).toEqual(['configured']);
+    expect(await built.store.modelCatalogLive('anthropic', 'bad-key'))
+      .toEqual({ models: ['configured'], source: 'config' });
   });
 });

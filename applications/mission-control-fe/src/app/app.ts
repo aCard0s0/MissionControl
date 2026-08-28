@@ -12,6 +12,7 @@ import { Notifications } from './shared/notifications';
 import { StatusDot } from './shared/status-dot';
 import { TerminalPanel } from './shared/terminal-panel';
 import { uptime } from './core/format';
+import { Scrim } from './shared/scrim';
 
 const NAV = [
   { path: '/containers', label: 'Containers', icon: 'box', exact: false },
@@ -31,7 +32,7 @@ const NAV = [
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, NavIconView, Notifications, StatusDot, TerminalPanel],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NavIconView, Notifications, StatusDot, TerminalPanel, Scrim],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: { '[class.side-collapsed]': 'sideCollapsed()' },

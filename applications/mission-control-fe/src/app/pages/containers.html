@@ -130,8 +130,8 @@
 </p>
 
 @if (stopping(); as pending) {
-  <div class="scrim" (click)="stopping.set(null)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="stopping.set(null)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h">STOP <span class="mono">{{ pending.container.name }}</span>?</div>
       <div class="modal-b">
         @if (pending.activity.activeAgents > 0) {
@@ -165,17 +165,17 @@
 }
 
 @if (deployOpen()) {
-  <div class="scrim" (click)="deployOpen.set(false)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="deployOpen.set(false)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h">DEPLOY HERMES CONTAINER</div>
       <div class="modal-b">
         <div class="field">
-          <label>container name</label>
-          <input class="input" [(ngModel)]="deployName" placeholder="hermes-staging" autofocus />
+          <label for="ctr-container-name">container name</label>
+          <input id="ctr-container-name" class="input" [(ngModel)]="deployName" placeholder="hermes-staging" autofocus />
         </div>
         <div class="field">
-          <label>image version</label>
-          <select class="select" [(ngModel)]="deployVersion"
+          <label for="ctr-image-version">image version</label>
+          <select id="ctr-image-version" class="select" [(ngModel)]="deployVersion"
                   [disabled]="tagsLoading() || !deployTags().length">
             @for (tag of deployTags(); track tag) {
               <option [value]="tag">{{ tag }}</option>
@@ -190,24 +190,26 @@
           }
         </div>
         <div class="field">
-          <label>docker host</label>
-          <select class="select" [(ngModel)]="deployHost" (ngModelChange)="loadTags($event)">
+          <label for="ctr-docker-host">docker host</label>
+          <select id="ctr-docker-host" class="select" [(ngModel)]="deployHost" (ngModelChange)="loadTags($event)">
             @for (h of connectedHosts(); track h.id) {
               <option [value]="h.id">{{ h.name }} — {{ h.url }}</option>
             }
           </select>
         </div>
         <div class="field">
-          <label>seed profiles — comma separated, optional</label>
-          <input class="input" [(ngModel)]="deployProfiles" placeholder="ops, research" />
+          <label for="ctr-seed-profiles">seed profiles — comma separated, optional</label>
+          <input id="ctr-seed-profiles" class="input" [(ngModel)]="deployProfiles" placeholder="ops, research" />
         </div>
         <p class="lock-hint">
           The default profile is initialized automatically. Named profiles are created before deployment completes;
           configure their model credentials from the Agents page afterwards.
         </p>
 
-        <div class="field resources">
-          <label>resources — starts at what Hermes recommends</label>
+        <!-- role=group rather than <label>: this caption sits over two rows of preset
+             buttons, and a <label> can only name a single form control -->
+        <div class="field resources" role="group" aria-labelledby="ctr-resources">
+          <span class="field-cap" id="ctr-resources">resources — starts at what Hermes recommends</span>
 
           <div class="res-row mono">
             <span class="res-lbl">memory</span>
@@ -259,8 +261,8 @@
 }
 
 @if (updating(); as c) {
-  <div class="scrim" (click)="cancelUpdate()">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="cancelUpdate()">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h">UPDATE IMAGE — {{ c.name }}</div>
       <div class="modal-b">
         <p class="dim">
@@ -269,8 +271,8 @@
           same name, profiles and managed data volume.
         </p>
         <div class="field">
-          <label>target version</label>
-          <select class="select" [(ngModel)]="updateVersion" [disabled]="updatingBusy()">
+          <label for="ctr-target-version">target version</label>
+          <select id="ctr-target-version" class="select" [(ngModel)]="updateVersion" [disabled]="updatingBusy()">
             @for (t of updateTargets(); track t.tag) {
               <!-- the value stays the tag: a tag is what gets pulled, a release is only
                    what it currently means -->
@@ -305,8 +307,8 @@
 }
 
 @if (removing(); as c) {
-  <div class="scrim" (click)="removingBusy() ? null : removing.set(null)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="removingBusy() ? null : removing.set(null)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h crit-h">REMOVE CONTAINER</div>
       <div class="modal-b">
         <p class="dim">
@@ -314,8 +316,8 @@
           {{ profileCount(c.id) }} profile(s) inside it. External or unowned mounts are never deleted. It cannot be undone.
         </p>
         <div class="field">
-          <label>type <span class="mono">{{ c.name }}</span> to confirm</label>
-          <input class="input" [(ngModel)]="confirmText" [placeholder]="c.name" />
+          <label for="ctr-type-confirm">type <span class="mono">{{ c.name }}</span> to confirm</label>
+          <input id="ctr-type-confirm" class="input" [(ngModel)]="confirmText" [placeholder]="c.name" />
         </div>
         <div class="modal-actions">
           <button class="btn ghost" [disabled]="removingBusy()" (click)="removing.set(null)">cancel</button>

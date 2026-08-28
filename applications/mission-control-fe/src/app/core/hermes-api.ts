@@ -6,6 +6,7 @@ import { ApiHttp } from './api/http';
 import { terminalSocketUrl } from './api/terminal-socket';
 import { McpCatalogApi } from './api/mcp-catalog-api';
 import { PromptsApi } from './api/prompts-api';
+import { InferenceEndpointsApi } from './api/inference-endpoints-api';
 import { ProvidersApi } from './api/providers-api';
 import { ServerApi } from './api/server-api';
 import { TemplatesApi } from './api/templates-api';
@@ -37,6 +38,7 @@ export class HermesApi {
   readonly mcp: McpCatalogApi;
   readonly prompts: PromptsApi;
   readonly providers: ProvidersApi;
+  readonly endpoints: InferenceEndpointsApi;
   readonly templates: TemplatesApi;
   readonly board: BoardApi;
   readonly server: ServerApi;
@@ -52,6 +54,7 @@ export class HermesApi {
     this.mcp = new McpCatalogApi(this.http);
     this.prompts = new PromptsApi(this.http);
     this.providers = new ProvidersApi(this.http);
+    this.endpoints = new InferenceEndpointsApi(this.http);
     this.templates = new TemplatesApi(this.http);
     this.board = new BoardApi(this.http);
     this.server = new ServerApi(this.http);

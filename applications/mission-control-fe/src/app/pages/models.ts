@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AgentStore } from '../core/store/agent-store';
-import { ProviderStore } from '../core/store/provider-store';
+import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { StatusDot } from '../shared/status-dot';
 import { Reveal } from '../shared/reveal';
 import { errorMessage } from '../core/errors';
@@ -20,7 +20,7 @@ const POLL_MS = 3000;
   styleUrl: './models.scss',
 })
 export class ModelsPage {
-  protected readonly providers = inject(ProviderStore);
+  protected readonly endpoints = inject(InferenceEndpointStore);
   protected readonly agents = inject(AgentStore);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -57,7 +57,7 @@ export class ModelsPage {
   private static readonly HTTP_URL = /^https?:\/\/.+/;
 
   constructor() {
-    void this.providers.refresh();
+    void this.endpoints.refresh();
     this.destroyRef.onDestroy(() => this.stopPolling());
   }
 
@@ -69,7 +69,7 @@ export class ModelsPage {
     const name = this.provName.trim();
     const url = this.provUrl.trim();
     if (!name || !ModelsPage.HTTP_URL.test(url)) return;
-    this.providers.add(name, url);
+    this.endpoints.add(name, url);
     this.addingProvider.set(false);
     this.provName = '';
     this.provUrl = '';
@@ -78,12 +78,12 @@ export class ModelsPage {
   protected removeProvider(id: string): void {
     this.removingProvider.set(null);
     if (this.selectedId() === id) this.collapse();
-    this.providers.remove(id);
+    this.endpoints.remove(id);
   }
 
   protected selected(): InferenceEndpoint | null {
     const id = this.selectedId();
-    return this.providers.endpoints().find(p => p.id === id) ?? null;
+    return this.endpoints.endpoints().find(p => p.id === id) ?? null;
   }
 
   /** The row is the control: opening one endpoint's models closes whichever was open. */
@@ -130,7 +130,7 @@ export class ModelsPage {
     this.modelsLoading.set(true);
     this.modelsError.set(null);
     try {
-      const models = await this.providers.models(id);
+      const models = await this.endpoints.models(id);
       if (id !== this.selectedId()) return;   // provider changed mid-flight — stale response
       this.models.set(models);
     } catch (error) {
@@ -187,7 +187,7 @@ export class ModelsPage {
     if (!id) return;   // the other rows' buttons are disabled while one is busy
     this.busyModel.set(name);
     try {
-      await (loaded ? this.providers.loadModel(id, name) : this.providers.unloadModel(id, name));
+      await (loaded ? this.endpoints.loadModel(id, name) : this.endpoints.unloadModel(id, name));
     } finally {
       if (id === this.selectedId()) this.busyModel.set(null);
     }
@@ -199,7 +199,7 @@ export class ModelsPage {
     const name = this.pullName.trim();
     if (!id || !name) return;
     this.pullName = '';
-    await this.providers.pullModel(id, name);
+    await this.endpoints.pullModel(id, name);
     // read the state now rather than up to a tick later: the chip is the only sign the pull
     // was accepted. The poller is already running — the pull bar only exists where it does.
     if (id === this.selectedId()) await this.refreshPulls(id);
@@ -209,7 +209,7 @@ export class ModelsPage {
     const id = this.selectedId();
     if (!id) return;
     this.removingModel.set(null);
-    await this.providers.deleteModel(id, name);
+    await this.endpoints.deleteModel(id, name);
     if (id === this.selectedId()) void this.loadModels(id);
   }
 
@@ -228,13 +228,13 @@ export class ModelsPage {
   }
 
   private async refreshRunning(id: string): Promise<void> {
-    const running = await this.providers.running(id);
+    const running = await this.endpoints.running(id);
     if (id === this.selectedId()) this.running.set(running);
   }
 
   private async refreshPulls(id: string): Promise<void> {
     try {
-      const pulls = await this.providers.pullStatus(id);
+      const pulls = await this.endpoints.pullStatus(id);
       if (id !== this.selectedId()) return;
       const wasPulling = this.pulls().some(p => p.status === 'pulling');
       this.pulls.set(pulls);

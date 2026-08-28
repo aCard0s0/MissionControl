@@ -88,29 +88,17 @@ class RouteContractTest {
   void thePublishedListCoversTheWholeClient() {
     // a truncated or half-written file would let the check above pass while covering nothing
     assertTrue(readContract().size() > 50,
-        () -> "expected the frontend's whole route table in " + contractFile()
+        () -> "expected the frontend's whole route table in " + RepoDocs.contractFile()
             + "; run `npm run test:coverage` in applications/mission-control-fe to rewrite it");
   }
 
   private static List<String> readContract() {
-    Path file = contractFile();
+    Path file = RepoDocs.contractFile();
     assumeTrue(file != null, "mission-control-fe is not in this checkout — nothing published to check");
     try {
       return Files.readAllLines(file).stream().map(String::trim).filter(line -> !line.isEmpty()).toList();
     } catch (IOException e) {
       throw new UncheckedIOException("could not read " + file, e);
     }
-  }
-
-  /** Walks up from the working directory, so this passes from the module or the repo root. */
-  private static Path contractFile() {
-    Path dir = Path.of("").toAbsolutePath();
-    for (int depth = 0; depth < 5 && dir != null; depth++, dir = dir.getParent()) {
-      Path candidate = dir.resolve("applications/api-contract.txt");
-      if (Files.isRegularFile(candidate)) return candidate;
-      candidate = dir.resolve("api-contract.txt");
-      if (Files.isRegularFile(candidate)) return candidate;
-    }
-    return null;
   }
 }

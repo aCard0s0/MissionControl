@@ -29,8 +29,8 @@ const storeStub = (templates: ProfileTemplate[] = [], catalog: McpCatalogServer[
   },
   providers: {
     llmProviders: signal([]),
-    endpoints: signal([]),
   },
+  endpoints: { endpoints: signal([]) },
   templates: {
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
     categories: signal([...new Set(templates.map(t => t.category).filter(Boolean))].sort()),

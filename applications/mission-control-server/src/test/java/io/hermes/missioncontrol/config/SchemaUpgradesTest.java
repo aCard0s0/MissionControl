@@ -142,80 +142,112 @@ class SchemaUpgradesTest {
     assertTrue(columnsOfProfileTemplates().isEmpty());
   }
 
-  // ── model_providers.kind, dropped now the protocol is probed ─────────────
+  // ── model_providers → inference_endpoints ────────────────────────────────
 
-  /** {@code model_providers} as it shipped while the protocol was stored. */
-  private void rollBackToTheShapeWithStoredKind() {
-    database.jdbc().execute("DROP TABLE model_providers");
+  /** A database from before the table followed its route's rename. */
+  private void rollBackToModelProviders(boolean withStoredKind) {
+    database.jdbc().execute("DROP TABLE inference_endpoints");
     database.jdbc().execute("CREATE TABLE model_providers ("
         + "id TEXT PRIMARY KEY,"
         + "name TEXT NOT NULL,"
         + "url TEXT NOT NULL UNIQUE,"
-        + "kind TEXT NOT NULL CHECK (kind IN ('ollama')),"
+        + (withStoredKind ? "kind TEXT NOT NULL CHECK (kind IN ('ollama'))," : "")
+        + "created_at INTEGER NOT NULL)");
+    // the schema script runs before this class does, so the new table is already there
+    database.jdbc().execute("CREATE TABLE inference_endpoints ("
+        + "id TEXT PRIMARY KEY,"
+        + "name TEXT NOT NULL,"
+        + "url TEXT NOT NULL UNIQUE,"
         + "created_at INTEGER NOT NULL)");
   }
 
-  private Set<String> columnsOfModelProviders() {
-    return Set.copyOf(database.jdbc().query("PRAGMA table_info(model_providers)",
+  private boolean tableExists(String table) {
+    return database.jdbc().queryForObject(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        Integer.class, table) > 0;
+  }
+
+  private List<String> endpointUrls() {
+    return database.jdbc().queryForList(
+        "SELECT url FROM inference_endpoints ORDER BY id", String.class);
+  }
+
+  @Test
+  void theUpgradeCarriesEveryEndpointAcrossAndRemovesTheOldTable() {
+    rollBackToModelProviders(false);
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 1)");
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
+        + " VALUES ('mp-2', 'mac', 'http://mac:1234', 2)");
+
+    upgrades().apply();
+
+    assertEquals(List.of("http://box:11434", "http://mac:1234"), endpointUrls());
+    assertFalse(tableExists("model_providers"));
+  }
+
+  /**
+   * A database old enough to still store the protocol. The column list in the copy is what
+   * leaves {@code kind} behind — SQLite refuses {@code DROP COLUMN} on a column named in a
+   * CHECK, which is precisely the constraint being escaped.
+   */
+  @Test
+  void theUpgradeLeavesAStoredKindBehindWithoutLosingTheEndpoint() {
+    rollBackToModelProviders(true);
+    database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
+
+    upgrades().apply();
+
+    assertEquals(List.of("http://box:11434"), endpointUrls());
+    assertFalse(columnsOfInferenceEndpoints().contains("kind"));
+    // and any protocol can be registered now, not just the one the CHECK allowed
+    database.jdbc().update("INSERT INTO inference_endpoints (id, name, url, created_at)"
+        + " VALUES ('mp-2', 'mac', 'http://mac:1234', 1)");
+    assertEquals(2, endpointUrls().size());
+  }
+
+  private Set<String> columnsOfInferenceEndpoints() {
+    return Set.copyOf(database.jdbc().query("PRAGMA table_info(inference_endpoints)",
         (rs, n) -> rs.getString("name").toLowerCase(Locale.ROOT)));
   }
 
   @Test
-  void theUpgradeDropsKindAndKeepsTheRowsThatHadOne() {
-    rollBackToTheShapeWithStoredKind();
-    database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
-        + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
-
-    upgrades().apply();
-
-    assertFalse(columnsOfModelProviders().contains("kind"));
-    // the endpoint itself survived: only the stored protocol went
-    assertEquals(List.of("http://box:11434"), database.jdbc().queryForList(
-        "SELECT url FROM model_providers WHERE id = 'mp-1'", String.class));
-  }
-
-  /**
-   * The reason a rebuild is needed at all. SQLite refuses {@code DROP COLUMN} on a column
-   * named in a CHECK — which is precisely the constraint being removed.
-   */
-  @Test
-  void theOldCheckIsGoneSoAnyProtocolCanBeProbedLater() {
-    rollBackToTheShapeWithStoredKind();
-
-    upgrades().apply();
-
-    database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
-        + " VALUES ('mp-2', 'mac', 'http://mac:1234', 1)");
-    assertEquals(1, (int) database.jdbc().queryForObject(
-        "SELECT COUNT(*) FROM model_providers", Integer.class));
-  }
-
-  @Test
-  void theUniqueUrlConstraintSurvivesTheRebuild() {
-    rollBackToTheShapeWithStoredKind();
-    upgrades().apply();
+  void theUniqueUrlConstraintHoldsOnTheNewTable() {
+    rollBackToModelProviders(false);
     database.jdbc().update("INSERT INTO model_providers (id, name, url, created_at)"
         + " VALUES ('mp-1', 'box', 'http://box:11434', 1)");
 
-    // UNIQUE(url) is what stops one server being registered twice; a rebuild that dropped it
+    upgrades().apply();
+
+    // UNIQUE(url) is what stops one server being registered twice; a move that dropped it
     // would let duplicates in silently
     assertThrows(Exception.class, () -> database.jdbc().update(
-        "INSERT INTO model_providers (id, name, url, created_at)"
+        "INSERT INTO inference_endpoints (id, name, url, created_at)"
             + " VALUES ('mp-2', 'copy', 'http://box:11434', 1)"));
   }
 
   @Test
-  void theUpgradeIsIdempotentAndLeavesNoHalfBuiltTable() {
-    rollBackToTheShapeWithStoredKind();
+  void aSecondPassMovesNothingAndKeepsTheOneRow() {
+    rollBackToModelProviders(true);
     database.jdbc().update("INSERT INTO model_providers (id, name, url, kind, created_at)"
         + " VALUES ('mp-1', 'box', 'http://box:11434', 'ollama', 1)");
 
     upgrades().apply();
     upgrades().apply();
 
-    assertEquals(1, (int) database.jdbc().queryForObject(
-        "SELECT COUNT(*) FROM model_providers", Integer.class));
-    assertEquals(0, (int) database.jdbc().queryForObject(
-        "SELECT COUNT(*) FROM sqlite_master WHERE name = 'model_providers_new'", Integer.class));
+    assertEquals(List.of("http://box:11434"), endpointUrls());
+    assertFalse(tableExists("model_providers"));
+  }
+
+  /** The ordinary case: nothing to move, and the migration must not touch what is there. */
+  @Test
+  void aFreshDatabaseIsLeftAlone() {
+    database.jdbc().update("INSERT INTO inference_endpoints (id, name, url, created_at)"
+        + " VALUES ('mp-1', 'box', 'http://box:11434', 1)");
+
+    upgrades().apply();
+
+    assertEquals(List.of("http://box:11434"), endpointUrls());
   }
 }

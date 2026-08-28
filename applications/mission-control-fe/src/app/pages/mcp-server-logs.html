@@ -1,5 +1,5 @@
-<div class="scrim" (click)="closed.emit()">
-  <div class="modal log-modal" (click)="$event.stopPropagation()">
+<div class="scrim" mcScrim (dismiss)="closed.emit()">
+  <div class="modal log-modal" role="dialog" aria-modal="true">
     <div class="panel-h">
       LOGS — {{ server().name }}
       <span class="spacer"></span>

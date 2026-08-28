@@ -49,33 +49,33 @@
     <div class="panel-b form">
       <div class="row">
         <div class="field">
-          <label>route name — becomes /webhooks/&lt;name&gt;</label>
-          <input class="input" [(ngModel)]="fName" placeholder="grafana" />
+          <label for="hook-route-name-becomes">route name — becomes /webhooks/&lt;name&gt;</label>
+          <input id="hook-route-name-becomes" class="input" [(ngModel)]="fName" placeholder="grafana" />
         </div>
         <div class="field">
-          <label>agent</label>
-          <select class="select" [(ngModel)]="fAgent">
+          <label for="hook-agent">agent</label>
+          <select id="hook-agent" class="select" [(ngModel)]="fAgent">
             @for (a of agents.forSelectedContainer(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
           </select>
         </div>
       </div>
       <div class="field">
-        <label>prompt — dotted references pull values out of the payload</label>
-        <input class="input" [(ngModel)]="fPrompt" [placeholder]="promptExample" />
+        <label for="hook-prompt-dotted-references">prompt — dotted references pull values out of the payload</label>
+        <input id="hook-prompt-dotted-references" class="input" [(ngModel)]="fPrompt" [placeholder]="promptExample" />
       </div>
       <div class="row">
         <div class="field">
-          <label>event filters — comma separated, blank = all</label>
-          <input class="input" [(ngModel)]="fEvents" placeholder="alert.firing, alert.resolved" />
+          <label for="hook-event-filters">event filters — comma separated, blank = all</label>
+          <input id="hook-event-filters" class="input" [(ngModel)]="fEvents" placeholder="alert.firing, alert.resolved" />
         </div>
         <div class="field">
-          <label>deliver to — blank keeps it in the log</label>
-          <input class="input" [(ngModel)]="fDeliver" placeholder="telegram" />
+          <label for="hook-deliver-to">deliver to — blank keeps it in the log</label>
+          <input id="hook-deliver-to" class="input" [(ngModel)]="fDeliver" placeholder="telegram" />
         </div>
       </div>
       <div class="field">
-        <label>description — optional</label>
-        <input class="input" [(ngModel)]="fDescription" placeholder="Grafana alerting" />
+        <label for="hook-description">description — optional</label>
+        <input id="hook-description" class="input" [(ngModel)]="fDescription" placeholder="Grafana alerting" />
       </div>
       <p class="lock-hint">hermes generates the signing secret; read it from the route once it exists.</p>
       <div class="form-actions">
@@ -163,22 +163,24 @@
       <div class="panel-b">
         @if (editing === 'new') {
           <div class="field">
-            <label>agent</label>
-            <select class="select" [(ngModel)]="oForm.agent">
+            <label for="hook-agent-2">agent</label>
+            <select id="hook-agent-2" class="select" [(ngModel)]="oForm.agent">
               @for (a of agents.forSelectedContainer(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
             </select>
           </div>
         }
         <div class="field">
-          <label>url</label>
-          <input class="input" [(ngModel)]="oForm.url" placeholder="https://ci.example.com/hermes-events" />
+          <label for="hook-url">url</label>
+          <input id="hook-url" class="input" [(ngModel)]="oForm.url" placeholder="https://ci.example.com/hermes-events" />
         </div>
         <div class="field">
-          <label>name <span class="faint">— optional, shown in hermes' logs</span></label>
-          <input class="input" [(ngModel)]="oForm.name" placeholder="ci-notify" />
+          <label for="hook-name-shown-in">name <span class="faint">— optional, shown in hermes' logs</span></label>
+          <input id="hook-name-shown-in" class="input" [(ngModel)]="oForm.name" placeholder="ci-notify" />
         </div>
-        <div class="field">
-          <label>events</label>
+        <!-- role=group rather than <label>: this caption sits over several groups of toggle
+             buttons, and a <label> can only name a single form control -->
+        <div class="field" role="group" aria-labelledby="hook-events-cap">
+          <span class="field-cap" id="hook-events-cap">events</span>
           @for (group of eventGroups; track group.title) {
             <div class="event-group">
               <span class="k mono">{{ group.title }}</span>
@@ -193,8 +195,8 @@
           }
         </div>
         <div class="field">
-          <label>matcher <span class="faint">— regex over the tool name</span></label>
-          <input class="input" [(ngModel)]="oForm.matcher" placeholder="terminal|delegate_task" />
+          <label for="hook-matcher-regex-over">matcher <span class="faint">— regex over the tool name</span></label>
+          <input id="hook-matcher-regex-over" class="input" [(ngModel)]="oForm.matcher" placeholder="terminal|delegate_task" />
           @if (oForm.matcher && !matcherApplies()) {
             <p class="lock-hint warn">
               Hermes honours a matcher for <code>pre_tool_call</code> and
@@ -204,12 +206,12 @@
           }
         </div>
         <div class="field">
-          <label>timeout <span class="faint">— seconds per attempt, 1–60</span></label>
-          <input class="input" type="number" min="1" max="60" [(ngModel)]="oForm.timeout" placeholder="10" />
+          <label for="hook-timeout-seconds-per">timeout <span class="faint">— seconds per attempt, 1–60</span></label>
+          <input id="hook-timeout-seconds-per" class="input" type="number" min="1" max="60" [(ngModel)]="oForm.timeout" placeholder="10" />
         </div>
         <div class="field">
-          <label>signing secret <span class="faint">— the env var holding it, not the value</span></label>
-          <input class="input" [(ngModel)]="oForm.secretEnv" placeholder="HERMES_OUTBOUND_WEBHOOK_SECRET" />
+          <label for="hook-signing-secret-env">signing secret <span class="faint">— the env var holding it, not the value</span></label>
+          <input id="hook-signing-secret-env" class="input" [(ngModel)]="oForm.secretEnv" placeholder="HERMES_OUTBOUND_WEBHOOK_SECRET" />
           <p class="lock-hint">
             Hermes signs each POST <code>X-Hermes-Signature-256</code> when a secret is set.
             Set the variable's value on the agent's Setup page — a key typed here would be

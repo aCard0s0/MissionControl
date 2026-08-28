@@ -38,9 +38,12 @@ const storeStub = (opts: {
   return {
     providers: {
       llmProviders: signal(llm),
+      modelCatalog: vi.fn().mockResolvedValue(
+        { models: opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5'], source: 'catalog' }),
+      modelCatalogLive: vi.fn().mockResolvedValue({ models: ['live-model'], source: 'live' }),
+    },
+    endpoints: {
       endpoints: signal(ollama),
-      modelCatalog: vi.fn().mockResolvedValue(opts.catalog ?? ['claude-opus-5', 'claude-sonnet-5']),
-      modelCatalogLive: vi.fn().mockResolvedValue(['live-model']),
       models: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
     },
     templates: {
@@ -141,7 +144,7 @@ describe('AgentCreateDialog provider choice', () => {
 
     await choose(fixture, 'provider', 'ollama: workstation');
 
-    expect(store.providers.models).toHaveBeenCalledWith('mp-1');
+    expect(store.endpoints.models).toHaveBeenCalledWith('mp-1');
     expect(field(fixture, 'model').querySelector<HTMLInputElement>('.input')!.value)
       .toBe('gemma3:4b');
   });
@@ -441,7 +444,7 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
 
     await choose(fixture, 'auxiliary provider', OLLAMA);
 
-    expect(store.providers.models).toHaveBeenCalledWith('mp-1');
+    expect(store.endpoints.models).toHaveBeenCalledWith('mp-1');
   });
 
   it('refuses to create against an instance that has since disappeared', async () => {
@@ -452,7 +455,7 @@ describe('AgentCreateDialog auxiliary on a self-hosted model', () => {
     await choose(fixture, 'auxiliary provider', OLLAMA);
     await fill(fixture, 'auxiliary model', 'gemma3:4b');
 
-    store.providers.endpoints.set([]);
+    store.endpoints.endpoints.set([]);
     await submit(fixture);
 
     expect(store.agents.create).not.toHaveBeenCalled();

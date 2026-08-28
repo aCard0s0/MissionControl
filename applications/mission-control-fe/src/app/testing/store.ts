@@ -17,6 +17,7 @@ import { LiveSync } from '../core/store/live-sync';
 import { LogStore } from '../core/store/log-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { PromptStore } from '../core/store/prompt-store';
+import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { ActivityStore } from '../core/store/activity-store';
 import { StoreContext } from '../core/store/store-context';
@@ -128,6 +129,7 @@ export const storeSlices = () => {
     get catalog() { return TestBed.inject(McpCatalogStore); },
     get prompts() { return TestBed.inject(PromptStore); },
     get providers() { return TestBed.inject(ProviderStore); },
+    get endpoints() { return TestBed.inject(InferenceEndpointStore); },
     get setup() { return TestBed.inject(AgentSetupStore); },
     get templates() { return TestBed.inject(TemplateStore); },
     get jobs() { return TestBed.inject(JobStore); },
@@ -191,6 +193,7 @@ const SLICE_TOKENS = {
   liveSync: LiveSync,
   logs: LogStore,
   providers: ProviderStore,
+  endpoints: InferenceEndpointStore,
   removal: AgentRemoval,
   setup: AgentSetupStore,
   skills: AgentSkillStore,

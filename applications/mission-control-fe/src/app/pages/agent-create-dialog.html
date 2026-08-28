@@ -1,15 +1,15 @@
-<div class="scrim" (click)="closed.emit()">
-  <div class="modal" (click)="$event.stopPropagation()">
+<div class="scrim" mcScrim (dismiss)="closed.emit()">
+  <div class="modal" role="dialog" aria-modal="true">
     <div class="panel-h">NEW AGENT PROFILE — {{ container().name }}</div>
     <div class="modal-b">
       <div class="field">
-        <label>profile name</label>
-        <input class="input" [(ngModel)]="name" placeholder="ops-bot" autofocus />
+        <label for="new-profile-name">profile name</label>
+        <input id="new-profile-name" class="input" [(ngModel)]="name" placeholder="ops-bot" autofocus />
       </div>
       @if (templates.templates().length) {
         <div class="field">
-          <label>from profile — optional, applies a saved blueprint</label>
-          <select class="select" [ngModel]="fromTemplate" (ngModelChange)="onTemplate($event)">
+          <label for="new-from-profile-applies">from profile — optional, applies a saved blueprint</label>
+          <select id="new-from-profile-applies" class="select" [ngModel]="fromTemplate" (ngModelChange)="onTemplate($event)">
             <option value="">— blank, no template —</option>
             @for (t of templates.templates(); track t.id) { <option [value]="t.id">{{ t.name }}</option> }
           </select>
@@ -17,14 +17,15 @@
       }
       <div class="row">
         <div class="field">
-          <label>provider</label>
-          <select class="select" [ngModel]="provider" (ngModelChange)="onProvider($event)">
+          <label for="new-provider">provider</label>
+          <select id="new-provider" class="select" [ngModel]="provider" (ngModelChange)="onProvider($event)">
             @for (p of providerChoices(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
           </select>
         </div>
         <div class="field">
-          <label>model @if (main.loading()) { <span class="faint">loading…</span> }</label>
-          <input class="input" [(ngModel)]="main.model" list="agent-model-list"
+          <label for="new-model">model @if (main.loading()) { <span class="faint">loading…</span> }
+            @else if (main.sourceLabel()) { <span class="faint">{{ main.sourceLabel() }}</span> }</label>
+          <input id="new-model" class="input" [(ngModel)]="main.model" list="agent-model-list"
                  placeholder="model id" autocomplete="off" />
           <datalist id="agent-model-list">
             @for (m of main.suggestions(); track m) { <option [value]="m"></option> }
@@ -44,9 +45,9 @@
       }
       @if (apiKeyRequired()) {
         <div class="field">
-          <label>API key — stored in the profile's .env</label>
+          <label for="new-api-key-stored">API key — stored in the profile's .env</label>
           <div class="key-row">
-            <input class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…"
+            <input id="new-api-key-stored" class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…"
                    (blur)="refreshLive()" />
             <button class="btn ghost key-refresh" type="button"
                     title="fetch live model list from the provider"
@@ -66,14 +67,15 @@
       @if (auxOverride) {
         <div class="row">
           <div class="field">
-            <label>auxiliary provider</label>
-            <select class="select" [ngModel]="auxProvider" (ngModelChange)="onAuxProvider($event)">
+            <label for="new-auxiliary-provider">auxiliary provider</label>
+            <select id="new-auxiliary-provider" class="select" [ngModel]="auxProvider" (ngModelChange)="onAuxProvider($event)">
               @for (p of providerChoices(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
             </select>
           </div>
           <div class="field">
-            <label>auxiliary model @if (aux.loading()) { <span class="faint">loading…</span> }</label>
-            <input class="input" [(ngModel)]="aux.model" list="agent-aux-model-list"
+            <label for="new-auxiliary-model">auxiliary model @if (aux.loading()) { <span class="faint">loading…</span> }
+              @else if (aux.sourceLabel()) { <span class="faint">{{ aux.sourceLabel() }}</span> }</label>
+            <input id="new-auxiliary-model" class="input" [(ngModel)]="aux.model" list="agent-aux-model-list"
                    placeholder="model id" autocomplete="off" />
             <datalist id="agent-aux-model-list">
               @for (m of aux.suggestions(); track m) { <option [value]="m"></option> }
@@ -82,14 +84,14 @@
         </div>
         @if (auxApiKeyRequired()) {
           <div class="field">
-            <label>auxiliary API key — stored in the profile's .env</label>
-            <input class="input" type="password" [(ngModel)]="auxApiKey" placeholder="sk-…" />
+            <label for="new-auxiliary-api-key">auxiliary API key — stored in the profile's .env</label>
+            <input id="new-auxiliary-api-key" class="input" type="password" [(ngModel)]="auxApiKey" placeholder="sk-…" />
           </div>
         }
       }
       <div class="field">
-        <label>clone from — optional, copies config + soul + skills</label>
-        <select class="select" [(ngModel)]="cloneFrom">
+        <label for="new-clone-from-copies">clone from — optional, copies config + soul + skills</label>
+        <select id="new-clone-from-copies" class="select" [(ngModel)]="cloneFrom">
           <option value="">— blank profile —</option>
           @for (a of agents.forSelectedContainer(); track a.id) { <option [value]="a.id">{{ a.name }}</option> }
         </select>

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { highlightHtml } from './highlight';
+import { highlightHtml, primText } from './highlight';
 
 type Kind = 'obj' | 'arr' | 'prim';
 
@@ -126,13 +126,7 @@ export class JsonTree {
       out.push({ path, depth, key, kind: 'obj', preview: `{${keys.length}}`, openable: keys.length > 0 });
       for (const k of keys) this.flatten((value as Record<string, unknown>)[k], k, `${path}.${k}`, depth + 1, out);
     } else {
-      out.push({ path, depth, key, kind: 'prim', preview: this.primText(value), openable: false });
+      out.push({ path, depth, key, kind: 'prim', preview: primText(value), openable: false });
     }
-  }
-
-  private primText(value: unknown): string {
-    if (value === null) return 'null';
-    if (typeof value === 'string') return JSON.stringify(value);   // quoted + escaped
-    return String(value);
   }
 }
