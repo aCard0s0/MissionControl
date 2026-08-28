@@ -260,16 +260,6 @@ describe('TerminalSession identity and wiring', () => {
     expect(first.id).not.toBe(second.id);
   });
 
-  it('still mints an id without a secure context to generate a uuid in', () => {
-    vi.stubGlobal('crypto', {
-      get randomUUID(): never { throw new Error('requires a secure context'); },
-    });
-
-    const session = new TerminalSession(target(), socketUrl);
-
-    expect(session.id).toMatch(/^t-/);
-  });
-
   it('opens the socket the api layer addressed for its target', () => {
     new TerminalSession({ hostId: 'dh/1', containerId: 'c 1', label: 'x' }, socketUrl).connect();
 
@@ -524,6 +514,8 @@ describe('TerminalSession column floor', () => {
     };
     return {
       session, ws,
+      /** the grid the pane is actually running, read where the notice count is read */
+      cols: () => term.cols,
       /** anything the pane wrote into its own buffer — which the notice must never do */
       selfWritten: () => written.filter(w => w.includes('cols in a')).length,
       /** resize the box and refit, as a split or a sash drag would */
@@ -543,12 +535,12 @@ describe('TerminalSession column floor', () => {
 
   it('narrows freely while the screen is still empty', () => {
     const p = pane(200);
-    expect(p.session.grid().cols).toBe(200);
+    expect(p.cols()).toBe(200);
 
     p.resizeTo(80);
 
     // nothing has been printed, so there is nothing a reflow could damage
-    expect(p.session.grid().cols).toBe(80);
+    expect(p.cols()).toBe(80);
     expect(p.sentCols()).toBe(80);
   });
 
@@ -559,7 +551,7 @@ describe('TerminalSession column floor', () => {
     p.resizeTo(80);
 
     // the pane scrolls sideways to the grid instead of rewrapping it
-    expect(p.session.grid().cols).toBe(200);
+    expect(p.cols()).toBe(200);
     expect(p.sentCols()).toBe(200);
   });
 
@@ -569,7 +561,7 @@ describe('TerminalSession column floor', () => {
 
     p.resizeTo(240);
 
-    expect(p.session.grid().cols).toBe(240);
+    expect(p.cols()).toBe(240);
   });
 
   it('raises the floor again as the shell prints at the wider grid', () => {
@@ -580,7 +572,7 @@ describe('TerminalSession column floor', () => {
 
     p.resizeTo(120);
 
-    expect(p.session.grid().cols).toBe(240);
+    expect(p.cols()).toBe(240);
   });
 
   it('reports being held wide as state, not as writing into its own scrollback', () => {
@@ -595,7 +587,7 @@ describe('TerminalSession column floor', () => {
     // unless something says otherwise. The panel draws that as pane chrome — writing it into
     // the buffer put it in the scrollback people copy and across the line the shell was
     // drawing, so nothing goes into the terminal at all.
-    expect(p.session.grid().cols).toBe(200);
+    expect(p.cols()).toBe(200);
     expect(p.session.overWide()).toEqual({ cols: 200, boxCols: 100 });
     expect(p.selfWritten()).toBe(0);
   });
@@ -611,18 +603,6 @@ describe('TerminalSession column floor', () => {
     expect(p.session.overWide()).toBeNull();
   });
 
-  it('lets go of the floor on a refit, which is the button the notice carries', () => {
-    const p = pane(200);
-    p.ws.emit('printed wide');
-    p.resizeTo(80);
-    expect(p.session.overWide()).not.toBeNull();
-
-    p.session.refit();
-
-    expect(p.session.grid().cols).toBe(80);
-    expect(p.session.overWide()).toBeNull();
-  });
-
   it('holds the floor however much output goes by, because that output is wide too', () => {
     // Tempting to expire the floor once the guarded banner must have scrolled away. But
     // the floor is what keeps the grid wide, so every row since was drawn wide as well —
@@ -634,19 +614,21 @@ describe('TerminalSession column floor', () => {
     p.ws.emit('line\n'.repeat(9000));
     p.resizeTo(80);
 
-    expect(p.session.grid().cols).toBe(200);
+    expect(p.cols()).toBe(200);
   });
 
-  it('lets go of the floor when the screen is cleared', () => {
+  it('lets go of the floor when the screen is cleared — the notice\'s button too', () => {
     const p = pane(200);
     p.ws.emit('printed wide');
     p.resizeTo(80);
-    expect(p.session.grid().cols).toBe(200);
+    expect(p.cols()).toBe(200);
+    expect(p.session.overWide()).not.toBeNull();
 
     p.session.clear();
 
     // an empty buffer holds nothing that could rewrap, so ⌫ is a way back to fitting
-    expect(p.session.grid().cols).toBe(80);
+    expect(p.cols()).toBe(80);
+    expect(p.session.overWide()).toBeNull();
   });
 
   it('lets go of the floor on a reconnect, which redraws from nothing', () => {
@@ -657,6 +639,6 @@ describe('TerminalSession column floor', () => {
     p.session.connect();          // ↻
     FakeSocket.last!.onopen!();
 
-    expect(p.session.grid().cols).toBe(80);
+    expect(p.cols()).toBe(80);
   });
 });

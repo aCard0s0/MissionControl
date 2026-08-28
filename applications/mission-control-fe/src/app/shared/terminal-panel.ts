@@ -17,7 +17,6 @@ import { TerminalNoticeView } from './terminal-notice-view';
 import { TerminalTabView } from './terminal-tab-view';
 import { TermTarget, TerminalSession } from './terminal-session';
 import { readTerminalTabs, writeTerminalTabs } from './terminal-tabs';
-import { Scrim } from './scrim';
 
 // UI sanity guard against runaway tab creation; the backend enforces the real
 // per-client/global ceiling (mc.terminal.*) and rejects connections past it.
@@ -65,7 +64,7 @@ interface PickerAt {
 @Component({
   selector: 'mc-terminal-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HermesCommands, StatusDot, Scrim],
+  imports: [HermesCommands, StatusDot],
   templateUrl: './terminal-panel.html',
   styleUrl: './terminal-panel.scss',
 })
@@ -156,10 +155,7 @@ export class TerminalPanel {
 
     // The one writer of the storage key: tab targets and the arrangement, never the live
     // socket or scrollback. Everything else changes a signal and lets this land.
-    effect(() => {
-      writeTerminalTabs(
-        this.sessions().map(s => s.toJSON()), this.focusedId(), this.arrangement());
-    });
+    effect(() => this.persist());
 
     // a tab whose container disappeared from the inventory will never stream
     // again — drop its socket so the backend exec is released (don't wait on the
@@ -183,9 +179,10 @@ export class TerminalPanel {
     window.addEventListener('pagehide', onPageHide);
     destroyRef.onDestroy(() => {
       window.removeEventListener('pagehide', onPageHide);
-      // the same teardown the panel collapsing uses, so both flush the arrangement — but
-      // writing it too, since the effect that would have is already destroyed
-      this.unmountDock({ write: true });
+      // the same teardown the panel collapsing uses, plus the write the effect above would
+      // have done — it is already destroyed by the time this runs
+      this.unmountDock();
+      this.persist();
       this.sessions().forEach(s => s.dispose());
     });
   }
@@ -223,11 +220,6 @@ export class TerminalPanel {
   }
 
   // ── tabs and panes ──────────────────────────────────────────────────────
-
-  /** A new shell as another tab in the focused pane's group. */
-  protected addTab(): void {
-    this.newTab(null);
-  }
 
   /**
    * A new shell split away from the focused one.
@@ -277,28 +269,28 @@ export class TerminalPanel {
     this.focused()?.clear();
   }
 
-  /** Live container name (absorbs renames), falling back to the saved label.
-   *  An agent tab keeps its profile name — that, not the container, is what the
-   *  shell is running. */
-  protected liveLabel(s: TerminalSession): string {
+  /**
+   * What a tab says: the container's live name so a rename shows, or the saved label once it
+   * is gone (struck through). An agent tab keeps its profile name — that, not the container,
+   * is what the shell is running. One lookup, because both halves ask the same question of
+   * the same list.
+   */
+  protected tabState(s: TerminalSession): { label: string; stale: boolean } {
     const t = s.target();
-    if (t.agentKey) return t.label;
-    return this.containers.containers().find(c => c.id === t.containerId)?.name ?? t.label;
-  }
-
-  /** True when the tab's container no longer exists in the inventory. */
-  protected isStale(s: TerminalSession): boolean {
-    const id = s.target().containerId;
-    return !!id && !this.containers.containers().some(c => c.id === id);
+    const live = this.containers.containers().find(c => c.id === t.containerId);
+    return {
+      label: t.agentKey ? t.label : live?.name ?? t.label,
+      stale: !!t.containerId && !live,
+    };
   }
 
   // ── height ──────────────────────────────────────────────────────────────
-  protected shorter(): void {
-    this.resize(-80);
-  }
 
-  protected taller(): void {
-    this.resize(80);
+  /** ± a step of panel height. xterm only recomputes its grid when told to, so every resize
+   *  refits. */
+  protected resize(delta: number): void {
+    this.height.bump(delta);
+    this.relayout();
   }
 
   protected dragStart(down: PointerEvent): void {
@@ -308,12 +300,6 @@ export class TerminalPanel {
       this.dock?.suspendFits(false);
       this.relayout();
     });
-  }
-
-  /** xterm only recomputes its grid when told to, so every resize refits. */
-  private resize(delta: number): void {
-    this.height.bump(delta);
-    this.relayout();
   }
 
   /** Hand the dock its new box and refit the shells inside it. */
@@ -330,13 +316,17 @@ export class TerminalPanel {
    * behaviour (open, seed a tab on the selected container). A targeted one
    * opens a tab pinned to that container — or focuses the tab that target
    * already has, instead of stacking a second shell for it.
+   *
+   * `insert` is typed into whichever tab it lands in; a tab still connecting arms it for the
+   * first live frame rather than dropping it into a socket nobody reads.
    */
   private handleRequest(req: TerminalRequest): void {
     if (!this.open()) this.open.set(true);
+    const insert = req.insert ?? '';
 
     if (!req.containerId) {
       this.onOpened();
-      this.insertInto(this.focused(), req.insert);
+      this.focused()?.type(insert);
       return;
     }
 
@@ -345,17 +335,17 @@ export class TerminalPanel {
       this.setFocused(existing.id);
       // the user closed it, or its container went away and came back — revive
       if (existing.status() === 'closed') existing.connect();
-      this.insertInto(existing, req.insert);
+      existing.type(insert);
       return;
     }
 
-    this.insertInto(this.newSession({
+    this.newSession({
       hostId: req.hostId ?? '',
       containerId: req.containerId,
       label: req.label ?? req.containerId,
       agentKey: req.agentKey,
       command: req.command,
-    }, null), req.insert);
+    }, null)?.type(insert);
   }
 
   /**
@@ -371,20 +361,15 @@ export class TerminalPanel {
       : !s.target().agentKey && s.target().containerId === req.containerId);
   }
 
-  /** Types a requested line into `session`, which may still be connecting — TerminalSession
-   *  arms it for the first live frame rather than dropping it into a socket nobody reads. */
-  private insertInto(session: TerminalSession | null, insert: string | undefined): void {
-    if (session && insert) session.type(insert);
-  }
-
   /** On first open (or external request): seed a tab if empty. The dock connects
    *  every (restored) session as it gives it a pane. */
   private onOpened(): void {
-    if (this.sessions().length === 0) this.addTab();
+    if (this.sessions().length === 0) this.newTab();
     queueMicrotask(() => this.relayout());
   }
 
-  private newTab(split: SplitDirection | null): TerminalSession | null {
+  /** A new shell: another tab in the focused pane's group, or split away from it. */
+  protected newTab(split: SplitDirection | null = null): TerminalSession | null {
     const c = this.containers.selected();
     const s = this.newSession(c
       ? { hostId: c.hostId, containerId: c.id, label: c.name }
@@ -466,8 +451,7 @@ export class TerminalPanel {
       // the tab is built here, not in the dock: what a tab looks like is this
       // component's business, and the dock stays free of Angular for it
       createTab: session => new TerminalTabView(session, {
-        label: s => this.liveLabel(s),
-        stale: s => this.isStale(s),
+        state: s => this.tabState(s),
         pick: (s, anchor) => this.openPicker(s, anchor),
       }, this.injector),
       // likewise the pane's own chrome: the notice that a pane is being held wider than its
@@ -486,12 +470,9 @@ export class TerminalPanel {
   }
 
   /**
-   * Capture the arrangement, now.
-   *
-   * <p>The one place that does it, because every route to it has to behave the same: the
-   * settle timer, the panel collapsing, and the component being torn down. Setting the signal
-   * is the whole of it on the first two — the persistence effect writes it. Teardown is the
-   * exception: the effect is already gone by then, so that path writes directly.
+   * Capture the arrangement, now. The one place that does it, because the settle timer, the
+   * panel collapsing and the component being torn down all have to behave the same. Setting
+   * the signal is the whole of it — {@link persist} lands it, driven by the effect.
    */
   private saveNow(): void {
     if (this.saveTimer !== null) {
@@ -501,19 +482,18 @@ export class TerminalPanel {
     this.arrangement.set(this.dock?.toJSON() ?? this.arrangement());
   }
 
-  /** The same capture, plus the write the effect would have done. Teardown only. */
-  private saveOnTeardown(): void {
-    this.saveNow();
+  /** Write the tab targets and the arrangement down. The effect's whole body, and the one
+   *  thing teardown has to do by hand once that effect is gone. */
+  private persist(): void {
     writeTerminalTabs(
       this.sessions().map(s => s.toJSON()), this.focusedId(), this.arrangement());
   }
 
-  private unmountDock(opts: { write?: boolean } = {}): void {
+  private unmountDock(): void {
     if (!this.dock) return;
     // captured before the dock stops being able to answer, so a rearrangement made in the
     // last moments before a collapse is not lost with the timer that was going to save it
-    if (opts.write) this.saveOnTeardown();
-    else this.saveNow();
+    this.saveNow();
     this.dock.dispose();
     this.dock = null;
   }
@@ -536,14 +516,11 @@ export class TerminalPanel {
   private restoreTabs(): void {
     const { tabs, activeId, layout } = readTerminalTabs();
     if (!tabs.length) return;
-    this.sessions.set(tabs.map(t => {
-      const session = new TerminalSession(
-        {
-          hostId: t.hostId, containerId: t.containerId, label: t.label ?? '',
-          agentKey: t.agentKey, command: t.command,
-        }, this.socketUrl, t.id);
-      return session;
-    }));
+    this.sessions.set(tabs.map(t => new TerminalSession(
+      {
+        hostId: t.hostId, containerId: t.containerId, label: t.label ?? '',
+        agentKey: t.agentKey, command: t.command,
+      }, this.socketUrl, t.id)));
     this.focusedId.set(activeId);
     this.arrangement.set(layout);
   }

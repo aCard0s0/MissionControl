@@ -9,24 +9,20 @@
   <span class="chev">{{ open() ? '▾' : '▴' }}</span>
   <span class="title">TERMINAL</span>
   @if (focused(); as f) {
-    <span class="faint">{{ liveLabel(f) }}</span>
+    <span class="faint">{{ tabState(f).label }}</span>
     <span class="status" [class.on]="f.status() === 'connected'">{{ f.status() }}</span>
   } @else {
     <span class="faint">no shell</span>
   }
   <span class="spacer"></span>
   @if (open()) {
-    <button class="add" (click)="addTab(); $event.stopPropagation()" title="new shell">+</button>
+    <button class="add" (click)="newTab(); $event.stopPropagation()" title="new shell">+</button>
     <button class="act" (click)="splitTab('right'); $event.stopPropagation()"
             title="split right — a new shell beside this one (half the columns)">◫</button>
     <button class="act" (click)="splitTab('below'); $event.stopPropagation()"
             title="split down — a new shell under this one (keeps every column)">⬓</button>
-  }
-  @if (open()) {
-    <button class="act" (click)="shorter(); $event.stopPropagation()" title="shorter">▼</button>
-    <button class="act" (click)="taller(); $event.stopPropagation()" title="taller">▲</button>
-  }
-  @if (open()) {
+    <button class="act" (click)="resize(-80); $event.stopPropagation()" title="shorter">▼</button>
+    <button class="act" (click)="resize(80); $event.stopPropagation()" title="taller">▲</button>
     <button class="act" (click)="reconnect(); $event.stopPropagation()" title="restart session">↻</button>
     <button class="act" (click)="clear(); $event.stopPropagation()" title="clear">⌫</button>
   }

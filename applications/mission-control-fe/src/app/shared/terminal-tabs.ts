@@ -7,19 +7,16 @@ import { PersistedTab } from './terminal-session';
 
 const TABS_KEY = 'mc-terminal-tabs';
 
-/** Versioned envelope, so an older shape is discarded rather than misread. */
-interface PersistedTabsV1 {
-  v: 1;
+/**
+ * Versioned envelope, so an older shape is discarded rather than misread. v1 is v2 without
+ * `layout`, which is exactly what it meant: one group, every tab in it.
+ */
+interface PersistedTabs {
+  v: 1 | 2;
   tabs: PersistedTab[];
   activeId: string | null;
-}
-
-/** v2 adds the dock layout: which groups exist, their order and their sizes. */
-interface PersistedTabsV2 {
-  v: 2;
-  tabs: PersistedTab[];
-  activeId: string | null;
-  layout: SerializedDockview | null;
+  /** the dock layout: which groups exist, their order and their sizes (v2) */
+  layout?: SerializedDockview | null;
 }
 
 /** The restored tabs and the arrangement to put them back into. */
@@ -35,9 +32,6 @@ export interface RestoredTabs {
  * "(choose)" tab has no container to reconnect to, so restoring it would just
  * reopen an empty picker. Anything unreadable — private mode, a hand-edited
  * value, a shape from an older version — restores nothing rather than throwing.
- *
- * A v1 payload restores its tabs with no layout, which is exactly what it meant:
- * one group, every tab in it.
  */
 export function readTerminalTabs(): RestoredTabs {
   const empty: RestoredTabs = { tabs: [], activeId: null, layout: null };
@@ -48,7 +42,7 @@ export function readTerminalTabs(): RestoredTabs {
     return empty;   // private mode
   }
   if (!raw) return empty;
-  let data: PersistedTabsV1 | PersistedTabsV2;
+  let data: PersistedTabs;
   try {
     data = JSON.parse(raw);
   } catch {
@@ -62,8 +56,9 @@ export function readTerminalTabs(): RestoredTabs {
   const activeId = tabs.some(tab => tab.id === data.activeId) ? data.activeId : tabs[0].id;
   // the layout can name panels that did not come back (an unconfigured tab was
   // never saved), so it is pruned to what actually exists before being handed on
-  const saved = data.v === 2 ? data.layout : null;
-  const layout = saved ? pruneLayout(saved, new Set(tabs.map(tab => tab.id))) : null;
+  const layout = data.layout
+    ? pruneLayout(data.layout, new Set(tabs.map(tab => tab.id)))
+    : null;
   return { tabs, activeId, layout };
 }
 
@@ -75,7 +70,7 @@ export function writeTerminalTabs(
   tabs: readonly PersistedTab[], activeId: string | null,
   layout: SerializedDockview | null = null,
 ): void {
-  const data: PersistedTabsV2 = {
+  const data: PersistedTabs = {
     v: 2, tabs: tabs.filter(tab => tab.containerId), activeId, layout,
   };
   try {
@@ -109,13 +104,14 @@ export function pruneLayout(
   }
   if (!Object.keys(panels).length) return null;
 
-  const groups = new Set(groupIds(root));
   return {
     ...layout,
     grid: { ...layout.grid, root },
     panels,
-    activeGroup: layout.activeGroup && groups.has(layout.activeGroup)
-      ? layout.activeGroup : undefined,
+    // never carried over: TerminalDock.restore() activates the focused pane itself, and that
+    // activates its group. A saved value is overwritten a moment later at best, and names a
+    // group pruning has just removed at worst.
+    activeGroup: undefined,
     // a floating or popped-out terminal is not offered (xterm is bound to the
     // document it was opened in), so there is never anything here to carry over
     floatingGroups: undefined,
@@ -124,7 +120,7 @@ export function pruneLayout(
 }
 
 type Node = NonNullable<SerializedDockview['grid']>['root'];
-type LeafData = { views?: string[]; activeView?: string; id?: string };
+type LeafData = { views?: string[]; activeView?: string };
 
 /** Prunes one grid node, returning null when it holds nothing worth keeping. */
 function pruneNode(node: Node | undefined, keep: ReadonlySet<string>): Node | null {
@@ -152,14 +148,4 @@ function pruneNode(node: Node | undefined, keep: ReadonlySet<string>): Node | nu
   const activeView = data.activeView && views.includes(data.activeView)
     ? data.activeView : views[0];
   return { ...node, data: { ...data, views, activeView } as Node['data'] };
-}
-
-/** Every group id still in the tree, so a stale activeGroup can be dropped. */
-function groupIds(node: Node): string[] {
-  if (node.type === 'branch') {
-    return (Array.isArray(node.data) ? node.data : [])
-      .flatMap(child => groupIds(child as Node));
-  }
-  const id = (node.data as LeafData)?.id;
-  return id ? [id] : [];
 }
