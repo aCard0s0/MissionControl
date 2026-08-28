@@ -40,6 +40,8 @@ Thumbs.db
 deploy/**/.env
 .mission-control.env
 
-# Claude Code worktrees (a second full copy of the repo)
-.claude/worktrees/
-/.claude/
+# Claude Code local state — worktrees especially, which are a second full copy of
+# the repo and make every recursive grep double-hit. Skills are checked in: they
+# are project tooling, not session state.
+/.claude/*
+!/.claude/skills/
