@@ -292,7 +292,5 @@ A fresh install is seeded with one sample prompt, once — the marker lives in
 
 ## Roadmap (not implemented)
 
-- Hermes cron jobs and webhooks introspection; would light up the Calendar and
-  Webhooks pages in live mode.
 - SSE/WebSocket streaming for logs and stats (currently polled).
 - TLS for remote daemons; authentication for the dashboard itself.

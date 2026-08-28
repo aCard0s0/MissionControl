@@ -88,11 +88,14 @@ values remain visible to principals with Docker-daemon access.
 
 `window.__MC_CONFIG__` (served by the backend at `/config.js`, dev default in
 `public/config.js`) carries `apiBaseUrl` and `dockerSocket`. There is one mode: the
-store starts empty, health-checks the backend, then polls — containers every 10s,
-stats per running container every 3s (network rates derived client-side from
-cumulative counters), selected-container logs every 5s. Log requests are
-non-overlapping and container-scoped because Docker stdout/stderr has no reliable
-profile identity.
+store starts empty, health-checks the backend, then polls on periods staggered by how
+fast each thing actually moves (`core/store/live-sync.ts`) — stats per running container
+every 3s (network rates derived client-side from cumulative counters),
+selected-container logs every 5s, containers every 10s, agents every 12s, scheduled jobs
+every 30s, and published image tags every 300s. The two slow ones are deliberate: reading
+a schedule is one `docker exec` per profile, and each image-tag lookup probes the daemon
+for something that changes on the order of days. Log requests are non-overlapping and
+container-scoped because Docker stdout/stderr has no reliable profile identity.
 
 An unreachable backend shows an empty dashboard and a banner naming the address it
 could not reach, and retries every 10s. That is deliberate: seeded demo inventory

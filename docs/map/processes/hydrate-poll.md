@@ -64,12 +64,6 @@ output**.
 - **Does not hit:** the terminal. Its WebSockets are outside this clock entirely — see
   [terminal session](../objects/dashboard/terminal-session.md).
 
-## A drift worth knowing
-
-`docs/architecture.md` describes the containers (10 s), stats (3 s), logs (5 s) and agents (12 s)
-periods. It does **not** mention `jobs` (30 s) or `imageCatalogs` (300 s), which are in the code.
-The code is right; the doc is incomplete, not wrong.
-
 ## Surfaces
 
 | Surface | Role |
