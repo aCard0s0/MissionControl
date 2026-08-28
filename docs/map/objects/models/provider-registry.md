@@ -1,0 +1,64 @@
+---
+type: object
+cluster: models
+universe: live
+status: verified
+verified: main @ 640da14 · 2026-08-28
+entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/ModelProviderRegistry.java
+---
+
+# Provider
+
+An upstream LLM vendor an Agent can be pointed at — "Anthropic", "OpenRouter", "Ollama Cloud".
+Code name `ModelProviderRegistry.Provider`. Served at **`/api/providers`**.
+
+## Why this shape
+
+Compiled-in, not stored. The list mirrors hermes' own `CANONICAL_PROVIDERS` picker order
+(`hermes_cli/models.py`) and its provider records (`hermes_cli/auth.py`) — so it is a
+*mirror of another program's constant*, and a database row would let it drift from the CLI it
+has to agree with. Three authentication shapes exist and the record spells all three:
+an env-var API key, OAuth with no key, and neither.
+
+The one job the registry does that no caller could do alone: the picker, the "needs an API
+key?" rule, and the provider→catalog decision all read the same list, so they cannot disagree
+(`agents/web/ProvidersController.java:9`).
+
+## Shape
+
+`Provider(key, label, envVar, oauth, hasCatalog)` — `agents/ModelProviderRegistry.java:37`.
+~28 entries, `agents/ModelProviderRegistry.java:47`.
+
+- `envVar` null means the provider takes no key (OAuth or resolved elsewhere).
+- `hasCatalog` gates whether [Model catalog](model-catalog.md) can list names for it.
+
+## Connected to
+
+- **owns:** nothing — it is a constant
+- **owned-by:** hermes' own provider list, upstream. Adding an entry here that hermes does not
+  know is a ghost in the picker.
+- **joins:** [Model catalog](model-catalog.md) by `key`; [Auth provider](auth-provider.md) by `key`
+- **looks-like-but-is-not:** [Inference endpoint](inference-endpoint.md), which is served at
+  `/api/model-providers` and *is* a database row. The two are unrelated.
+
+## If you change this
+
+- **Hits:** the create-agent and template UIs (the picker reads `/api/providers`); the
+  "needs an API key" prompt; whether a provider offers a model catalog at all; the
+  `.env` key name written into a profile on create.
+- **Does not hit:** [Inference endpoint](inference-endpoint.md) rows. A self-hosted Ollama
+  is not a registry entry and adding one here does not create one. Nor does it hit
+  `model_providers` in SQLite — despite the name, that table is inference endpoints.
+
+## Surfaces
+
+| Surface | Role |
+|---|---|
+| `/api/providers` | reads |
+| FE `core/api/providers-api.ts`, `core/store/provider-store.ts` | reads |
+| hermes CLI | the upstream this mirrors — never written by us |
+
+## See
+
+- Source: `applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/ModelProviderRegistry.java`
+- Controller: `agents/web/ProvidersController.java`

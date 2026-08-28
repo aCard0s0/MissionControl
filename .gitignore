@@ -39,3 +39,7 @@ Thumbs.db
 # Deployment secrets (tailscale auth key etc.)
 deploy/**/.env
 .mission-control.env
+
+# Claude Code worktrees (a second full copy of the repo)
+.claude/worktrees/
+/.claude/
