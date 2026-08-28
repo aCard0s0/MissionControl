@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FALLBACK_MODELS } from './provider-defaults';
 import { testSlices } from '../../testing/store';
 
 const store = (providers: Record<string, unknown>) => {
@@ -40,14 +39,12 @@ describe('ProviderStore models', () => {
       .toEqual({ models: ['m-1', 'm-2'], source: 'catalog' });
   });
 
-  it('marks the bundled fallback as bundled, so a page cannot show it as the real catalog', async () => {
-    const [key] = Object.keys(FALLBACK_MODELS);
+  it('answers empty when the catalog cannot be read, rather than from a shipped copy', async () => {
     const built = store({ modelCatalog: vi.fn().mockRejectedValue(new Error('offline')) });
 
-    expect(await built.store.modelCatalog(key))
-      .toEqual({ models: FALLBACK_MODELS[key], source: 'bundled' });
-    expect(await built.store.modelCatalog('unknown-provider'))
-      .toEqual({ models: [], source: 'bundled' });
+    // the picker shows nothing, which is what an unreachable backend looks like everywhere
+    // else here — and the create it feeds could not be submitted anyway
+    expect(await built.store.modelCatalog('anthropic')).toEqual({ models: [], source: null });
   });
 
   it('reads the live catalog with the operator\'s key', async () => {

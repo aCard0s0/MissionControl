@@ -1,6 +1,5 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { LlmProvider, ModelCatalog } from '../models';
-import { FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
 import { toLlmProvider } from './wire-mappers';
 
@@ -33,15 +32,21 @@ export class ProviderStore {
     } catch { /* no registry — the picker stays empty, like every other store */ }
   }
 
-  /** Models a provider key can serve, from the backend's configured catalog. Carries the
-   *  backend's own `source` through, and labels the offline fallback `bundled` — a shipped
-   *  list and a list read from the provider are indistinguishable in a dropdown otherwise. */
+  /** Models a provider key can serve, from the backend's configured catalog, carrying the
+   *  backend's own `source` through so a page can say which list it is showing.
+   *
+   *  <p>A failure answers empty rather than from a bundled copy. The copy that used to live
+   *  here duplicated `mc.models` in application.yml under a "keep in sync" comment nothing
+   *  enforced, and it could only ever fire when the request itself failed — every provider it
+   *  carried has a server-side config list, so the endpoint does not 404 for them. With the
+   *  backend unreachable the create-agent POST fails too, so it was populating a picker in a
+   *  form that could not be submitted. */
   async modelCatalog(provider: string): Promise<ModelCatalog> {
     try {
       const answered = await this.ctx.api.providers.modelCatalog(provider);
       return { models: answered.models, source: answered.source };
     } catch {
-      return { models: FALLBACK_MODELS[provider] ?? [], source: 'bundled' };
+      return { models: [], source: null };
     }
   }
 

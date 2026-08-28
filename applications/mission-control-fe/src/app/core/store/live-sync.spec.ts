@@ -565,7 +565,7 @@ describe('live registries', () => {
     expect(store.providers.llmProviders()).toEqual(mirrored);
   });
 
-  it('falls back to the offline model list when a catalog lookup fails', async () => {
+  it('answers an empty model list when a catalog lookup fails', async () => {
     const store = await loaded();
     stubBackend(store.ctx, {
       providers: {
@@ -577,9 +577,8 @@ describe('live registries', () => {
     const fromConfig = await store.providers.modelCatalog('anthropic');
     const fromKey = await store.providers.modelCatalogLive('anthropic', 'sk-ant-x');
 
-    expect(fromConfig.models).toContain('claude-fable-5');
-    // and it says so, rather than passing the offline copy off as the provider's own list
-    expect(fromConfig.source).toBe('bundled');
+    // no shipped copy stands in: an unreachable backend shows nothing, here as everywhere
+    expect(fromConfig).toEqual({ models: [], source: null });
     expect(fromKey).toEqual(fromConfig);
   });
 

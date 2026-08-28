@@ -36,9 +36,17 @@ const FOCUSABLE = [
  * focus returns to whatever opened the dialog — a list may have re-rendered underneath, so the
  * restore checks the element is still in the document.
  *
- * <p>The trap is skipped when the backdrop holds nothing focusable. Three of these are bare
- * click-catchers behind a menu rather than dialogs, and moving focus into an empty box would
- * stranded the keyboard where there is nothing to operate.
+ * <p>While a real dialog is up the rest of the page is marked `inert`, which takes it out of
+ * the tab order and out of the accessibility tree — the trap holds the keyboard, but without
+ * this a screen reader's own cursor still walks content the backdrop is covering, and
+ * `aria-modal` is only advisory. Ancestors are walked to `body` and each one's siblings marked;
+ * a sibling that was already inert is left alone so cleanup cannot clear someone else's.
+ *
+ * <p>Both are skipped when the backdrop holds nothing focusable. Three of these are bare
+ * click-catchers rather than dialogs, and the thing they sit behind — the sidebar, a context
+ * menu — is a *sibling* of the backdrop, so inerting siblings would disable the very element
+ * the scrim exists to reveal. Moving focus into an empty box would strand the keyboard for the
+ * same reason.
  *
  * <p>Guards stay in the template — `(dismiss)="saveBusy() ? null : closed.emit()"` — because
  * whether a dialog may close mid-save is the dialog's business, not the backdrop's.
@@ -61,13 +69,35 @@ export class Scrim implements AfterViewInit, OnDestroy {
   /** Whatever had focus when the dialog appeared — captured before focus is moved in. */
   private readonly opener = document.activeElement as HTMLElement | null;
 
+  /** Only what this backdrop marked, so cleanup cannot clear an inert someone else set. */
+  private inerted: Element[] = [];
+
   ngAfterViewInit(): void {
-    this.focusable()[0]?.focus();
+    const controls = this.focusable();
+    if (!controls.length) return;   // a bare click-catcher: neither trap nor inert
+    this.inertBehind();
+    controls[0].focus();
   }
 
   ngOnDestroy(): void {
+    for (const element of this.inerted) element.removeAttribute('inert');
+    this.inerted = [];
     // the opener may have been re-rendered away while the dialog was open
     if (this.opener?.isConnected) this.opener.focus();
+  }
+
+  /** Everything that is not an ancestor of this backdrop, up to `body`. */
+  private inertBehind(): void {
+    for (let node: HTMLElement | null = this.host; node && node !== document.body;
+        node = node.parentElement) {
+      for (const sibling of Array.from(node.parentElement?.children ?? [])) {
+        if (sibling === node || sibling.hasAttribute('inert')) continue;
+        // the attribute rather than the property: it is what the browser honours, and what a
+        // test can see in a DOM that does not implement inert behaviour
+        sibling.setAttribute('inert', '');
+        this.inerted.push(sibling);
+      }
+    }
   }
 
   /** Ignores clicks that bubbled up from the modal — only the backdrop itself dismisses. */

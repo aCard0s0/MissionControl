@@ -22,15 +22,14 @@ export class ModelPicker {
   /** Where the current suggestions came from; null before the first load. */
   readonly source = signal<ModelSource | null>(null);
 
-  /** The provenance as a field hint, or null when there is nothing worth saying —
-   *  an empty list has no source to report, and `live` means the operator's own key
-   *  just answered, which they already know because they typed it. */
+  /** The provenance as a field hint, or null when there is nothing worth saying — an empty
+   *  list has no source to report, a failed read has none either, and `live` means the
+   *  operator's own key just answered, which they already know because they typed it. */
   readonly sourceLabel = computed(() => {
     if (!this.suggestions().length) return null;
     switch (this.source()) {
       case 'catalog': return 'from the provider';
       case 'config': return 'shipped list';
-      case 'bundled': return 'offline copy — backend unreachable';
       default: return null;
     }
   });

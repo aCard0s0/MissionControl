@@ -98,9 +98,6 @@ describe('ModelPicker', () => {
   it('labels where the list came from, and says nothing when there is nothing to say', async () => {
     const picker = new ModelPicker();
 
-    await picker.load(Promise.resolve(cat(['m-1'], 'bundled')));
-    expect(picker.sourceLabel()).toBe('offline copy — backend unreachable');
-
     await picker.load(Promise.resolve(cat(['m-1'], 'catalog')));
     expect(picker.sourceLabel()).toBe('from the provider');
 
