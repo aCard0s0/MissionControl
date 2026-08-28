@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InferenceEndpoint } from '../models';
-import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
+import { FALLBACK_MODELS } from './provider-defaults';
 import { flush, liveError, testSlices } from '../../testing/store';
 
 const provider = (id: string, patch: Partial<InferenceEndpoint> = {}): InferenceEndpoint => ({
@@ -14,11 +14,11 @@ const store = (providers: Record<string, unknown>) => {
 };
 
 describe('ProviderStore LLM registry', () => {
-  it('starts on the bootstrap mirror so the pickers work before the backend answers', () => {
-    expect(store({}).store.llmProviders()).toEqual(DEFAULT_LLM_PROVIDERS);
+  it('starts empty — the backend registry is the only one', () => {
+    expect(store({}).store.llmProviders()).toEqual([]);
   });
 
-  it('replaces the mirror with the backend registry', async () => {
+  it('fills the picker from the backend registry', async () => {
     const registry = [{ key: 'nous', label: 'Nous', needsKey: true, oauth: false, hasCatalog: true, envVar: 'NOUS_API_KEY' }];
     const built = store({ registry: vi.fn().mockResolvedValue(registry) });
 
@@ -27,15 +27,12 @@ describe('ProviderStore LLM registry', () => {
     expect(built.store.llmProviders()).toEqual(registry);
   });
 
-  it('keeps the mirror when the registry is unreachable or empty', async () => {
+  it('resolves rather than throwing when the registry is unreachable, so the rest of the initial load survives', async () => {
     const failing = store({ registry: vi.fn().mockRejectedValue(new Error('offline')) });
-    const empty = store({ registry: vi.fn().mockResolvedValue([]) });
 
-    await failing.store.refreshRegistry();
-    await empty.store.refreshRegistry();
+    await expect(failing.store.refreshRegistry()).resolves.toBeUndefined();
 
-    expect(failing.store.llmProviders()).toEqual(DEFAULT_LLM_PROVIDERS);
-    expect(empty.store.llmProviders()).toEqual(DEFAULT_LLM_PROVIDERS);
+    expect(failing.store.llmProviders()).toEqual([]);
   });
 });
 

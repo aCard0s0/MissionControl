@@ -1,6 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { LlmProvider, InferenceEndpoint, EndpointModel, PullState, RunningModel } from '../models';
-import { DEFAULT_LLM_PROVIDERS, FALLBACK_MODELS } from './provider-defaults';
+import { FALLBACK_MODELS } from './provider-defaults';
 import { StoreContext } from './store-context';
 import {
   toLlmProvider, toInferenceEndpoint, toEndpointModel, toPullState, toRunningModel,
@@ -14,20 +14,25 @@ import {
  */
 @Injectable({ providedIn: 'root' })
 export class ProviderStore {
-  /** LLM provider registry for the create-agent / template pickers. Seeded with
-   *  the bootstrap mirror, refreshed from the backend in live mode. */
-  readonly llmProviders = signal<LlmProvider[]>(DEFAULT_LLM_PROVIDERS);
+  /** LLM provider registry for the create-agent / template pickers. Starts empty
+   *  and is filled by `refreshRegistry()`, which `LiveSync.start()` awaits — the
+   *  backend's list is the only one, so there is nothing to seed it with. A hardcoded
+   *  mirror used to live here and had drifted to 12 of the registry's 32 entries,
+   *  offering a short list nobody could tell from the real one. */
+  readonly llmProviders = signal<LlmProvider[]>([]);
 
   readonly endpoints = signal<InferenceEndpoint[]>([]);
 
   private readonly ctx = inject(StoreContext);
 
-  /** Loads the LLM provider registry; keeps the bootstrap mirror on failure. */
+  /** Loads the LLM provider registry. Swallows a failure rather than rejecting:
+   *  `LiveSync.start()` awaits this inside a `Promise.all`, so throwing here would
+   *  take every other initial load with it. An empty picker is what an unreachable
+   *  backend looks like everywhere else in this app. */
   async refreshRegistry(): Promise<void> {
     try {
-      const list = await this.ctx.api.providers.registry();
-      if (list.length) this.llmProviders.set(list.map(toLlmProvider));
-    } catch { /* keep DEFAULT_LLM_PROVIDERS */ }
+      this.llmProviders.set((await this.ctx.api.providers.registry()).map(toLlmProvider));
+    } catch { /* no registry — the picker stays empty, like every other store */ }
   }
 
   async refresh(): Promise<void> {
