@@ -4,10 +4,9 @@ import { TerminalSession } from './terminal-session';
 /**
  * The strip along the bottom of a pane that says its grid is wider than its box.
  *
- * <p>This used to be written into the terminal itself, which put it where the operator was
- * looking at the cost of putting it everywhere else too: into the scrollback they copy, into a
- * stream that tools parse, and — leading CRLF and all — across whatever line the shell was
- * mid-way through drawing. As chrome it says the same thing, stays out of the buffer, and can
+ * <p>Chrome rather than terminal output, which is where it used to be written: as output it
+ * also landed in the scrollback operators copy, in a stream tools parse, and — leading CRLF
+ * and all — across whatever line the shell was mid-way through drawing. As chrome it can also
  * carry the button that fixes it, so the way out stops being folklore about which toolbar
  * glyph to press.
  *
@@ -37,7 +36,7 @@ export class TerminalNoticeView {
     // says outright that it clears: the floor only lifts on an empty buffer, so there is no
     // version of this button that keeps the scrollback
     refit.title = 'clear this pane so it fits its box again';
-    refit.addEventListener('click', () => session.refit());
+    refit.addEventListener('click', () => session.clear());
 
     this.element.append(this.text, refit);
 

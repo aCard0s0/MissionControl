@@ -106,7 +106,6 @@ describe('terminal arrangement persistence', () => {
       [left]: { id: left, contentComponent: 'mc-terminal' },
       [right]: { id: right, contentComponent: 'mc-terminal' },
     },
-    activeGroup: 'g-right',
   }) as unknown as SerializedDockview;
 
   it('brings the splits back, not just the tabs that were in them', () => {
@@ -161,13 +160,13 @@ describe('pruneLayout', () => {
     expect(pruned!.grid.root.data).toMatchObject({ views: ['a'], activeView: 'a' });
   });
 
-  it('forgets an active group that pruning removed', () => {
+  it('never carries an active group over — the dock re-activates the focused pane itself', () => {
     const layout = {
       ...grid({
         type: 'branch',
         data: [leaf('g-1', ['a']), leaf('g-2', ['b'])],
       }, ['a', 'b']),
-      activeGroup: 'g-2',
+      activeGroup: 'g-1',   // survives the prune, and is still not carried over
     };
 
     expect(pruneLayout(layout, new Set(['a']))!.activeGroup).toBeUndefined();

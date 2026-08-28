@@ -3,13 +3,10 @@ import type { DockviewIDisposable, ITabRenderer, TabPartInitParameters } from 'd
 import { statusTone } from './status-dot';
 import { TerminalSession } from './terminal-session';
 
-/**
- * What a tab needs to know that only the panel can answer: a container's live
- * name (so a rename shows), and whether it is still in the inventory at all.
- */
+/** What a tab needs to know that only the panel can answer. */
 export interface TabInfo {
-  label(session: TerminalSession): string;
-  stale(session: TerminalSession): boolean;
+  /** the container's live name (so a rename shows) and whether it is still in the inventory */
+  state(session: TerminalSession): { label: string; stale: boolean };
   /** open the container picker for this tab, anchored on the caret it was clicked from */
   pick(session: TerminalSession, anchor: HTMLElement): void;
 }
@@ -105,9 +102,9 @@ export class TerminalTabView implements ITabRenderer {
 
     this.live?.destroy();
     this.live = effect(() => {
-      const label = this.info.label(this.session);
+      const { label, stale } = this.info.state(this.session);
       this.lbl.textContent = label;
-      this.lbl.classList.toggle('gone', this.info.stale(this.session));
+      this.lbl.classList.toggle('gone', stale);
       this.dot.className = `dot ${statusTone(this.session.status())}`;
       // the title is the whole story a truncated tab cannot tell
       this.element.title = `${label} — ${this.session.status()}`;

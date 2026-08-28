@@ -24,7 +24,6 @@ export type { AgentRef } from './api/agent-ref';
 export type { AgentMcpRequest } from './api/agent-mcp-api';
 export type { CreateAgentRequest } from './api/agents-api';
 export type { McpServerOperation } from './api/mcp-catalog-api';
-export type { TerminalFrame } from './api/terminal-socket';
 export { resizeFrame } from './api/terminal-socket';
 export type { ApiServerInfo } from './api/server-api';
 

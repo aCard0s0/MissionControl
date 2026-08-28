@@ -7,6 +7,7 @@ import type {
 // See src/dockview-core-styled.d.ts.
 import { createDockview, themeDark } from 'dockview-core/dist/dockview-core.js';
 import type { ITabRenderer } from 'dockview-core';
+import type { TerminalNoticeView } from './terminal-notice-view';
 import { TerminalSession, isPaneChord } from './terminal-session';
 
 /** The one component name the dock registers — every panel is a terminal. */
@@ -16,17 +17,14 @@ const TAB = 'mc-terminal-tab';
 /**
  * The terminal chrome, as a dockview theme.
  *
- * <p>Built on dockview's own dark theme rather than declared from nothing: that
- * theme is a block of some forty CSS variables in dockview's stylesheet, and a
- * from-scratch class would have to redefine every one of them — including the
- * ones a future version adds. Keeping its class name means those all still
- * apply, and the handful that carry the panel's look are overridden against the
- * `--term-*` tokens in styles.scss, where a rule can actually reach DOM dockview
- * built itself.
+ * <p>Built on dockview's own dark theme rather than declared from nothing: keeping its class
+ * name keeps the forty-odd CSS variables it defines — including the ones a future version
+ * adds — and the handful that carry the panel's look are overridden against the `--term-*`
+ * tokens in styles.scss, where a rule can reach DOM dockview built itself.
  *
- * <p>What is set here is the behaviour a stylesheet cannot express: a visible gap
- * between groups, and a drop overlay covering the whole group rather than just
- * its content, so dragging a shell onto a tab strip reads as landing there.
+ * <p>What is set here is the behaviour a stylesheet cannot express: a visible gap between
+ * groups, and a drop overlay covering the whole group rather than just its content, so
+ * dragging a shell onto a tab strip reads as landing there.
  */
 const TERM_THEME: DockviewTheme = {
   ...themeDark,
@@ -37,12 +35,10 @@ const TERM_THEME: DockviewTheme = {
 };
 
 /**
- * The smallest a pane may be squeezed to, in pixels.
- *
- * <p>Twelve shells can be split into a grid whose cells are slivers, and dockview will
- * happily let a sash take one down to nothing. A pane narrower than this holds no readable
- * terminal, so the grid stops there and the drag simply will not go further. Roughly a
- * 24-column, 4-row terminal at the panel's 12px monospace — small, but still a terminal.
+ * The smallest a pane may be squeezed to, in pixels. Twelve shells can be split into a grid
+ * whose cells are slivers, and dockview will happily let a sash take one down to nothing.
+ * Roughly a 24-column, 4-row terminal at the panel's 12px monospace — small, but still a
+ * terminal.
  */
 const MIN_PANE_W = 220;
 const MIN_PANE_H = 80;
@@ -50,34 +46,25 @@ const MIN_PANE_H = 80;
 /**
  * Where a new pane goes relative to the one it was split from.
  *
- * <p>Not a cosmetic choice. `right` halves the columns; `below` keeps every column
- * and halves the rows instead. A pane that has already printed will not be
- * narrowed either way — TerminalSession holds its grid at the width it drew at and
- * scrolls sideways rather than rewrapping — so what this really picks is whether
- * new output gets columns or rows. Which trade is right depends on what is being
- * read, so it is the operator's to make rather than ours to hard-code.
+ * <p>Not a cosmetic choice: `right` halves the columns, `below` keeps every column and halves
+ * the rows instead. A pane that has already printed will not be narrowed either way (see
+ * TerminalSession's column floor), so what this picks is whether new output gets columns or
+ * rows — which is the operator's trade to make rather than ours to hard-code.
  */
 export type SplitDirection = 'right' | 'below';
-
-/** The pane chrome the panel builds, as little of it as the dock needs to know. */
-export interface PaneNotice {
-  readonly element: HTMLElement;
-  dispose(): void;
-}
 
 /**
  * What the dock needs the panel to decide, and what it reports back to it.
  *
  * <p>{@link createTab} is why this is an interface rather than a set of options: dockview owns
  * the tab strip, but what a tab *looks* like is the panel's business, and building it there is
- * what keeps this file free of any framework. A second tab presentation — narrower, read-only,
- * whatever — is a change in the panel and nothing here.
+ * what keeps this file free of any framework.
  */
 export interface DockHooks {
   /** the tab chrome for a pane; the dock only ever hands it to dockview */
   createTab(session: TerminalSession): ITabRenderer;
-  /** the chrome that sits inside a pane, over the terminal — see TerminalNoticeView */
-  createNotice(session: TerminalSession): PaneNotice;
+  /** the chrome that sits inside a pane, over the terminal */
+  createNotice(session: TerminalSession): TerminalNoticeView;
   /** a pane went away — by its ×, or with the group it was the last member of */
   removed(id: string): void;
   /** the pane the toolbar should act on; null when the last one closed */
@@ -90,17 +77,12 @@ export interface DockHooks {
  * The split layout behind the terminal panel: a dockview grid whose every panel
  * is one {@link TerminalSession}.
  *
- * <p>Panels are rendered `always` rather than only while visible, which is the
- * whole reason this works: dockview keeps a hidden pane's element in the DOM
- * instead of tearing it out, so a background shell stays attached, keeps its
- * scrollback, and goes on streaming into its buffer. A session's host div is
- * created once and lives for the session's life — the pane element it sits in
- * is just where the dock currently puts it.
+ * <p>Panels are rendered `always` rather than only while visible, which is the whole reason
+ * this works: dockview keeps a hidden pane's element in the DOM instead of tearing it out, so
+ * a background shell stays attached, keeps its scrollback, and goes on streaming.
  *
- * <p>Floating and popped-out groups are off: xterm binds a terminal to the
- * document it was opened in, so a shell dragged into a second window would come
- * up unmeasurable and unstyled. Splitting and re-arranging inside the panel is
- * the whole offer.
+ * <p>Floating and popped-out groups are off: xterm binds a terminal to the document it was
+ * opened in, so a shell dragged into a second window would come up unmeasurable and unstyled.
  *
  * <p>Panel ids are session ids, which is what lets a saved layout be matched
  * back up with restored sessions by nothing more than a lookup.
@@ -117,7 +99,6 @@ export class TerminalDock {
       theme: TERM_THEME,
       defaultRenderer: 'always',
       disableFloatingGroups: true,
-      singleTabMode: 'default',
       noPanelsOverlay: 'emptyGroup',
       createComponent: options => this.createPane(options.id),
       createTabComponent: options => this.createTab(options.id),
@@ -144,21 +125,6 @@ export class TerminalDock {
     this.root.addEventListener('keydown', this.onKeydown, true);
   }
 
-  /**
-   * Move the keyboard to the next or previous pane.
-   *
-   * <p>`includePanel` walks the tabs within a group before stepping to the next group, so one
-   * chord covers both halves of the offer — a stack of tabs and a row of splits read as one
-   * ring rather than as two separate motions to learn.
-   */
-  focusNext(): void {
-    this.api.moveToNext({ includePanel: true });
-  }
-
-  focusPrevious(): void {
-    this.api.moveToPrevious({ includePanel: true });
-  }
-
   /** The sessions the dock is currently showing, in tab order. */
   panes(): TerminalSession[] {
     return this.api.panels
@@ -167,12 +133,10 @@ export class TerminalDock {
   }
 
   /**
-   * Puts `sessions` back into `layout`, falling back to one group holding them
-   * all when there is no layout to honour or it will not load.
-   *
-   * <p>A layout is data from localStorage, so a hand-edited or half-migrated one
-   * has to be survivable: the fallback is not a nicety, it is the difference
-   * between a bad payload costing the arrangement and it costing the panel.
+   * Puts `sessions` back into `layout`, falling back to one group holding them all when there
+   * is no layout to honour or it will not load. A layout is data from localStorage, so the
+   * fallback is the difference between a bad payload costing the arrangement and it costing
+   * the panel.
    */
   restore(
     sessions: readonly TerminalSession[], layout: SerializedDockview | null,
@@ -221,11 +185,6 @@ export class TerminalDock {
     this.sessions.get(id)?.focus();
   }
 
-  /** Close a pane. Its session is disposed by the panel, via {@link DockHooks.removed}. */
-  close(id: string): void {
-    this.api.getPanel(id)?.api.close();
-  }
-
   /** The arrangement, for persisting. */
   toJSON(): SerializedDockview | null {
     try {
@@ -264,24 +223,26 @@ export class TerminalDock {
 
   /**
    * What a freshly arrived group needs from us: a floor on how far it can be squeezed, and a
-   * `tablist` on the strip dockview built for it.
-   *
-   * <p>The role is set here because the strip is dockview's DOM — a `role="tab"` on a tab
-   * (see TerminalTabView) is only meaningful inside a `tablist`, and there is nowhere else
-   * that element can be reached. Guarded rather than asserted: a class name is a weaker
-   * contract than an API, and a missing strip should cost the role, not the dock.
+   * `tablist` on the strip dockview built for it — a `role="tab"` on a tab (see
+   * TerminalTabView) is only meaningful inside one, and there is nowhere else that element can
+   * be reached. Guarded rather than asserted: a class name is a weaker contract than an API,
+   * and a missing strip should cost the role, not the dock.
    */
   private prepareGroup(group: DockviewGroupPanel): void {
     group.api.setConstraints({ minimumWidth: MIN_PANE_W, minimumHeight: MIN_PANE_H });
     group.element.querySelector('.dv-tabs-container')?.setAttribute('role', 'tablist');
   }
 
-  /** Bound once so dispose() can take it off again. */
+  /**
+   * Bound once so dispose() can take it off again. `includePanel` walks the tabs within a
+   * group before stepping to the next group, so one chord covers both halves of the offer — a
+   * stack of tabs and a row of splits read as one ring rather than two motions to learn.
+   */
   private readonly onKeydown = (event: KeyboardEvent): void => {
     if (!isPaneChord(event)) return;
     event.preventDefault();
-    if (event.key === 'ArrowRight') this.focusNext();
-    else this.focusPrevious();
+    if (event.key === 'ArrowRight') this.api.moveToNext({ includePanel: true });
+    else this.api.moveToPrevious({ includePanel: true });
   };
 
   private addPanel(
@@ -300,12 +261,14 @@ export class TerminalDock {
 
   private createPane(id: string): IContentRenderer {
     const session = this.sessions.get(id);
-    // A layout naming a panel with no session is pruned out before it ever gets
-    // here (see pruneLayout), so this is a bug rather than a payload problem —
-    // an empty pane says so instead of crashing the whole dock.
-    return session
-      ? new TerminalPaneView(session, this.hooks.createNotice(session))
-      : new MissingPaneView(id);
+    if (session) return new TerminalPaneView(session, this.hooks.createNotice(session));
+    // A layout naming a panel with no session is pruned out before it gets here (see
+    // pruneLayout), so this is a bug rather than a payload problem — an empty pane says so
+    // instead of crashing the whole dock.
+    const element = document.createElement('div');
+    element.className = 'mc-term-pane';
+    element.textContent = `no shell for ${id}`;
+    return { element, init: () => { /* nothing to wire — there is no session */ } };
   }
 
   private createTab(id: string): ITabRenderer | undefined {
@@ -330,7 +293,7 @@ class TerminalPaneView implements IContentRenderer {
 
   constructor(
     private readonly session: TerminalSession,
-    private readonly notice: PaneNotice,
+    private readonly notice: TerminalNoticeView,
   ) {
     // styled here, not in the panel's stylesheet: created outside any template,
     // so emulated view encapsulation would never scope a class rule to it
@@ -372,17 +335,3 @@ class TerminalPaneView implements IContentRenderer {
     // the dock reports the removal and the panel owns that decision
   }
 }
-
-/** Placeholder for a panel id with no session behind it. See createPane(). */
-class MissingPaneView implements IContentRenderer {
-  readonly element: HTMLDivElement;
-
-  constructor(id: string) {
-    this.element = document.createElement('div');
-    this.element.className = 'mc-term-pane';
-    this.element.textContent = `no shell for ${id}`;
-  }
-
-  init(): void { /* nothing to wire — there is no session */ }
-}
-
