@@ -234,8 +234,8 @@
   }
 
   @if (removing()) {
-    <div class="scrim" (click)="removing.set(false)">
-      <div class="modal" (click)="$event.stopPropagation()">
+    <div class="scrim" mcScrim (dismiss)="removing.set(false)">
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="panel-h crit-h">DELETE PROFILE</div>
         <div class="modal-b">
           <p class="dim">Deletes <span class="mono">{{ a.name }}</span> — its config, memory, sessions, skills, jobs, and webhooks. Cannot be undone.</p>
@@ -253,8 +253,8 @@
   }
 
   @if (capturing()) {
-    <div class="scrim" (click)="capturing.set(false)">
-      <div class="modal" (click)="$event.stopPropagation()">
+    <div class="scrim" mcScrim (dismiss)="capturing.set(false)">
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="panel-h">SAVE AS TEMPLATE</div>
         <div class="modal-b">
           <p class="dim">Snapshots <span class="mono">{{ a.name }}</span>'s soul, memory, skills, and MCP servers into a reusable profile. Key values aren't copied — only which keys are required.</p>
@@ -271,8 +271,8 @@
     </div>
   }
   @if (pauseOpen()) {
-    <div class="scrim" (click)="pauseOpen.set(false)">
-      <div class="modal" (click)="$event.stopPropagation()">
+    <div class="scrim" mcScrim (dismiss)="pauseOpen.set(false)">
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="panel-h">PAUSE AGENT</div>
         <div class="modal-b">
           <p class="dim">Holds <span class="mono">{{ a.name }}</span>'s cron dispatch, kanban

@@ -3,7 +3,9 @@
   <div class="drag" (pointerdown)="dragStart($event)" title="drag to resize"><span class="grip"></span></div>
 }
 
-<div class="bar mono" (click)="toggle()">
+<div class="bar mono" role="button" tabindex="0" [attr.aria-expanded]="open()"
+     [attr.aria-label]="open() ? 'collapse the terminal' : 'expand the terminal'"
+     (click)="toggle()" (keydown.enter)="toggle()" (keydown.space)="toggle(); $event.preventDefault()">
   <span class="chev">{{ open() ? '▾' : '▴' }}</span>
   <span class="title">TERMINAL</span>
   @if (focused(); as f) {
@@ -57,7 +59,7 @@
 <!-- Fixed to the viewport, not nested in the tab that opened it: the tab strip
      scrolls and clips, so a popover living inside one would be cut off. -->
 @if (pickerAt(); as at) {
-  <div class="scrim" (click)="pickerAt.set(null)"></div>
+  <div class="scrim" mcScrim (dismiss)="pickerAt.set(null)"></div>
   <div class="pop" [style.left.px]="at.x" [style.top.px]="at.y">
     @for (c of containers.containers(); track c.id) {
       <button class="row" [class.sel]="c.id === pickerFor()?.target()?.containerId"

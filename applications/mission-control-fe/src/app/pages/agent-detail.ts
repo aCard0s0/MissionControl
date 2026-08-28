@@ -19,6 +19,7 @@ import { ago, until } from '../core/format';
 import { errorMessage } from '../core/errors';
 import { ChatMessage, LogEntry, SessionInfo } from '../core/models';
 import { SessionViewer } from './session-viewer';
+import { Scrim } from '../shared/scrim';
 
 type Tab = 'overview' | 'setup' | 'skills' | 'mcp' | 'jobs' | 'activity' | 'files' | 'sessions';
 
@@ -32,10 +33,8 @@ interface SessionView {
 @Component({
   selector: 'mc-agent-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    FormsModule, RouterLink, StatusDot, Reveal, LogView,
-    AgentMcpPanel, AgentSetupPanel, AgentSkillsPanel, SessionViewer,
-  ],
+  imports: [FormsModule, RouterLink, StatusDot, Reveal, LogView,
+    AgentMcpPanel, AgentSetupPanel, AgentSkillsPanel, SessionViewer, Scrim],
   templateUrl: './agent-detail.html',
   styleUrl: './agent-detail.scss',
 })

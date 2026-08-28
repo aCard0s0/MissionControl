@@ -7,6 +7,7 @@ import {
   McpEditorDraft, McpEditorEntry, applyMcpKindDefaults, blankConfigEntry, blankSupportService,
   blankVolume, defaultHealthcheck, mcpDraftToInput, mcpDraftValid, splitMcpLines,
 } from '../core/mcp/catalog-draft';
+import { Scrim } from '../shared/scrim';
 
 /**
  * The modal form behind one catalog entry. The page decides which draft to open
@@ -22,7 +23,7 @@ import {
 @Component({
   selector: 'mc-mcp-server-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, Scrim],
   templateUrl: './mcp-server-editor.html',
   styleUrl: './mcp-server-editor.scss',
 })

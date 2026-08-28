@@ -16,6 +16,7 @@ import { ModelPicker } from '../shared/model-picker';
 import {
   OLLAMA_PREFIX, providerOptions, providerOptionFor, resolveProviderOption, templateProvidesKey,
 } from '../shared/provider-resolve';
+import { Scrim } from '../shared/scrim';
 
 /**
  * The new-agent form. Everything it collects is provider-shaped: which provider
@@ -29,7 +30,7 @@ import {
 @Component({
   selector: 'mc-agent-create-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, Scrim],
   templateUrl: './agent-create-dialog.html',
   styleUrl: './agent-create-dialog.scss',
 })

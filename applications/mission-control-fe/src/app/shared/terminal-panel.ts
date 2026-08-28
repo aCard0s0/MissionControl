@@ -17,6 +17,7 @@ import { TerminalNoticeView } from './terminal-notice-view';
 import { TerminalTabView } from './terminal-tab-view';
 import { TermTarget, TerminalSession } from './terminal-session';
 import { readTerminalTabs, writeTerminalTabs } from './terminal-tabs';
+import { Scrim } from './scrim';
 
 // UI sanity guard against runaway tab creation; the backend enforces the real
 // per-client/global ceiling (mc.terminal.*) and rejects connections past it.
@@ -64,7 +65,7 @@ interface PickerAt {
 @Component({
   selector: 'mc-terminal-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HermesCommands, StatusDot],
+  imports: [HermesCommands, StatusDot, Scrim],
   templateUrl: './terminal-panel.html',
   styleUrl: './terminal-panel.scss',
 })

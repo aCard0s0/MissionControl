@@ -130,8 +130,8 @@
 </p>
 
 @if (stopping(); as pending) {
-  <div class="scrim" (click)="stopping.set(null)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="stopping.set(null)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h">STOP <span class="mono">{{ pending.container.name }}</span>?</div>
       <div class="modal-b">
         @if (pending.activity.activeAgents > 0) {
@@ -165,8 +165,8 @@
 }
 
 @if (deployOpen()) {
-  <div class="scrim" (click)="deployOpen.set(false)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="deployOpen.set(false)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h">DEPLOY HERMES CONTAINER</div>
       <div class="modal-b">
         <div class="field">
@@ -259,8 +259,8 @@
 }
 
 @if (updating(); as c) {
-  <div class="scrim" (click)="cancelUpdate()">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="cancelUpdate()">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h">UPDATE IMAGE — {{ c.name }}</div>
       <div class="modal-b">
         <p class="dim">
@@ -305,8 +305,8 @@
 }
 
 @if (removing(); as c) {
-  <div class="scrim" (click)="removingBusy() ? null : removing.set(null)">
-    <div class="modal" (click)="$event.stopPropagation()">
+  <div class="scrim" mcScrim (dismiss)="removingBusy() ? null : removing.set(null)">
+    <div class="modal" role="dialog" aria-modal="true">
       <div class="panel-h crit-h">REMOVE CONTAINER</div>
       <div class="modal-b">
         <p class="dim">

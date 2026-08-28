@@ -11,6 +11,7 @@ import { McpEditorDraft, mcpDraftFromServer, newMcpDraft } from '../core/mcp/cat
 import { mcpServerGroups } from './mcp-server-groups';
 import { McpServerEditor } from './mcp-server-editor';
 import { McpServerLogs } from './mcp-server-logs';
+import { Scrim } from '../shared/scrim';
 
 /**
  * The global MCP catalog: what is registered, what is running, and what data a
@@ -21,7 +22,7 @@ import { McpServerLogs } from './mcp-server-logs';
 @Component({
   selector: 'mc-mcp-servers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, StatusDot, Reveal, McpServerEditor, McpServerLogs],
+  imports: [FormsModule, StatusDot, Reveal, McpServerEditor, McpServerLogs, Scrim],
   templateUrl: './mcp-servers.html',
   styleUrl: './mcp-servers.scss',
 })

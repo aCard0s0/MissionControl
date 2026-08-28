@@ -1,7 +1,7 @@
 @let form = draft();
 
-<div class="scrim" (click)="saveBusy() ? null : closed.emit()">
-  <div class="modal editor-modal" (click)="$event.stopPropagation()">
+<div class="scrim" mcScrim (dismiss)="saveBusy() ? null : closed.emit()">
+  <div class="modal editor-modal" role="dialog" aria-modal="true">
     <div class="panel-h">
       {{ form.id ? 'EDIT MCP SERVER' : 'ADD MCP SERVER' }}
       <span class="spacer"></span>

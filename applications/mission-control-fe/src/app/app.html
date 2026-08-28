@@ -1,5 +1,5 @@
 @if (sideOpen()) {
-  <div class="side-scrim" (click)="closeSide()"></div>
+  <div class="side-scrim" mcScrim (dismiss)="closeSide()"></div>
 }
 
 <aside class="side" [class.open]="sideOpen()">
@@ -48,7 +48,7 @@
     </button>
 
     @if (pickerOpen()) {
-      <div class="scrim-click" (click)="pickerOpen.set(false)"></div>
+      <div class="scrim-click" mcScrim (dismiss)="pickerOpen.set(false)"></div>
       <div class="ctx-pop">
         @for (c of containers.containers(); track c.id) {
           <button class="ctx-row" [class.sel]="c.id === containers.selectedContainerId()" (click)="pick(c.id)">

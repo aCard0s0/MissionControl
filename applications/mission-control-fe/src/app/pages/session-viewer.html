@@ -1,5 +1,5 @@
-<div class="scrim" (click)="closed.emit()">
-  <div class="modal wide session-modal" (click)="$event.stopPropagation()">
+<div class="scrim" mcScrim (dismiss)="closed.emit()">
+  <div class="modal wide session-modal" role="dialog" aria-modal="true">
     <div class="panel-h">
       SESSION · {{ session().title }}
       <span class="chip off mono">{{ session().platform }}</span>

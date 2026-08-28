@@ -1,5 +1,5 @@
-<div class="scrim" (click)="closed.emit()">
-  <div class="modal" (click)="$event.stopPropagation()">
+<div class="scrim" mcScrim (dismiss)="closed.emit()">
+  <div class="modal" role="dialog" aria-modal="true">
     <div class="panel-h">deploy — {{ template().name }}</div>
     <div class="modal-b">
       <p class="dim">Creates a new agent in the chosen container and applies this blueprint —
