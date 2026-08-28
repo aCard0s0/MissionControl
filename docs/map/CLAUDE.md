@@ -4,7 +4,7 @@ The catalog for a tree you do not hold in your head. It answers *what is X* and 
 moves if I change X*. It is not a second spec: [docs/architecture.md](../architecture.md)
 owns the as-built "why", and the code owns the truth. Every card cites both.
 
-Verified against `main @ 640da14` · 2026-08-28.
+Verified against `main @ 976a9c9` · 2026-08-28.
 
 ## Where things live
 

@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/api-contract.txt
 ---
 
@@ -16,7 +16,7 @@ every line resolves to a real handler. Never hand-edit it.
 ## Why this shape
 
 The gap it closes is stated in `RouteContractTest`'s comment
-(`.../src/test/java/io/hermes/missioncontrol/contract/RouteContractTest.java:25`): other tests pin
+(`contract/RouteContractTest.java:25`): other tests pin
 JSON keys and sweep the routes the app *maps*, but **neither says whether the dashboard calls
 those routes**. A controller can move from `@PutMapping` to `@PatchMapping`, or gain a path
 segment, and every test on both sides stays green — the frontend's suite asserts only the URL its
@@ -36,7 +36,7 @@ annotation mapping directly makes an unmapped path fail instead of quietly succe
 - Written by `core/api/api-routes.spec.ts:389` via `toMatchFileSnapshot`, deduped and sorted
 - Read by `RouteContractTest` and `ApiDocCoverageTest`, which find it by walking up from the
   working directory — Maven runs from the module, a developer often from the repo root
-  (`RepoDocs.java:19`)
+  (`contract/RepoDocs.java:19`)
 - **On CI a drifted file fails the snapshot instead of being rewritten**
   (`.github/workflows/ci.yml:43`), so a route renamed on one side and not the other cannot reach
   `main`. Locally, running the FE tests rewrites it.

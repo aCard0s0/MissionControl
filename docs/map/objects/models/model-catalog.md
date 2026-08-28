@@ -3,7 +3,7 @@ type: object
 cluster: models
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/models/ModelCatalogService.java
 ---
 
@@ -69,7 +69,7 @@ neither is an empty list, nor an endpoint's own installed models.
 |---|---|
 | `/api/models` | reads |
 | `ModelCatalogRefresher` | writes |
-| FE `core/api/providers-api.ts:23` | reads |
+| FE `core/api/providers-api.ts:20` | reads |
 
 ## See
 

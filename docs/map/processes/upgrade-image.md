@@ -1,7 +1,7 @@
 ---
 type: process
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 consumes: [container, image]
 produces: [container]
 ---

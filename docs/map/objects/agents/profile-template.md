@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/templates/
 ---
 
@@ -28,7 +28,7 @@ editor never received the ciphertext to send back (`encryptOrKeep`, `:40`).
 
 ## Shape
 
-`profile_templates` — `schema.sql:34`. Note two columns added **after the table shipped**,
+`profile_templates` — `schema.sql:38`. Note two columns added **after the table shipped**,
 `icon` and `category`, handled by `config/SchemaUpgrades.java` rather than by editing the
 CREATE statement — that is the pattern for any further column.
 

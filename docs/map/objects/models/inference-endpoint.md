@@ -3,7 +3,7 @@ type: object
 cluster: models
 universe: live
 status: verified
-verified: main @ 640da14 · 2026-08-28
+verified: main @ 976a9c9 · 2026-08-28
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/inference/InferenceEndpointService.java
 ---
 
@@ -39,7 +39,7 @@ Derived per probe — `inference/InferenceEndpointDto.java:4`:
 
 | Field | Source |
 |---|---|
-| `kind` | `ollama \| openai \| null` — whichever client answered. Detection order is Ollama first, and that order matters (`InferenceEndpointService.java:47`) |
+| `kind` | `ollama \| openai \| null` — whichever client answered. Detection order is Ollama first, and that order matters (`inference/InferenceEndpointService.java:47`) |
 | `status`, `version`, `detail` | the probe. `version` is null for openai — the protocol has no version endpoint |
 | `canManageModels` | ollama only (`:239`). The UI hides pull/delete when false rather than offering a button that 400s |
 
