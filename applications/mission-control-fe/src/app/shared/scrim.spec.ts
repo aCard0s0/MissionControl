@@ -7,11 +7,28 @@ import { Scrim } from './scrim';
   standalone: true,
   imports: [Scrim],
   template: `
-    <div class="scrim" mcScrim (dismiss)="dismissed.set(dismissed() + 1)">
-      <div class="modal"><button id="inside">save</button></div>
-    </div>`,
+    @if (open()) {
+      <div class="scrim" mcScrim (dismiss)="dismissed.set(dismissed() + 1)">
+        <div class="modal">
+          <button id="first">first</button>
+          <input id="middle" />
+          <button id="inside">save</button>
+        </div>
+      </div>
+    }`,
 })
 class Host {
+  readonly dismissed = signal(0);
+  readonly open = signal(true);
+}
+
+/** A backdrop with nothing in it — the shape behind a menu, not a dialog. */
+@Component({
+  standalone: true,
+  imports: [Scrim],
+  template: `<div class="scrim" mcScrim (dismiss)="dismissed.set(dismissed() + 1)"></div>`,
+})
+class BareHost {
   readonly dismissed = signal(0);
 }
 
@@ -20,6 +37,13 @@ const mount = () => {
   fixture.detectChanges();
   const el = (sel: string) => fixture.nativeElement.querySelector(sel) as HTMLElement;
   return { fixture, host: fixture.componentInstance, el };
+};
+
+/** A Tab that the browser would act on, so the directive gets a chance to preventDefault. */
+const tab = (from: HTMLElement, shift = false) => {
+  const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true, cancelable: true });
+  from.dispatchEvent(event);
+  return event;
 };
 
 describe('Scrim', () => {
@@ -58,5 +82,85 @@ describe('Scrim', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
     expect(host.dismissed()).toBe(0);
+  });
+});
+
+describe('Scrim focus', () => {
+  it('moves focus into the dialog, so the keyboard starts where the eye is', () => {
+    const { el } = mount();
+
+    expect(document.activeElement).toBe(el('#first'));
+  });
+
+  it('wraps forward off the last control instead of leaving for the covered page', () => {
+    const { el } = mount();
+    el('#inside').focus();
+
+    const event = tab(el('#inside'));
+
+    expect(document.activeElement).toBe(el('#first'));
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('wraps backward off the first control', () => {
+    const { el } = mount();
+    el('#first').focus();
+
+    const event = tab(el('#first'), true);
+
+    expect(document.activeElement).toBe(el('#inside'));
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('leaves a Tab in the middle of the dialog to the browser', () => {
+    const { el } = mount();
+    el('#middle').focus();
+
+    const event = tab(el('#middle'));
+
+    // not our business: the browser moves to the next control on its own
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not trap a backdrop that holds nothing focusable', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const fixture = TestBed.createComponent(BareHost);
+    fixture.detectChanges();
+
+    // a click-catcher behind a menu: moving focus in would strand the keyboard
+    expect(document.activeElement).toBe(opener);
+    const scrim = fixture.nativeElement.querySelector('.scrim') as HTMLElement;
+    expect(tab(scrim).defaultPrevented).toBe(false);
+    opener.remove();
+  });
+
+  it('gives focus back to whatever opened the dialog', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const fixture = TestBed.createComponent(Host);
+    fixture.detectChanges();
+    fixture.componentInstance.open.set(false);
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('does not throw when the opener was re-rendered away while the dialog was open', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const fixture = TestBed.createComponent(Host);
+    fixture.detectChanges();
+    opener.remove();                       // a list refreshed underneath the dialog
+    fixture.componentInstance.open.set(false);
+
+    expect(() => fixture.detectChanges()).not.toThrow();
   });
 });
