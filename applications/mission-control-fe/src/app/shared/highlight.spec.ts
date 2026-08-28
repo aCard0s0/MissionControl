@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countJsonMatches, countMatches, highlightHtml } from './highlight';
+import { countJsonMatches, countMatches, highlightHtml, primText } from './highlight';
 
 // This output is handed to DomSanitizer.bypassSecurityTrustHtml and rendered via
 // [innerHTML] in json-tree and agent-detail — so it is the only thing standing
@@ -129,5 +129,17 @@ describe('countJsonMatches', () => {
     expect(countJsonMatches({ error: null }, null, 'null')).toBe(1);
     expect(countJsonMatches({ latencyMs: 120 }, null, '120')).toBe(1);
     expect(countJsonMatches({ latencyMs: 120 }, null, '"120"')).toBe(0);
+  });
+});
+
+describe('primText', () => {
+  // mc-json-tree renders with this and countJsonMatches counts against it. One definition
+  // now, so they cannot disagree — this pins what that definition renders.
+  it('quotes and escapes strings, and leaves everything else bare', () => {
+    expect(primText('user')).toBe('"user"');
+    expect(primText('say "hi"')).toBe('"say \\"hi\\""');
+    expect(primText(null)).toBe('null');
+    expect(primText(120)).toBe('120');
+    expect(primText(true)).toBe('true');
   });
 });

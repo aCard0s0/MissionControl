@@ -64,6 +64,13 @@ jobs:
         run: npm run build
       - name: Launcher syntax
         run: bash -n mc
+      - name: Launcher lint
+        # `bash -n` parses; it does not read. ./mc is the operator entrypoint — it mounts the
+        # docker socket, mints and persists MC_SECRET_KEY, and picks the deploy flavor — and it
+        # was the one component with no check beyond "does it tokenise". Warning severity and
+        # above, so this gates on things that actually misbehave (unquoted expansions, unused
+        # or misspelled variables, subshell state that does not survive) rather than on style.
+        run: shellcheck -S warning mc
 
   # Everything above substitutes the Docker CLI, which pins the argv Mission Control builds but
   # never asks the daemon whether it accepts it. This job is the only thing that can tell, so it
