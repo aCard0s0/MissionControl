@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: main @ 976a9c9 · 2026-08-28
+verified: main @ 379fe7e · 2026-08-29
 entity: applications/mission-control-fe/src/app/shared/scrim.ts
 ---
 
@@ -26,24 +26,30 @@ Three decisions inside it are not obvious:
 - **Target filtering replaces `stopPropagation`.** Asking whether the click landed on the
   backdrop itself answers the same question without the modal having to know it sits on one,
   and without swallowing an event something else might have wanted. A spec pins that a click
-  inside still reaches the document (`shared/scrim.spec.ts:58`).
+  inside still reaches the document (`shared/scrim.spec.ts:60`).
 - **Escape binds on the document, not the host.** A backdrop is not focusable, and making it
   focusable to receive the key would put a tab stop with no meaning in front of the dialog's
   own controls.
 - **Guards stay in the template.** `(dismiss)="saveBusy() ? null : closed.emit()"` — whether a
   dialog may close mid-save is the dialog's business, not the backdrop's.
-- **Focus is moved in, held, and given back** (`shared/scrim.ts:64`). Without it `aria-modal` is
+- **Focus is moved in, held, and given back** (`shared/scrim.ts:75`). Without it `aria-modal` is
   a claim the page does not honour: a keyboard user tabs straight out of an open dialog onto
   controls the backdrop is covering. Tab off the last control wraps to the first and Shift+Tab
   wraps the other way; on close focus returns to the opener, checked for `isConnected` because
   a list may have re-rendered underneath.
-- **The trap is skipped when the backdrop holds nothing focusable.** Three of these are bare
-  click-catchers behind a menu; moving focus into an empty box would strand the keyboard where
-  there is nothing to operate.
+- **The page behind is marked `inert`** (`shared/scrim.ts:90`), which takes it out of the tab
+  order *and* out of the accessibility tree. The trap holds the keyboard; without this a screen
+  reader's own cursor still walks content the backdrop is covering, and `aria-modal` is only
+  advisory. A sibling that was already inert is left alone, so cleanup cannot clear one this
+  backdrop did not set.
+- **Both are skipped when the backdrop holds nothing focusable.** Three of these are bare
+  click-catchers, and the thing they reveal — the sidebar, a context menu — is a *sibling* of
+  the backdrop. Inerting siblings would disable exactly what the scrim exists to show, and
+  moving focus into an empty box would strand the keyboard for the same reason.
 
 ## Shape
 
-`shared/scrim.ts:46` — selector `[mcScrim]`, one output `dismiss`.
+`shared/scrim.ts:54` — selector `[mcScrim]`, one output `dismiss`.
 
 | Host binding | Does |
 |---|---|
@@ -70,10 +76,10 @@ before.
 
 - **Hits:** all fifteen backdrops at once — that is the point of it being one directive.
   Removing the target filter would make every click inside a modal close it.
-- **Does not hit:** the content behind the dialog. Focus is trapped for the keyboard, but the
-  page underneath is not `inert` and is not hidden from assistive tech — a screen reader's own
-  cursor can still walk it, and `aria-modal` is the only thing telling it not to. Nor does any
-  of this reach the three bare click-catchers, which are deliberately outside the trap.
+- **Does not hit:** the three bare click-catchers, which are deliberately outside both the trap
+  and the inerting — a menu that is a sibling of its own backdrop cannot be inerted without
+  being switched off. Nor does it hit stacked dialogs: one modal is mounted at a time here, and
+  a second opened over the first would inert it.
 
 ## Surfaces
 

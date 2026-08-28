@@ -40,13 +40,16 @@ trailing `\| string` is what lets `catalog` type-check without being named.
 record comment and the FE union are the two that are incomplete, not the doc.
 
 The frontend carries it through as `ModelCatalog` (`core/models.ts`) and shows it as a hint on
-the model field — `ModelPicker.sourceLabel` (`shared/model-picker.ts:28`). It adds a fourth value
-of its own, **`bundled`**, for the offline `FALLBACK_MODELS` list used when the backend cannot be
-reached at all: a shipped list and a list read from the provider are identical in a dropdown, and
+the model field — `ModelPicker.sourceLabel` (`shared/model-picker.ts:28`). Worth showing rather
+than hiding: a shipped list and a list read from the provider are identical in a dropdown, and
 picking a model the provider no longer serves fails much later, at the agent's first turn.
 
 `live` is deliberately **not** labelled — the operator supplied the key that fetched it — and
 neither is an empty list, nor an endpoint's own installed models.
+
+A failed read answers **empty**, not from a shipped copy. The frontend used to keep its own
+mirror of `mc.models` for that case; it only fired when the backend was unreachable, at which
+point the create it fed could not be submitted either.
 
 ## Connected to
 

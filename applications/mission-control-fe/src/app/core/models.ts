@@ -71,15 +71,14 @@ export interface LlmProvider {
 }
 
 /**
- * Where a model list came from. The backend sends the first three; `bundled` is this
- * client's own offline copy, used when the backend could not be reached at all.
+ * Where a model list came from — the backend decides, and sends one of these.
  *
  * <p>It is on the wire so a page can say which list an operator is looking at. Worth
  * showing rather than hiding: a shipped list and a list read from the provider look
  * identical in a dropdown, and picking a model the provider no longer serves fails much
  * later, at the agent's first turn.
  */
-export type ModelSource = 'catalog' | 'config' | 'live' | 'bundled';
+export type ModelSource = 'catalog' | 'config' | 'live';
 
 /**
  * The models one provider can serve, and where that list came from.

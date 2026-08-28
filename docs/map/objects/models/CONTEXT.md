@@ -21,5 +21,3 @@ On the frontend the two axes are now two classes each — `core/api/providers-ap
 half; the create-agent picker offers both in one dropdown, and that merge is
 `shared/provider-resolve.ts`'s `providerOptions()` — one function, not a shared store.
 
-`core/store/provider-defaults.ts` still carries `provider` in its name and holds only
-`FALLBACK_MODELS`, the offline model lists mirroring `application.yml`.

@@ -7,6 +7,8 @@ import { Scrim } from './scrim';
   standalone: true,
   imports: [Scrim],
   template: `
+    <div id="behind">page content</div>
+    <div id="already" inert>someone else's inert</div>
     @if (open()) {
       <div class="scrim" mcScrim (dismiss)="dismissed.set(dismissed() + 1)">
         <div class="modal">
@@ -162,5 +164,45 @@ describe('Scrim focus', () => {
     fixture.componentInstance.open.set(false);
 
     expect(() => fixture.detectChanges()).not.toThrow();
+  });
+});
+
+describe('Scrim inert', () => {
+  it('takes the page behind out of the tab order and the a11y tree', () => {
+    const { el } = mount();
+
+    expect(el('#behind').hasAttribute('inert')).toBe(true);
+  });
+
+  it('gives it back on close', () => {
+    const { fixture, el } = mount();
+    const behind = el('#behind');
+
+    fixture.componentInstance.open.set(false);
+    fixture.detectChanges();
+
+    expect(behind.hasAttribute('inert')).toBe(false);
+  });
+
+  it('leaves an inert it did not set, so cleanup cannot clear someone else\'s', () => {
+    const { fixture, el } = mount();
+    const already = el('#already');
+    expect(already.hasAttribute('inert')).toBe(true);
+
+    fixture.componentInstance.open.set(false);
+    fixture.detectChanges();
+
+    expect(already.hasAttribute('inert')).toBe(true);
+  });
+
+  it('inerts nothing for a backdrop that holds nothing focusable', () => {
+    const fixture = TestBed.createComponent(BareHost);
+    fixture.detectChanges();
+
+    // the sidebar and the context menu are siblings of their backdrop — inerting siblings
+    // would disable the very thing the scrim exists to reveal
+    const scrim = fixture.nativeElement.querySelector('.scrim') as HTMLElement;
+    const siblings = Array.from(scrim.parentElement?.children ?? []).filter(c => c !== scrim);
+    expect(siblings.some(c => c.hasAttribute('inert'))).toBe(false);
   });
 });
