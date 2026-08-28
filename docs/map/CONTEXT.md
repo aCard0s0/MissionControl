@@ -46,3 +46,15 @@ A card is `verified` only with a commit and a date in its frontmatter. `stale` i
 status. A confident wrong date is not. When you change a noun, the cheapest correct move is to
 update its card in the same commit — or set `status: stale` and move on. Do not leave a
 `verified` card describing code you just changed.
+
+That much is convention, and convention did not hold: the map was written against one commit
+and eight commits later twenty citations pointed at blank lines and stray braces, because a
+table rename had shifted `schema.sql` under seven cards at once. So the part a machine can
+check, it checks. `MapIntegrityTest` fails the backend build when a cited file has gone, when a
+cited line is past the end of it, when a citation lands on a lone brace — the signature of a
+line number that moved — when a link goes nowhere, or when an object card is missing from
+`objects/_index.md`.
+
+It cannot tell whether a card is **right**; that still needs a person reading the source. It
+only bounds how wrong one can quietly become. So `status: verified` remains a claim you are
+making, not one the build made for you.
