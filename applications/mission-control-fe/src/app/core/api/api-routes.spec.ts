@@ -263,42 +263,42 @@ const cases: Record<string, Case> = {
     call: a => a.providers.modelCatalogLive('anthropic', 'sk-x'), method: 'POST',
     url: '/api/models/anthropic', body: { apiKey: 'sk-x' },
   },
-  'providers.list': { call: a => a.providers.list(), method: 'GET', url: '/api/model-providers' },
+  'providers.list': { call: a => a.providers.list(), method: 'GET', url: '/api/inference-endpoints' },
   'providers.add': {
     call: a => a.providers.add('lab', 'http://ollama:11434'), method: 'POST',
-    url: '/api/model-providers', body: { name: 'lab', url: 'http://ollama:11434' },
+    url: '/api/inference-endpoints', body: { name: 'lab', url: 'http://ollama:11434' },
   },
   'providers.remove': {
-    call: a => a.providers.remove('mp-1'), method: 'DELETE', url: '/api/model-providers/mp-1',
+    call: a => a.providers.remove('mp-1'), method: 'DELETE', url: '/api/inference-endpoints/mp-1',
   },
   'providers.check': {
-    call: a => a.providers.check('mp-1'), method: 'POST', url: '/api/model-providers/mp-1/check',
+    call: a => a.providers.check('mp-1'), method: 'POST', url: '/api/inference-endpoints/mp-1/check',
   },
   'providers.models': {
-    call: a => a.providers.models('mp-1'), method: 'GET', url: '/api/model-providers/mp-1/models',
+    call: a => a.providers.models('mp-1'), method: 'GET', url: '/api/inference-endpoints/mp-1/models',
   },
   'providers.running': {
     call: a => a.providers.running('mp-1'), method: 'GET',
-    url: '/api/model-providers/mp-1/running',
+    url: '/api/inference-endpoints/mp-1/running',
   },
   'providers.loadModel': {
     call: a => a.providers.loadModel('mp-1', 'llama3'), method: 'POST',
-    url: '/api/model-providers/mp-1/models/load', body: { name: 'llama3' },
+    url: '/api/inference-endpoints/mp-1/models/load', body: { name: 'llama3' },
   },
   'providers.unloadModel': {
     call: a => a.providers.unloadModel('mp-1', 'llama3'), method: 'POST',
-    url: '/api/model-providers/mp-1/models/unload', body: { name: 'llama3' },
+    url: '/api/inference-endpoints/mp-1/models/unload', body: { name: 'llama3' },
   },
   'providers.pullModel': {
     call: a => a.providers.pullModel('mp-1', 'llama3'), method: 'POST',
-    url: '/api/model-providers/mp-1/models/pull', body: { name: 'llama3' },
+    url: '/api/inference-endpoints/mp-1/models/pull', body: { name: 'llama3' },
   },
   'providers.pullStatus': {
-    call: a => a.providers.pullStatus('mp-1'), method: 'GET', url: '/api/model-providers/mp-1/pulls',
+    call: a => a.providers.pullStatus('mp-1'), method: 'GET', url: '/api/inference-endpoints/mp-1/pulls',
   },
   'providers.deleteModel': {
     call: a => a.providers.deleteModel('mp-1', 'llama3'), method: 'POST',
-    url: '/api/model-providers/mp-1/models/delete', body: { name: 'llama3' },
+    url: '/api/inference-endpoints/mp-1/models/delete', body: { name: 'llama3' },
   },
 
   // ── profile templates ──────────────────────────────────────────────────

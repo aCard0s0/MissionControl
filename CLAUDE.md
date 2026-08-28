@@ -29,7 +29,7 @@ owns the fact.
 |---|---|
 | changing anything and want to know the blast radius | [docs/map/effects/CONTEXT.md](docs/map/effects/CONTEXT.md) |
 | asking "what is X" | [docs/map/objects/_index.md](docs/map/objects/_index.md) |
-| confused by `providers` vs `models` vs `model-providers` | [docs/map/CLAUDE.md](docs/map/CLAUDE.md) — name collisions |
+| confused by `providers` vs `models` vs `inference-endpoints` | [docs/map/CLAUDE.md](docs/map/CLAUDE.md) — name collisions |
 | adding or changing an HTTP route | `docs/map/objects/dashboard/api-contract.md` — the route list is snapshot-tested from both sides |
 | writing a test | [docs/testing.md](docs/testing.md) |
 | touching deploy, upgrade, MCP apply, profile edit or polling | [docs/map/processes/](docs/map/processes/) |

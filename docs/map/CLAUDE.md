@@ -36,7 +36,7 @@ other, and three of them are one route rename apart from being confused in a dif
 |---|---|---|
 | `/api/providers` | `ModelProviderRegistry.PROVIDERS` (`agents/`) | a **static, compiled-in list of upstream LLM vendors** — key, label, env var, oauth, hasCatalog. Mirrors hermes' own `CANONICAL_PROVIDERS`. No database, no network. |
 | `/api/models` | `ModelCatalogService` (`models/`) | **model names** available per vendor. `source: config \| live`. |
-| `/api/model-providers` | `InferenceEndpointService` (`inference/`) | **self-hosted inference endpoints** — Ollama or OpenAI-compatible, probed for protocol and status. The `model_providers` SQLite table is these, not the registry above. |
+| `/api/inference-endpoints` | `InferenceEndpointService` (`inference/`) | **self-hosted inference endpoints** — Ollama or OpenAI-compatible, probed for protocol and status. Table `inference_endpoints`. Both shipped as `model-providers` / `model_providers`; `SchemaUpgrades` moves an older database across. |
 | `/api/agents/{host}/{container}/auth-providers` | `AgentSetupController` | which vendors **this container has credentials for**. |
 
 Other product-word / code-name disagreements:

@@ -7,12 +7,13 @@ They are not variants of each other. This cluster is grouped by *the confusion*,
 |---|---|---|
 | [provider-registry](provider-registry.md) | `/api/providers` | compiled-in list of LLM vendors. No DB, no network. |
 | [model-catalog](model-catalog.md) | `/api/models` | model *names* per vendor. `model_catalog` table. |
-| [inference-endpoint](inference-endpoint.md) | `/api/model-providers` | a self-hosted server you run. **`model_providers` table.** |
+| [inference-endpoint](inference-endpoint.md) | `/api/inference-endpoints` | a self-hosted server you run. `inference_endpoints` table. |
 | [auth-provider](auth-provider.md) | `.../auth-providers` | which vendors *this container* has keys for. |
 
-Before you rename anything here, read all four. The `model_providers` table holds inference
-endpoints and the provider registry has no table at all — a rename that looks obvious from one
-card is wrong from another.
+Before you rename anything here, read all four. The provider registry has no table at all, so a
+rename that looks obvious from one card is wrong from another. The one rename that has happened
+went the other way: `model-providers` / `model_providers` → `inference-endpoints` /
+`inference_endpoints`, because that pair genuinely named the wrong noun.
 
 The frontend mirrors the confusion four more ways: `core/api/providers-api.ts`,
 `core/store/provider-store.ts`, `core/store/provider-defaults.ts`, `shared/provider-resolve.ts`.

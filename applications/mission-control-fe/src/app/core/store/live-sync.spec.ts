@@ -82,7 +82,7 @@ describe('LiveSync bootstrap', () => {
         id: 'dh-remote', name: 'remote', url: 'tcp://10.0.0.2:2375', kind: 'remote',
         status: 'connected', engine: 'Docker 27.3', apiVersion: '1.47', latencyMs: 12, note: null,
       }],
-      '/api/model-providers': [],
+      '/api/inference-endpoints': [],
       '/api/providers': [{ key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true, envVar: 'ANTHROPIC_API_KEY' }],
       '/api/containers': [CONTAINER],
       '/api/board/tasks': [{ id: 't1', containerId: 'c-live', agentId: null, title: 'Ship it', column: 'queued', priority: 'high', tags: null, createdAt: 1 }],

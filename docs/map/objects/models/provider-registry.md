@@ -38,8 +38,9 @@ key?" rule, and the provider→catalog decision all read the same list, so they 
 - **owned-by:** hermes' own provider list, upstream. Adding an entry here that hermes does not
   know is a ghost in the picker.
 - **joins:** [Model catalog](model-catalog.md) by `key`; [Auth provider](auth-provider.md) by `key`
-- **looks-like-but-is-not:** [Inference endpoint](inference-endpoint.md), which is served at
-  `/api/model-providers` and *is* a database row. The two are unrelated.
+- **looks-like-but-is-not:** [Inference endpoint](inference-endpoint.md), which *is* a database
+  row. The two are unrelated — and the endpoint route was called `/api/model-providers` until it
+  was renamed for exactly this reason.
 
 ## If you change this
 
@@ -48,7 +49,8 @@ key?" rule, and the provider→catalog decision all read the same list, so they 
   `.env` key name written into a profile on create.
 - **Does not hit:** [Inference endpoint](inference-endpoint.md) rows. A self-hosted Ollama
   is not a registry entry and adding one here does not create one. Nor does it hit
-  `model_providers` in SQLite — despite the name, that table is inference endpoints.
+  `inference_endpoints` in SQLite. That table used to be called `model_providers`, which is what
+  made this pair worth two cards.
 
 ## Surfaces
 

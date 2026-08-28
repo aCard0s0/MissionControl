@@ -198,22 +198,24 @@ the next probe says so.
 Adding a protocol is one `EndpointClient` bean. There is no schema change and no list to
 keep in sync.
 
-The `/api/model-providers` route predates the rename and is kept as-is; the concept it
-serves is an endpoint, not a vendor. Not to be confused with `/api/providers`, which is
-the model **vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API keys.
+The route and the table are `inference-endpoints` / `inference_endpoints`. Both shipped as
+`model-providers` / `model_providers` and were renamed once the concept had a name — an
+endpoint is a url you run, not a vendor. `SchemaUpgrades` carries an older database across
+and drops the old table. Not to be confused with `/api/providers`, which is the model
+**vendor** registry (Anthropic, DeepSeek, Ollama Cloud) and their API keys.
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/model-providers` | — | probe resolves status **and** `kind` (10s cache); `version` is null for `openai` |
-| `POST /api/model-providers` | `{ name, url }` | http(s) urls only; duplicates rejected; a server that is down is still registered |
-| `POST /api/model-providers/{id}/check` | — | fresh probe |
-| `DELETE /api/model-providers/{id}` | — | |
-| `GET /api/model-providers/{id}/models` | — | proxied per kind |
-| `GET /api/model-providers/{id}/running` | — | what is loaded in memory, and the VRAM it holds; `[]` where the protocol cannot say |
-| `POST /api/model-providers/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
-| `POST /api/model-providers/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
-| `POST /api/model-providers/{id}/models/load` | `{ name }` | pins the model in memory (`keep_alive: -1`); **blocks** while the weights load, up to 3 min; **400 unless `canManageModels`** |
-| `POST /api/model-providers/{id}/models/unload` | `{ name }` | frees its VRAM immediately; **400 unless `canManageModels`** |
+| `GET /api/inference-endpoints` | — | probe resolves status **and** `kind` (10s cache); `version` is null for `openai` |
+| `POST /api/inference-endpoints` | `{ name, url }` | http(s) urls only; duplicates rejected; a server that is down is still registered |
+| `POST /api/inference-endpoints/{id}/check` | — | fresh probe |
+| `DELETE /api/inference-endpoints/{id}` | — | |
+| `GET /api/inference-endpoints/{id}/models` | — | proxied per kind |
+| `GET /api/inference-endpoints/{id}/running` | — | what is loaded in memory, and the VRAM it holds; `[]` where the protocol cannot say |
+| `POST /api/inference-endpoints/{id}/models/pull` | `{ name }` | 202; async pull, progress via `GET …/pulls`; **400 unless `canManageModels`** |
+| `POST /api/inference-endpoints/{id}/models/delete` | `{ name }` | **400 unless `canManageModels`** |
+| `POST /api/inference-endpoints/{id}/models/load` | `{ name }` | pins the model in memory (`keep_alive: -1`); **blocks** while the weights load, up to 3 min; **400 unless `canManageModels`** |
+| `POST /api/inference-endpoints/{id}/models/unload` | `{ name }` | frees its VRAM immediately; **400 unless `canManageModels`** |
 
 A pull is streamed from ollama, so `GET …/pulls` reports `detail` as `47% · pulling <digest>`
 while it runs and as the failure reason if it fails. A pull that has begun streaming is a 200

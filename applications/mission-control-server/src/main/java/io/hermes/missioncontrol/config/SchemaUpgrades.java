@@ -30,9 +30,9 @@ import org.springframework.stereotype.Component;
  * operator's data survives an upgrade, and a destructive step in the same mechanism would be
  * the one thing that could take it away.
  *
- * <p>{@link #dropEndpointKind()} is the one exception, and it runs once ever. It removes a
- * column whose value is now derived rather than stored; the rows themselves are copied across
- * untouched.
+ * <p>{@link #moveEndpointsOffModelProviders()} is the one exception, and it runs once ever. It
+ * carries rows from a table that was renamed; every row is copied across untouched before the
+ * old table goes.
  */
 @Component
 @DependsOnDatabaseInitialization
@@ -66,42 +66,42 @@ class SchemaUpgrades {
       jdbc.execute("ALTER TABLE " + added.table()
           + " ADD COLUMN " + added.column() + " " + added.definition());
     }
-    dropEndpointKind();
+    moveEndpointsOffModelProviders();
   }
 
   /**
-   * Removes {@code model_providers.kind}.
+   * Carries inference endpoints from {@code model_providers} to {@code inference_endpoints}.
    *
-   * <p>Which protocol answers at a url is a property of the server, and the service probes for
-   * it on every status refresh anyway — so the column was a stored copy of something already
-   * known, able to go stale the moment a different server appeared behind the same url. It
-   * also carried a {@code CHECK} that would have needed a table rebuild for every protocol
-   * ever added. This is that rebuild, once, and then never again.
+   * <p>The table shipped as {@code model_providers} while the concept was still called a model
+   * provider. It is not one: a row here is a URL you run — ollama, or anything OpenAI-compatible
+   * — while a model provider is an upstream vendor, and that one is a compiled-in list with no
+   * table at all. Two things called the same name, one route rename apart from being confused in
+   * a diff, so the table follows the rename its route and service already had.
    *
-   * <p>{@code ALTER TABLE … DROP COLUMN} cannot do it: SQLite refuses to drop a column named
-   * in a CHECK constraint, which is exactly the constraint being removed.
+   * <p>A copy rather than {@code ALTER TABLE … RENAME TO}: this class runs after the schema
+   * script, which has already created an empty {@code inference_endpoints}, so there is nowhere
+   * to rename onto. Copying also lets the column list be explicit, which is what drops a legacy
+   * {@code kind} column on a database old enough to still carry one — the protocol is probed,
+   * not stored, and SQLite refuses {@code DROP COLUMN} on a column named in a CHECK.
+   *
+   * <p>Guarded on the url rather than on "did this run", so a second pass moves nothing and
+   * still cannot lose a row. One connection, one transaction: as separate autocommitted
+   * statements this could be interrupted between the INSERT and the DROP, and a retry would
+   * then see rows in both tables.
    */
-  private void dropEndpointKind() {
-    if (!tableExists("model_providers") || !columns("model_providers").contains("kind")) {
+  private void moveEndpointsOffModelProviders() {
+    if (!tableExists("model_providers")) {
       return;
     }
-    log.info("dropping model_providers.kind — the protocol is probed, not stored");
-    // One connection, one transaction. As separate autocommitted statements this could be
-    // interrupted between the DROP and the RENAME and leave no model_providers table at all.
-    // SQLite makes DDL transactional, so the swap either lands whole or not at all.
+    log.info("moving inference endpoints from model_providers to inference_endpoints");
     jdbc.execute((ConnectionCallback<Void>) connection -> {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
       try (Statement statement = connection.createStatement()) {
-        statement.execute("CREATE TABLE model_providers_new ("
-            + "id TEXT PRIMARY KEY,"
-            + "name TEXT NOT NULL,"
-            + "url TEXT NOT NULL UNIQUE,"
-            + "created_at INTEGER NOT NULL)");
-        statement.execute("INSERT INTO model_providers_new"
-            + " SELECT id, name, url, created_at FROM model_providers");
+        statement.execute("INSERT INTO inference_endpoints (id, name, url, created_at)"
+            + " SELECT id, name, url, created_at FROM model_providers"
+            + " WHERE url NOT IN (SELECT url FROM inference_endpoints)");
         statement.execute("DROP TABLE model_providers");
-        statement.execute("ALTER TABLE model_providers_new RENAME TO model_providers");
         connection.commit();
       } catch (SQLException e) {
         connection.rollback();

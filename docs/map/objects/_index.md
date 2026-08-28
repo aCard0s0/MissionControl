@@ -49,7 +49,7 @@ is most of the value.
 |---|---|---|---|
 | ✓ | [Provider](models/provider-registry.md) | `agents/ModelProviderRegistry.java` | `/api/providers`. Compiled-in vendor list. Mirrors hermes' own. |
 | ✓ | [Model catalog](models/model-catalog.md) | `models/` | `/api/models`. Model names per vendor. `source` has **three** values. |
-| ✓ | [Inference endpoint](models/inference-endpoint.md) | `inference/` | `/api/model-providers`, table `model_providers`. **A server you run.** |
+| ✓ | [Inference endpoint](models/inference-endpoint.md) | `inference/` | `/api/inference-endpoints`, table `inference_endpoints`. **A server you run.** |
 | ✓ | [Auth provider](models/auth-provider.md) | `agents/HermesSetup.java` | `…/auth-providers`. Which keys *this container* holds. |
 | · | Endpoint model / running model | `inference/{EndpointModelDto,RunningModelDto}.java` | what an endpoint serves and what is loaded. |
 | · | Pull status | `inference/PullStatusDto.java` | ollama only — `canManageModels` gates the button. |

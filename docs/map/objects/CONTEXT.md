@@ -29,7 +29,8 @@ and following two cards' Hits lists is how you get the second order.
 
 **Does not hit** is the more useful half. It names the *obvious next thing that is wrong*: the
 noun a reasonable person would assume moves and which does not. Most wasted edits in this tree
-are in that gap — `/api/providers` vs `/api/model-providers` being the standing example.
+are in that gap — `/api/providers` vs `/api/inference-endpoints` being the standing example, and
+the reason the latter was renamed off `model-providers`.
 
 ## Status honesty
 
