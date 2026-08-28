@@ -34,8 +34,9 @@ annotation mapping directly makes an unmapped path fail instead of quietly succe
 ## Shape
 
 - Written by `core/api/api-routes.spec.ts:389` via `toMatchFileSnapshot`, deduped and sorted
-- Read by `RouteContractTest`, which looks for `applications/api-contract.txt` then
-  `api-contract.txt` walking up (`RouteContractTest.java:109`)
+- Read by `RouteContractTest` and `ApiDocCoverageTest`, which find it by walking up from the
+  working directory — Maven runs from the module, a developer often from the repo root
+  (`RepoDocs.java:19`)
 - **On CI a drifted file fails the snapshot instead of being rewritten**
   (`.github/workflows/ci.yml:43`), so a route renamed on one side and not the other cannot reach
   `main`. Locally, running the FE tests rewrites it.
@@ -45,8 +46,11 @@ annotation mapping directly makes an unmapped path fail instead of quietly succe
 - **owns:** nothing
 - **owned-by:** the frontend's route suite
 - **joins:** every controller in the backend; every client method in `core/api/`
-- **looks-like-but-is-not:** [docs/api.md](../../../api.md), which is hand-written prose for
-  humans and is not checked against anything.
+- **joins:** [docs/api.md](../../../api.md) — `ApiDocCoverageTest` asserts every route in this
+  file is written down there. It recovers the pattern Spring matched rather than parsing the
+  url, because a published url carries concrete values where the doc writes `{placeholders}`.
+  It is a floor, not a proof: the `…/{name}/…` shorthand is matched as a suffix, so two routes
+  sharing a method and a tail satisfy each other — the test names the live instance.
 
 ## If you change this
 

@@ -7,7 +7,7 @@ disagree, **the card is the one to fix**.
 
 | Changing | Open these | The thing people miss |
 |---|---|---|
-| an HTTP route (path or method) | [api-contract](../objects/dashboard/api-contract.md) | `applications/api-contract.txt` is generated from **both** sides and CI fails on drift. Rename the FE client, the controller and this file in one commit. |
+| an HTTP route (path or method) | [api-contract](../objects/dashboard/api-contract.md) | three places, one commit: the FE client, the controller, and a row in `docs/api.md`. `api-contract.txt` regenerates from the FE suite; CI fails if it drifts, and `ApiDocCoverageTest` fails if the route is undocumented. |
 | a response shape | [api-contract](../objects/dashboard/api-contract.md), `core/store/wire-mappers.ts` | `ApiContractTest` pins JSON keys separately from the route contract. |
 | a `mc.*` container label or the volume prefix | [container](../objects/docker/container.md) | four classes read it — deployer, upgrader, lifecycle, inventory. That is why `ManagedContainer` exists. |
 | the MCP network or owner label | [managed-mcp-stack](../objects/mcp/managed-mcp-stack.md) | grep for the **string**, not just the constant: `agents/` once held its own copy, and the health probe would still have passed. |
