@@ -56,7 +56,15 @@ export class DeployDialog {
   /** Set when the deploy failed outright, as opposed to a part of it. */
   protected readonly failed = signal(false);
 
-  protected readonly targets = computed(() => this.agents.agents());
+  /**
+   * The agents of the container the shell has selected, not every agent on the daemon.
+   *
+   * <p>"Views never mix containers" is the rule the shell header states, and two containers
+   * each holding a `default` profile is the ordinary case — a flat list showed `default`
+   * twice with nothing to tell them apart, and deploying to the wrong one would look like
+   * it worked.
+   */
+  protected readonly targets = computed(() => this.agents.forSelectedContainer());
 
   protected readonly landed = computed(() =>
     (this.parts() ?? []).filter(p => p.status === 'deployed').length);

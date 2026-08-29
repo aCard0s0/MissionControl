@@ -128,6 +128,15 @@
                         spellcheck="false" rows="10"></textarea>
             </div>
           }
+          @if (nameDisagrees()) {
+            <!-- plain text on purpose: .lock-hint is a flex row, so inline elements become
+                 flex items and a sentence built from several of them wraps mid-phrase -->
+            <p class="lock-hint warn">
+              SKILL.md declares name: {{ frontmatterName() }} — hermes resolves by frontmatter
+              name, so the agent will list this as {{ frontmatterName() }}, not
+              {{ fName.trim() }}. Edit one to match if that is not what you meant.
+            </p>
+          }
           <p class="lock-hint">paths are relative to the skill's own directory, at most three
             segments deep — <code class="mono">SKILL.md</code>,
             <code class="mono">scripts/run.sh</code>.</p>

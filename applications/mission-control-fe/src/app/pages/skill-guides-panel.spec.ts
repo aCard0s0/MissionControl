@@ -53,7 +53,7 @@ const render = (
         },
       },
       { provide: McpCatalogStore, useValue: { servers: signal(servers) } },
-      { provide: AgentStore, useValue: { agents: signal([]), resolve: () => null } },
+      { provide: AgentStore, useValue: { forSelectedContainer: signal([]), resolve: () => null } },
       { provide: ActivityStore, useValue: { run: (_: string, w: () => unknown) => w() } },
     ],
   });

@@ -38,7 +38,7 @@ const render = (
       {
         provide: AgentStore,
         useValue: {
-          agents: signal([AGENT]),
+          forSelectedContainer: signal([AGENT]),
           resolve: vi.fn().mockReturnValue({ agent: AGENT, ref: REF }),
           ...agents,
         },
@@ -153,10 +153,12 @@ describe('DeployDialog', () => {
     expect(fixture.componentInstance.closed).toBe(0);
   });
 
-  it('says so when there is no agent to deploy to', () => {
-    const fixture = render(undefined, { agents: signal([]) });
+  it('offers only the selected container\'s agents, because views never mix containers', () => {
+    // two containers each holding a `default` profile is ordinary; a flat list showed it
+    // twice with nothing to tell them apart
+    const fixture = render(undefined, { forSelectedContainer: signal([]) });
 
-    expect(text(fixture)).toContain('no agents available');
+    expect(text(fixture)).toContain('no agents in the selected container');
   });
 
   it('does not touch its signals after the dialog is gone', async () => {

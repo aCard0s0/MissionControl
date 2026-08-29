@@ -196,6 +196,31 @@ export class SkillsPage {
     this.fFiles.update(files => files.map((f, i) => (i === index ? { ...f, body } : f)));
   }
 
+  /**
+   * The name SKILL.md's own frontmatter declares, when it declares one.
+   *
+   * <p>Hermes resolves a skill by its frontmatter name and falls back to the directory only
+   * when there is none, so a body still carrying the starter's `name:` deploys into
+   * `skills/<row name>/` and then shows up on the agent under the other name. Reported
+   * rather than rewritten: overriding the directory name is a legitimate thing an author
+   * does, and silently editing someone's frontmatter to match a field is worse than saying
+   * the two disagree.
+   */
+  protected frontmatterName(): string {
+    const md = this.fFiles().find(f => f.path.trim() === SKILL_MD)?.body ?? '';
+    if (!md.startsWith('---')) return '';
+    const end = md.indexOf('\n---', 3);
+    const declared = /^name:\s*(.+)$/m.exec(end > 0 ? md.slice(3, end) : '');
+    return declared ? declared[1].trim() : '';
+  }
+
+  /** True when SKILL.md names a different skill than this row does. */
+  protected nameDisagrees(): boolean {
+    const declared = this.frontmatterName();
+    return this.fKind === 'local' && !!declared && !!this.fName.trim()
+      && declared !== this.fName.trim();
+  }
+
   /** A local skill needs a SKILL.md, so the page says so before the backend does. */
   protected hasSkillMd(): boolean {
     return this.fFiles().some(f => f.path.trim() === SKILL_MD);

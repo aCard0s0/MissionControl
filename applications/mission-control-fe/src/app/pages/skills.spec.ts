@@ -38,7 +38,7 @@ const render = (store: ReturnType<typeof storeStub> = storeStub()) => {
       { provide: SkillStore, useValue: store },
       // the deploy dialog is declared by the page's template, so its own injections
       // have to resolve even in tests that never open it
-      { provide: AgentStore, useValue: { agents: signal([]), resolve: () => null } },
+      { provide: AgentStore, useValue: { forSelectedContainer: signal([]), resolve: () => null } },
       { provide: ActivityStore, useValue: { run: (_: string, w: () => unknown) => w() } },
     ],
   });
@@ -281,6 +281,28 @@ describe('SkillsPage', () => {
     const { fixture } = render(store);
 
     expect(row(fixture, 'pdf').textContent).toContain('check failed');
+  });
+
+  it('says when SKILL.md names a different skill than the row does', async () => {
+    // hermes resolves by frontmatter name, so the starter body's `name:` left unedited
+    // deploys into skills/<row>/ and then shows up on the agent under the other name
+    const { fixture } = render();
+    press(fixture, '+ new skill');
+    await settle(fixture);
+
+    await fill(fixture, 'name', 'ui-made');
+
+    expect(text(fixture)).toContain('the agent will list this as my-skill, not ui-made');
+  });
+
+  it('stays quiet once the two names agree', async () => {
+    const { fixture } = render();
+    press(fixture, '+ new skill');
+    await settle(fixture);
+
+    await fill(fixture, 'name', 'my-skill');
+
+    expect(text(fixture)).not.toContain('hermes resolves by frontmatter name');
   });
 
   it('opens the deploy dialog for the skill whose button was pressed', async () => {

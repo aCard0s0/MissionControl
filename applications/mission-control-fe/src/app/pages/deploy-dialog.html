@@ -38,7 +38,8 @@
         </div>
 
         @if (!targets().length) {
-          <p class="lock-hint">no agents available — create one on the Agents page first.</p>
+          <p class="lock-hint">no agents in the selected container — pick another container in
+            the header, or create an agent on the Agents page.</p>
         }
         @if (busy()) {
           <p class="lock-hint">the deploy runs on the container, not in this window — close it and
