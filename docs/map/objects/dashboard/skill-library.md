@@ -79,6 +79,16 @@ The cache key is operator-supplied, so unlike `docker/RegistryTagService` — wh
 says its map only holds because its key is a single configured value — expired entries are
 swept on write, the shape `agents/HermesProfileMcp` uses.
 
+## Checked against a real agent
+
+Verified end to end against `nousresearch/hermes-agent:latest` (v2026.8.19) in a throwaway
+container, not only against the exec-seam fake: a multi-file local deploy lands every file
+including a three-segment path and hermes lists the skill with its frontmatter parsed;
+`default` writes at `/opt/data/skills/` and mints no `profiles/default`; an import round-trips
+a curator-authored skill to another profile with a PNG reported skipped; and a row carrying
+`../../../../../../etc/cron.d/pwned`, inserted straight into SQLite to bypass the controller,
+is refused with **nothing** written — not even the valid `SKILL.md` earlier in the same set.
+
 ## Connected to
 
 - **owns:** nothing on an agent. A deployed copy is not tracked.

@@ -111,8 +111,14 @@ final class ProfilePaths {
   }
 
   /**
-   * The argv prefix that scopes a hermes command to one profile. Hermes takes {@code -p}
-   * only for named profiles — {@code default} lives at the hermes home and is invoked bare.
+   * The argv prefix that scopes a hermes command to one profile. {@code default} lives at
+   * the hermes home rather than under the profiles directory, and is invoked bare.
+   *
+   * <p>Bare is the canonical form, not the only one that works: hermes v2026.8.19 accepts
+   * {@code -p default} and resolves it to the same home, checked against a real container on
+   * {@code skills list} and {@code skills install}. Worth knowing before treating a call site
+   * that passes it as a live defect — the reason to route every one of them through here is
+   * that this method validates the name, not that the other spelling fails.
    *
    * <p>Here because this class already owns that special case for paths, and because every
    * caller in this package builds an argv the same way: this prefix, then the subcommand.

@@ -263,9 +263,14 @@ class HermesSkillsTest {
 
   @Test
   void installingIntoTheDefaultProfileInvokesHermesBare() {
-    // `default` lives at the hermes home and takes no -p, which the assertion above cannot
-    // see because it uses a named profile. This call site built its own argv for a while and
-    // passed `-p default` to every install onto the most common agent there is.
+    // The assertion above cannot see this, because it uses a named profile: this call site
+    // built its own argv for a while, and `default` was the one profile where that argv
+    // differed from what ProfilePaths produces.
+    //
+    // Not a bug that was biting. Checked against hermes v2026.8.19 in a real container:
+    // `hermes -p default skills install <id>` and the bare form behave identically, so the
+    // old argv worked. What it did skip is profileDir()'s validation of the profile name,
+    // which is why the fix is worth keeping and why this pins the argv rather than a repair.
     FakeContainer container = new FakeContainer();
 
     skills(container).install(HOST, CONTAINER, "default", "pdf");
