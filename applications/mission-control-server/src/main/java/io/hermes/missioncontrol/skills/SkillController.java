@@ -76,15 +76,6 @@ public class SkillController {
       @Size(max = 200_000) String body) {
   }
 
-  /** Which agent to act on. The three parts are the profile's identity — a profile name is
-   *  only unique inside a container. {@code profile} reaches a shell, so it carries the
-   *  pattern here as well as being re-guarded by {@code ProfilePaths}. */
-  public record AgentTargetRequest(
-      @NotBlank String hostId,
-      @NotBlank String containerId,
-      @NotBlank @Pattern(regexp = ProfileSpec.NAME_PATTERN) String profile) {
-  }
-
   public record ImportSkillRequest(
       @NotBlank String hostId,
       @NotBlank String containerId,

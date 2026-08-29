@@ -65,12 +65,6 @@ public class SkillGuideController {
       @Size(max = MAX_REFS) List<@Size(max = 64) String> mcpServerIds) {
   }
 
-  public record AgentTargetRequest(
-      @NotBlank String hostId,
-      @NotBlank String containerId,
-      @NotBlank @Pattern(regexp = ProfileSpec.NAME_PATTERN) String profile) {
-  }
-
   /** What one part of a guide did. {@code detail} is null unless something went wrong. */
   public record DeployedPart(String kind, String name, String status, String detail) {
 

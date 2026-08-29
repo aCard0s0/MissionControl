@@ -35,14 +35,14 @@ Several independent writes to an agent someone else owns, and they fail one at a
 skill deleted from the library since the guide named it, an MCP alias already on that agent,
 a managed server that is not running.
 
-`skills/SkillGuideController.java:152` follows the rule
+`skills/SkillGuideController.java:146` follows the rule
 [profile-edit](../../processes/profile-edit.md) inherits from
 `agents/templates/TemplateApplier.java:60` — *layering onto a profile the caller does not own
 surfaces the error and does not roll back*. Undoing half a guide would mean removing skills
 and MCP entries that may have been on that agent **before the guide ever ran**.
 
 So it reports instead: one `DeployedPart` per part
-(`skills/SkillGuideController.java:75`), each `deployed | skipped | failed` with a reason.
+(`skills/SkillGuideController.java:69`), each `deployed | skipped | failed` with a reason.
 `skipped` is "gone from the library or the catalog"; `failed` is "attempted and refused".
 
 A guide and a library skill of the same name both resolve to `skills/<name>/`, so a deploy

@@ -14,9 +14,5 @@ import java.util.Map;
  *     a binary asset cannot round-trip through it, and the importer says so rather than
  *     storing the corruption
  */
-public record SkillFilesDto(
-    String name,
-    String path,
-    Map<String, String> files,
-    List<String> skipped) {
+public record SkillFilesDto(Map<String, String> files, List<String> skipped) {
 }

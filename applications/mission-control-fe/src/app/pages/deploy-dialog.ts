@@ -37,8 +37,8 @@ import { Scrim } from '../shared/scrim';
 export class DeployDialog {
   /** Shown in the header — the name of the thing going over. */
   readonly label = input.required<string>();
-  /** The verb on the button, e.g. `skill` or `guide`. */
-  readonly noun = input('');
+  /** The verb on the button and in the header, e.g. `skill` or `guide`. */
+  readonly noun = input.required<string>();
   /**
    * Runs the deploy. Must be a stable reference — bind a field, not an inline arrow, or
    * every change detection pass writes a new identity into this input.

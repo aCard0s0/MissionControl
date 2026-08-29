@@ -335,8 +335,7 @@ class SkillControllerTest {
   @Test
   void importingASkillOffAnAgentStoresItAsLocalWithItsFiles() throws Exception {
     when(profiles.readSkillFiles(any(), anyString(), anyString(), eq("curated")))
-        .thenReturn(new SkillFilesDto("curated", "/opt/data/profiles/ops/skills/curated",
-            Map.of("SKILL.md", "# curated", "notes.md", "why"), List.of("logo.png")));
+        .thenReturn(new SkillFilesDto(Map.of("SKILL.md", "# curated", "notes.md", "why"), List.of("logo.png")));
 
     mvc.perform(post("/api/skills/import").contentType(MediaType.APPLICATION_JSON).content("""
             {"hostId":"dh-1","containerId":"c1","profile":"ops","skillName":"curated"}
@@ -357,7 +356,7 @@ class SkillControllerTest {
         "https://example.test/c", "1.0", List.of(new SkillFile("SKILL.md", "# old")),
         1_000L, 1_000L));
     when(profiles.readSkillFiles(any(), anyString(), anyString(), anyString()))
-        .thenReturn(new SkillFilesDto("curated", "/x", Map.of("SKILL.md", "# new"), List.of()));
+        .thenReturn(new SkillFilesDto(Map.of("SKILL.md", "# new"), List.of()));
 
     mvc.perform(post("/api/skills/import").contentType(MediaType.APPLICATION_JSON).content("""
             {"hostId":"dh-1","containerId":"c1","profile":"ops","skillName":"curated"}
@@ -377,7 +376,7 @@ class SkillControllerTest {
   @Test
   void importingASkillWithoutASkillMdIsRejected() throws Exception {
     when(profiles.readSkillFiles(any(), anyString(), anyString(), anyString()))
-        .thenReturn(new SkillFilesDto("odd", "/x", Map.of("notes.md", "why"), List.of()));
+        .thenReturn(new SkillFilesDto(Map.of("notes.md", "why"), List.of()));
 
     mvc.perform(post("/api/skills/import").contentType(MediaType.APPLICATION_JSON).content("""
             {"hostId":"dh-1","containerId":"c1","profile":"ops","skillName":"odd"}

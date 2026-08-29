@@ -223,7 +223,7 @@ class HermesSkills {
       }
       contents.put(name, body);
     }
-    return new SkillFilesDto(skillName, skillDir, contents, List.copyOf(skipped));
+    return new SkillFilesDto(contents, List.copyOf(skipped));
   }
 
   /** Overwrites a skill's SKILL.md. The caller re-reads the profile so the refreshed
