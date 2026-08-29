@@ -16,11 +16,19 @@ Stubs with no card body: skills (`HermesSkills`), sessions (`HermesSessions`), S
 
 ## The rule that governs this whole cluster
 
-**Reads come from the files hermes owns. Writes go through its CLI.**
+**Reads come from the files hermes owns. Writes go through its CLI — except for whole
+documents whose shape we own.**
 
-Not a style choice. Hermes parses schedule expressions, mints job ids, generates HMAC secrets and
-owns its config schema — so a write we compose ourselves is a second implementation of its rules.
-Reading its JSON is stable; parsing its printed tables is presentation and drifts on any release.
+Not a style choice, and the exception is not a loophole. Hermes parses schedule expressions,
+mints job ids, generates HMAC secrets and owns its config schema, so a write we compose
+ourselves is a second implementation of its rules. Reading its JSON is stable; parsing its
+printed tables is presentation and drifts on any release.
 
-Both sides of that rule live in one place each: `HermesContainerFiles` owns the exec seam,
-`HermesCli` owns how a profile-scoped hermes command is spelled (`agents/HermesCli.java:25`).
+The exception is for documents hermes only stores: `SOUL.md`, `MEMORY.md`, `config.yaml`,
+`.env`, a skill's files. There is no CLI for those — or, for skill uninstall, the CLI prompts
+and cannot be driven through a non-tty exec — so they are written straight through the seam.
+[../../processes/profile-edit.md](../../processes/profile-edit.md) names both writers and the
+rule that picks between them.
+
+Both sides live in one place each: `HermesContainerFiles` owns the exec seam, `HermesCli` owns
+how a profile-scoped hermes command is spelled (`agents/HermesCli.java:25`).
