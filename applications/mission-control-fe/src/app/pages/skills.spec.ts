@@ -19,6 +19,8 @@ const storeStub = (skills: Skill[] = [skill('s-1')]) => {
   const list = signal(skills);
   return {
     skills: list,
+    upstream: signal<Record<string, unknown>>({}),
+    checkUpstream: vi.fn().mockResolvedValue(undefined),
     categories: signal([...new Set(skills.map(s => s.category))].sort()),
     refresh: vi.fn().mockResolvedValue(undefined),
     save: vi.fn().mockResolvedValue('s-new'),
@@ -253,6 +255,32 @@ describe('SkillsPage', () => {
     await settle(fixture);
 
     expect(text(fixture)).toContain('hermes skills install hubbed');
+  });
+
+  it('offers a repository check only for a skill that has a repository', async () => {
+    const { fixture } = render(storeStub([
+      skill('s-1', { name: 'linked', repoUrl: 'https://github.com/o/r' }),
+      skill('s-2', { name: 'unlinked', repoUrl: '' }),
+    ]));
+
+    expect(row(fixture, 'linked').textContent).toContain('check');
+    expect(row(fixture, 'unlinked').textContent).not.toContain('check');
+  });
+
+  it('names the version an update was found at, which is the next question', async () => {
+    const store = storeStub([skill('s-1', { name: 'pdf', repoUrl: 'https://github.com/o/r' })]);
+    store.upstream.set({ 's-1': { status: 'update', latest: 'v2.0', detail: '', checkedAt: 1 } });
+    const { fixture } = render(store);
+
+    expect(row(fixture, 'pdf').textContent).toContain('update: v2.0');
+  });
+
+  it('says a check could not be made rather than that the skill is current', async () => {
+    const store = storeStub([skill('s-1', { name: 'pdf', repoUrl: 'https://github.com/o/r' })]);
+    store.upstream.set({ 's-1': { status: 'unavailable', latest: '', detail: '', checkedAt: null } });
+    const { fixture } = render(store);
+
+    expect(row(fixture, 'pdf').textContent).toContain('check failed');
   });
 
   it('opens the deploy dialog for the skill whose button was pressed', async () => {

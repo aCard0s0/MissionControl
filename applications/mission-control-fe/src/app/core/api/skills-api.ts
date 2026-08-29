@@ -1,6 +1,6 @@
 import { AgentRef } from './agent-ref';
 import { SkillInput } from '../models';
-import { ApiImportedSkill, ApiSkill, ApiAgentProfile } from './api-types';
+import { ApiImportedSkill, ApiSkill, ApiAgentProfile, ApiUpstream } from './api-types';
 import { ApiHttp, seg } from './http';
 
 /**
@@ -37,6 +37,12 @@ export class SkillsApi {
       containerId: agent.containerId,
       profile: agent.name,
     });
+  }
+
+  /** Whether the skill's source repository has moved on. Reaches the network, so it is a
+   *  call of its own rather than a field on the row. */
+  upstream(id: string): Promise<ApiUpstream> {
+    return this.http.get(`/api/skills/${seg(id)}/upstream`);
   }
 
   /** Copies a skill off an agent into the library. */

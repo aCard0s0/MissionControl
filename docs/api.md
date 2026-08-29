@@ -379,6 +379,7 @@ truth that goes stale the moment the Hub moves, which is why the split exists.
 | `PUT /api/skills/{id}` | same body | replaces everything an editor owns and keeps `createdAt`; 404 rather than an insert when the skill is gone |
 | `DELETE /api/skills/{id}` | — | idempotent. Removes the library row only — a copy already deployed onto an agent stays exactly where it is |
 | `POST /api/skills/{id}/deploy` | `{ hostId, containerId, profile }` | puts the skill on one agent and answers with the refreshed profile. A `hub` row runs `hermes skills install <name> --force`; a `local` row has its files written into `<profileDir>/skills/<name>/` |
+| `GET  /api/skills/{id}/upstream` | — | whether the skill's repository has moved on; see below |
 | `POST /api/skills/import` | `{ hostId, containerId, profile, skillName, category? }` | copies a skill off an agent into the library, always as `local`. Re-importing a name updates that row rather than colliding with the unique index, keeping the description and repo link an operator typed |
 
 Skill DTO: `{ id, kind, name, description, category, repoUrl, version, files, createdAt,
@@ -386,6 +387,24 @@ updatedAt }`, where `files` is `[{ path, body }]` and is null for a hub row. Imp
 `{ skill, skipped }` — `skipped` names files left behind because they hold a NUL byte: the
 exec pipe is UTF-8, so a binary asset cannot round-trip through it, and the importer says so
 rather than storing the corruption.
+
+The upstream check answers `{ status, latest, detail, checkedAt }` with `status` one of
+`current | update | unknown | unsupported | unavailable`. It is a call of its own rather
+than a field on the row, because it reaches the network and the library list is read on
+every page load.
+
+**The stored `repoUrl` is never fetched.** It is parsed to an owner and repository, both
+validated against GitHub's own name charset, and the API URL is built from those two words —
+so a URL an operator typed cannot make the server issue a request of their choosing. Anything
+that is not a `https://github.com/<owner>/<repo>` root answers `unsupported` without a
+lookup. GitHub is read at `releases/latest`, falling back to the newest tag for a repository
+that cuts no releases.
+
+Readings are cached ten minutes per repository (one minute for a failure) and the check never
+throws — an unreachable GitHub answers `unavailable`, since the row is usable without it.
+`update` means the two version strings differ after dropping a leading `v`, **not** that
+upstream is ahead: `version` is free text an operator typed, so ordering it would be a guess
+presented as a fact. Both values are reported and the person decides.
 
 A local deploy is an **overlay, not a sync**. It writes the files the row holds and removes
 nothing, so a file renamed in the library leaves its old copy on the agent; removing that

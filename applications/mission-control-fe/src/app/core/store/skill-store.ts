@@ -1,8 +1,8 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { AgentRef } from '../api/agent-ref';
-import { Skill, SkillInput } from '../models';
+import { Skill, SkillInput, Upstream } from '../models';
 import { StoreContext } from './store-context';
-import { toSkill } from './wire-mappers';
+import { toSkill, toUpstream } from './wire-mappers';
 
 /**
  * The skill library — global, like prompts and blueprints: a library skill belongs to the
@@ -23,6 +23,13 @@ export class SkillStore {
   /** Every category currently in use — what the page's filter chips are built from. */
   readonly categories = computed(() =>
     [...new Set(this.skills().map(s => s.category))].sort());
+
+  /**
+   * The last repository check per skill id, keyed rather than stored on the row: it is not
+   * part of what the library holds, it reaches the network, and it is only ever asked for
+   * one skill at a time.
+   */
+  readonly upstream: WritableSignal<Record<string, Upstream>> = signal({});
 
   private readonly ctx = inject(StoreContext);
 
@@ -89,6 +96,24 @@ export class SkillStore {
       this.ctx.toastFailure('import skill', e);
       return false;
     }
+  }
+
+  /** Asks whether this skill's repository has moved on. Never throws: an unreachable
+   *  github is reported in the row rather than as a toast, because it is a fact about the
+   *  skill and not a failed operation. */
+  async checkUpstream(id: string): Promise<void> {
+    this.setUpstream(id, { status: 'checking', latest: '', detail: '', checkedAt: null });
+    try {
+      this.setUpstream(id, toUpstream(await this.ctx.api.skills.upstream(id)));
+    } catch {
+      this.setUpstream(id, {
+        status: 'unavailable', latest: '', detail: 'the check could not be made', checkedAt: null,
+      });
+    }
+  }
+
+  private setUpstream(id: string, state: Upstream): void {
+    this.upstream.update(all => ({ ...all, [id]: state }));
   }
 
   /** Newest edit first, which is the order the backend lists in. */

@@ -119,6 +119,45 @@ describe('SkillStore', () => {
     expect(liveNotice(ctx)).toBe('saved curated to the library');
   });
 
+  it('reports a repository check in the row rather than as a toast', async () => {
+    // an unreachable github is a fact about the skill, not a failed operation
+    const { store, ctx } = await loaded([apiSkill('s-1')], {
+      upstream: vi.fn().mockResolvedValue({
+        status: 'update', latest: 'v2.0', detail: 'upstream is at v2.0', checkedAt: 5,
+      }),
+    });
+
+    await store.checkUpstream('s-1');
+
+    expect(store.upstream()['s-1']).toEqual({
+      status: 'update', latest: 'v2.0', detail: 'upstream is at v2.0', checkedAt: 5,
+    });
+    expect(liveError(ctx)).toBeNull();
+  });
+
+  it('reads a check status this build does not know as unavailable, not as current', async () => {
+    const { store } = await loaded([apiSkill('s-1')], {
+      upstream: vi.fn().mockResolvedValue({
+        status: 'quantum', latest: null, detail: null, checkedAt: null,
+      }),
+    });
+
+    await store.checkUpstream('s-1');
+
+    expect(store.upstream()['s-1'].status).toBe('unavailable');
+  });
+
+  it('leaves a failed check readable in the row', async () => {
+    const { store, ctx } = await loaded([apiSkill('s-1')], {
+      upstream: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+
+    await store.checkUpstream('s-1');
+
+    expect(store.upstream()['s-1'].status).toBe('unavailable');
+    expect(liveError(ctx)).toBeNull();
+  });
+
   it('puts a saved skill at the front, which is the order the backend lists in', async () => {
     const { store } = await loaded([apiSkill('s-1'), apiSkill('s-2')], {
       update: vi.fn().mockResolvedValue(apiSkill('s-2', { name: 'renamed' })),

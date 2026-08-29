@@ -4,7 +4,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { SkillStore } from '../core/store/skill-store';
 import { AgentRef } from '../core/api/agent-ref';
-import { DeployedPart, Skill, SkillFile, SkillKind } from '../core/models';
+import { DeployedPart, Skill, SkillFile, SkillKind, Upstream, UpstreamStatus } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { DeployDialog } from './deploy-dialog';
 import { SkillGuidesPanel } from './skill-guides-panel';
@@ -224,6 +224,28 @@ export class SkillsPage {
     // a failed save keeps the editor open with the files still in it — retyping a skill
     // because the backend blinked is the one thing this page must never cost
     if (id) this.cancel();
+  }
+
+  /** The chip's text. `update` names the version, because "which one" is the question an
+   *  operator asks next and the answer is already in hand. */
+  protected upstreamLabel(up: Upstream): string {
+    switch (up.status) {
+      case 'checking': return 'checking…';
+      case 'current': return 'up to date';
+      case 'update': return `update: ${up.latest}`;
+      case 'unknown': return up.latest ? `upstream ${up.latest}` : 'no version set';
+      case 'unsupported': return 'not checkable';
+      default: return 'check failed';
+    }
+  }
+
+  protected upstreamHint(status: UpstreamStatus): string {
+    switch (status) {
+      case 'unknown': return 'set a version on this skill to compare against';
+      case 'unsupported': return 'only github.com repositories can be checked';
+      case 'unavailable': return 'github could not be reached — try again shortly';
+      default: return '';
+    }
   }
 
   protected async remove(skill: Skill): Promise<void> {

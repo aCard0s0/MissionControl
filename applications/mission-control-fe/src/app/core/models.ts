@@ -228,6 +228,17 @@ export interface DeployedPart {
   detail: string;
 }
 
+export type UpstreamStatus =
+  'current' | 'update' | 'unknown' | 'unsupported' | 'unavailable' | 'checking';
+
+/** What a repository check found. `checking` is the frontend's own state while in flight. */
+export interface Upstream {
+  status: UpstreamStatus;
+  latest: string;
+  detail: string;
+  checkedAt: number | null;
+}
+
 /** Editor payload sent on save — a create has no id, an edit is a PUT. */
 export interface SkillInput {
   kind: SkillKind;

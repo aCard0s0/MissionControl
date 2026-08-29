@@ -2,14 +2,14 @@ import {
   ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
-  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiSkill, ApiSkillGuide, ApiDeployedPart, ApiServerInfo, ApiSession, ApiSetupApiKey,
+  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiSkill, ApiSkillGuide, ApiDeployedPart, ApiUpstream, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
-  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, Skill, SkillGuide, DeployedPart,
+  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, Skill, SkillGuide, DeployedPart, Upstream,
   PullState, RunningModel, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider,
   SetupMessaging,
 } from '../models';
@@ -268,6 +268,17 @@ export function toSkill(api: ApiSkill): Skill {
     files: (api.files ?? []).map(f => ({ path: f.path, body: f.body ?? '' })),
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
+  };
+}
+
+/** A status this build does not know reads as `unavailable`: claiming a skill is current
+ *  on a word nothing here understands is the one wrong direction. */
+export function toUpstream(api: ApiUpstream): Upstream {
+  return {
+    status: oneOf(api.status, ['current', 'update', 'unknown', 'unsupported'], 'unavailable'),
+    latest: api.latest ?? '',
+    detail: api.detail ?? '',
+    checkedAt: api.checkedAt ?? null,
   };
 }
 

@@ -168,6 +168,16 @@
         }
         <span class="spacer"></span>
         @if (s.repoUrl) {
+          @if (skills.upstream()[s.id]; as up) {
+            <span class="chip"
+                  [class.on]="up.status === 'current'"
+                  [class.warn]="up.status === 'update'"
+                  [class.off]="up.status !== 'current' && up.status !== 'update'"
+                  [title]="up.detail || upstreamHint(up.status)">{{ upstreamLabel(up) }}</span>
+          } @else {
+            <button class="btn sm ghost" (click)="skills.checkUpstream(s.id)"
+                    title="ask github whether this repository has a newer release">check</button>
+          }
           <a class="btn sm ghost" [href]="s.repoUrl" target="_blank" rel="noopener noreferrer"
              title="open the source repository">repo ↗</a>
         }

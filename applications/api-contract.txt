@@ -44,6 +44,7 @@ GET /api/prompts
 GET /api/providers
 GET /api/skill-guides
 GET /api/skills
+GET /api/skills/s%201/upstream
 PATCH /api/agents/dh-local/c-1/atlas/cron/j%201
 PATCH /api/board/tasks/t%201
 POST /api/agents

@@ -53,6 +53,7 @@ class SkillControllerTest {
   private SqliteTestDatabase database;
   private SkillRepository repository;
   private HermesProfiles profiles;
+  private UpstreamCheck upstream;
   private MockMvc mvc;
 
   @BeforeEach
@@ -64,9 +65,10 @@ class SkillControllerTest {
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
     AgentMcpCatalogService mcpCatalog = mock(AgentMcpCatalogService.class);
     when(mcpCatalog.enrich(any(), any())).thenAnswer(call -> call.getArgument(1));
+    upstream = mock(UpstreamCheck.class);
     mvc = MockMvcBuilders
         .standaloneSetup(new SkillController(
-            repository, new SkillDeployer(profiles), profiles, hosts, mcpCatalog))
+            repository, new SkillDeployer(profiles), upstream, profiles, hosts, mcpCatalog))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

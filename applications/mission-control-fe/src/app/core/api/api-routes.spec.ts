@@ -357,6 +357,9 @@ const cases: Record<string, Case> = {
     method: 'POST', url: '/api/skills/s%201/deploy',
     body: { hostId: 'dh-1', containerId: 'c1', profile: 'ops' },
   },
+  'skills.upstream': {
+    call: a => a.skills.upstream('s 1'), method: 'GET', url: '/api/skills/s%201/upstream',
+  },
   'skills.importFrom': {
     call: a => a.skills.importFrom({ hostId: 'dh-1', containerId: 'c1', name: 'ops' }, 'pdf'),
     method: 'POST', url: '/api/skills/import',

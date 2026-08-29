@@ -59,6 +59,26 @@ Every path is resolved **before the first write** (`agents/HermesSkills.java:157
 as it is written would leave a half-deployed skill behind the rejection, and hermes would
 still try to load it.
 
+## The upstream check
+
+`skills/UpstreamCheck.java` answers whether a row's repository has moved on. On demand and
+cached, never on a timer: the answer changes on the order of days and unauthenticated GitHub
+allows sixty requests an hour per address.
+
+**The stored URL is never fetched.** It is parsed to an owner and repository — with `URI`,
+not a regex, because the cases that matter are `github.com.evil.test`, a host in the path and
+userinfo before the real host — and the API URL is built from those two validated words. A
+URL an operator typed that reached `HttpClient` would be a request this server makes wherever
+they said.
+
+`update` means the two version strings differ, **not** that upstream is ahead. `version` is
+free text, so ordering it would be a guess presented as a fact; both values are reported and
+the person decides.
+
+The cache key is operator-supplied, so unlike `docker/RegistryTagService` — whose own comment
+says its map only holds because its key is a single configured value — expired entries are
+swept on write, the shape `agents/HermesProfileMcp` uses.
+
 ## Connected to
 
 - **owns:** nothing on an agent. A deployed copy is not tracked.
@@ -94,6 +114,7 @@ still try to load it.
 | `/api/skills` | reads / writes the library |
 | `POST /api/skills/{id}/deploy` | the one write that reaches a container |
 | `POST /api/skills/import` | the one read that reaches a container |
+| `GET /api/skills/{id}/upstream` | the one call that reaches the internet |
 | SQLite `skills` | stored |
 | `HermesContainerFiles` | the exec seam every deploy goes through |
 

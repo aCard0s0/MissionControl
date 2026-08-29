@@ -90,15 +90,17 @@ public class SkillController {
 
   private final SkillRepository repository;
   private final SkillDeployer deployer;
+  private final UpstreamCheck upstream;
   private final HermesProfiles profiles;
   private final HostService hosts;
   private final AgentMcpCatalogService mcpCatalog;
 
   public SkillController(
-      SkillRepository repository, SkillDeployer deployer, HermesProfiles profiles,
-      HostService hosts, AgentMcpCatalogService mcpCatalog) {
+      SkillRepository repository, SkillDeployer deployer, UpstreamCheck upstream,
+      HermesProfiles profiles, HostService hosts, AgentMcpCatalogService mcpCatalog) {
     this.repository = repository;
     this.deployer = deployer;
+    this.upstream = upstream;
     this.profiles = profiles;
     this.hosts = hosts;
     this.mcpCatalog = mcpCatalog;
@@ -140,6 +142,19 @@ public class SkillController {
   @DeleteMapping("/{id}")
   public void delete(@PathVariable String id) {
     repository.delete(id);
+  }
+
+  /**
+   * Whether this skill's source repository has moved on.
+   *
+   * <p>A GET that reaches the network, which is why it is a separate call rather than a
+   * field on the row: the library list is read on every page load and must not wait on
+   * github, and this answer is only wanted when someone asks for it.
+   */
+  @GetMapping("/{id}/upstream")
+  public UpstreamCheck.Upstream upstream(@PathVariable String id) {
+    Skill skill = repository.find(id).orElseThrow(() -> unknown(id));
+    return upstream.check(skill.repoUrl(), skill.version());
   }
 
   /**

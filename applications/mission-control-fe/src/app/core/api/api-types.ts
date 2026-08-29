@@ -138,6 +138,15 @@ export interface ApiImportedSkill {
   skipped: string[] | null;
 }
 
+/** Whether a skill's source repository has moved on. `latest` is null when nothing was
+ *  read — an unreachable github, or a repository that publishes no releases or tags. */
+export interface ApiUpstream {
+  status: 'current' | 'update' | 'unknown' | 'unsupported' | 'unavailable' | string;
+  latest: string | null;
+  detail: string | null;
+  checkedAt: number | null;
+}
+
 export interface ApiSkillGuide {
   id: string;
   name: string;

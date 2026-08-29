@@ -34,6 +34,7 @@ import io.hermes.missioncontrol.skills.SkillController;
 import io.hermes.missioncontrol.skills.SkillFile;
 import io.hermes.missioncontrol.skills.SkillGuide;
 import io.hermes.missioncontrol.skills.SkillGuideController;
+import io.hermes.missioncontrol.skills.UpstreamCheck;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.ImageTagDto;
 import io.hermes.missioncontrol.docker.ImageTagsDto;
@@ -159,6 +160,7 @@ class ApiContractTest {
     CONTRACT.put("ApiSkill", Skill.class);
     CONTRACT.put("ApiSkillFile", SkillFile.class);
     CONTRACT.put("ApiImportedSkill", SkillController.ImportedSkill.class);
+    CONTRACT.put("ApiUpstream", UpstreamCheck.Upstream.class);
     // guides
     CONTRACT.put("ApiSkillGuide", SkillGuide.class);
     CONTRACT.put("ApiDeployedPart", SkillGuideController.DeployedPart.class);
