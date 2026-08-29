@@ -339,6 +339,49 @@ const cases: Record<string, Case> = {
     call: a => a.prompts.remove('p-1'), method: 'DELETE', url: '/api/prompts/p-1',
   },
 
+  // ── skill library ──────────────────────────────────────────────────────
+  'skills.list': { call: a => a.skills.list(), method: 'GET', url: '/api/skills' },
+  'skills.create': {
+    call: a => a.skills.create({ kind: 'hub', name: 'pdf' } as never), method: 'POST',
+    url: '/api/skills', body: { kind: 'hub', name: 'pdf' },
+  },
+  'skills.update': {
+    call: a => a.skills.update('s 1', { kind: 'hub', name: 'pdf' } as never), method: 'PUT',
+    url: '/api/skills/s%201', body: { kind: 'hub', name: 'pdf' },
+  },
+  'skills.remove': {
+    call: a => a.skills.remove('s-1'), method: 'DELETE', url: '/api/skills/s-1',
+  },
+  'skills.deploy': {
+    call: a => a.skills.deploy('s 1', { hostId: 'dh-1', containerId: 'c1', name: 'ops' }),
+    method: 'POST', url: '/api/skills/s%201/deploy',
+    body: { hostId: 'dh-1', containerId: 'c1', profile: 'ops' },
+  },
+  'skills.importFrom': {
+    call: a => a.skills.importFrom({ hostId: 'dh-1', containerId: 'c1', name: 'ops' }, 'pdf'),
+    method: 'POST', url: '/api/skills/import',
+    body: { hostId: 'dh-1', containerId: 'c1', profile: 'ops', skillName: 'pdf' },
+  },
+
+  // ── guides ─────────────────────────────────────────────────────────────
+  'guides.list': { call: a => a.guides.list(), method: 'GET', url: '/api/skill-guides' },
+  'guides.create': {
+    call: a => a.guides.create({ name: 'pdf-triage' } as never), method: 'POST',
+    url: '/api/skill-guides', body: { name: 'pdf-triage' },
+  },
+  'guides.update': {
+    call: a => a.guides.update('g 1', { name: 'pdf-triage' } as never), method: 'PUT',
+    url: '/api/skill-guides/g%201', body: { name: 'pdf-triage' },
+  },
+  'guides.remove': {
+    call: a => a.guides.remove('g-1'), method: 'DELETE', url: '/api/skill-guides/g-1',
+  },
+  'guides.deploy': {
+    call: a => a.guides.deploy('g 1', { hostId: 'dh-1', containerId: 'c1', name: 'ops' }),
+    method: 'POST', url: '/api/skill-guides/g%201/deploy',
+    body: { hostId: 'dh-1', containerId: 'c1', profile: 'ops' },
+  },
+
   // ── board ──────────────────────────────────────────────────────────────
   'board.tasks': { call: a => a.board.tasks(), method: 'GET', url: '/api/board/tasks' },
   'board.moveTask': {

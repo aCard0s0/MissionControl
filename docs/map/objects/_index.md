@@ -28,7 +28,7 @@ is most of the value.
 | ✓ | [Cron job](agents/cron-job.md) | `agents/HermesCron.java` | read `cron/jobs.json`, write via `hermes cron`. |
 | ✓ | [Webhook subscription](agents/webhook-subscription.md) | `agents/HermesWebhooks.java` | inbound routes. We publish no port, deliberately. |
 | ✓ | [Profile template](agents/profile-template.md) | `agents/templates/` | the one dashboard-owned noun here. Encrypted secrets. |
-| · | Skill | `agents/HermesSkills.java` | `SkillDto`, `SkillContentDto`. Files under the profile's skills dir. |
+| · | Skill | `agents/HermesSkills.java` | `SkillDto`, `SkillContentDto`. Files under the profile's skills dir. **Not** the [Skill library](dashboard/skill-library.md): this one exists because a container has it. |
 | · | Session | `agents/HermesSessions.java` | conversation history; `SessionDto`. |
 | · | SOUL / config | `agents/{HermesConfigEditor,YamlValues}.java` | the smallest safe edit surface. Config writes go through hermes. |
 | · | Model config | `agents/HermesModelConfig.java` | which provider/model a profile runs; `AuxiliaryModelSpec`. |
@@ -82,6 +82,8 @@ is most of the value.
 | · | Field caption | `styles.scss` (`.field-cap`) | a caption over what a `<label>` cannot name; the group carries `aria-labelledby`. |
 | ✓ | [Board task](dashboard/board-task.md) | `board/` | kanban card keyed by container id. Repointed on upgrade. |
 | ✓ | [Prompt](dashboard/prompt.md) | `prompts/` | operator's text library. Nothing in a container reads it. |
+| ✓ | [Skill library](dashboard/skill-library.md) | `skills/` | skills the dashboard holds and deploys onto an agent. `hub` = a pointer, `local` = the files. |
+| ✓ | [Guide](dashboard/guide.md) | `skills/SkillGuideController.java` | prose composing several skills + MCP servers. Deploys as an umbrella SKILL.md the agent reads. |
 | · | Server log buffer | `web/ServerLogBuffer.java` | in-memory ring behind `/api/server/logs`. |
 | · | Runtime config | `web/RuntimeConfigController.java` | `/config.js` from `MC_*` — no rebuild to repoint the FE. |
 | · | App properties | `config/AppProperties.java` | every `MC_*` binding. Table in `architecture.md`. |

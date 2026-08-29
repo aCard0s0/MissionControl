@@ -43,9 +43,16 @@ Two seams, one each, and both are shared on purpose:
 
 1. Resolve the host at the edge; `requireConnected(hostId)`.
 2. Read: `HermesContainerFiles` → the path from `ProfilePaths` (`agents/ProfilePaths.java:28`).
-3. Write: `ProfilePaths.hermesCli(profile, args…)` (`:90`) → `DockerExecService`, as user
-   `mc.terminal.user` (default `hermes`) — a root exec writing into `/opt/data` leaves files the
-   agent can no longer read.
+3. Write, as user `mc.terminal.user` (default `hermes`) — a root exec writing into
+   `/opt/data` leaves files the agent can no longer read. **Two writers, and which one is
+   not a style choice:**
+   - `ProfilePaths.hermesCli(profile, args…)` (`:90`) → `DockerExecService`, for anything
+     hermes mints or parses for itself — schedules, job ids, HMAC secrets, config keys.
+     Composing those ourselves would mean re-implementing hermes' own rules.
+   - `HermesContainerFiles.writeFile` / `writeFileAtomically`, for whole documents whose
+     shape the dashboard owns: `SOUL.md`, `MEMORY.md`, `config.yaml`, `.env`, a skill's
+     files. There is no CLI for these — or, for skill uninstall, the CLI is interactive-only
+     and cannot be driven through a non-tty exec.
 4. Read back through step 2. The file hermes wrote is the response, not what we sent.
 5. Per-profile fan-out where the page is per container: one read each, capped like the other
    pollers, and a profile that cannot be read loses only its own entries.
@@ -65,7 +72,8 @@ Two seams, one each, and both are shared on purpose:
 |---|---|
 | `/api/agents/{hostId}/{containerId}/{name}/**` | entry |
 | profile files under `/opt/data` | read |
-| `hermes -p <profile> …` via `docker exec` | the only writer |
+| `hermes -p <profile> …` via `docker exec` | writes what hermes mints or parses |
+| `HermesContainerFiles.writeFile` via `docker exec` | writes whole documents the dashboard owns |
 
 ## See
 

@@ -143,6 +143,59 @@ CREATE TABLE IF NOT EXISTS prompt_meta (
   value TEXT NOT NULL
 );
 
+-- The skill library: dashboard-owned rows an operator deploys onto one agent.
+-- Two origins holding different things. A `hub` row is a pointer — the Skills Hub
+-- owns the content, so a deploy shells `hermes skills install`. A `local` row owns
+-- its files: authored here, or imported off an agent, and a deploy writes them into
+-- the profile's skills dir. Storing a copy of a hub skill would be a second source
+-- of truth that goes stale silently, which is the whole reason for the split.
+CREATE TABLE IF NOT EXISTS skills (
+  id          TEXT PRIMARY KEY,
+  kind        TEXT NOT NULL CHECK (kind IN ('hub', 'local')),
+  -- what `hermes skills install` is handed for a hub row, and the directory name a
+  -- local row is written into. Same charset rule as a profile name
+  -- (ProfileSpec.NAME_PATTERN), because both end up in an argv and in a container
+  -- path. NOCASE unique so `pdf` and `PDF` cannot both address skills/pdf on a
+  -- case-insensitive filesystem.
+  name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description TEXT,
+  category    TEXT NOT NULL,
+  -- Provenance, and what the on-demand update check will read. Nothing is ever
+  -- cloned or fetched to produce a deploy — the URL is a link.
+  repo_url    TEXT,
+  version     TEXT,
+  files       TEXT,   -- JSON array of {path, body}; NULL for a hub row
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_skills_category ON skills (category);
+
+-- A guide: prose that teaches how to use several skills together, with the MCP servers
+-- they need. Deploying one puts every skill on the agent, links every MCP server, and
+-- writes the prose itself into the agent's skills dir as an umbrella SKILL.md — which is
+-- what hermes' own curator authors, and the reason a guide is more than a note: the agent
+-- reads it too, so it knows when to reach for the set rather than the parts.
+--
+-- The id lists are deliberately not foreign keys. Production runs with sqlite's default
+-- `PRAGMA foreign_keys` off, so a CASCADE here would be decoration; a guide resolves its
+-- ids at deploy time and reports the ones that are gone instead.
+CREATE TABLE IF NOT EXISTS skill_guides (
+  id             TEXT PRIMARY KEY,
+  -- also the directory name the umbrella skill is written into, so it carries the same
+  -- charset rule as a skill name (ProfileSpec.NAME_PATTERN)
+  name           TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description    TEXT,
+  body           TEXT NOT NULL,   -- markdown; becomes the umbrella SKILL.md's body
+  category       TEXT NOT NULL,
+  skill_ids      TEXT,   -- JSON array of skills.id
+  mcp_server_ids TEXT,   -- JSON array of mcp_servers.id
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_skill_guides_category ON skill_guides (category);
+
 -- Model ids fetched from a provider's own API by the background refresh, so the
 -- picker offers what the provider actually serves today rather than the curated
 -- list this app shipped with. Only providers whose listing endpoint needs no

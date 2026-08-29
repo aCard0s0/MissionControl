@@ -43,6 +43,45 @@ final class ProfilePaths {
     return profileDir(profileName) + "/skills";
   }
 
+  /** How deep a skill's own files may nest. Bounded by the reader, not by taste:
+   *  {@code HermesSkills.listSkillFiles} runs {@code find -maxdepth 3}, so a file
+   *  written deeper than this is invisible to the very call that lists it back. */
+  static final int MAX_SKILL_FILE_DEPTH = 3;
+
+  /**
+   * One file inside a skill's directory, from a relative path a library row supplied.
+   *
+   * <p>Every {@code /}-separated segment must pass {@link #isValidName} on its own. That
+   * turns the same whitelist {@link #profileDir} relies on into a per-segment rule, which
+   * is what a multi-segment path needs: {@code NAME} already rejects {@code ..}, an empty
+   * segment, a leading dot, a backslash and a leading {@code -}, so a path that survives
+   * every segment cannot climb out of the directory it is joined to.
+   *
+   * <p>Rejecting rather than sanitizing is deliberate. A silently-rewritten path would
+   * write an operator's file somewhere they did not ask for.
+   */
+  static String skillFile(String profileName, String skillName, String relativePath) {
+    if (!isValidName(skillName)) {
+      throw new IllegalArgumentException("invalid skill name");
+    }
+    if (relativePath == null || relativePath.isBlank()) {
+      throw new IllegalArgumentException("missing skill file path");
+    }
+    // split(-1) keeps trailing empties, so "a/" and "a//b" are rejected rather than
+    // silently collapsing to "a" and "a/b"
+    String[] segments = relativePath.split("/", -1);
+    if (segments.length > MAX_SKILL_FILE_DEPTH) {
+      throw new IllegalArgumentException(
+          "skill file path is deeper than " + MAX_SKILL_FILE_DEPTH + " segments: " + relativePath);
+    }
+    for (String segment : segments) {
+      if (!isValidName(segment)) {
+        throw new IllegalArgumentException("invalid skill file path: " + relativePath);
+      }
+    }
+    return skillsDir(profileName) + "/" + skillName + "/" + relativePath;
+  }
+
   static String configFile(String profileName) {
     return profileDir(profileName) + "/config.yaml";
   }

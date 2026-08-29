@@ -9,6 +9,8 @@ import { PromptsApi } from './api/prompts-api';
 import { InferenceEndpointsApi } from './api/inference-endpoints-api';
 import { ProvidersApi } from './api/providers-api';
 import { ServerApi } from './api/server-api';
+import { SkillsApi } from './api/skills-api';
+import { SkillGuidesApi } from './api/skill-guides-api';
 import { TemplatesApi } from './api/templates-api';
 
 // Typed client for mission-control-server. apiBaseUrl '' = same origin
@@ -36,6 +38,9 @@ export class HermesApi {
   readonly agents: AgentsApi;
   readonly mcp: McpCatalogApi;
   readonly prompts: PromptsApi;
+  /** The skill *library*. Per-agent skills live on `agents` — see SkillsApi. */
+  readonly skills: SkillsApi;
+  readonly guides: SkillGuidesApi;
   readonly providers: ProvidersApi;
   readonly endpoints: InferenceEndpointsApi;
   readonly templates: TemplatesApi;
@@ -52,6 +57,8 @@ export class HermesApi {
     this.agents = new AgentsApi(this.http);
     this.mcp = new McpCatalogApi(this.http);
     this.prompts = new PromptsApi(this.http);
+    this.skills = new SkillsApi(this.http);
+    this.guides = new SkillGuidesApi(this.http);
     this.providers = new ProvidersApi(this.http);
     this.endpoints = new InferenceEndpointsApi(this.http);
     this.templates = new TemplatesApi(this.http);

@@ -358,6 +358,98 @@ Prompt DTO: `{ id, title, body, category, notes, tags, createdAt, updatedAt }`.
 A fresh install is seeded with one sample prompt, once — the marker lives in
 `prompt_meta`, so a sample an operator deletes does not come back at the next boot.
 
+## Skill library — dashboard-owned state in SQLite
+
+Skills the dashboard holds, deployable onto any agent. Distinct from the per-agent routes
+under `/api/agents/…/skills`, which read and edit what one profile already has: a library
+row may live on no agent at all.
+
+A row's `kind` decides what it holds and how it deploys, and the two are mutually
+exclusive. A `hub` row is a pointer — the Skills Hub owns the content, so the row carries
+only the id and a deploy shells `hermes skills install`. A `local` row owns its files,
+because nothing else can install it: hermes has no `skills create`, so a skill authored in
+the dashboard or written by an agent's own curator has no hub id, and writing the files out
+is the only way to place it. Keeping a copy of a hub skill here would be a second source of
+truth that goes stale the moment the Hub moves, which is why the split exists.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/skills` | `?category=` | newest edit first; a blank category is not a filter |
+| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400 |
+| `PUT /api/skills/{id}` | same body | replaces everything an editor owns and keeps `createdAt`; 404 rather than an insert when the skill is gone |
+| `DELETE /api/skills/{id}` | — | idempotent. Removes the library row only — a copy already deployed onto an agent stays exactly where it is |
+| `POST /api/skills/{id}/deploy` | `{ hostId, containerId, profile }` | puts the skill on one agent and answers with the refreshed profile. A `hub` row runs `hermes skills install <name> --force`; a `local` row has its files written into `<profileDir>/skills/<name>/` |
+| `POST /api/skills/import` | `{ hostId, containerId, profile, skillName, category? }` | copies a skill off an agent into the library, always as `local`. Re-importing a name updates that row rather than colliding with the unique index, keeping the description and repo link an operator typed |
+
+Skill DTO: `{ id, kind, name, description, category, repoUrl, version, files, createdAt,
+updatedAt }`, where `files` is `[{ path, body }]` and is null for a hub row. Import answers
+`{ skill, skipped }` — `skipped` names files left behind because they hold a NUL byte: the
+exec pipe is UTF-8, so a binary asset cannot round-trip through it, and the importer says so
+rather than storing the corruption.
+
+A local deploy is an **overlay, not a sync**. It writes the files the row holds and removes
+nothing, so a file renamed in the library leaves its old copy on the agent; removing that
+one is the agent's own Skills tab.
+
+A skill deployed from the library writes into `<profileDir>/skills/<name>/` and nowhere
+else: every relative path is validated segment by segment against the profile-name rule
+before it is concatenated, at most three segments deep — matching the `find -maxdepth 3`
+that lists them back — and nothing is written if any path in the set is rejected.
+
+## Guides — dashboard-owned state in SQLite
+
+A guide is prose that teaches how to use several library skills together, with the MCP
+servers they need, plus the ids of both. Deploying one is three things at once: every skill
+onto the agent, every MCP server linked to it, and the guide itself written into the agent's
+skills directory as an umbrella `SKILL.md`.
+
+That last part is the point. Hermes' own curator authors umbrella skills exactly like this,
+so the agent reads the guide too and knows when to reach for the set rather than for one of
+the parts. The guide's `name` is therefore a directory name as well as a label, and carries
+the same charset rule as a skill's.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/skill-guides` | `?category=` | newest edit first |
+| `POST /api/skill-guides` | `{ name, description?, body, category?, skillIds?, mcpServerIds? }` | `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*`; `body` is required — a guide with no prose teaches nothing. Blank and duplicate ids are dropped, order kept |
+| `PUT /api/skill-guides/{id}` | same body | keeps `createdAt`; 404 rather than an insert |
+| `DELETE /api/skill-guides/{id}` | — | idempotent, and reaches no agent: everything the guide ever deployed stays where it is, including its umbrella skill |
+| `POST /api/skill-guides/{id}/deploy` | `{ hostId, containerId, profile }` | → `{ profile, parts }` — see below |
+
+Guide DTO: `{ id, name, description, body, category, skillIds, mcpServerIds, createdAt,
+updatedAt }`.
+
+**The deploy is not atomic, and says so.** It is several independent writes to an agent
+someone else owns, and they fail one at a time: a skill deleted from the library since the
+guide named it, an MCP alias already taken on that agent, a managed server that is not
+running. So it follows the rule `TemplateApplier` states for layering onto a profile the
+caller does not own — surface the error, do not roll back — and answers with one row per
+part rather than a single status:
+
+```
+{ "kind": "skill" | "mcp" | "guide",
+  "name": "pdf-tools",
+  "status": "deployed" | "skipped" | "failed",
+  "detail": null }
+```
+
+`skipped` means the part is gone from the library or the catalog; `failed` means the write
+was attempted and refused, and `detail` carries the reason. `profile` is null when the agent
+could not be read back afterwards — the parts had already landed by then, so the report is
+answered without it rather than thrown away with a 500.
+
+A guide whose `name` matches a library skill's is refused at deploy, as a `failed` part: both
+resolve to `skills/<name>/`, so writing the umbrella there would replace that skill's own
+`SKILL.md`. The skills the guide names still deploy; only the umbrella is held back. Undoing half a guide would mean
+removing skills and MCP entries that may have been on that agent before the guide ever ran,
+so reporting beats guessing.
+
+The umbrella skill is written **last** and names only the parts that actually landed. Telling
+an agent to reach for a skill that then failed to deploy is worse than not mentioning it. Its
+frontmatter is generated rather than authored — `HermesSkills.parseSkillMeta` has to parse it,
+and a description containing a colon would otherwise produce a skill hermes cannot read. A
+redeploy overwrites that file, so an edit made to it on the agent does not survive.
+
 ## Roadmap (not implemented)
 
 - SSE/WebSocket streaming for logs and stats (currently polled).

@@ -2,14 +2,14 @@ import {
   ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
-  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiServerInfo, ApiSession, ApiSetupApiKey,
+  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiSkill, ApiSkillGuide, ApiDeployedPart, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
-  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt,
+  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, Skill, SkillGuide, DeployedPart,
   PullState, RunningModel, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider,
   SetupMessaging,
 } from '../models';
@@ -250,6 +250,49 @@ export function toPrompt(api: ApiPrompt): Prompt {
     tags: api.tags ?? [],
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
+  };
+}
+
+/** Same contract as {@link toPrompt}: the library's optional columns are null on the wire
+ *  and '' / [] in the model. A hub row sends `files: null`, which is the empty list here —
+ *  the kind, not the file count, is what a template branches on. */
+export function toSkill(api: ApiSkill): Skill {
+  return {
+    id: api.id,
+    kind: api.kind === 'hub' ? 'hub' : 'local',
+    name: api.name,
+    description: api.description ?? '',
+    category: api.category || 'general',
+    repoUrl: api.repoUrl ?? '',
+    version: api.version ?? '',
+    files: (api.files ?? []).map(f => ({ path: f.path, body: f.body ?? '' })),
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
+}
+
+export function toSkillGuide(api: ApiSkillGuide): SkillGuide {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description ?? '',
+    body: api.body ?? '',
+    category: api.category || 'general',
+    skillIds: api.skillIds ?? [],
+    mcpServerIds: api.mcpServerIds ?? [],
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
+}
+
+/** A part whose status this build does not know reads as `failed` rather than as success —
+ *  the safe direction when the operator is deciding whether the deploy actually worked. */
+export function toDeployedPart(api: ApiDeployedPart): DeployedPart {
+  return {
+    kind: oneOf(api.kind, ['skill', 'mcp', 'guide'], 'skill'),
+    name: api.name ?? '',
+    status: oneOf(api.status, ['deployed', 'skipped', 'failed'], 'failed'),
+    detail: api.detail ?? '',
   };
 }
 

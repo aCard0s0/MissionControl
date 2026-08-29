@@ -12,6 +12,8 @@ DELETE /api/mcp-servers/mcp-1
 DELETE /api/mcp-servers/retained-resources/vol-1
 DELETE /api/profile-templates/pt-1
 DELETE /api/prompts/p-1
+DELETE /api/skill-guides/g-1
+DELETE /api/skills/s-1
 GET /api/agents/dh-local/c-1/atlas/cron
 GET /api/agents/dh-local/c-1/atlas/integrations
 GET /api/agents/dh-local/c-1/atlas/logs?tail=50
@@ -40,6 +42,8 @@ GET /api/models/anthropic
 GET /api/profile-templates
 GET /api/prompts
 GET /api/providers
+GET /api/skill-guides
+GET /api/skills
 PATCH /api/agents/dh-local/c-1/atlas/cron/j%201
 PATCH /api/board/tasks/t%201
 POST /api/agents
@@ -75,6 +79,11 @@ POST /api/profile-templates
 POST /api/profile-templates/capture
 POST /api/profile-templates/pt-1/deploy
 POST /api/prompts
+POST /api/skill-guides
+POST /api/skill-guides/g%201/deploy
+POST /api/skills
+POST /api/skills/import
+POST /api/skills/s%201/deploy
 PUT /api/agents/dh-local/c-1/atlas/config
 PUT /api/agents/dh-local/c-1/atlas/env
 PUT /api/agents/dh-local/c-1/atlas/mcp/gh
@@ -86,3 +95,5 @@ PUT /api/agents/dh-local/c-1/atlas/webhooks/platform
 PUT /api/mcp-servers/mcp-1
 PUT /api/profile-templates/pt%201
 PUT /api/prompts/p%201
+PUT /api/skill-guides/g%201
+PUT /api/skills/s%201

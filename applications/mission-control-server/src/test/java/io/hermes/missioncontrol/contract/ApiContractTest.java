@@ -29,6 +29,11 @@ import io.hermes.missioncontrol.agents.templates.McpServerSpec;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.board.BoardTask;
 import io.hermes.missioncontrol.prompts.Prompt;
+import io.hermes.missioncontrol.skills.Skill;
+import io.hermes.missioncontrol.skills.SkillController;
+import io.hermes.missioncontrol.skills.SkillFile;
+import io.hermes.missioncontrol.skills.SkillGuide;
+import io.hermes.missioncontrol.skills.SkillGuideController;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.ImageTagDto;
 import io.hermes.missioncontrol.docker.ImageTagsDto;
@@ -150,6 +155,14 @@ class ApiContractTest {
     CONTRACT.put("ApiBoardTask", BoardTask.class);
     // prompt library
     CONTRACT.put("ApiPrompt", Prompt.class);
+    // skill library
+    CONTRACT.put("ApiSkill", Skill.class);
+    CONTRACT.put("ApiSkillFile", SkillFile.class);
+    CONTRACT.put("ApiImportedSkill", SkillController.ImportedSkill.class);
+    // guides
+    CONTRACT.put("ApiSkillGuide", SkillGuide.class);
+    CONTRACT.put("ApiDeployedPart", SkillGuideController.DeployedPart.class);
+    CONTRACT.put("ApiDeployedGuide", SkillGuideController.DeployedGuide.class);
   }
 
   /**

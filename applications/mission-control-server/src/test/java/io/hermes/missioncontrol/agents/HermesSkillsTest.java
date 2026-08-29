@@ -262,6 +262,28 @@ class HermesSkillsTest {
   }
 
   @Test
+  void installingIntoTheDefaultProfileInvokesHermesBare() {
+    // `default` lives at the hermes home and takes no -p, which the assertion above cannot
+    // see because it uses a named profile. This call site built its own argv for a while and
+    // passed `-p default` to every install onto the most common agent there is.
+    FakeContainer container = new FakeContainer();
+
+    skills(container).install(HOST, CONTAINER, "default", "pdf");
+
+    assertEquals(List.of("hermes", "skills", "install", "pdf", "--force"),
+        container.executed().getFirst());
+  }
+
+  @Test
+  void anInvalidProfileNameNeverReachesTheInstallArgv() {
+    FakeContainer container = new FakeContainer();
+
+    assertThrows(IllegalArgumentException.class,
+        () -> skills(container).install(HOST, CONTAINER, "../escape", "pdf"));
+    assertEquals(List.of(), container.executed());
+  }
+
+  @Test
   void aMissingBodyIsRejectedBeforeTheSkillIsResolved() {
     FakeContainer container = new FakeContainer()
         .dir(SKILLS + "/pdf")
