@@ -18,6 +18,8 @@ import { AgentRef } from '../core/api/agent-ref';
 import { DeployDialog } from './deploy-dialog';
 import { Scrim } from '../shared/scrim';
 
+export type McpTab = 'servers' | 'groups';
+
 /**
  * The global MCP catalog: what is registered, what is running, and what data a
  * delete left behind. The page itself is the roster and the two destructive
@@ -29,6 +31,11 @@ import { Scrim } from '../shared/scrim';
  * External endpoints, Reusable stdio definitions — and nothing stores it. {@link groups} are
  * operator-made sets of entries with a deploy, the noun `mcp_groups` holds. The word "group"
  * used to mean the first one in this file; it now means only the second.
+ *
+ * They are two tabs rather than two sections of one page, because the roster answers "what is
+ * registered and is it up" and the groups answer "what does an agent get" — different
+ * questions, and stacking a user grouping under a kind grouping made neither readable. The tab
+ * is local state and not a `?tab=` link, unlike the Skills page: nothing links here yet.
  */
 @Component({
   selector: 'mc-mcp-servers',
@@ -40,6 +47,9 @@ import { Scrim } from '../shared/scrim';
   styleUrl: './mcp-servers.scss',
 })
 export class McpServersPage {
+  protected readonly tabs: McpTab[] = ['servers', 'groups'];
+  protected readonly activeTab = signal<McpTab>('servers');
+
   protected readonly catalog = inject(McpCatalogStore);
   protected readonly groups = inject(McpGroupStore);
   protected readonly hosts = inject(HostStore);

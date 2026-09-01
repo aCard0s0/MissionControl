@@ -75,9 +75,13 @@ written afterwards that names what landed.
 The MCP Servers page arranges the roster by kind and host — *Managed stack*, *External
 endpoints*, *Reusable stdio definitions*. That arrangement used to be called `serverGroups` in
 the code while meaning nothing an operator creates. It is now `mcpServerSections`
-(`pages/mcp-server-sections.ts`), so **group** on that page means only this noun. The groups get
-their own section rather than a second arrangement of the roster: stacking a user grouping on
-top of a kind grouping would make neither readable.
+(`pages/mcp-server-sections.ts`), so **group** on that page means only this noun.
+
+The groups are a **tab**, not a second band under the roster: the roster answers "what is
+registered and is it up", the groups answer "what does an agent get", and stacking a user
+grouping under a kind grouping made neither readable. The tab is local state rather than a
+`?tab=` link, unlike the Skills page — nothing links here yet. Retained data stays with the
+roster, which is what it is about.
 
 ## Shape
 

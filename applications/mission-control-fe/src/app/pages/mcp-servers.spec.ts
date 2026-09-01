@@ -314,20 +314,69 @@ describe('McpServersPage groups', () => {
   });
 
   /** A store with `servers` in the catalog and `groups` already loaded. */
-  const withGroups = (servers: McpCatalogServer[], groups: McpGroup[]) => {
+  const withGroups = (servers: McpCatalogServer[], groups: McpGroup[] = []) => {
     const store = storeStub(servers);
     store.mcpGroups.groups.set(groups);
     return store;
   };
 
-  it('teaches what a group is for when there are none', () => {
+  /** Renders and switches to the groups tab, which is where all of this lives. */
+  const onGroupsTab = (store: ReturnType<typeof storeStub>) => {
+    const rendered = render(store);
+    press(rendered.fixture, 'groups');
+    return rendered;
+  };
+
+  it('opens on the roster, and swaps it for the groups when the tab is pressed', async () => {
+    const { fixture } = render(withGroups(
+      [server('files')], [mcpGroup('mg-1', { name: 'research', serverIds: ['files'] })]));
+    await settle(fixture);
+
+    // the roster is the default: the registry is what this page is for
+    expect(el(fixture).querySelector('.server-row')).toBeTruthy();
+    expect(el(fixture).querySelector('.mcp-groups')).toBeNull();
+
+    press(fixture, 'groups');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.server-row')).toBeNull();
+    expect(el(fixture).querySelector('.mcp-groups')).toBeTruthy();
+    expect(text(fixture)).toContain('research');
+  });
+
+  it('offers each tab its own create buttons, and only its own', async () => {
     const { fixture } = render(storeStub([server('files')]));
+    await settle(fixture);
+
+    expect(button(fixture, '+ managed server')).toBeTruthy();
+    expect(() => button(fixture, '+ new group')).toThrow();
+
+    press(fixture, 'groups');
+    await settle(fixture);
+
+    expect(button(fixture, '+ new group')).toBeTruthy();
+    expect(() => button(fixture, '+ managed server')).toThrow();
+  });
+
+  it('keeps the retained-data panel with the roster it belongs to', async () => {
+    const { fixture } = render(storeStub([server('files')]));
+    await settle(fixture);
+    expect(text(fixture)).toContain('RETAINED DATA');
+
+    press(fixture, 'groups');
+    await settle(fixture);
+
+    expect(text(fixture)).not.toContain('RETAINED DATA');
+  });
+
+  it('teaches what a group is for when there are none', () => {
+    const { fixture } = onGroupsTab(storeStub([server('files')]));
 
     expect(text(fixture)).toContain('connects several catalog entries to an agent');
   });
 
   it('lists a group with the catalog entries it names', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files'), server('search')],
       [mcpGroup('mg-1', { name: 'research', serverIds: ['files', 'search'] })]));
     await settle(fixture);
@@ -339,7 +388,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('marks a server the catalog has lost, because a deploy will skip it', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files')],
       [mcpGroup('mg-1', { serverIds: ['files', 'deleted'] })]));
     await settle(fixture);
@@ -350,7 +399,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('says which agents the group reaches, from the coverage the backend derived', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files'), server('search')],
       [mcpGroup('mg-1', {
         serverIds: ['files', 'search'],
@@ -365,7 +414,7 @@ describe('McpServersPage groups', () => {
 
   it('warns on an agent that has only part of the group', async () => {
     // the whole reason the coverage is derived rather than stored
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files'), server('search')],
       [mcpGroup('mg-1', {
         serverIds: ['files', 'search'],
@@ -379,7 +428,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('lists every agent a group reaches, not just one', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files')],
       [mcpGroup('mg-1', {
         serverIds: ['files'],
@@ -396,7 +445,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('says so when a group is on no agent yet', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files')], [mcpGroup('mg-1', { serverIds: ['files'] })]));
     await settle(fixture);
 
@@ -405,7 +454,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('sends the group the editor composed', async () => {
-    const { fixture, store } = render(storeStub([server('files'), server('search')]));
+    const { fixture, store } = onGroupsTab(storeStub([server('files'), server('search')]));
 
     press(fixture, '+ new group');
     await settle(fixture);
@@ -420,7 +469,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('will not save a group with no name', async () => {
-    const { fixture, store } = render(storeStub([server('files')]));
+    const { fixture, store } = onGroupsTab(storeStub([server('files')]));
 
     press(fixture, '+ new group');
     await settle(fixture);
@@ -430,7 +479,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('loads a group into the editor with its servers picked', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files'), server('search')],
       [mcpGroup('mg-1', { name: 'research', serverIds: ['files'] })]));
     await settle(fixture);
@@ -445,7 +494,7 @@ describe('McpServersPage groups', () => {
 
   it('says a group delete leaves every agent connected, and confirms first', async () => {
     const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const { fixture, store } = render(withGroups(
+    const { fixture, store } = onGroupsTab(withGroups(
       [server('files')], [mcpGroup('mg-1', { serverIds: ['files'] })]));
     await settle(fixture);
 
@@ -458,7 +507,7 @@ describe('McpServersPage groups', () => {
   });
 
   it('opens the deploy dialog for the group whose button was pressed', async () => {
-    const { fixture } = render(withGroups(
+    const { fixture } = onGroupsTab(withGroups(
       [server('files')], [mcpGroup('mg-1', { name: 'research', serverIds: ['files'] })]));
     await settle(fixture);
 
