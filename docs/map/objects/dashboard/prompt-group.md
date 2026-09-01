@@ -50,8 +50,8 @@ removing a prompt from group B.
 
 ## Shape
 
-- `prompt_groups` — `schema.sql:177`; `name` is `COLLATE NOCASE UNIQUE` (`:181`); `prompt_ids`
-  is JSON in TEXT (`:183`)
+- `prompt_groups` — `schema.sql:181`; `name` is `COLLATE NOCASE UNIQUE` (`:185`); `prompt_ids`
+  is JSON in TEXT (`:187`)
 - `PromptGroup` — `prompts/PromptGroup.java`
 - `PromptGroupRepository` — `prompts/PromptGroupRepository.java:43` reads **by name**, not
   newest-edit like the library it files: these are the headers the prompt list is filed under,

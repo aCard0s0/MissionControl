@@ -48,8 +48,17 @@ entries are registry-only and therefore have no container lifecycle or logs.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions |
-| `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201 |
+| `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201. `repoUrl` is optional and must be `http://` or `https://` — it is rendered as a link, so the scheme is checked here rather than trusted to the client |
 | `PUT /api/mcp-servers/{id}` | complete structured definition | Kind and managed `hostId` are immutable; running deployment changes remain pending until Apply |
+
+`repoUrl` is documentation: where the entry comes from, for a person to open. Nothing fetches
+it — unlike a skill's repository, which `UpstreamCheck` parses to ask GitHub about releases —
+and it never reaches a profile's MCP config. It is a top-level column beside `description`
+rather than part of `config_json`, which is *how the thing runs*.
+
+Editing it bumps the entry's revision like any other edit, so a managed server with agents
+linked to it will show **apply required** afterwards. That is existing behaviour for
+`description` too, not a rule this field introduces.
 | `DELETE /api/mcp-servers/{id}` | — | Disables/unlinks Agent copies first; managed deletion returns 202 and preserves named volumes |
 | `POST …/{id}/start` | — | 202; applies pending config and starts the main/support services |
 | `POST …/{id}/stop` | — | 202; stops the main/support services without deleting them |

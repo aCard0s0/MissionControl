@@ -26,7 +26,7 @@ rather than an invention — and it is the difference between the operator havin
 the *agent* having it. A guide the agent cannot read would leave it choosing between the
 parts with no idea they belong together.
 
-The guide's `name` is therefore a directory name as well as a label (`schema.sql:236`), and
+The guide's `name` is therefore a directory name as well as a label (`schema.sql:240`), and
 carries the same charset rule as a skill's.
 
 ## The deploy is not atomic, deliberately
@@ -61,9 +61,9 @@ Two orderings are load-bearing:
 
 ## Shape
 
-- `skill_guides` — `schema.sql:232`; `name` is `COLLATE NOCASE UNIQUE` (`:187`) because two
+- `skill_guides` — `schema.sql:236`; `name` is `COLLATE NOCASE UNIQUE` (`:240`) because two
   guides would otherwise write the same umbrella directory; both id lists are JSON in TEXT
-  (`:240`); index on `category` (`:246`)
+  (`:244`); index on `category` (`:250`)
 - `SkillGuide` — `skills/SkillGuide.java`
 - `GuideDocument.render` — `skills/GuideDocument.java:30`, the umbrella SKILL.md
 - `SkillDeployer` — `skills/SkillDeployer.java:33`, shared with the skill library

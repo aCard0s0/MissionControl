@@ -310,15 +310,16 @@ class McpRegistryLifecycleTest {
       private boolean raced;
 
       @Override
-      boolean updateDefinition(String id, String name, String description, String configJson,
+      boolean updateDefinition(String id, String name, String description, String repoUrl,
+          String configJson,
           long revision, long appliedRevision, String operationState, long expectedRevision) {
         if (!raced) {
           raced = true;
           // the other editor's save lands first, taking revision 1 to 2
-          super.updateDefinition(id, "Saved by someone else", description, configJson,
+          super.updateDefinition(id, "Saved by someone else", description, null, configJson,
               expectedRevision + 1, appliedRevision, operationState, expectedRevision);
         }
-        return super.updateDefinition(id, name, description, configJson, revision,
+        return super.updateDefinition(id, name, description, null, configJson, revision,
             appliedRevision, operationState, expectedRevision);
       }
     };
@@ -414,7 +415,7 @@ class McpRegistryLifecycleTest {
     assertEquals(2, service.update(id, external("Remote docs renamed")).revision());
 
     // the stale write carries revision 1, which is no longer what the row holds
-    repository.updateDefinition(id, "stale", "d", "{}", 2L, 2L, "idle", 1L);
+    repository.updateDefinition(id, "stale", "d", null, "{}", 2L, 2L, "idle", 1L);
 
     assertEquals("Remote docs renamed", service.definition(id).name());
   }
@@ -568,7 +569,7 @@ class McpRegistryLifecycleTest {
 
   /** A managed record on {@code dh-local} carrying the given support services. */
   private static McpServerRequest managedWith(String name, SupportServiceRequest... supports) {
-    return new McpServerRequest(name, "desc", "managed", "dh-local", "http", null,
+    return new McpServerRequest(name, "desc", null, "managed", "dh-local", "http", null,
         "example/files:1", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null, List.of(supports));
   }
@@ -600,19 +601,19 @@ class McpRegistryLifecycleTest {
   }
 
   private static McpServerRequest managed(String name, String hostId) {
-    return new McpServerRequest(name, "desc", "managed", hostId, "http", null,
+    return new McpServerRequest(name, "desc", null, "managed", hostId, "http", null,
         "example/files:1", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null, List.of());
   }
 
   private static McpServerRequest external(String name) {
-    return new McpServerRequest(name, "desc", "external", null, "http", "https://example.test/mcp",
+    return new McpServerRequest(name, "desc", null, "external", null, "http", "https://example.test/mcp",
         null, null, List.of(), List.of(), null, List.of(), null, null, null, null,
         List.of(), List.of(), List.of(), null, List.of());
   }
 
   private static McpServerRequest stdio(String name) {
-    return new McpServerRequest(name, "desc", "stdio", null, null, null, null, null,
+    return new McpServerRequest(name, "desc", null, "stdio", null, null, null, null, null,
         List.of(), List.of(), "npx", List.of("-y", "@example/tool"), null, null, null, null,
         List.of(new ConfigValueInput("TOKEN", "super-secret", true, false)),
         List.of(), List.of(), null, List.of());

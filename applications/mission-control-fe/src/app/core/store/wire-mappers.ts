@@ -147,6 +147,7 @@ export function toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
     id: api.id,
     name: api.name ?? '',
     description: api.description ?? '',
+    repoUrl: api.repoUrl ?? '',
     kind,
     hostId: api.hostId || null,
     transport: oneOf(api.transport, TRANSPORTS, kind === 'stdio' ? 'stdio' : 'http'),

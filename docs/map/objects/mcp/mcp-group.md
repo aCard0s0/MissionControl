@@ -85,8 +85,8 @@ roster, which is what it is about.
 
 ## Shape
 
-- `mcp_groups` — `schema.sql:141`; `name` is `COLLATE NOCASE UNIQUE` (`:146`); `server_ids` is
-  JSON in TEXT (`:148`)
+- `mcp_groups` — `schema.sql:145`; `name` is `COLLATE NOCASE UNIQUE` (`:150`); `server_ids` is
+  JSON in TEXT (`:152`)
 - `McpGroup` — `mcp/McpGroup.java`
 - `McpGroupDto` / `McpGroupAgentDto` — `mcp/McpGroupDto.java`, the read shape with coverage
 - `McpGroupRepository` — `mcp/McpGroupRepository.java:37` reads by name, like the other two

@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   id               TEXT PRIMARY KEY,
   name             TEXT NOT NULL COLLATE NOCASE UNIQUE,
   description      TEXT,
+  -- where this server comes from, for a human to go and read. Documentation, like
+  -- `description`, and deliberately NOT inside config_json: that column is how the thing is
+  -- run, and nothing here ever reaches a profile's MCP config.
+  repo_url         TEXT,
   kind             TEXT NOT NULL CHECK (kind IN ('managed', 'external', 'stdio')),
   host_id          TEXT,
   service_key      TEXT UNIQUE,

@@ -36,6 +36,7 @@ final class McpRequestValidator {
     if (request == null) throw new IllegalArgumentException("request body is required");
     String name = required(request.name(), "name", 100);
     String description = optional(request.description(), "description", 2_000);
+    String repoUrl = repoUrl(request.repoUrl());
     String kind = lower(required(request.kind(), "kind", 20));
     if (!Set.of("managed", "external", "stdio").contains(kind)) {
       throw new IllegalArgumentException("kind must be managed, external, or stdio");
@@ -97,7 +98,7 @@ final class McpRequestValidator {
       default -> throw new IllegalStateException("unreachable");
     }
 
-    return new McpServerRequest(name, description, kind, hostId, transport, url, image, platform,
+    return new McpServerRequest(name, description, repoUrl, kind, hostId, transport, url, image, platform,
         entrypoint, command, stdioCommand, args, request.internalPort(), request.publishedPort(),
         path, crossHostUrl, environment, headers, volumes, healthcheck, supports);
   }
@@ -298,6 +299,26 @@ final class McpRequestValidator {
     String result = optional(value, field, maxLen);
     if (result == null) throw new IllegalArgumentException(field + " is required");
     return result;
+  }
+
+  /**
+   * The repository link, if there is one, and only if it is one a browser should follow.
+   *
+   * <p>The value is rendered as an {@code href} on the roster, so the scheme is checked at the
+   * boundary rather than trusted. Angular sanitizes a bound href as well, but a store that will
+   * hand this to any client should not be relying on one client's framework to make it safe.
+   *
+   * <p>Nothing fetches it — unlike a skill's repository, which {@code UpstreamCheck} parses to
+   * ask GitHub about releases. This one is only ever opened by a person.
+   */
+  private static String repoUrl(String value) {
+    String url = optional(value, "repoUrl", 500);
+    if (url == null) return null;
+    String scheme = url.toLowerCase(Locale.ROOT);
+    if (!scheme.startsWith("http://") && !scheme.startsWith("https://")) {
+      throw new IllegalArgumentException("repoUrl must start with http:// or https://");
+    }
+    return url;
   }
 
   private static String optional(String value, String field, int maxLen) {

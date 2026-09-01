@@ -436,6 +436,8 @@ export interface McpCatalogServer {
   id: string;
   name: string;
   description: string;
+  /** Where this entry comes from, or '' — documentation, never fetched by anything. */
+  repoUrl: string;
   kind: McpCatalogKind;
   hostId: string | null;
   transport: McpTransport;
@@ -478,6 +480,7 @@ export interface McpCatalogServer {
  *  immutable after create; the backend enforces that invariant. */
 export interface McpCatalogServerInput {
   name: string;
+  repoUrl: string;
   description: string;
   kind: McpCatalogKind;
   hostId: string | null;

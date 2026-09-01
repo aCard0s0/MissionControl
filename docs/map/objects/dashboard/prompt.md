@@ -13,19 +13,19 @@ Dashboard-owned text an operator keeps for later, with a category, notes and tag
 `prompts` table, served at **`/api/prompts`**.
 
 **Nothing inside a Hermes container reads it** — the schema says so where it is defined
-(`schema.sql:124`). It is a library for the human, not a config surface.
+(`schema.sql:159`). It is a library for the human, not a config surface.
 
 ## Why this shape
 
 The interesting part is the second table. `prompt_meta` records that the sample prompt **has
 already been seeded, so one an operator deleted does not come back on the next boot**
-(`schema.sql:139`). Seeding on "is the table empty?" would resurrect it; seeding on a recorded
+(`schema.sql:194`). Seeding on "is the table empty?" would resurrect it; seeding on a recorded
 flag does not.
 
 ## Shape
 
-- `prompts` — `schema.sql:126`; `tags` is a JSON array in TEXT; index on `category` (`:133`)
-- `prompt_meta` — `schema.sql:190`, key/value
+- `prompts` — `schema.sql:159`; `tags` is a JSON array in TEXT; index on `category` (`:170`)
+- `prompt_meta` — `schema.sql:194`, key/value
 - Seeder: `prompts/PromptSeeder.java`
 
 ## Connected to

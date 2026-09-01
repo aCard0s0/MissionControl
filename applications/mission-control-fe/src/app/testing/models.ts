@@ -64,7 +64,7 @@ export const agent = (id: string, patch: Partial<AgentProfile> = {}): AgentProfi
 export const catalogServer = (
   id: string, patch: Partial<McpCatalogServer> = {},
 ): McpCatalogServer => ({
-  id, name: id, description: '', kind: 'managed', hostId: 'dh-local',
+  id, name: id, description: '', repoUrl: '', kind: 'managed', hostId: 'dh-local',
   transport: 'http', url: null, image: 'mcp/image:latest', platform: null,
   entrypoint: [], command: [], stdioCommand: null, args: [], internalPort: 1100,
   publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: `http://${id}:1100/mcp`,

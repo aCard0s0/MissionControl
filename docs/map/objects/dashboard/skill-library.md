@@ -29,7 +29,7 @@ whole design: the library splits by origin rather than picking one mechanism.
 Both halves are load-bearing. Storing a copy of a hub skill would be a second source of
 truth that goes stale the moment the Hub moves. Refusing to store local content would make
 dashboard-authored and curator-authored skills undeployable. The CHECK constraint at
-`schema.sql:203` and the branch at `skills/SkillController.java:149` are the two places that stay
+`schema.sql:207` and the branch at `skills/SkillController.java:149` are the two places that stay
 in step.
 
 A local deploy is an **overlay, not a sync**: it writes what the row holds and removes
@@ -37,9 +37,9 @@ nothing, so a file renamed in the library leaves its old copy on the agent.
 
 ## Shape
 
-- `skills` — `schema.sql:201`; `kind` CHECK at `:203`; `name` is `COLLATE NOCASE UNIQUE`
-  (`:209`) so `pdf` and `PDF` cannot both address `skills/pdf`; `files` is a JSON array in
-  TEXT, NULL for a hub row (`:216`); index on `category` (`:221`)
+- `skills` — `schema.sql:205`; `kind` CHECK at `:207`; `name` is `COLLATE NOCASE UNIQUE`
+  (`:213`) so `pdf` and `PDF` cannot both address `skills/pdf`; `files` is a JSON array in
+  TEXT, NULL for a hub row (`:220`); index on `category` (`:225`)
 - `Skill` / `SkillFile` — `skills/Skill.java`, `skills/SkillFile.java`
 - `SkillRepository` — plain JdbcTemplate, the `prompts` shape
 - `SkillController` — `/api/skills`, six routes, no service layer

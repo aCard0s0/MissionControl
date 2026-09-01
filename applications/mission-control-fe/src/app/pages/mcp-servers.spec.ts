@@ -305,6 +305,42 @@ describe('McpServersPage lifecycle verbs', () => {
   });
 });
 
+describe('McpServersPage repository link', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('offers a repo link only for a server that has one', async () => {
+    const { fixture } = render(storeStub([
+      server('linked', { repoUrl: 'https://github.com/o/r' }),
+      server('unlinked', { repoUrl: '' }),
+    ]));
+    await settle(fixture);
+
+    const rows = Array.from(el(fixture).querySelectorAll<HTMLElement>('.server-row'));
+    const linked = rows.find(r => r.textContent?.includes('linked'))!;
+    const unlinked = rows.find(r => r.textContent?.includes('unlinked'))!;
+
+    expect(linked.querySelector('a.btn')).toBeTruthy();
+    expect(unlinked.querySelector('a.btn')).toBeNull();
+  });
+
+  it('opens the repository in a new tab, without handing it the opener', async () => {
+    const { fixture } = render(storeStub([
+      server('linked', { repoUrl: 'https://github.com/o/r' }),
+    ]));
+    await settle(fixture);
+
+    const link = el(fixture).querySelector<HTMLAnchorElement>('.server-row a.btn')!;
+    expect(link.getAttribute('href')).toBe('https://github.com/o/r');
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noopener');
+  });
+});
+
 describe('McpServersPage groups', () => {
   beforeEach(() => vi.useFakeTimers());
 

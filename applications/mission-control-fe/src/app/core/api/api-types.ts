@@ -331,6 +331,7 @@ export interface ApiMcpCatalogServer {
   id: string;
   name?: string;
   description?: string;
+  repoUrl?: string | null;
   kind?: string;
   hostId?: string | null;
   transport?: string;

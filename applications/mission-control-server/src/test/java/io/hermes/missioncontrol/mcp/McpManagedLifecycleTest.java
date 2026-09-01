@@ -76,7 +76,7 @@ class McpManagedLifecycleTest {
 
   private McpServerDto createManaged() {
     return service.create(new McpServerRequest(
-        "files", "a managed server", "managed", HostService.LOCAL_HOST_ID,
+        "files", "a managed server", null, "managed", HostService.LOCAL_HOST_ID,
         "http", null, "mcp/filesystem:latest", null,
         List.of(), List.of(), null, List.of(),
         1100, null, "/mcp", null,

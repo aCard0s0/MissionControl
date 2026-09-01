@@ -7,6 +7,8 @@ public record McpServerDto(
     String id,
     String name,
     String description,
+    /** Where this entry comes from, for a human to open. Documentation only. */
+    String repoUrl,
     String kind,
     String hostId,
     String serviceKey,

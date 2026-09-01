@@ -47,7 +47,9 @@ class SchemaUpgrades {
       // Blueprints gained a category so the page can file and filter them.
       new AddedColumn("profile_templates", "category", "TEXT"),
       // …and a glyph, drawn beside the name in the list and the editor.
-      new AddedColumn("profile_templates", "icon", "TEXT"));
+      new AddedColumn("profile_templates", "icon", "TEXT"),
+      // A catalog entry gained a link to where it comes from, for the roster's `repo` button.
+      new AddedColumn("mcp_servers", "repo_url", "TEXT"));
 
   private final JdbcTemplate jdbc;
 

@@ -56,7 +56,8 @@ class McpCatalogSeeder {
 
   void seedDefaults() {
     createSeed("playwright", "Playwright", "playwright", new McpServerRequest(
-        "Playwright", "Browser automation through Playwright MCP", "managed", HostService.LOCAL_HOST_ID,
+        "Playwright", "Browser automation through Playwright MCP",
+        "https://github.com/microsoft/playwright-mcp", "managed", HostService.LOCAL_HOST_ID,
         "http", null, "mcp/playwright:latest", null, List.of(),
         List.of("--port", "1100", "--host", "0.0.0.0", "--allowed-hosts", "*"),
         null, List.of(), 1100, null, "/mcp", null,
@@ -64,7 +65,8 @@ class McpCatalogSeeder {
         List.of(), List.of(), null, List.of()));
 
     createSeed("context7", "Context7", "context7", new McpServerRequest(
-        "Context7", "Up-to-date library documentation through Context7", "managed", HostService.LOCAL_HOST_ID,
+        "Context7", "Up-to-date library documentation through Context7",
+        "https://github.com/upstash/context7", "managed", HostService.LOCAL_HOST_ID,
         "http", null, "mcp/context7:latest", null, List.of(), List.of(), null, List.of(),
         1101, null, "/mcp", null,
         List.of(new ConfigValueInput("MCP_TRANSPORT", "http", false, false),
@@ -73,7 +75,8 @@ class McpCatalogSeeder {
         List.of(), List.of(), null, List.of()));
 
     createSeed("sequential-thinking", "Sequential Thinking", "sequentialthinking", new McpServerRequest(
-        "Sequential Thinking", "Structured reasoning MCP server", "managed", HostService.LOCAL_HOST_ID,
+        "Sequential Thinking", "Structured reasoning MCP server",
+        "https://github.com/modelcontextprotocol/servers", "managed", HostService.LOCAL_HOST_ID,
         "http", null, "mcp/sequentialthinking:latest", null,
         List.of("npx", "-y", "supergateway"),
         List.of("--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
@@ -91,7 +94,10 @@ class McpCatalogSeeder {
             new ConfigValueInput("POSTGRES_DB", "mcp", false, false)),
         List.of(new VolumeSpec("data", "/var/lib/postgresql/data")), pgHealth);
     createSeed("postgres", "Postgres MCP", "postgres-mcp", new McpServerRequest(
-        "Postgres MCP", "Read-only PostgreSQL MCP server with a private database", "managed",
+        "Postgres MCP", "Read-only PostgreSQL MCP server with a private database",
+        // left blank on purpose: the image is openmcpserver/mcp-postgres and its upstream
+        // repository is not one this code can name with certainty. An operator can fill it in.
+        null, "managed",
         HostService.LOCAL_HOST_ID, "sse", null, POSTGRES_IMAGE, null,
         List.of("python", "-c"), List.of(POSTGRES_BOOT), null, List.of(), 1103, null, "/sse", null,
         List.of(new ConfigValueInput("PORT", "1103", false, false),
@@ -126,8 +132,9 @@ class McpCatalogSeeder {
           config.supportServices());
       // repair runs at boot, before anything can be editing this row, so the revision guard
       // cannot lose here — but it is the same write, and the guard belongs to the write
-      repository.updateDefinition(row.id(), row.name(), row.description(), configs.write(repaired),
-          row.revision() + 1, row.appliedRevision(), row.operationState(), row.revision());
+      repository.updateDefinition(row.id(), row.name(), row.description(), row.repoUrl(),
+          configs.write(repaired), row.revision() + 1, row.appliedRevision(),
+          row.operationState(), row.revision());
       log.info("repaired the seeded Postgres MCP entry: the image ignores PORT and rejects the "
           + "Compose service name as a Host header, so it is now booted through an explicit "
           + "entrypoint");
@@ -144,7 +151,8 @@ class McpCatalogSeeder {
     }
     String id = "mcp-seed-" + seedKey;
     long now = System.currentTimeMillis();
-    repository.insert(new ServerRow(id, validated.name(), validated.description(), "managed",
+    repository.insert(new ServerRow(id, validated.name(), validated.description(),
+        validated.repoUrl(), "managed",
         HostService.LOCAL_HOST_ID, serviceKey, configs.write(configs.store(validated, null)),
         "stopped", McpRuntimeState.MISSING.wire(), McpOperationState.PROVISIONING.wire(),
         null, 1, 0, seedKey, null, null, null, null, now, now));

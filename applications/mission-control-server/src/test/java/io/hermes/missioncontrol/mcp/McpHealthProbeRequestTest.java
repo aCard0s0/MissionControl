@@ -309,7 +309,7 @@ class McpHealthProbeRequestTest {
   }
 
   private static ServerRow row(String kind, String runtimeState, String hostId, String serviceKey) {
-    return new ServerRow(ID, "Files", null, kind, hostId, serviceKey, "{}",
+    return new ServerRow(ID, "Files", null, null, kind, hostId, serviceKey, "{}",
         "running", runtimeState, "idle", null, 1L, 1L, null, "unknown", null, null, null, 0L, 0L);
   }
 

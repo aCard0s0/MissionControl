@@ -148,7 +148,8 @@ public class McpRegistryService {
     String serviceKey = managed ? "mcp-" + id.substring(4, 12) : null;
     StoredConfig config = configs.store(validated, null);
     long now = System.currentTimeMillis();
-    ServerRow row = new ServerRow(id, validated.name(), validated.description(), validated.kind(),
+    ServerRow row = new ServerRow(id, validated.name(), validated.description(),
+        validated.repoUrl(), validated.kind(),
         validated.hostId(), serviceKey, configs.write(config), "stopped",
         McpRuntimeState.initial(managed).wire(),
         (managed ? McpOperationState.PROVISIONING : McpOperationState.IDLE).wire(), null, 1,
@@ -183,7 +184,8 @@ public class McpRegistryService {
         && "stopped".equals(existing.desiredState());
     long applied = "managed".equals(existing.kind()) ? existing.appliedRevision() : revision;
     boolean written = repository.updateDefinition(
-        id, validated.name(), validated.description(), configs.write(config), revision, applied,
+        id, validated.name(), validated.description(), validated.repoUrl(),
+        configs.write(config), revision, applied,
         (recreateStopped ? McpOperationState.APPLYING : McpOperationState.IDLE).wire(),
         existing.revision());
     if (!written) {

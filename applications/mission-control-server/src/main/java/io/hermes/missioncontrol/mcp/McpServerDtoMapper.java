@@ -27,7 +27,8 @@ class McpServerDtoMapper {
             value.entrypoint(), value.command(), configs.redact(value.environment()),
             value.volumes(), value.healthcheck()))
         .toList();
-    return new McpServerDto(row.id(), row.name(), row.description(), row.kind(), row.hostId(), row.serviceKey(),
+    return new McpServerDto(row.id(), row.name(), row.description(), row.repoUrl(), row.kind(),
+        row.hostId(), row.serviceKey(),
         config.transport(), config.url(), connectionUrl(row, config), config.image(), config.platform(),
         config.entrypoint(), config.command(), config.stdioCommand(), config.args(), config.internalPort(),
         config.publishedPort(), config.path(), config.crossHostUrl(), configs.redact(config.environment()),

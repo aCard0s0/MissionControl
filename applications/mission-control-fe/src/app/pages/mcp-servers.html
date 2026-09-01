@@ -122,6 +122,10 @@
                   {{ server.checkStatus === 'checking' ? 'checking…' : 'check' }}
                 </button>
               }
+              @if (server.repoUrl) {
+                <a class="btn sm ghost" [href]="server.repoUrl" target="_blank"
+                   rel="noopener noreferrer" title="open the source repository">repo ↗</a>
+              }
               <button class="btn sm ghost" (click)="openEdit(server, true)">duplicate</button>
               <button class="btn sm ghost" (click)="openEdit(server)">edit</button>
               <button class="btn sm danger ghost" [disabled]="isBusy(server)" (click)="beginRemove(server)">remove</button>
