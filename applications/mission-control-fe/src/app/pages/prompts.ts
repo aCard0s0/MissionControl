@@ -7,6 +7,7 @@ import { PromptStore } from '../core/store/prompt-store';
 import { Prompt, PromptGroup } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { copyText } from '../shared/copy-text';
+import { fileIntoSections, groupHolding } from '../core/filing';
 import { ago } from '../core/format';
 
 /** How long a row stays marked as copied — long enough to read, short enough not to linger. */
@@ -19,16 +20,7 @@ export type PromptView = 'compact' | 'expanded';
 
 const VIEW_KEY = 'mc-prompt-view';
 
-/** The section key for prompts no group claims. Not an id, so it cannot collide with one. */
-const UNGROUPED = '';
 
-/** One band of the filed list: a group and the visible prompts it claims, or the trailing
- *  bucket where `group` is null. */
-interface PromptSection {
-  readonly key: string;
-  readonly group: PromptGroup | null;
-  readonly prompts: Prompt[];
-}
 
 /**
  * The prompt library — a dictionary of text worth keeping, with a category, notes and tags
@@ -95,45 +87,8 @@ export class PromptsPage {
   protected readonly filtering = computed(() =>
     !!this.query().trim() || this.category() !== null);
 
-  /**
-   * The list as it is filed: one section per group, then whatever no group claims.
-   *
-   * <p>A prompt appears under **every** group that names it. `promptIds` lives on the group,
-   * so nothing stops two groups claiming one prompt, and showing it once would mean silently
-   * picking a winner — the group editor marks which other group already holds a prompt
-   * instead, so double-filing is visible where it is done.
-   *
-   * <p>With no groups at all this collapses to a single unlabelled section, which is exactly
-   * the flat list this page had before.
-   */
-  protected readonly sections = computed<PromptSection[]>(() => {
-    const visible = this.visible();
-    const groups = this.groups.groups();
-    if (!groups.length) {
-      return [{ key: UNGROUPED, group: null, prompts: visible }];
-    }
-    const byId = new Map(visible.map(p => [p.id, p]));
-    const filed = new Set<string>();
-    const sections: PromptSection[] = [];
-    for (const group of groups) {
-      const members: Prompt[] = [];
-      for (const id of group.promptIds) {
-        const prompt = byId.get(id);
-        if (prompt) {
-          members.push(prompt);
-          filed.add(id);
-        }
-      }
-      if (members.length || !this.filtering()) {
-        sections.push({ key: group.id, group, prompts: members });
-      }
-    }
-    const rest = visible.filter(p => !filed.has(p.id));
-    if (rest.length) {
-      sections.push({ key: UNGROUPED, group: null, prompts: rest });
-    }
-    return sections;
-  });
+  protected readonly sections = computed(() => fileIntoSections(
+    this.visible(), this.groups.groups(), g => g.promptIds, this.filtering(), g => g.id));
 
   // ── the group editor ──────────────────────────────────────────────────────
   protected readonly groupEditorOpen = signal(false);
@@ -263,11 +218,8 @@ export class PromptsPage {
 
   // ── groups ───────────────────────────────────────────────────────────────
 
-  /** The name of another group already holding this prompt, or ''. Shown in the group editor
-   *  so double-filing is visible at the moment it is done. */
   protected filedElsewhere(promptId: string): string {
-    return this.groups.groups()
-      .find(g => g.id !== this.groupEditId() && g.promptIds.includes(promptId))?.name ?? '';
+    return groupHolding(this.groups.groups(), g => g.promptIds, promptId, this.groupEditId());
   }
 
   protected newGroup(): void {

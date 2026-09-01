@@ -1,11 +1,12 @@
 package io.hermes.missioncontrol.skills;
 
-import io.hermes.missioncontrol.agents.api.AgentTargetRequest;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.AgentTargetRequest;
 import io.hermes.missioncontrol.agents.api.SkillFilesDto;
+import io.hermes.missioncontrol.common.Text;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
@@ -238,9 +239,9 @@ public class SkillController {
       requireSkillMd(files);
     }
     return new Skill(
-        id, kind, request.name().trim(), blankToNull(request.description()),
-        category(request.category()), blankToNull(request.repoUrl()),
-        blankToNull(request.version()), files, createdAt, now);
+        id, kind, request.name().trim(), Text.blankToNull(request.description()),
+        category(request.category()), Text.blankToNull(request.repoUrl()),
+        Text.blankToNull(request.version()), files, createdAt, now);
   }
 
   /** Hermes finds a skill by its SKILL.md. A local row without one could be saved and
@@ -283,9 +284,6 @@ public class SkillController {
     return raw == null || raw.isBlank() ? DEFAULT_CATEGORY : raw.trim().toLowerCase(Locale.ROOT);
   }
 
-  private static String blankToNull(String raw) {
-    return raw == null || raw.isBlank() ? null : raw.trim();
-  }
 
   private static NoSuchElementException unknown(String id) {
     return new NoSuchElementException("unknown skill: " + id);

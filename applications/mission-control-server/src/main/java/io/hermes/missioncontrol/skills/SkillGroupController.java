@@ -1,9 +1,10 @@
 package io.hermes.missioncontrol.skills;
 
+import io.hermes.missioncontrol.common.IdList;
+import io.hermes.missioncontrol.common.Text;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -85,28 +86,11 @@ public class SkillGroupController {
   private static SkillGroup normalize(
       String id, UpsertGroupRequest request, long createdAt, long now) {
     return new SkillGroup(
-        id, request.name().trim(), blankToNull(request.description()),
-        ids(request.skillIds()), blankToNull(request.guideId()), createdAt, now);
+        id, request.name().trim(), Text.blankToNull(request.description()),
+        IdList.normalize(request.skillIds()), Text.blankToNull(request.guideId()), createdAt, now);
   }
 
-  /** Blanks dropped, duplicates dropped, order kept — the order is what the group's skills
-   *  are listed in, so it is the operator's and not a set's. */
-  private static List<String> ids(List<String> raw) {
-    if (raw == null) {
-      return List.of();
-    }
-    LinkedHashSet<String> ids = new LinkedHashSet<>();
-    for (String id : raw) {
-      if (id != null && !id.isBlank()) {
-        ids.add(id.trim());
-      }
-    }
-    return List.copyOf(ids);
-  }
 
-  private static String blankToNull(String raw) {
-    return raw == null || raw.isBlank() ? null : raw.trim();
-  }
 
   private static NoSuchElementException unknown(String id) {
     return new NoSuchElementException("unknown skill group: " + id);

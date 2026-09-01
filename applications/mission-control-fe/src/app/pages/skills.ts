@@ -13,6 +13,7 @@ import {
 import { Reveal } from '../shared/reveal';
 import { DeployDialog } from './deploy-dialog';
 import { SkillGuidesPanel } from './skill-guides-panel';
+import { fileIntoSections, groupHolding } from '../core/filing';
 import { ago } from '../core/format';
 
 export type SkillsTab = 'skills' | 'guides';
@@ -20,16 +21,7 @@ export type SkillsTab = 'skills' | 'guides';
 /** Hermes finds a skill by this file. A local skill without one cannot be loaded. */
 const SKILL_MD = 'SKILL.md';
 
-/** The section key for skills no group claims. Not an id, so it cannot collide with one. */
-const UNGROUPED = '';
 
-/** One band of the filed list: a group and the visible skills it claims, or the trailing
- *  bucket where `group` is null. */
-interface SkillSection {
-  readonly key: string;
-  readonly group: SkillGroup | null;
-  readonly skills: Skill[];
-}
 
 /** What a new local skill starts as, so the first save is one edit away rather than
  *  a blank textarea and a guess at the frontmatter. */
@@ -150,45 +142,8 @@ export class SkillsPage {
   protected readonly filtering = computed(() =>
     !!this.query().trim() || this.category() !== null || this.kind() !== null);
 
-  /**
-   * The list as it is filed: one section per group, then whatever no group claims.
-   *
-   * <p>A skill appears under **every** group that names it. `skillIds` lives on the group, so
-   * nothing stops two groups claiming one skill, and showing it once would mean silently
-   * picking a winner — the group editor marks which other group already holds a skill instead,
-   * so double-filing is visible where it is done rather than guessed at here.
-   *
-   * <p>With no groups at all this collapses to a single unlabelled section, which is exactly
-   * the flat list this page had before.
-   */
-  protected readonly sections = computed<SkillSection[]>(() => {
-    const visible = this.visible();
-    const groups = this.groups.groups();
-    if (!groups.length) {
-      return [{ key: UNGROUPED, group: null, skills: visible }];
-    }
-    const byId = new Map(visible.map(s => [s.id, s]));
-    const filed = new Set<string>();
-    const sections: SkillSection[] = [];
-    for (const group of groups) {
-      const members: Skill[] = [];
-      for (const id of group.skillIds) {
-        const skill = byId.get(id);
-        if (skill) {
-          members.push(skill);
-          filed.add(id);
-        }
-      }
-      if (members.length || !this.filtering()) {
-        sections.push({ key: group.id, group, skills: members });
-      }
-    }
-    const rest = visible.filter(s => !filed.has(s.id));
-    if (rest.length) {
-      sections.push({ key: UNGROUPED, group: null, skills: rest });
-    }
-    return sections;
-  });
+  protected readonly sections = computed(() => fileIntoSections(
+    this.visible(), this.groups.groups(), g => g.skillIds, this.filtering(), g => g.id));
 
   /** The guide a group points at, or null — either because it points at none, or because the
    *  guide has been deleted since. The two cases read differently on the header. */
@@ -196,11 +151,8 @@ export class SkillsPage {
     return group.guideId ? this.guides.byId(group.guideId) : null;
   }
 
-  /** The name of another group already holding this skill, or ''. Shown in the group editor
-   *  so double-filing is visible at the moment it is done. */
   protected filedElsewhere(skillId: string): string {
-    return this.groups.groups()
-      .find(g => g.id !== this.groupEditId() && g.skillIds.includes(skillId))?.name ?? '';
+    return groupHolding(this.groups.groups(), g => g.skillIds, skillId, this.groupEditId());
   }
 
   constructor() {

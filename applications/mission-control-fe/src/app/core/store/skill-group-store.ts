@@ -17,8 +17,6 @@ export class SkillGroupStore {
 
   private readonly ctx = inject(StoreContext);
 
-  byId = (id: string | null): SkillGroup | null =>
-    this.groups().find(g => g.id === id) ?? null;
 
   async refresh(): Promise<void> {
     try {

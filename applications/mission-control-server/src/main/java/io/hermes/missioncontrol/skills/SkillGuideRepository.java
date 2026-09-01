@@ -1,7 +1,9 @@
 package io.hermes.missioncontrol.skills;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.common.IdList;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -14,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SkillGuideRepository {
 
-  private static final Logger log = LoggerFactory.getLogger(SkillGuideRepository.class);
+
 
   private final RowMapper<SkillGuide> mapper = (rs, n) -> new SkillGuide(
       rs.getString("id"),
@@ -22,10 +24,11 @@ public class SkillGuideRepository {
       rs.getString("description"),
       rs.getString("body"),
       rs.getString("category"),
-      ids(rs.getString("skill_ids")),
-      ids(rs.getString("mcp_server_ids")),
+      ids(rs, "skill_ids"),
+      ids(rs, "mcp_server_ids"),
       rs.getLong("created_at"),
       rs.getLong("updated_at"));
+
 
   private final JdbcTemplate jdbc;
   private final ObjectMapper objectMapper;
@@ -54,7 +57,7 @@ public class SkillGuideRepository {
         "INSERT INTO skill_guides (id, name, description, body, category, skill_ids, "
             + "mcp_server_ids, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         guide.id(), guide.name(), guide.description(), guide.body(), guide.category(),
-        ids(guide.skillIds()), ids(guide.mcpServerIds()),
+        IdList.write(objectMapper, guide.skillIds()), IdList.write(objectMapper, guide.mcpServerIds()),
         guide.createdAt(), guide.updatedAt());
   }
 
@@ -65,7 +68,7 @@ public class SkillGuideRepository {
         "UPDATE skill_guides SET name = ?, description = ?, body = ?, category = ?, "
             + "skill_ids = ?, mcp_server_ids = ?, updated_at = ? WHERE id = ?",
         guide.name(), guide.description(), guide.body(), guide.category(),
-        ids(guide.skillIds()), ids(guide.mcpServerIds()),
+        IdList.write(objectMapper, guide.skillIds()), IdList.write(objectMapper, guide.mcpServerIds()),
         guide.updatedAt(), guide.id());
   }
 
@@ -73,24 +76,10 @@ public class SkillGuideRepository {
     jdbc.update("DELETE FROM skill_guides WHERE id = ?", id);
   }
 
-  /** An unparseable column degrades to empty and says so, rather than failing the read. */
-  private List<String> ids(String json) {
-    if (json == null || json.isBlank()) {
-      return List.of();
-    }
-    try {
-      return objectMapper.readValue(json, new TypeReference<List<String>>() {});
-    } catch (Exception e) {
-      log.warn("dropping unparseable id column on a guide: {}", e.getMessage());
-      return List.of();
-    }
-  }
 
-  private String ids(List<String> ids) {
-    try {
-      return objectMapper.writeValueAsString(ids == null ? List.of() : ids);
-    } catch (Exception e) {
-      throw new IllegalStateException("failed to serialize guide ids", e);
-    }
+
+  /** Deferred to a method so the row mapper, a field initializer, may read {@code objectMapper}. */
+  private List<String> ids(ResultSet rs, String column) throws SQLException {
+    return IdList.read(objectMapper, rs.getString(column), column);
   }
 }

@@ -145,7 +145,7 @@
     @if (sec.group || sections().length > 1) {
       <div class="group-head mono" [class.loose]="!sec.group">
         <span class="g-name">{{ sec.group?.name ?? 'ungrouped' }}</span>
-        <span class="chip off">{{ sec.prompts.length }}</span>
+        <span class="chip off">{{ sec.items.length }}</span>
         @if (sec.group; as group) {
           @if (group.description) {
             <span class="g-desc faint">{{ group.description }}</span>
@@ -156,7 +156,7 @@
         }
       </div>
     }
-    @for (p of sec.prompts; track p.id) {
+    @for (p of sec.items; track p.id) {
     <div class="panel prompt" [class.open]="showBody(p)">
       <div class="panel-h">
         <button class="disc" (click)="toggleOpen(p)" [attr.aria-expanded]="showBody(p)"

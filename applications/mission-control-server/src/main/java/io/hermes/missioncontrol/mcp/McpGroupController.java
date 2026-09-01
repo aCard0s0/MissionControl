@@ -5,6 +5,8 @@ import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentTargetRequest;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.agents.api.DeployedPart;
+import io.hermes.missioncontrol.common.IdList;
+import io.hermes.missioncontrol.common.Text;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpGroupDto.McpGroupAgentDto;
@@ -14,7 +16,6 @@ import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -203,27 +204,11 @@ public class McpGroupController {
   private static McpGroup normalize(
       String id, UpsertMcpGroupRequest request, long createdAt, long now) {
     return new McpGroup(
-        id, request.name().trim(), blankToNull(request.description()),
-        ids(request.serverIds()), createdAt, now);
+        id, request.name().trim(), Text.blankToNull(request.description()),
+        IdList.normalize(request.serverIds()), createdAt, now);
   }
 
-  /** Blanks dropped, duplicates dropped, order kept — the order a deploy connects them in. */
-  private static List<String> ids(List<String> raw) {
-    if (raw == null) {
-      return List.of();
-    }
-    LinkedHashSet<String> ids = new LinkedHashSet<>();
-    for (String id : raw) {
-      if (id != null && !id.isBlank()) {
-        ids.add(id.trim());
-      }
-    }
-    return List.copyOf(ids);
-  }
 
-  private static String blankToNull(String raw) {
-    return raw == null || raw.isBlank() ? null : raw.trim();
-  }
 
   private static NoSuchElementException unknown(String id) {
     return new NoSuchElementException("unknown MCP group: " + id);

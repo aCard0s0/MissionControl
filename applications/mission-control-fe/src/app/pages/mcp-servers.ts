@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { HostStore } from '../core/store/host-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { McpGroupStore } from '../core/store/mcp-group-store';
+import { groupHolding } from '../core/filing';
 import { clock } from '../core/format';
 import { mcpDisplayEndpoint, mcpEntryBusy, mcpOperationActive } from '../core/mcp/catalog-rules';
 import {
@@ -109,12 +110,8 @@ export class McpServersPage {
     });
   }
 
-  /** The name of another group already holding this server, or ''. Shown in the editor so
-   *  double-filing is visible — unlike the other two libraries it is often deliberate here,
-   *  since one server can belong to several sets an agent needs. */
   protected filedElsewhere(serverId: string): string {
-    return this.groups.groups()
-      .find(g => g.id !== this.groupEditId() && g.serverIds.includes(serverId))?.name ?? '';
+    return groupHolding(this.groups.groups(), g => g.serverIds, serverId, this.groupEditId());
   }
 
   protected newGroup(): void {

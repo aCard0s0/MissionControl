@@ -16,8 +16,6 @@ export class PromptGroupStore {
 
   private readonly ctx = inject(StoreContext);
 
-  byId = (id: string | null): PromptGroup | null =>
-    this.groups().find(g => g.id === id) ?? null;
 
   async refresh(): Promise<void> {
     try {

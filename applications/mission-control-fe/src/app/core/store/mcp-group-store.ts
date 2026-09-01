@@ -20,8 +20,6 @@ export class McpGroupStore {
 
   private readonly ctx = inject(StoreContext);
 
-  byId = (id: string | null): McpGroup | null =>
-    this.groups().find(g => g.id === id) ?? null;
 
   async refresh(): Promise<void> {
     try {

@@ -250,7 +250,7 @@
     @if (sec.group || sections().length > 1) {
       <div class="group-head mono" [class.loose]="!sec.group">
         <span class="g-name">{{ sec.group?.name ?? 'ungrouped' }}</span>
-        <span class="chip off">{{ sec.skills.length }}</span>
+        <span class="chip off">{{ sec.items.length }}</span>
         @if (sec.group; as group) {
           @if (guideOf(group); as guide) {
             <span class="chip info" title="the guide that explains this set">
@@ -270,7 +270,7 @@
         }
       </div>
     }
-    @for (s of sec.skills; track s.id) {
+    @for (s of sec.items; track s.id) {
     <div class="panel skill" [class.open]="expanded() === s.id">
       <div class="panel-h">
         @if (hasDetail(s)) {
@@ -281,8 +281,8 @@
             <span class="title mono">{{ s.name }}</span>
           </button>
         } @else {
-          <span class="disc-gap" aria-hidden="true"></span>
-          <span class="title mono">{{ s.name }}</span>
+          <!-- nothing to open, but the name still lines up with the rows that have a caret -->
+          <span class="disc-gap" aria-hidden="true"></span><span class="title mono">{{ s.name }}</span>
         }
         <span class="chip" [class.custom]="s.kind === 'local'" [class.info]="s.kind === 'hub'"
               [title]="s.kind === 'hub' ? 'installed from the Skills Hub by name'

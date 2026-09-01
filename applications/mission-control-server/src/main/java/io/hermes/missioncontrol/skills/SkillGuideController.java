@@ -7,6 +7,8 @@ import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentTargetRequest;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.agents.api.DeployedPart;
+import io.hermes.missioncontrol.common.IdList;
+import io.hermes.missioncontrol.common.Text;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
@@ -15,7 +17,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -230,33 +231,16 @@ public class SkillGuideController {
   private static SkillGuide normalize(
       String id, UpsertGuideRequest request, long createdAt, long now) {
     return new SkillGuide(
-        id, request.name().trim(), blankToNull(request.description()), request.body(),
-        category(request.category()), ids(request.skillIds()), ids(request.mcpServerIds()),
+        id, request.name().trim(), Text.blankToNull(request.description()), request.body(),
+        category(request.category()), IdList.normalize(request.skillIds()), IdList.normalize(request.mcpServerIds()),
         createdAt, now);
   }
 
-  /** Blanks dropped, duplicates dropped, order kept — the order is what the umbrella skill
-   *  lists the parts in, so it is the operator's and not a set's. */
-  private static List<String> ids(List<String> raw) {
-    if (raw == null) {
-      return List.of();
-    }
-    LinkedHashSet<String> ids = new LinkedHashSet<>();
-    for (String id : raw) {
-      if (id != null && !id.isBlank()) {
-        ids.add(id.trim());
-      }
-    }
-    return List.copyOf(ids);
-  }
 
   private static String category(String raw) {
     return raw == null || raw.isBlank() ? DEFAULT_CATEGORY : raw.trim().toLowerCase(Locale.ROOT);
   }
 
-  private static String blankToNull(String raw) {
-    return raw == null || raw.isBlank() ? null : raw.trim();
-  }
 
   private static NoSuchElementException unknown(String id) {
     return new NoSuchElementException("unknown guide: " + id);

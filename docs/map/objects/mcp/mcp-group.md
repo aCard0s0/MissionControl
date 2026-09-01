@@ -28,7 +28,7 @@ Deploying a group connects each of its servers to one agent — and every one of
 connections is already an [MCP agent link](agent-mcp-link.md), the dashboard's existing record
 of "this profile is connected to this catalog entry, under this alias". So which agents a group
 reaches is **derived** from those links on every read
-(`mcp/McpGroupController.java:183`), never stored.
+(`mcp/McpGroupController.java:184`), never stored.
 
 A stored group-to-agent association would be a second source of truth. Disconnect one server on
 the agent's own MCP tab and the association would still claim the group was connected; the
@@ -58,7 +58,7 @@ Several independent writes to an agent someone else owns. Same rule as
 on that agent **before the group ever ran**.
 
 **One difference from a guide's report, and it matters:** an alias the agent already has is
-`skipped`, not `failed` (`mcp/McpGroupController.java:167`). `AgentMcpCatalogService.connect`
+`skipped`, not `failed` (`mcp/McpGroupController.java:168`). `AgentMcpCatalogService.connect`
 answers a `ResourceConflictException` for a name already on the profile, and topping up an agent
 that holds part of the group is the *ordinary* use of this button — calling that a failure would
 paint the normal case red. The operator's question is "is this server on the agent?", and the
@@ -89,7 +89,7 @@ roster, which is what it is about.
   JSON in TEXT (`:152`)
 - `McpGroup` — `mcp/McpGroup.java`
 - `McpGroupDto` / `McpGroupAgentDto` — `mcp/McpGroupDto.java`, the read shape with coverage
-- `McpGroupRepository` — `mcp/McpGroupRepository.java:37` reads by name, like the other two
+- `McpGroupRepository` — `mcp/McpGroupRepository.java:40` reads by name, like the other two
   group tables
 - `McpGroupController` — `/api/mcp-groups`, five routes: four for the set, one deploy
 - `AgentMcpLinkRepository.findByServer` — where the coverage comes from

@@ -189,13 +189,11 @@
             <div class="picks">
               @for (server of catalog.servers(); track server.id) {
                 <button class="chip" [class.on]="gServerIds().includes(server.id)"
+                        [class.info]="!gServerIds().includes(server.id) && filedElsewhere(server.id)"
                         [title]="filedElsewhere(server.id)
                                    ? 'also in the group ' + filedElsewhere(server.id)
                                    : server.kind + ' entry'"
-                        (click)="toggleGroupServer(server.id)">
-                  {{ server.name }}
-                  @if (filedElsewhere(server.id)) { <span class="faint">·</span> }
-                </button>
+                        (click)="toggleGroupServer(server.id)">{{ server.name }}</button>
               }
             </div>
             <p class="lock-hint">a server may be in several groups — an agent often needs the

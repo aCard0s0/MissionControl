@@ -1,7 +1,9 @@
 package io.hermes.missioncontrol.prompts;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.hermes.missioncontrol.common.IdList;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -14,15 +16,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PromptGroupRepository {
 
-  private static final Logger log = LoggerFactory.getLogger(PromptGroupRepository.class);
+
 
   private final RowMapper<PromptGroup> mapper = (rs, n) -> new PromptGroup(
       rs.getString("id"),
       rs.getString("name"),
       rs.getString("description"),
-      ids(rs.getString("prompt_ids")),
+      ids(rs, "prompt_ids"),
       rs.getLong("created_at"),
       rs.getLong("updated_at"));
+
 
   private final JdbcTemplate jdbc;
   private final ObjectMapper objectMapper;
@@ -51,7 +54,7 @@ public class PromptGroupRepository {
     jdbc.update(
         "INSERT INTO prompt_groups (id, name, description, prompt_ids, created_at, updated_at) "
             + "VALUES (?, ?, ?, ?, ?, ?)",
-        group.id(), group.name(), group.description(), ids(group.promptIds()),
+        group.id(), group.name(), group.description(), IdList.write(objectMapper, group.promptIds()),
         group.createdAt(), group.updatedAt());
   }
 
@@ -61,31 +64,17 @@ public class PromptGroupRepository {
     return jdbc.update(
         "UPDATE prompt_groups SET name = ?, description = ?, prompt_ids = ?, updated_at = ? "
             + "WHERE id = ?",
-        group.name(), group.description(), ids(group.promptIds()), group.updatedAt(), group.id());
+        group.name(), group.description(), IdList.write(objectMapper, group.promptIds()), group.updatedAt(), group.id());
   }
 
   public void delete(String id) {
     jdbc.update("DELETE FROM prompt_groups WHERE id = ?", id);
   }
 
-  /** An unparseable column degrades to empty and says so, rather than failing the read. */
-  private List<String> ids(String json) {
-    if (json == null || json.isBlank()) {
-      return List.of();
-    }
-    try {
-      return objectMapper.readValue(json, new TypeReference<List<String>>() {});
-    } catch (Exception e) {
-      log.warn("dropping unparseable prompt_ids column on a group: {}", e.getMessage());
-      return List.of();
-    }
-  }
 
-  private String ids(List<String> ids) {
-    try {
-      return objectMapper.writeValueAsString(ids == null ? List.of() : ids);
-    } catch (Exception e) {
-      throw new IllegalStateException("failed to serialize group prompt ids", e);
-    }
+
+  /** Deferred to a method so the row mapper, a field initializer, may read {@code objectMapper}. */
+  private List<String> ids(ResultSet rs, String column) throws SQLException {
+    return IdList.read(objectMapper, rs.getString(column), column);
   }
 }
