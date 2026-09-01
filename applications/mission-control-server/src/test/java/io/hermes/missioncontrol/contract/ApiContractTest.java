@@ -29,10 +29,12 @@ import io.hermes.missioncontrol.agents.templates.McpServerSpec;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.board.BoardTask;
 import io.hermes.missioncontrol.prompts.Prompt;
+import io.hermes.missioncontrol.prompts.PromptGroup;
 import io.hermes.missioncontrol.skills.Skill;
 import io.hermes.missioncontrol.skills.SkillController;
 import io.hermes.missioncontrol.skills.SkillFile;
 import io.hermes.missioncontrol.skills.SkillGuide;
+import io.hermes.missioncontrol.skills.SkillGroup;
 import io.hermes.missioncontrol.skills.SkillGuideController;
 import io.hermes.missioncontrol.skills.UpstreamCheck;
 import io.hermes.missioncontrol.docker.ContainerDto;
@@ -156,11 +158,13 @@ class ApiContractTest {
     CONTRACT.put("ApiBoardTask", BoardTask.class);
     // prompt library
     CONTRACT.put("ApiPrompt", Prompt.class);
+    CONTRACT.put("ApiPromptGroup", PromptGroup.class);
     // skill library
     CONTRACT.put("ApiSkill", Skill.class);
     CONTRACT.put("ApiSkillFile", SkillFile.class);
     CONTRACT.put("ApiImportedSkill", SkillController.ImportedSkill.class);
     CONTRACT.put("ApiUpstream", UpstreamCheck.Upstream.class);
+    CONTRACT.put("ApiSkillGroup", SkillGroup.class);
     // guides
     CONTRACT.put("ApiSkillGuide", SkillGuide.class);
     CONTRACT.put("ApiDeployedPart", SkillGuideController.DeployedPart.class);

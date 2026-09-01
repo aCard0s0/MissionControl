@@ -84,6 +84,8 @@ is most of the value.
 | ✓ | [Prompt](dashboard/prompt.md) | `prompts/` | operator's text library. Nothing in a container reads it. |
 | ✓ | [Skill library](dashboard/skill-library.md) | `skills/` | skills the dashboard holds and deploys onto an agent. `hub` = a pointer, `local` = the files. |
 | ✓ | [Guide](dashboard/guide.md) | `skills/SkillGuideController.java` | prose composing several skills + MCP servers. Deploys as an umbrella SKILL.md the agent reads. |
+| ✓ | [Skill group](dashboard/skill-group.md) | `skills/SkillGroupController.java` | how the library is filed: a named set of skills, optionally pointing at the guide that explains it. No deploy. |
+| ✓ | [Prompt group](dashboard/prompt-group.md) | `prompts/PromptGroupController.java` | the same filing over prompts. No guide link — there is no prose object over prompts. |
 | · | Server log buffer | `web/ServerLogBuffer.java` | in-memory ring behind `/api/server/logs`. |
 | · | Runtime config | `web/RuntimeConfigController.java` | `/config.js` from `MC_*` — no rebuild to repoint the FE. |
 | · | App properties | `config/AppProperties.java` | every `MC_*` binding. Table in `architecture.md`. |

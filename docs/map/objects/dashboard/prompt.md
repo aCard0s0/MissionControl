@@ -32,7 +32,10 @@ flag does not.
 
 - **owns:** nothing
 - **owned-by:** the dashboard
-- **joins:** nothing. Genuinely standalone — the simplest noun in the tree.
+- **joins:** nothing. A prompt still reaches nothing and knows about nothing.
+- **pointed-at-by:** any number of [prompt groups](prompt-group.md), which file the library.
+  The link is the group's, in `prompt_groups.prompt_ids`; nothing on a prompt records it, and
+  deleting a prompt just drops it out of whatever group named it.
 - **looks-like-but-is-not:** the CLI reference at `/reference`, which is generated from
   `core/hermes-commands.ts` and is not stored at all.
 
@@ -40,7 +43,9 @@ flag does not.
 
 - **Hits:** `PromptRepository`, `PromptController`, `PromptSeeder`, `pages/prompts.ts`,
   `core/store/prompt-store.ts`.
-- **Does not hit:** any Agent, any profile, any container. This is the one noun with no reach.
+- **Does not hit:** any Agent, any profile, any container. Still the noun with no reach — but
+  no longer the simplest: [prompt group](prompt-group.md) is four routes over a list of these
+  ids and has no behaviour at all.
 
 ## Surfaces
 

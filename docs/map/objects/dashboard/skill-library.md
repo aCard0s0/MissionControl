@@ -93,7 +93,10 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 
 - **owns:** nothing on an agent. A deployed copy is not tracked.
 - **owned-by:** the dashboard
-- **joins:** a profile, only at the moment of a deploy or an import
+- **joins:** a profile, only at the moment of a deploy or an import; and any number of
+  [skill groups](skill-group.md), which name rows here to file them. A group holds the
+  ids, so nothing on a row says which group claims it, and deleting a group leaves the
+  row alone.
 - **looks-like-but-is-not:** the **Skill** an agent has (`agents/HermesSkills.java`,
   `SkillDto`), read through from that container's disk and listed on the agent's own Skills
   tab. Different lifetime, different owner: that one exists because a container has it, this
@@ -102,6 +105,9 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 - **looks-like-but-is-not:** a **Profile template** (`profile_templates.skills`), which
   holds skill *ids* to install when deploying a whole new agent. A blueprint creates an
   agent; this layers one skill onto an agent that exists.
+- **looks-like-but-is-not:** a [skill group](skill-group.md). A group is filing and has
+  no deploy at all; `category` on a row here is a filter, not a group. Both are on this
+  page and neither is the other.
 
 ## If you change this
 

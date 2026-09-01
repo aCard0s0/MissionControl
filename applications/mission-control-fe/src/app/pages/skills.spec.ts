@@ -4,8 +4,10 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStore } from '../core/store/agent-store';
 import { ActivityStore } from '../core/store/activity-store';
+import { SkillGroupStore } from '../core/store/skill-group-store';
+import { SkillGuideStore } from '../core/store/skill-guide-store';
 import { SkillStore } from '../core/store/skill-store';
-import { Skill } from '../core/models';
+import { Skill, SkillGroup, SkillGuide } from '../core/models';
 import { SkillsPage } from './skills';
 import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
 
@@ -31,11 +33,47 @@ const storeStub = (skills: Skill[] = [skill('s-1')]) => {
   };
 };
 
-const render = (store: ReturnType<typeof storeStub> = storeStub()) => {
+const group = (id: string, patch: Partial<SkillGroup> = {}): SkillGroup => ({
+  id, name: `group-${id}`, description: '', skillIds: [], guideId: '',
+  createdAt: 1_000, updatedAt: 2_000, ...patch,
+});
+
+const guide = (id: string, patch: Partial<SkillGuide> = {}): SkillGuide => ({
+  id, name: `guide-${id}`, description: '', body: '# how', category: 'docs',
+  skillIds: [], mcpServerIds: [], createdAt: 1_000, updatedAt: 2_000, ...patch,
+});
+
+const groupStub = (groups: SkillGroup[] = []) => {
+  const list = signal(groups);
+  return {
+    groups: list,
+    refresh: vi.fn().mockResolvedValue(undefined),
+    save: vi.fn().mockResolvedValue('sg-new'),
+    remove: vi.fn().mockResolvedValue(true),
+    byId: (id: string) => list().find(g => g.id === id) ?? null,
+  };
+};
+
+const guideStub = (guides: SkillGuide[] = []) => {
+  const list = signal(guides);
+  return {
+    guides: list,
+    refresh: vi.fn().mockResolvedValue(undefined),
+    byId: (id: string) => list().find(g => g.id === id) ?? null,
+  };
+};
+
+const render = (
+  store: ReturnType<typeof storeStub> = storeStub(),
+  groups: ReturnType<typeof groupStub> = groupStub(),
+  guides: ReturnType<typeof guideStub> = guideStub(),
+) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
       { provide: SkillStore, useValue: store },
+      { provide: SkillGroupStore, useValue: groups },
+      { provide: SkillGuideStore, useValue: guides },
       // the deploy dialog is declared by the page's template, so its own injections
       // have to resolve even in tests that never open it
       { provide: AgentStore, useValue: { forSelectedContainer: signal([]), resolve: () => null } },
@@ -44,7 +82,7 @@ const render = (store: ReturnType<typeof storeStub> = storeStub()) => {
   });
   const fixture = TestBed.createComponent(SkillsPage);
   fixture.detectChanges();
-  return { fixture, store };
+  return { fixture, store, groups, guides };
 };
 
 /** The row for one skill, found by its name the way an operator would. */
@@ -91,6 +129,31 @@ describe('SkillsPage', () => {
     expect(text(fixture)).not.toContain('pdf');
   });
 
+  it('keeps the description out of the collapsed row and reveals it on the click', async () => {
+    // the list is for scanning; a paragraph per row is what made it unscannable
+    const { fixture } = render(storeStub([skill('s-1', { name: 'pdf' })]));
+
+    const disclose = () => row(fixture, 'pdf').querySelector<HTMLButtonElement>('.open-row')!;
+
+    expect(text(fixture)).not.toContain('what s-1 does');
+
+    disclose().click();
+    await settle(fixture);
+    expect(text(fixture)).toContain('what s-1 does');
+
+    disclose().click();
+    await settle(fixture);
+    expect(text(fixture)).not.toContain('what s-1 does');
+  });
+
+  it('offers no disclosure on a row with nothing behind it', () => {
+    const { fixture } = render(storeStub([
+      skill('s-1', { name: 'bare', kind: 'hub', description: '', files: [] }),
+    ]));
+
+    expect(row(fixture, 'bare').querySelector('.open-row')).toBeNull();
+  });
+
   it('teaches both ways in when the library is empty', () => {
     const { fixture } = render(storeStub([]));
 
@@ -108,6 +171,168 @@ describe('SkillsPage', () => {
 
     expect(text(fixture)).toContain('No skill matches');
     expect(button(fixture, 'clear filters')).toBeTruthy();
+  });
+
+  // ── groups ───────────────────────────────────────────────────────────────
+
+  it('leaves the list flat and unlabelled when no group exists', () => {
+    const { fixture } = render(storeStub([skill('s-1', { name: 'pdf' })]));
+
+    expect(el(fixture).querySelector('.group-head')).toBeNull();
+    expect(text(fixture)).toContain('pdf');
+  });
+
+  it('files each skill under the group that names it', async () => {
+    const { fixture } = render(
+      storeStub([skill('s-1', { name: 'pdf' }), skill('s-2', { name: 'sheets' })]),
+      groupStub([group('sg-1', { name: 'documents', skillIds: ['s-1'] })]));
+    await settle(fixture);
+
+    const heads = Array.from(el(fixture).querySelectorAll<HTMLElement>('.group-head'))
+      .map(h => (h.querySelector('.g-name')?.textContent ?? '').trim());
+    expect(heads).toEqual(['documents', 'ungrouped']);
+  });
+
+  it('lists a skill under every group that claims it, rather than picking a winner', async () => {
+    const { fixture } = render(
+      storeStub([skill('s-1', { name: 'pdf' })]),
+      groupStub([
+        group('sg-1', { name: 'documents', skillIds: ['s-1'] }),
+        group('sg-2', { name: 'reporting', skillIds: ['s-1'] }),
+      ]));
+    await settle(fixture);
+
+    expect(el(fixture).querySelectorAll('.skill').length).toBe(2);
+    expect(el(fixture).querySelector('.group-head.loose')).toBeNull();
+  });
+
+  it('names the guide a group points at', async () => {
+    const { fixture } = render(
+      storeStub([skill('s-1')]),
+      groupStub([group('sg-1', { skillIds: ['s-1'], guideId: 'g-1' })]),
+      guideStub([guide('g-1', { name: 'pdf-triage' })]));
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('guide: pdf-triage');
+  });
+
+  it('says the guide is gone rather than showing a group with no link', async () => {
+    // ids are not foreign keys here — the guide can be deleted after the group named it
+    const { fixture } = render(
+      storeStub([skill('s-1')]),
+      groupStub([group('sg-1', { skillIds: ['s-1'], guideId: 'g-deleted' })]),
+      guideStub([]));
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('guide missing');
+  });
+
+  it('keeps an empty group visible until a filter is on', async () => {
+    const { fixture } = render(
+      storeStub([skill('s-1', { name: 'pdf' })]),
+      groupStub([group('sg-1', { name: 'documents', skillIds: [] })]));
+    await settle(fixture);
+
+    // unfiltered: the header has to be there to be filled
+    expect(text(fixture)).toContain('documents');
+
+    press(fixture, 'hub');   // the kind filter, which matches neither
+    await settle(fixture);
+
+    expect(text(fixture)).not.toContain('documents');
+  });
+
+  it('sends the group the editor composed, with the guide it picked', async () => {
+    const { fixture, groups } = render(
+      storeStub([skill('s-1', { name: 'pdf' })]),
+      groupStub(),
+      guideStub([guide('g-1', { name: 'pdf-triage' })]));
+
+    press(fixture, '+ new group');
+    await settle(fixture);
+    await fill(fixture, 'name', 'documents');
+    press(fixture, 'pdf', '.picker');
+    await settle(fixture);
+    press(fixture, 'pdf-triage');
+    await settle(fixture);
+    press(fixture, 'save group');
+    await settle(fixture);
+
+    expect(groups.save).toHaveBeenCalledWith(
+      { name: 'documents', description: '', skillIds: ['s-1'], guideId: 'g-1' }, undefined);
+  });
+
+  it('clears the guide when the one already picked is pressed again', async () => {
+    // the association is the optional half; a picker you cannot un-pick makes it compulsory
+    const { fixture, groups } = render(
+      storeStub([skill('s-1')]), groupStub(), guideStub([guide('g-1', { name: 'pdf-triage' })]));
+
+    press(fixture, '+ new group');
+    await settle(fixture);
+    await fill(fixture, 'name', 'documents');
+    press(fixture, 'pdf-triage');
+    await settle(fixture);
+    press(fixture, 'pdf-triage');
+    await settle(fixture);
+    press(fixture, 'save group');
+    await settle(fixture);
+
+    expect(groups.save).toHaveBeenCalledWith(
+      expect.objectContaining({ guideId: '' }), undefined);
+  });
+
+  it('will not save a group with no name', async () => {
+    const { fixture, groups } = render();
+
+    press(fixture, '+ new group');
+    await settle(fixture);
+
+    expect(buttonWith(fixture, 'save group').disabled).toBe(true);
+    expect(groups.save).not.toHaveBeenCalled();
+  });
+
+  it('warns in the picker when another group already holds a skill', async () => {
+    const { fixture } = render(
+      storeStub([skill('s-1', { name: 'pdf' })]),
+      groupStub([group('sg-1', { name: 'documents', skillIds: ['s-1'] })]));
+
+    press(fixture, '+ new group');
+    await settle(fixture);
+
+    const chip = button(fixture, 'pdf', '.picker');
+    expect(chip.classList).toContain('warn');
+    expect(chip.title).toContain('already in the group documents');
+  });
+
+  it('says a group delete leaves its skills alone, and confirms first', async () => {
+    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { fixture, groups } = render(
+      storeStub([skill('s-1')]), groupStub([group('sg-1', { skillIds: ['s-1'] })]));
+    await settle(fixture);
+
+    press(fixture, 'delete', '.group-head');
+    await settle(fixture);
+
+    expect(confirmed.mock.calls[0][0]).toContain('only the filing goes');
+    expect(groups.remove).not.toHaveBeenCalled();
+    confirmed.mockRestore();
+  });
+
+  it('loads a group into the editor with its skills and its guide', async () => {
+    const { fixture } = render(
+      storeStub([skill('s-1', { name: 'pdf' })]),
+      groupStub([group('sg-1', {
+        name: 'documents', description: 'paper things', skillIds: ['s-1'], guideId: 'g-1',
+      })]),
+      guideStub([guide('g-1', { name: 'pdf-triage' })]));
+    await settle(fixture);
+
+    press(fixture, 'edit', '.group-head');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector<HTMLInputElement>('#group-name')!.value).toBe('documents');
+    expect(button(fixture, 'pdf', '.picker').classList).toContain('on');
+    expect(button(fixture, 'pdf-triage').classList).toContain('on');
   });
 
   // ── the editor ───────────────────────────────────────────────────────────

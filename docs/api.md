@@ -415,6 +415,60 @@ else: every relative path is validated segment by segment against the profile-na
 before it is concatenated, at most three segments deep — matching the `find -maxdepth 3`
 that lists them back — and nothing is written if any path in the set is rejected.
 
+## Prompt groups — dashboard-owned state in SQLite
+
+How the prompt library is filed: a named set of prompts. Organization only — no behaviour and
+no route that reaches a container, because a prompt is text for a person to paste.
+
+A different axis from a prompt's `category` and `tags`, which are a word and a loose label on
+one row: a group is a record, so it can be renamed, described and emptied as a unit.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/prompt-groups` | — | by name, not newest edit: these are the headers the prompt list is filed under, so their order is the page's reading order |
+| `POST /api/prompt-groups` | `{ name, description?, promptIds? }` | `name` carries no charset rule — nothing writes a group anywhere — but it is `NOCASE UNIQUE`, so a second `TRIAGE` beside `triage` is a 409. Blank, null and duplicate prompt ids are dropped, order kept |
+| `PUT /api/prompt-groups/{id}` | same body | replaces the membership; keeps `createdAt`; 404 rather than an insert |
+| `DELETE /api/prompt-groups/{id}` | — | idempotent. Every prompt the group named stays in the library — only the filing goes |
+
+Group DTO: `{ id, name, description, promptIds, createdAt, updatedAt }`.
+
+`promptIds` is stored as given and never checked against the `prompts` table, for the same
+reason a skill group's ids are not: the rows can be deleted at any time, so they are resolved
+on read and what is gone is dropped.
+
+The near-twin of [skill groups](#skill-groups--dashboard-owned-state-in-sqlite), and
+deliberately a separate table and controller rather than one polymorphic `groups` table with a
+`kind` column — the two hold ids from different tables, and every read would have to be told
+which.
+
+## Skill groups — dashboard-owned state in SQLite
+
+How the library is filed. A group is a named set of skills and, optionally, the guide that
+explains them — organization only, so there is no deploy here and no route that reaches a
+container.
+
+A different axis from a skill's `category`, which is one word on one skill: a group is a row,
+so it can be renamed, described, pointed at a guide, and hold skills that disagree about
+their category.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/skill-groups` | — | by name, not newest edit: these are the headers the skills list is filed under, so their order is the page's reading order |
+| `POST /api/skill-groups` | `{ name, description?, skillIds?, guideId? }` | `name` is a label and carries no charset rule — nothing writes a group to disk — but it is `NOCASE UNIQUE`, so a second `PDF` beside `pdf` is a 409. Blank and duplicate skill ids are dropped, order kept. A blank `guideId` is stored as null |
+| `PUT /api/skill-groups/{id}` | same body | replaces the membership and the guide link; keeps `createdAt`; 404 rather than an insert |
+| `DELETE /api/skill-groups/{id}` | — | idempotent, and reaches nothing: every skill the group named stays in the library and the guide it pointed at stays where it is. Only the filing goes |
+
+Group DTO: `{ id, name, description, skillIds, guideId, createdAt, updatedAt }`.
+
+`skillIds` and `guideId` are stored as given and never checked against the other tables. The
+rows behind them can be deleted at any time — production runs with `PRAGMA foreign_keys` off,
+so a CASCADE would be decoration — so both are resolved on read and the page marks what is
+gone. Validating on write would only move the lie earlier.
+
+The association points group → guide rather than the other way about. A guide already owns
+the set it deploys; a group that wants deploying links the guide that does it rather than
+growing a deploy of its own.
+
 ## Guides — dashboard-owned state in SQLite
 
 A guide is prose that teaches how to use several library skills together, with the MCP

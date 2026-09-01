@@ -16,7 +16,9 @@ import { JobStore } from '../core/store/job-store';
 import { LiveSync } from '../core/store/live-sync';
 import { LogStore } from '../core/store/log-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { PromptGroupStore } from '../core/store/prompt-group-store';
 import { PromptStore } from '../core/store/prompt-store';
+import { SkillGroupStore } from '../core/store/skill-group-store';
 import { SkillGuideStore } from '../core/store/skill-guide-store';
 import { SkillStore } from '../core/store/skill-store';
 import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
@@ -130,9 +132,11 @@ export const storeSlices = () => {
     get agentMcp() { return TestBed.inject(AgentMcpStore); },
     get catalog() { return TestBed.inject(McpCatalogStore); },
     get prompts() { return TestBed.inject(PromptStore); },
+    get promptGroups() { return TestBed.inject(PromptGroupStore); },
     // `skills` is the per-agent slice; the library is `skillLibrary`
     get skillLibrary() { return TestBed.inject(SkillStore); },
     get guides() { return TestBed.inject(SkillGuideStore); },
+    get skillGroups() { return TestBed.inject(SkillGroupStore); },
     get providers() { return TestBed.inject(ProviderStore); },
     get endpoints() { return TestBed.inject(InferenceEndpointStore); },
     get setup() { return TestBed.inject(AgentSetupStore); },
@@ -204,6 +208,8 @@ const SLICE_TOKENS = {
   skills: AgentSkillStore,
   skillLibrary: SkillStore,
   guides: SkillGuideStore,
+  skillGroups: SkillGroupStore,
+  promptGroups: PromptGroupStore,
   templates: TemplateStore,
   terminal: TerminalRequestStore,
   webhooks: WebhookStore,

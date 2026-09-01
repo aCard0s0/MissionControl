@@ -2,8 +2,9 @@ import {
   ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { PromptGroupStore } from '../core/store/prompt-group-store';
 import { PromptStore } from '../core/store/prompt-store';
-import { Prompt } from '../core/models';
+import { Prompt, PromptGroup } from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { copyText } from '../shared/copy-text';
 import { ago } from '../core/format';
@@ -17,6 +18,17 @@ const PREVIEW_CHARS = 160;
 export type PromptView = 'compact' | 'expanded';
 
 const VIEW_KEY = 'mc-prompt-view';
+
+/** The section key for prompts no group claims. Not an id, so it cannot collide with one. */
+const UNGROUPED = '';
+
+/** One band of the filed list: a group and the visible prompts it claims, or the trailing
+ *  bucket where `group` is null. */
+interface PromptSection {
+  readonly key: string;
+  readonly group: PromptGroup | null;
+  readonly prompts: Prompt[];
+}
 
 /**
  * The prompt library — a dictionary of text worth keeping, with a category, notes and tags
@@ -40,6 +52,7 @@ const VIEW_KEY = 'mc-prompt-view';
 })
 export class PromptsPage {
   protected readonly prompts = inject(PromptStore);
+  protected readonly groups = inject(PromptGroupStore);
   protected readonly ago = ago;
 
   protected readonly query = signal('');
@@ -75,11 +88,70 @@ export class PromptsPage {
     });
   });
 
+  /** Whether anything is narrowing the list. An empty group still shows its header when
+   *  nothing is filtered — a group you just made has to be visible to be filled — but a
+   *  search matching none of its prompts hides it, because a header with no rows under it
+   *  reads as a match that is not there. */
+  protected readonly filtering = computed(() =>
+    !!this.query().trim() || this.category() !== null);
+
+  /**
+   * The list as it is filed: one section per group, then whatever no group claims.
+   *
+   * <p>A prompt appears under **every** group that names it. `promptIds` lives on the group,
+   * so nothing stops two groups claiming one prompt, and showing it once would mean silently
+   * picking a winner — the group editor marks which other group already holds a prompt
+   * instead, so double-filing is visible where it is done.
+   *
+   * <p>With no groups at all this collapses to a single unlabelled section, which is exactly
+   * the flat list this page had before.
+   */
+  protected readonly sections = computed<PromptSection[]>(() => {
+    const visible = this.visible();
+    const groups = this.groups.groups();
+    if (!groups.length) {
+      return [{ key: UNGROUPED, group: null, prompts: visible }];
+    }
+    const byId = new Map(visible.map(p => [p.id, p]));
+    const filed = new Set<string>();
+    const sections: PromptSection[] = [];
+    for (const group of groups) {
+      const members: Prompt[] = [];
+      for (const id of group.promptIds) {
+        const prompt = byId.get(id);
+        if (prompt) {
+          members.push(prompt);
+          filed.add(id);
+        }
+      }
+      if (members.length || !this.filtering()) {
+        sections.push({ key: group.id, group, prompts: members });
+      }
+    }
+    const rest = visible.filter(p => !filed.has(p.id));
+    if (rest.length) {
+      sections.push({ key: UNGROUPED, group: null, prompts: rest });
+    }
+    return sections;
+  });
+
+  // ── the group editor ──────────────────────────────────────────────────────
+  protected readonly groupEditorOpen = signal(false);
+  /** The group being edited, or null while composing a new one. */
+  protected readonly groupEditId = signal<string | null>(null);
+  protected readonly groupSaving = signal(false);
+
+  protected gName = '';
+  protected gDescription = '';
+  /** A signal, unlike the fields above: chips write it, not `ngModel`. */
+  protected readonly gPromptIds = signal<string[]>([]);
+
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    // LiveSync loads the library at boot; this covers a deep link that lands here first
+    // LiveSync loads these at boot; this covers a deep link that lands here first
     void this.prompts.refresh();
+    void this.groups.refresh();
     // a pending timer would wake a destroyed component and write to its signal
     inject(DestroyRef).onDestroy(() => {
       if (this.copiedTimer) clearTimeout(this.copiedTimer);
@@ -187,6 +259,64 @@ export class PromptsPage {
     if (!confirm(`Delete prompt "${prompt.title}"? This cannot be undone.`)) return;
     if (!await this.prompts.remove(prompt.id)) return;
     if (this.editId() === prompt.id) this.cancel();
+  }
+
+  // ── groups ───────────────────────────────────────────────────────────────
+
+  /** The name of another group already holding this prompt, or ''. Shown in the group editor
+   *  so double-filing is visible at the moment it is done. */
+  protected filedElsewhere(promptId: string): string {
+    return this.groups.groups()
+      .find(g => g.id !== this.groupEditId() && g.promptIds.includes(promptId))?.name ?? '';
+  }
+
+  protected newGroup(): void {
+    this.groupEditId.set(null);
+    this.gName = '';
+    this.gDescription = '';
+    this.gPromptIds.set([]);
+    this.groupEditorOpen.set(true);
+  }
+
+  protected editGroup(group: PromptGroup): void {
+    this.groupEditId.set(group.id);
+    this.gName = group.name;
+    this.gDescription = group.description;
+    this.gPromptIds.set([...group.promptIds]);
+    this.groupEditorOpen.set(true);
+  }
+
+  protected cancelGroup(): void {
+    this.groupEditorOpen.set(false);
+    this.groupEditId.set(null);
+  }
+
+  protected toggleGroupPrompt(id: string): void {
+    this.gPromptIds.update(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  }
+
+  protected canSaveGroup(): boolean {
+    return !this.groupSaving() && !!this.gName.trim();
+  }
+
+  protected async saveGroup(): Promise<void> {
+    if (!this.canSaveGroup()) return;
+    this.groupSaving.set(true);
+    const id = await this.groups.save({
+      name: this.gName.trim(),
+      description: this.gDescription.trim(),
+      promptIds: this.gPromptIds(),
+    }, this.groupEditId() ?? undefined);
+    this.groupSaving.set(false);
+    if (id) this.cancelGroup();
+  }
+
+  protected async removeGroup(group: PromptGroup): Promise<void> {
+    if (!confirm(
+      `Delete the group "${group.name}"? Its prompts stay in the library — only the filing goes.`
+    )) return;
+    if (!await this.groups.remove(group.id)) return;
+    if (this.groupEditId() === group.id) this.cancelGroup();
   }
 }
 

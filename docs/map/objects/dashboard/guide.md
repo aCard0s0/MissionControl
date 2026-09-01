@@ -80,6 +80,9 @@ Two orderings are load-bearing:
 - **looks-like-but-is-not:** a [profile template](../agents/profile-template.md), which
   creates a whole new agent from a blueprint. A guide layers onto an agent that already
   exists, and carries prose the agent reads — a template carries none.
+- **pointed-at-by:** any number of [skill groups](skill-group.md), optionally. The link is
+  the group's, in `skill_groups.guide_id`; nothing on a guide records it, and deleting a
+  guide leaves the group showing `guide missing ⚠` rather than silently unlinked.
 - **looks-like-but-is-not:** a [prompt](prompt.md). A prompt is text for the human to paste;
   a guide's text is deployed and read by the agent itself.
 

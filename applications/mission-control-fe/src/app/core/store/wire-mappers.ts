@@ -2,14 +2,14 @@ import {
   ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
-  ApiProfileTemplate, ApiPrompt, ApiPullState, ApiSkill, ApiSkillGuide, ApiDeployedPart, ApiUpstream, ApiServerInfo, ApiSession, ApiSetupApiKey,
+  ApiProfileTemplate, ApiPrompt, ApiPromptGroup, ApiPullState, ApiSkill, ApiSkillGroup, ApiSkillGuide, ApiDeployedPart, ApiUpstream, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
-  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, Skill, SkillGuide, DeployedPart, Upstream,
+  McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, PromptGroup, Skill, SkillGroup, SkillGuide, DeployedPart, Upstream,
   PullState, RunningModel, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider,
   SetupMessaging,
 } from '../models';
@@ -279,6 +279,29 @@ export function toUpstream(api: ApiUpstream): Upstream {
     latest: api.latest ?? '',
     detail: api.detail ?? '',
     checkedAt: api.checkedAt ?? null,
+  };
+}
+
+export function toPromptGroup(api: ApiPromptGroup): PromptGroup {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description ?? '',
+    promptIds: api.promptIds ?? [],
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
+}
+
+export function toSkillGroup(api: ApiSkillGroup): SkillGroup {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description ?? '',
+    skillIds: api.skillIds ?? [],
+    guideId: api.guideId ?? '',
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
   };
 }
 

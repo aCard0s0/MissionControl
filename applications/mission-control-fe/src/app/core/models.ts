@@ -193,6 +193,58 @@ export interface Skill {
 }
 
 /**
+ * A prompt group: how the prompt library is filed. Organization only — no behaviour, and
+ * deleting one leaves every prompt it named in the library.
+ *
+ * A different axis from a prompt's `category` or its `tags`, which are a word and a loose
+ * label on one row. `promptIds` is not a foreign key: a prompt can be deleted after a group
+ * named it, so the page resolves the ids on read and drops what is gone.
+ */
+export interface PromptGroup {
+  id: string;
+  name: string;
+  description: string;
+  promptIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PromptGroupInput {
+  name: string;
+  description: string;
+  promptIds: string[];
+}
+
+/**
+ * A skill group: how the library is filed, and optionally which guide explains the set.
+ *
+ * Organization only — a group has no deploy, and deleting one leaves every skill it named in
+ * the library. A different axis from a skill's `category`, which is one word on one skill: a
+ * group is a record, so it can be renamed, described, pointed at a guide, and hold skills
+ * that disagree about their category.
+ *
+ * `guideId` is `''` when the group is filing and nothing more. Neither it nor `skillIds` is a
+ * foreign key — the rows behind them can go at any time, so the page resolves them on read
+ * and marks what is missing.
+ */
+export interface SkillGroup {
+  id: string;
+  name: string;
+  description: string;
+  skillIds: string[];
+  guideId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SkillGroupInput {
+  name: string;
+  description: string;
+  skillIds: string[];
+  guideId: string;
+}
+
+/**
  * A guide: prose teaching how to use several library skills together, with the MCP servers
  * they need. Deploying one puts every part on the agent and writes the prose itself there
  * as an umbrella skill, so the agent reads it too.

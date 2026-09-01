@@ -147,6 +147,25 @@ export interface ApiUpstream {
   checkedAt: number | null;
 }
 
+export interface ApiPromptGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  promptIds: string[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ApiSkillGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  skillIds: string[] | null;
+  guideId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ApiSkillGuide {
   id: string;
   name: string;
