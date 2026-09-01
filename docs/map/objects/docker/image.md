@@ -49,7 +49,7 @@ about whether you are current — which is why [Container](container.md) carries
 ## If you change this
 
 - **Hits:** the version picker and upgrade flow; `core/store/image-catalog-store.ts` — note it
-  polls on a **300 s** period, by far the slowest (`core/store/live-sync.ts:26`), because each
+  polls on a **300 s** period, by far the slowest (`core/store/live-sync.ts:30`), because each
   lookup probes the daemon and published tags change on the order of days.
 - **Does not hit:** a running container. Docker cannot swap the image of a running container —
   changing tags is a *replacement*, which is [upgrade-image](../../processes/upgrade-image.md),
