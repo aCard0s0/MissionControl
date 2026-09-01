@@ -49,7 +49,9 @@ mission-control/
 - **SQLite** (file at `MC_DB_PATH`, volume `/data`) holds only dashboard-owned
   concepts that have no Hermes home: Docker hosts, MCP catalog definitions and
   agent links, profile templates, model providers, retained MCP volume metadata,
-  and ops board tasks. Single-connection pool; no database server.
+  ops board tasks, the prompt library, and the skill and guide libraries — a skill
+  hermes cannot install by name has nowhere else to live, since there is no
+  `hermes skills create`. Single-connection pool; no database server.
 
 ## MCP server catalog and Compose projects
 

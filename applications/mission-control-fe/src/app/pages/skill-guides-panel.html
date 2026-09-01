@@ -1,0 +1,170 @@
+<div class="filter mono">
+  <input class="input find" type="search" placeholder="search guides"
+         aria-label="search guides"
+         [value]="query()" (input)="onSearch($any($event.target).value)" />
+
+  <div class="facet">
+    <span class="lbl">category</span>
+    <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
+    @for (c of guides.categories(); track c) {
+      <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
+    }
+  </div>
+
+  <span class="spacer"></span>
+  <button class="btn primary" (click)="newGuide()">+ new guide</button>
+</div>
+
+@if (editorOpen()) {
+  <div class="panel editor">
+    <div class="panel-h">
+      {{ editId() ? 'EDIT GUIDE' : 'NEW GUIDE' }}
+      <span class="spacer"></span>
+      <span class="faint">{{ editId() ?? 'unsaved' }}</span>
+    </div>
+    <div class="panel-b">
+      <div class="row">
+        <div class="field">
+          <label for="guide-name">name</label>
+          <input id="guide-name" class="input mono" [(ngModel)]="fName" placeholder="pdf-triage" />
+        </div>
+        <div class="field">
+          <label for="guide-category">category</label>
+          <input id="guide-category" class="input" [(ngModel)]="fCategory"
+                 list="mc-guide-categories" placeholder="general" />
+          <datalist id="mc-guide-categories">
+            @for (c of guides.categories(); track c) { <option [value]="c"></option> }
+          </datalist>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="guide-description">description</label>
+        <input id="guide-description" class="input" [(ngModel)]="fDescription"
+               placeholder="what this set of skills is for" />
+        <p class="lock-hint">becomes the umbrella skill's one-line description — what the agent
+          reads when it is deciding whether this applies.</p>
+      </div>
+
+      <div class="field">
+        <label for="guide-body">guide</label>
+        <textarea id="guide-body" class="input soul" rows="14" [(ngModel)]="fBody"
+                  spellcheck="false"
+                  placeholder="how to use these skills together, and when"></textarea>
+      </div>
+
+      <div class="picker">
+        <div class="picker-h mono">
+          <span class="lbl">skills</span>
+          <span class="faint">{{ fSkillIds().length }} picked</span>
+        </div>
+        @if (skills.skills().length) {
+          <div class="picks">
+            @for (s of skills.skills(); track s.id) {
+              <button class="chip" [class.on]="fSkillIds().includes(s.id)"
+                      (click)="toggleSkill(s.id)">{{ s.name }}</button>
+            }
+          </div>
+        } @else {
+          <p class="lock-hint">no skills in the library yet — a guide can still be prose alone.</p>
+        }
+      </div>
+
+      <div class="picker">
+        <div class="picker-h mono">
+          <span class="lbl">MCP servers</span>
+          <span class="faint">{{ fMcpIds().length }} picked</span>
+        </div>
+        @if (catalog.servers().length) {
+          <div class="picks">
+            @for (m of catalog.servers(); track m.id) {
+              <button class="chip" [class.on]="fMcpIds().includes(m.id)"
+                      (click)="toggleServer(m.id)">{{ m.name }}</button>
+            }
+          </div>
+        } @else {
+          <p class="lock-hint">no MCP servers in the catalog — add one on the MCP Servers page.</p>
+        }
+      </div>
+
+      <p class="lock-hint">deploying writes this guide into the agent's skills directory as
+        <code class="mono">skills/{{ fName.trim() || '&lt;name&gt;' }}/SKILL.md</code>, so the agent
+        reads it too.</p>
+
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button class="btn" (click)="cancel()">cancel</button>
+        <button class="btn primary" [disabled]="!canSave()" (click)="save()">
+          {{ saving() ? 'saving…' : 'save guide' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<div class="list">
+  @for (g of visible(); track g.id) {
+    <div class="panel guide" [class.open]="expanded() === g.id">
+      <div class="panel-h">
+        <button class="disc" (click)="toggleExpanded(g)" [attr.aria-expanded]="expanded() === g.id"
+                [title]="expanded() === g.id ? 'hide the guide' : 'read the guide'">
+          {{ expanded() === g.id ? '▾' : '▸' }}
+        </button>
+        <span class="title mono">{{ g.name }}</span>
+        <span class="chip off">{{ g.category }}</span>
+        <span class="chip info">{{ g.skillIds.length }} skill{{ g.skillIds.length === 1 ? '' : 's' }}</span>
+        @if (g.mcpServerIds.length) {
+          <span class="chip info">{{ g.mcpServerIds.length }} MCP</span>
+        }
+        <span class="spacer"></span>
+        <span class="stamp faint">{{ ago(g.updatedAt) }}</span>
+        <button class="btn sm primary" (click)="deploying.set(g)">deploy</button>
+        <button class="btn sm ghost" (click)="edit(g)">edit</button>
+        <button class="btn sm danger ghost" (click)="remove(g)">delete</button>
+      </div>
+      <div class="panel-b">
+        @if (g.description) { <p class="desc dim">{{ g.description }}</p> }
+
+        <div class="parts mono">
+          @for (s of skillNames(g); track s.name) {
+            <span class="chip" [class.off]="!s.missing" [class.warn]="s.missing"
+                  [title]="s.missing ? 'no longer in the library — a deploy will skip it' : 'library skill'">
+              {{ s.name }}{{ s.missing ? ' ⚠' : '' }}
+            </span>
+          }
+          @for (m of serverNames(g); track m.name) {
+            <span class="chip" [class.info]="!m.missing" [class.warn]="m.missing"
+                  [title]="m.missing ? 'no longer in the catalog — a deploy will skip it' : 'MCP server'">
+              {{ m.name }}{{ m.missing ? ' ⚠' : '' }}
+            </span>
+          }
+        </div>
+
+        @if (expanded() === g.id) {
+          <pre class="body mono">{{ g.body }}</pre>
+        }
+      </div>
+    </div>
+  } @empty {
+    <div class="panel empty">
+      @if (guides.guides().length) {
+        <p class="mono dim">No guide matches this search.</p>
+        <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
+      } @else {
+        <p class="mono dim">No guides yet.</p>
+        <p class="lock-hint">A guide teaches how to use several skills together. Deploying one
+          puts every skill on the agent, links every MCP server it needs, and leaves the guide
+          itself there as an umbrella skill the agent can read.</p>
+        <button class="btn primary" (click)="newGuide()">+ create one</button>
+      }
+    </div>
+  }
+</div>
+
+@if (deploying(); as target) {
+  <mc-deploy-dialog [label]="target.name" noun="guide" [run]="deployToAgent"
+                    (closed)="deploying.set(null)">
+    <p class="dim">Puts every skill this guide names on the chosen agent, links every MCP
+      server it needs, and writes the guide itself there as an umbrella skill.</p>
+  </mc-deploy-dialog>
+}

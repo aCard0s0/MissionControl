@@ -12,6 +12,8 @@ import { McpCatalogStore } from './mcp-catalog-store';
 import { PromptStore } from './prompt-store';
 import { ProviderStore } from './provider-store';
 import { StoreContext } from './store-context';
+import { SkillGuideStore } from './skill-guide-store';
+import { SkillStore } from './skill-store';
 import { TemplateStore } from './template-store';
 
 /** Poll periods, in ms. Deliberately staggered: container state moves fastest,
@@ -64,6 +66,8 @@ export class LiveSync {
   private readonly templates = inject(TemplateStore);
   private readonly mcp = inject(McpCatalogStore);
   private readonly prompts = inject(PromptStore);
+  private readonly skills = inject(SkillStore);
+  private readonly guides = inject(SkillGuideStore);
   private readonly providers = inject(ProviderStore);
   private readonly endpoints = inject(InferenceEndpointStore);
   private readonly images = inject(ImageCatalogStore);
@@ -87,7 +91,7 @@ export class LiveSync {
     await Promise.all([
       this.hosts.refresh(), this.endpoints.refresh(), this.providers.refreshRegistry(),
       this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
-      this.prompts.refresh(),
+      this.prompts.refresh(), this.skills.refresh(), this.guides.refresh(),
       this.mcp.refresh(), this.mcp.refreshRetainedResources(),
     ]);
     await this.agents.refresh();   // needs the container list

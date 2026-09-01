@@ -1,0 +1,34 @@
+// `.scrim`, `.modal`, `.modal-b`, `.modal-actions`, `.panel-h`, `.field`, `.select`,
+// `.btn`, `.spin` and `.lock-hint` are global (src/styles.scss).
+
+.report {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  max-height: 40vh;
+  overflow: auto;
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    // status is carried by the word as well as the colour, so a colour-blind reader
+    // and a monochrome screenshot both still say which parts landed
+    &.ok .mark { color: var(--ok, var(--acc)); }
+    &.warn .mark { color: var(--warn, var(--dim)); }
+    &.crit .mark { color: var(--crit, var(--dim)); }
+  }
+
+  .mark { width: 1em; }
+  .kind { min-width: 3.5em; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+  .name { font-weight: 600; }
+  .status { font-size: 10.5px; }
+  .detail { flex: 1; font-size: 10.5px; overflow-wrap: anywhere; }
+}

@@ -155,6 +155,8 @@ export interface HermesContainer {
   netHist: number[];
 }
 
+/** A skill installed **on** an agent, read through from that container's disk.
+ *  The library's own row is `Skill` below — a different thing with a different lifetime. */
 export interface SkillRef {
   id: string;
   name: string;
@@ -162,6 +164,90 @@ export interface SkillRef {
   version: string;
   description: string;
   enabled: boolean;
+}
+
+// ── skill library (dashboard-owned) ────────────────────────────────────────
+
+/** `hub` rows are a pointer the Skills Hub resolves; `local` rows carry their own files,
+ *  because hermes has no way to create a skill from an id it has never seen. */
+export type SkillKind = 'hub' | 'local';
+
+export interface SkillFile {
+  path: string;
+  body: string;
+}
+
+/** One row in the skill library — deployable onto any agent, and not necessarily on one
+ *  yet. Distinct from `SkillRef`, which is what an agent already has. */
+export interface Skill {
+  id: string;
+  kind: SkillKind;
+  name: string;
+  description: string;
+  category: string;
+  repoUrl: string;
+  version: string;
+  files: SkillFile[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * A guide: prose teaching how to use several library skills together, with the MCP servers
+ * they need. Deploying one puts every part on the agent and writes the prose itself there
+ * as an umbrella skill, so the agent reads it too.
+ *
+ * `name` is a directory name as well as a label — the umbrella skill is written into it.
+ */
+export interface SkillGuide {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  category: string;
+  skillIds: string[];
+  mcpServerIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SkillGuideInput {
+  name: string;
+  description: string;
+  body: string;
+  category: string;
+  skillIds: string[];
+  mcpServerIds: string[];
+}
+
+/** One line of a guide deploy's report. A guide can half-land, so each part says so. */
+export interface DeployedPart {
+  kind: 'skill' | 'mcp' | 'guide';
+  name: string;
+  status: 'deployed' | 'skipped' | 'failed';
+  detail: string;
+}
+
+export type UpstreamStatus =
+  'current' | 'update' | 'unknown' | 'unsupported' | 'unavailable' | 'checking';
+
+/** What a repository check found. `checking` is the frontend's own state while in flight. */
+export interface Upstream {
+  status: UpstreamStatus;
+  latest: string;
+  detail: string;
+  checkedAt: number | null;
+}
+
+/** Editor payload sent on save — a create has no id, an edit is a PUT. */
+export interface SkillInput {
+  kind: SkillKind;
+  name: string;
+  description: string;
+  category: string;
+  repoUrl: string;
+  version: string;
+  files: SkillFile[];
 }
 
 /** Full SKILL.md body + file listing for inspecting/editing a skill. */

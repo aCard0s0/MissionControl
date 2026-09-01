@@ -78,7 +78,7 @@ describe('App shell', () => {
       .map(a => (a.textContent ?? '').trim());
     expect(links).toEqual([
       'Containers', 'Overview', 'Agents', 'Blueprints', 'Models',
-      'MCP Servers', 'Prompts', 'Ops Board', 'Calendar', 'Webhooks',
+      'MCP Servers', 'Prompts', 'Skills', 'Ops Board', 'Calendar', 'Webhooks',
       'CLI Reference', 'Server Logs',
     ]);
   });

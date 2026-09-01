@@ -1,0 +1,66 @@
+<div class="scrim" mcScrim (dismiss)="closed.emit()">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="panel-h">deploy {{ noun() }} — {{ label() }}</div>
+    <div class="modal-b">
+      @if (parts(); as report) {
+        <p class="dim">{{ landed() }} of {{ report.length }} part{{ report.length === 1 ? '' : 's' }}
+          landed on the agent.</p>
+        <ul class="report mono">
+          @for (p of report; track $index) {
+            <li [class.ok]="p.status === 'deployed'"
+                [class.warn]="p.status === 'skipped'"
+                [class.crit]="p.status === 'failed'">
+              <span class="mark" aria-hidden="true">
+                {{ p.status === 'deployed' ? '✓' : p.status === 'skipped' ? '–' : '✕' }}
+              </span>
+              <span class="kind faint">{{ p.kind }}</span>
+              <span class="name">{{ p.name }}</span>
+              <span class="status">{{ p.status }}</span>
+              @if (p.detail) { <span class="detail faint">{{ p.detail }}</span> }
+            </li>
+          }
+        </ul>
+        @if (trouble()) {
+          <p class="lock-hint">what landed stays on the agent — nothing was rolled back. Fix the
+            cause and deploy again; a redeploy overwrites rather than duplicates.</p>
+        }
+      } @else {
+        <ng-content />
+
+        <div class="field">
+          <label for="deploy-agent">target agent</label>
+          <select id="deploy-agent" class="select" [(ngModel)]="agentId">
+            <option value="">choose an agent…</option>
+            @for (a of targets(); track a.id) {
+              <option [value]="a.id">{{ a.name }}</option>
+            }
+          </select>
+        </div>
+
+        @if (!targets().length) {
+          <p class="lock-hint">no agents in the selected container — pick another container in
+            the header, or create an agent on the Agents page.</p>
+        }
+        @if (busy()) {
+          <p class="lock-hint">the deploy runs on the container, not in this window — close it and
+            keep working; progress follows you in the top right.</p>
+        }
+        @if (failed()) {
+          <p class="lock-hint crit">nothing was deployed — the reason is in the banner above.</p>
+        }
+      }
+
+      <div class="modal-actions">
+        <button class="btn ghost" (click)="closed.emit()">
+          {{ parts() || busy() ? 'close' : 'cancel' }}
+        </button>
+        @if (!parts()) {
+          <button class="btn primary" [disabled]="!agentId || busy()" (click)="deploy()">
+            @if (busy()) { <span class="spin" aria-hidden="true"></span> }
+            {{ busy() ? 'deploying…' : 'deploy ' + noun() }}
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+</div>

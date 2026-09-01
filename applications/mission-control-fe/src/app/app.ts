@@ -22,6 +22,7 @@ const NAV = [
   { path: '/models', label: 'Models', icon: 'chip', exact: false },
   { path: '/mcp-servers', label: 'MCP Servers', icon: 'plug', exact: false },
   { path: '/prompts', label: 'Prompts', icon: 'message', exact: false },
+  { path: '/skills', label: 'Skills', icon: 'wrench', exact: false },
   { path: '/board', label: 'Ops Board', icon: 'board', exact: false },
   { path: '/calendar', label: 'Calendar', icon: 'calendar', exact: false },
   { path: '/webhooks', label: 'Webhooks', icon: 'bolt', exact: false },

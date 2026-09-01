@@ -12,6 +12,7 @@ import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.agents.api.SkillFilesDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import java.util.ArrayList;
@@ -255,6 +256,22 @@ public class HermesProfiles {
   public SkillContentDto readSkillContent(
       DockerHostRef host, String containerId, String profileName, String skillName) {
     return skills.readContent(host, containerId, profileName, skillName);
+  }
+
+  /** Writes a library skill's whole file set onto the profile. Unlike {@link #installSkill}
+   *  this never runs {@code hermes skills install} — the library owns the content, so there
+   *  is nothing for the Skills Hub to resolve. */
+  public AgentProfileDto installSkillFiles(
+      DockerHostRef host, String containerId, String profileName, String skillName,
+      Map<String, String> skillFiles) {
+    skills.writeSkillFiles(host, containerId, profileName, skillName, skillFiles);
+    return readProfile(host, containerId, profileName);
+  }
+
+  /** A skill's files with their contents, for importing one off an agent into the library. */
+  public SkillFilesDto readSkillFiles(
+      DockerHostRef host, String containerId, String profileName, String skillName) {
+    return skills.readSkillFiles(host, containerId, profileName, skillName);
   }
 
   /** Overwrites a skill's SKILL.md, then re-reads the profile so the refreshed

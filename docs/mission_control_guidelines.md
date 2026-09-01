@@ -89,7 +89,22 @@ Cards on the overview page:
 1. User picks an agent card (or "new agent").
 2. Detail view answers: *what is this agent connected to, what can it do, what has it been doing recently?*
 3. Creating an agent asks only for: name, model provider + model, API key, optional clone source (mirrors `hermes profile create --clone`).
-4. Edits allowed in v1: `SOUL.md` content, display metadata, skill/MCP toggles, job enable/pause. Everything else is read-only with deep links to native Hermes tooling.
+4. Edits allowed: any **whole document whose shape the dashboard owns** — `SOUL.md`,
+   `MEMORY.md`, `config.yaml`, `.env` entries, a skill's files — plus toggles (skill/MCP
+   enable, job enable/pause) and lifecycle (create/delete a profile, install/remove a skill,
+   add/remove a cron job or webhook). Read-only stays anything hermes mints or parses for
+   itself: job ids, schedule expressions, HMAC secrets, session history, the bundled
+   manifest — which is why every write of those goes through the `hermes` CLI rather than
+   through a file. Deep links to native Hermes tooling stay beside all of them.
+
+   This replaces an earlier enumeration (`SOUL.md`, display metadata, toggles, job
+   enable/pause) that the code had already outgrown: `PUT …/skills/{name}/content`,
+   `PUT …/config`, `PUT …/env` and the cron and webhook routes all write more than it
+   allowed. A rule ages better than a list.
+
+   A skill deployed from the library writes into `<profileDir>/skills/<name>/` and nowhere
+   else: every relative path is validated segment by segment against the profile-name rule
+   before it is concatenated, and nothing is written if any path in the set is rejected.
 
 ---
 

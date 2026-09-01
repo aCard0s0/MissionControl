@@ -262,6 +262,33 @@ class HermesSkillsTest {
   }
 
   @Test
+  void installingIntoTheDefaultProfileInvokesHermesBare() {
+    // The assertion above cannot see this, because it uses a named profile: this call site
+    // built its own argv for a while, and `default` was the one profile where that argv
+    // differed from what ProfilePaths produces.
+    //
+    // Not a bug that was biting. Checked against hermes v2026.8.19 in a real container:
+    // `hermes -p default skills install <id>` and the bare form behave identically, so the
+    // old argv worked. What it did skip is profileDir()'s validation of the profile name,
+    // which is why the fix is worth keeping and why this pins the argv rather than a repair.
+    FakeContainer container = new FakeContainer();
+
+    skills(container).install(HOST, CONTAINER, "default", "pdf");
+
+    assertEquals(List.of("hermes", "skills", "install", "pdf", "--force"),
+        container.executed().getFirst());
+  }
+
+  @Test
+  void anInvalidProfileNameNeverReachesTheInstallArgv() {
+    FakeContainer container = new FakeContainer();
+
+    assertThrows(IllegalArgumentException.class,
+        () -> skills(container).install(HOST, CONTAINER, "../escape", "pdf"));
+    assertEquals(List.of(), container.executed());
+  }
+
+  @Test
   void aMissingBodyIsRejectedBeforeTheSkillIsResolved() {
     FakeContainer container = new FakeContainer()
         .dir(SKILLS + "/pdf")

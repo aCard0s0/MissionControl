@@ -2,10 +2,13 @@ package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.agents.api.SkillFilesDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -116,7 +119,8 @@ class HermesSkills {
     if (!ProfilePaths.isValidName(skillId)) {
       throw new IllegalArgumentException("invalid skill id: " + skillId);
     }
-    files.exec(host, containerId, List.of("hermes", "-p", profileName, "skills", "install", skillId, "--force"));
+    files.exec(host, containerId,
+        ProfilePaths.hermesCli(profileName, "skills", "install", skillId, "--force"));
   }
 
   void uninstall(DockerHostRef host, String containerId, String profileName, String skillName) {
@@ -126,6 +130,100 @@ class HermesSkills {
     // reports failures on stdout with exit code 0, so it cannot be driven
     // reliably through a non-tty exec — remove the skill directory instead.
     files.removeTree(host, containerId, requireSkillDir(host, containerId, profileName, skillName));
+  }
+
+  /** A skill deployed from the library may not bring more than this. Both caps refuse
+   *  rather than truncate: a silently half-imported skill is worse than a failed import. */
+  private static final int MAX_SKILL_FILES = 64;
+  private static final int MAX_SKILL_BYTES = 512 * 1024;
+
+  /**
+   * Writes a whole skill directory from the library onto a profile.
+   *
+   * <p>Guarded on the <em>profile</em> rather than the skill dir — the difference from
+   * {@link #updateContent}, which edits a skill that already exists. A deploy's whole point
+   * is that the directory does not exist yet, and {@code writeFile} runs {@code mkdir -p},
+   * so without {@code requireProfileDir} a mistyped profile name would mint a phantom one.
+   *
+   * <p>Every path is validated before the first write. A rejection discovered halfway
+   * through would leave a half-deployed skill, which hermes would still try to load.
+   *
+   * <p>Serialized not for a read-modify-write — there is none — but so two deploys of the
+   * same skill cannot interleave and mix files from two versions into one directory.
+   *
+   * <p>ponytail: the set is not atomic. A failure partway leaves a partial directory; the
+   * upgrade path is writing to a temp dir and renaming it into place.
+   */
+  void writeSkillFiles(
+      DockerHostRef host, String containerId, String profileName, String skillName,
+      Map<String, String> skillFiles) {
+    requireValidSkillName(skillName);
+    if (skillFiles == null || skillFiles.isEmpty()) {
+      throw new IllegalArgumentException("missing skill files");
+    }
+    if (skillFiles.size() > MAX_SKILL_FILES) {
+      throw new IllegalArgumentException("too many skill files: " + skillFiles.size());
+    }
+
+    // resolve every path up front, so a bad one rejects before anything is written
+    Map<String, String> resolved = new LinkedHashMap<>();
+    long bytes = 0;
+    for (Map.Entry<String, String> file : skillFiles.entrySet()) {
+      String body = file.getValue() == null ? "" : file.getValue();
+      bytes += body.getBytes(StandardCharsets.UTF_8).length;
+      if (bytes > MAX_SKILL_BYTES) {
+        throw new IllegalArgumentException("skill exceeds " + MAX_SKILL_BYTES + " bytes");
+      }
+      resolved.put(ProfilePaths.skillFile(profileName, skillName, file.getKey()), body);
+    }
+
+    files.serialized(containerId, profileName, () -> {
+      files.requireProfileDir(host, containerId, profileName);
+      // one exec per file: an operator-initiated one-shot, not a poll
+      resolved.forEach((path, body) -> files.writeFile(host, containerId, path, body));
+    });
+  }
+
+  /**
+   * A skill's whole file set, with contents — what {@link #readContent} cannot give,
+   * since {@code listSkillFiles} returns names only.
+   *
+   * <p>Two execs: the existing listing, then one batched read for every body.
+   *
+   * <p>A file holding a NUL byte is reported rather than returned. The exec pipe is UTF-8,
+   * so a binary asset would arrive corrupted, and silently storing that corruption in the
+   * library is the one failure here that loses data rather than raising.
+   */
+  SkillFilesDto readSkillFiles(
+      DockerHostRef host, String containerId, String profileName, String skillName) {
+    requireValidSkillName(skillName);
+    String skillDir = requireSkillDir(host, containerId, profileName, skillName);
+    List<String> names = listSkillFiles(host, containerId, skillDir);
+    if (names.size() > MAX_SKILL_FILES) {
+      throw new IllegalArgumentException(
+          "skill has more than " + MAX_SKILL_FILES + " files: " + names.size());
+    }
+
+    List<String> paths = names.stream().map(name -> skillDir + "/" + name).toList();
+    Map<String, String> read = files.readFiles(host, containerId, paths);
+
+    Map<String, String> contents = new LinkedHashMap<>();
+    List<String> skipped = new ArrayList<>();
+    long bytes = 0;
+    for (int i = 0; i < names.size(); i++) {
+      String name = names.get(i);
+      String body = read.getOrDefault(paths.get(i), "");
+      if (body.indexOf('\0') >= 0) {
+        skipped.add(name);
+        continue;
+      }
+      bytes += body.getBytes(StandardCharsets.UTF_8).length;
+      if (bytes > MAX_SKILL_BYTES) {
+        throw new IllegalArgumentException("skill exceeds " + MAX_SKILL_BYTES + " bytes");
+      }
+      contents.put(name, body);
+    }
+    return new SkillFilesDto(contents, List.copyOf(skipped));
   }
 
   /** Overwrites a skill's SKILL.md. The caller re-reads the profile so the refreshed

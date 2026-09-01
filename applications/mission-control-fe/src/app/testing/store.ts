@@ -17,6 +17,8 @@ import { LiveSync } from '../core/store/live-sync';
 import { LogStore } from '../core/store/log-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { PromptStore } from '../core/store/prompt-store';
+import { SkillGuideStore } from '../core/store/skill-guide-store';
+import { SkillStore } from '../core/store/skill-store';
 import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { ActivityStore } from '../core/store/activity-store';
@@ -128,6 +130,9 @@ export const storeSlices = () => {
     get agentMcp() { return TestBed.inject(AgentMcpStore); },
     get catalog() { return TestBed.inject(McpCatalogStore); },
     get prompts() { return TestBed.inject(PromptStore); },
+    // `skills` is the per-agent slice; the library is `skillLibrary`
+    get skillLibrary() { return TestBed.inject(SkillStore); },
+    get guides() { return TestBed.inject(SkillGuideStore); },
     get providers() { return TestBed.inject(ProviderStore); },
     get endpoints() { return TestBed.inject(InferenceEndpointStore); },
     get setup() { return TestBed.inject(AgentSetupStore); },
@@ -197,6 +202,8 @@ const SLICE_TOKENS = {
   removal: AgentRemoval,
   setup: AgentSetupStore,
   skills: AgentSkillStore,
+  skillLibrary: SkillStore,
+  guides: SkillGuideStore,
   templates: TemplateStore,
   terminal: TerminalRequestStore,
   webhooks: WebhookStore,

@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AgentSkillStore } from '../core/store/agent-skill-store';
+import { AgentStore } from '../core/store/agent-store';
+import { SkillStore } from '../core/store/skill-store';
 import { AgentProfile, SkillContent, SkillRef } from '../core/models';
 
 /** How long the "saved ✓" chip stays up after a write lands. */
@@ -22,6 +24,8 @@ export class AgentSkillsPanel {
   readonly agent = input.required<AgentProfile>();
 
   protected readonly skills = inject(AgentSkillStore);
+  private readonly agents = inject(AgentStore);
+  private readonly library = inject(SkillStore);
 
   // add form
   protected skillName = '';
@@ -41,6 +45,24 @@ export class AgentSkillsPanel {
 
   protected readonly enabledCount = computed(() =>
     this.agent().skills.filter(s => s.enabled).length);
+
+  /** The skill currently being copied into the library, so one row can show it. */
+  protected readonly importing = signal<string | null>(null);
+
+  /**
+   * Copies this skill into the global library, so it can be deployed to other agents.
+   *
+   * The reason this button exists: hermes has no `skills create`, so a skill the agent's
+   * own curator wrote has no id anything can install it by. Reading its files into the
+   * library is the only way it travels.
+   */
+  protected async saveToLibrary(s: SkillRef): Promise<void> {
+    const resolved = this.agents.resolve(this.agent().id);
+    if (!resolved || this.importing()) return;
+    this.importing.set(s.id);
+    await this.library.importFrom(resolved.ref, s.name);
+    this.importing.set(null);
+  }
 
   protected addSkill(): void {
     const name = this.skillName.trim();

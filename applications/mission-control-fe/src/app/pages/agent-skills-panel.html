@@ -17,6 +17,10 @@
           </div>
           <span class="dim desc">{{ s.description }}</span>
           <button class="btn sm ghost" (click)="viewSkill(s)">{{ expandedSkill() === s.id ? 'close' : 'view / edit' }}</button>
+          <button class="btn sm ghost" [disabled]="!!importing()" (click)="saveToLibrary(s)"
+                  title="copy this skill into the global library, to deploy it to other agents">
+            {{ importing() === s.id ? 'saving…' : 'save to library' }}
+          </button>
           <button class="btn sm danger ghost" (click)="skills.remove(agent().id, s.id)">remove</button>
         </div>
         @if (expandedSkill() === s.id) {

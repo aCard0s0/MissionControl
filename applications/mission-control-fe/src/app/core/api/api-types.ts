@@ -112,6 +112,68 @@ export interface ApiPrompt {
   updatedAt: number;
 }
 
+export interface ApiSkillFile {
+  path: string;
+  body: string;
+}
+
+/** A row in the skill *library*, which is dashboard-owned. `ApiSkillRef` below is the
+ *  different thing: a skill already installed on one agent. */
+export interface ApiSkill {
+  id: string;
+  kind: 'hub' | 'local' | string;
+  name: string;
+  description: string | null;
+  category: string;
+  repoUrl: string | null;
+  version: string | null;
+  files: ApiSkillFile[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** `skipped` names files an import left behind because they are not text. */
+export interface ApiImportedSkill {
+  skill: ApiSkill;
+  skipped: string[] | null;
+}
+
+/** Whether a skill's source repository has moved on. `latest` is null when nothing was
+ *  read — an unreachable github, or a repository that publishes no releases or tags. */
+export interface ApiUpstream {
+  status: 'current' | 'update' | 'unknown' | 'unsupported' | 'unavailable' | string;
+  latest: string | null;
+  detail: string | null;
+  checkedAt: number | null;
+}
+
+export interface ApiSkillGuide {
+  id: string;
+  name: string;
+  description: string | null;
+  body: string;
+  category: string;
+  skillIds: string[] | null;
+  mcpServerIds: string[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** What one part of a guide deploy did. `detail` is null unless something went wrong. */
+export interface ApiDeployedPart {
+  kind: 'skill' | 'mcp' | 'guide' | string;
+  name: string;
+  status: 'deployed' | 'skipped' | 'failed' | string;
+  detail: string | null;
+}
+
+export interface ApiDeployedGuide {
+  /** Null when the agent could not be read back afterwards — the parts had already
+   *  landed by then, so the report is answered without it rather than lost. */
+  profile: ApiAgentProfile | null;
+  parts: ApiDeployedPart[] | null;
+}
+
 export interface ApiImageTag {
   tag: string;
   pulled: boolean;

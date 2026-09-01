@@ -11,6 +11,8 @@ the secret envelope, and the generated route contract.
 | [scrim](scrim.md) | the backdrop behind every dialog. Click-outside and Escape, in one directive. |
 | [board-task](board-task.md) | kanban card, scoped to a container id. |
 | [prompt](prompt.md) | operator's text library. Nothing in a container reads it. |
+| [skill-library](skill-library.md) | skills the dashboard holds and deploys. `hub` is a pointer, `local` owns the files. |
+| [guide](guide.md) | prose composing several skills + MCP servers. Deploys as an umbrella SKILL.md the agent reads. |
 
 Stubs with no card body: `ServerLogBuffer` / `/api/server/logs`, `RuntimeConfigController`
 (`/config.js`), `AppProperties`, `SchemaUpgrades`, `StartupSummary`, notifications/toasts.
