@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   id               TEXT PRIMARY KEY,
   name             TEXT NOT NULL COLLATE NOCASE UNIQUE,
   description      TEXT,
+  -- where this server comes from, for a human to go and read. Documentation, like
+  -- `description`, and deliberately NOT inside config_json: that column is how the thing is
+  -- run, and nothing here ever reaches a profile's MCP config.
+  repo_url         TEXT,
   kind             TEXT NOT NULL CHECK (kind IN ('managed', 'external', 'stdio')),
   host_id          TEXT,
   service_key      TEXT UNIQUE,
@@ -121,6 +125,35 @@ CREATE TABLE IF NOT EXISTS mcp_agent_links (
 
 CREATE INDEX IF NOT EXISTS idx_mcp_agent_links_server ON mcp_agent_links (server_id);
 
+-- A named set of catalog entries, deployable onto an agent in one action. The only group
+-- table in this schema whose noun does something: the other two file a library, this one
+-- also has a deploy.
+--
+-- It records NO agents, deliberately. Deploying a group connects each of its servers to one
+-- agent, and every one of those connections is already a row in mcp_agent_links. Which agents
+-- a group reaches is derived from those links, so the count can only ever say what the links
+-- say. A stored group-to-agent association would be a second source of truth: disconnect one
+-- server on the agent's own MCP tab and it would still claim the group was connected.
+--
+-- Many-to-many in both directions falls out of that with no table saying so — the same group
+-- deploys onto as many agents as you like, an agent's links may come from several groups and
+-- from servers connected individually, and a server in two groups counts toward both.
+--
+-- `server_ids` holds ids and not foreign keys, unlike mcp_agent_links.server_id: this is a
+-- JSON list, so there is nothing for a REFERENCES clause to attach to. An entry deleted from
+-- the catalog is reported as skipped by a deploy rather than silently dropped.
+CREATE TABLE IF NOT EXISTS mcp_groups (
+  id          TEXT PRIMARY KEY,
+  -- a label. Unlike an alias in mcp_agent_links it never reaches a profile's config, so it
+  -- carries no charset rule. NOCASE UNIQUE because two headers reading the same is the one
+  -- way this list becomes unreadable.
+  name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description TEXT,
+  server_ids  TEXT,   -- JSON array of mcp_servers.id
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 -- The prompt library: dashboard-owned text an operator keeps for later, with a
 -- category, notes and tags. Nothing inside a Hermes container reads it.
 CREATE TABLE IF NOT EXISTS prompts (
@@ -135,6 +168,26 @@ CREATE TABLE IF NOT EXISTS prompts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts (category);
+
+-- How the prompt library is filed: a named set of prompts. Organization only — nothing here
+-- has behaviour, and dropping a group leaves every prompt it named in the library.
+--
+-- A different axis from prompts.category and prompts.tags, which are a word and a loose label
+-- on one row: a group is a record, so it can be renamed, described and emptied as a unit.
+--
+-- `prompt_ids` holds ids, not foreign keys — same reason as skill_groups: production runs
+-- with `PRAGMA foreign_keys` off, so a CASCADE would be decoration. Resolved on read, and
+-- what is gone is dropped.
+CREATE TABLE IF NOT EXISTS prompt_groups (
+  id          TEXT PRIMARY KEY,
+  -- a label, and nothing writes it anywhere, so no charset rule. NOCASE UNIQUE because two
+  -- headers reading the same is the one way this list becomes unreadable.
+  name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description TEXT,
+  prompt_ids  TEXT,   -- JSON array of prompts.id
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
 
 -- Records that the sample prompt has already been seeded, so one an operator
 -- deleted does not come back on the next boot.
@@ -195,6 +248,30 @@ CREATE TABLE IF NOT EXISTS skill_guides (
 );
 
 CREATE INDEX IF NOT EXISTS idx_skill_guides_category ON skill_guides (category);
+
+-- How the skill library is filed: a named set of skills, and optionally the guide that
+-- explains them. Organization only — nothing here reaches an agent, there is no deploy, and
+-- dropping a group leaves every skill it named in the library.
+--
+-- A different axis from skills.category, which is one word on one skill: a group is a row, so
+-- it can be renamed, described, pointed at a guide, and hold skills that disagree about their
+-- category.
+--
+-- `skill_ids` and `guide_id` are ids and not foreign keys, for the reason the note on
+-- skill_guides gives — production runs with `PRAGMA foreign_keys` off, so a CASCADE would be
+-- decoration. Both are resolved on read and what is gone is marked.
+CREATE TABLE IF NOT EXISTS skill_groups (
+  id          TEXT PRIMARY KEY,
+  -- a label, not a directory name: nothing writes a group to disk, so unlike a skill's or a
+  -- guide's name this carries no charset rule. NOCASE UNIQUE because two headers reading the
+  -- same is the one way this list becomes unreadable.
+  name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description TEXT,
+  skill_ids   TEXT,   -- JSON array of skills.id
+  guide_id    TEXT,   -- skill_guides.id, or NULL: the association is the optional half
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
 
 -- Model ids fetched from a provider's own API by the background refresh, so the
 -- picker offers what the provider actually serves today rather than the curated

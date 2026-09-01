@@ -19,6 +19,7 @@ class McpServerRepository {
       String id,
       String name,
       String description,
+      String repoUrl,
       String kind,
       String hostId,
       String serviceKey,
@@ -70,13 +71,14 @@ class McpServerRepository {
   void insert(ServerRow row) {
     jdbc.update("""
         INSERT INTO mcp_servers
-          (id, name, description, kind, host_id, service_key, config_json,
+          (id, name, description, repo_url, kind, host_id, service_key, config_json,
            desired_state, runtime_state, operation_state, operation_error,
            revision, applied_revision, seed_key, check_status, check_error,
            checked_at, latency_ms, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        row.id(), row.name(), row.description(), row.kind(), row.hostId(), row.serviceKey(),
+        row.id(), row.name(), row.description(), row.repoUrl(), row.kind(), row.hostId(),
+        row.serviceKey(),
         row.configJson(), row.desiredState(), row.runtimeState(), row.operationState(),
         row.operationError(), row.revision(), row.appliedRevision(), row.seedKey(),
         row.checkStatus(), row.checkError(), row.checkedAt(), row.latencyMs(),
@@ -93,14 +95,14 @@ class McpServerRepository {
    * @return false when the record has moved on, or is no longer there
    */
   boolean updateDefinition(
-      String id, String name, String description, String configJson, long revision,
-      long appliedRevision, String operationState, long expectedRevision) {
+      String id, String name, String description, String repoUrl, String configJson,
+      long revision, long appliedRevision, String operationState, long expectedRevision) {
     return jdbc.update("""
         UPDATE mcp_servers
-           SET name = ?, description = ?, config_json = ?, revision = ?, applied_revision = ?,
-               operation_state = ?, operation_error = NULL, updated_at = ?
+           SET name = ?, description = ?, repo_url = ?, config_json = ?, revision = ?,
+               applied_revision = ?, operation_state = ?, operation_error = NULL, updated_at = ?
          WHERE id = ? AND revision = ?
-        """, name, description, configJson, revision, appliedRevision, operationState,
+        """, name, description, repoUrl, configJson, revision, appliedRevision, operationState,
         System.currentTimeMillis(), id, expectedRevision) == 1;
   }
 
@@ -192,7 +194,8 @@ class McpServerRepository {
 
   private static ServerRow map(ResultSet rs) throws SQLException {
     return new ServerRow(
-        rs.getString("id"), rs.getString("name"), rs.getString("description"), rs.getString("kind"),
+        rs.getString("id"), rs.getString("name"), rs.getString("description"),
+        rs.getString("repo_url"), rs.getString("kind"),
         rs.getString("host_id"), rs.getString("service_key"), rs.getString("config_json"),
         rs.getString("desired_state"), rs.getString("runtime_state"), rs.getString("operation_state"),
         rs.getString("operation_error"), rs.getLong("revision"), rs.getLong("applied_revision"),

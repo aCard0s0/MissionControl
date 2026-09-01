@@ -186,11 +186,11 @@ class ComposeStackDockerAcceptanceTest {
 
   private ServerRow managedRow(McpConfigStore configs) {
     McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
-        "Acceptance " + serviceKey, null, "managed", HOST, "http", null, IMAGE, null,
+        "Acceptance " + serviceKey, null, null, "managed", HOST, "http", null, IMAGE, null,
         List.of(), List.of("sh", "-c", "sleep 600"), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(new VolumeSpec("data", "/data")), null, List.of()));
     long now = System.currentTimeMillis();
-    return new ServerRow("mcp-it", "Acceptance " + serviceKey, null, "managed", HOST, serviceKey,
+    return new ServerRow("mcp-it", "Acceptance " + serviceKey, null, null, "managed", HOST, serviceKey,
         configs.write(configs.store(validated, null)), "stopped", "missing", "provisioning", null,
         1, 0, null, null, null, null, null, now, now);
   }

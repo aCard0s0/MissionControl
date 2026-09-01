@@ -26,6 +26,13 @@
         <label for="mcp-description">description</label>
         <input id="mcp-description" class="input" [(ngModel)]="form.description" placeholder="What this server provides" />
       </div>
+      <div class="field">
+        <label for="mcp-repo-url">repository (optional)</label>
+        <input id="mcp-repo-url" class="input mono" [(ngModel)]="form.repoUrl"
+               placeholder="https://github.com/owner/repo" />
+        <p class="lock-hint">a link for a person to open, nothing more — nothing fetches it, and
+          it never reaches an agent's config.</p>
+      </div>
 
       @if (form.kind === 'managed') {
         <div class="section-label mono">CONTAINER</div>

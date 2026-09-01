@@ -2,9 +2,9 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DockerHost, McpCatalogServer, McpRetainedResource } from '../core/models';
+import { DockerHost, McpCatalogServer, McpGroup, McpRetainedResource } from '../core/models';
 import { McpServersPage } from './mcp-servers';
-import { button, el, press, settle, text, type } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text, type } from '../testing/dom';
 import { catalogServer as server, dockerHost } from '../testing/models';
 import { provideStores } from '../testing/store';
 
@@ -38,6 +38,19 @@ const storeStub = (servers: McpCatalogServer[], retained: McpRetainedResource[] 
   hosts: {
     hosts: signal(hosts),
   },
+  mcpGroups: {
+    groups: signal<McpGroup[]>([]),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    save: vi.fn().mockResolvedValue('mg-new'),
+    remove: vi.fn().mockResolvedValue(true),
+    deploy: vi.fn().mockResolvedValue([]),
+    byId: () => null,
+  },
+});
+
+const mcpGroup = (id: string, patch: Partial<McpGroup> = {}): McpGroup => ({
+  id, name: `group-${id}`, description: '', serverIds: [], agents: [],
+  createdAt: 1_000, updatedAt: 2_000, ...patch,
 });
 
 const render = (store: ReturnType<typeof storeStub>) => {
@@ -289,5 +302,256 @@ describe('McpServersPage lifecycle verbs', () => {
     await settle(fixture);
 
     expect(store.catalog.check).toHaveBeenCalledWith('remote');
+  });
+});
+
+describe('McpServersPage repository link', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('offers a repo link only for a server that has one', async () => {
+    const { fixture } = render(storeStub([
+      server('linked', { repoUrl: 'https://github.com/o/r' }),
+      server('unlinked', { repoUrl: '' }),
+    ]));
+    await settle(fixture);
+
+    const rows = Array.from(el(fixture).querySelectorAll<HTMLElement>('.server-row'));
+    const linked = rows.find(r => r.textContent?.includes('linked'))!;
+    const unlinked = rows.find(r => r.textContent?.includes('unlinked'))!;
+
+    expect(linked.querySelector('a.btn')).toBeTruthy();
+    expect(unlinked.querySelector('a.btn')).toBeNull();
+  });
+
+  it('opens the repository in a new tab, without handing it the opener', async () => {
+    const { fixture } = render(storeStub([
+      server('linked', { repoUrl: 'https://github.com/o/r' }),
+    ]));
+    await settle(fixture);
+
+    const link = el(fixture).querySelector<HTMLAnchorElement>('.server-row a.btn')!;
+    expect(link.getAttribute('href')).toBe('https://github.com/o/r');
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noopener');
+  });
+});
+
+describe('McpServersPage groups', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  /** A store with `servers` in the catalog and `groups` already loaded. */
+  const withGroups = (servers: McpCatalogServer[], groups: McpGroup[] = []) => {
+    const store = storeStub(servers);
+    store.mcpGroups.groups.set(groups);
+    return store;
+  };
+
+  /** Renders and switches to the groups tab, which is where all of this lives. */
+  const onGroupsTab = (store: ReturnType<typeof storeStub>) => {
+    const rendered = render(store);
+    press(rendered.fixture, 'groups');
+    return rendered;
+  };
+
+  it('opens on the roster, and swaps it for the groups when the tab is pressed', async () => {
+    const { fixture } = render(withGroups(
+      [server('files')], [mcpGroup('mg-1', { name: 'research', serverIds: ['files'] })]));
+    await settle(fixture);
+
+    // the roster is the default: the registry is what this page is for
+    expect(el(fixture).querySelector('.server-row')).toBeTruthy();
+    expect(el(fixture).querySelector('.mcp-groups')).toBeNull();
+
+    press(fixture, 'groups');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.server-row')).toBeNull();
+    expect(el(fixture).querySelector('.mcp-groups')).toBeTruthy();
+    expect(text(fixture)).toContain('research');
+  });
+
+  it('offers each tab its own create buttons, and only its own', async () => {
+    const { fixture } = render(storeStub([server('files')]));
+    await settle(fixture);
+
+    expect(button(fixture, '+ managed server')).toBeTruthy();
+    expect(() => button(fixture, '+ new group')).toThrow();
+
+    press(fixture, 'groups');
+    await settle(fixture);
+
+    expect(button(fixture, '+ new group')).toBeTruthy();
+    expect(() => button(fixture, '+ managed server')).toThrow();
+  });
+
+  it('keeps the retained-data panel with the roster it belongs to', async () => {
+    const { fixture } = render(storeStub([server('files')]));
+    await settle(fixture);
+    expect(text(fixture)).toContain('RETAINED DATA');
+
+    press(fixture, 'groups');
+    await settle(fixture);
+
+    expect(text(fixture)).not.toContain('RETAINED DATA');
+  });
+
+  it('teaches what a group is for when there are none', () => {
+    const { fixture } = onGroupsTab(storeStub([server('files')]));
+
+    expect(text(fixture)).toContain('connects several catalog entries to an agent');
+  });
+
+  it('lists a group with the catalog entries it names', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files'), server('search')],
+      [mcpGroup('mg-1', { name: 'research', serverIds: ['files', 'search'] })]));
+    await settle(fixture);
+
+    const row = el(fixture).querySelector<HTMLElement>('.mcp-groups .group-row')!;
+    expect(row.textContent).toContain('research');
+    expect(row.querySelector('.parts')!.textContent).toContain('files');
+    expect(row.querySelector('.parts')!.textContent).toContain('search');
+  });
+
+  it('marks a server the catalog has lost, because a deploy will skip it', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files')],
+      [mcpGroup('mg-1', { serverIds: ['files', 'deleted'] })]));
+    await settle(fixture);
+
+    const parts = el(fixture).querySelector<HTMLElement>('.mcp-groups .parts')!;
+    expect(parts.textContent).toContain('deleted ⚠');
+    expect(parts.querySelector('.chip.warn')).toBeTruthy();
+  });
+
+  it('says which agents the group reaches, from the coverage the backend derived', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files'), server('search')],
+      [mcpGroup('mg-1', {
+        serverIds: ['files', 'search'],
+        agents: [{ hostId: 'dh-local', containerId: 'c-1', profile: 'atlas', linked: 2 }],
+      })]));
+    await settle(fixture);
+
+    const agents = el(fixture).querySelector<HTMLElement>('.mcp-groups .agents')!;
+    expect(agents.textContent).toContain('atlas 2/2');
+    expect(agents.querySelector('.chip.on')).toBeTruthy();
+  });
+
+  it('warns on an agent that has only part of the group', async () => {
+    // the whole reason the coverage is derived rather than stored
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files'), server('search')],
+      [mcpGroup('mg-1', {
+        serverIds: ['files', 'search'],
+        agents: [{ hostId: 'dh-local', containerId: 'c-1', profile: 'atlas', linked: 1 }],
+      })]));
+    await settle(fixture);
+
+    const agents = el(fixture).querySelector<HTMLElement>('.mcp-groups .agents')!;
+    expect(agents.textContent).toContain('atlas 1/2');
+    expect(agents.querySelector('.chip.warn')).toBeTruthy();
+  });
+
+  it('lists every agent a group reaches, not just one', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files')],
+      [mcpGroup('mg-1', {
+        serverIds: ['files'],
+        agents: [
+          { hostId: 'dh-local', containerId: 'c-1', profile: 'atlas', linked: 1 },
+          { hostId: 'dh-local', containerId: 'c-1', profile: 'borealis', linked: 1 },
+        ],
+      })]));
+    await settle(fixture);
+
+    const agents = el(fixture).querySelector<HTMLElement>('.mcp-groups .agents')!;
+    expect(agents.textContent).toContain('atlas');
+    expect(agents.textContent).toContain('borealis');
+  });
+
+  it('says so when a group is on no agent yet', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files')], [mcpGroup('mg-1', { serverIds: ['files'] })]));
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('.mcp-groups .agents')!.textContent)
+      .toContain('no agent yet');
+  });
+
+  it('sends the group the editor composed', async () => {
+    const { fixture, store } = onGroupsTab(storeStub([server('files'), server('search')]));
+
+    press(fixture, '+ new group');
+    await settle(fixture);
+    await fill(fixture, 'name', 'research');
+    press(fixture, 'files', '.picker');
+    await settle(fixture);
+    press(fixture, 'save group');
+    await settle(fixture);
+
+    expect(store.mcpGroups.save).toHaveBeenCalledWith(
+      { name: 'research', description: '', serverIds: ['files'] }, undefined);
+  });
+
+  it('will not save a group with no name', async () => {
+    const { fixture, store } = onGroupsTab(storeStub([server('files')]));
+
+    press(fixture, '+ new group');
+    await settle(fixture);
+
+    expect(buttonWith(fixture, 'save group').disabled).toBe(true);
+    expect(store.mcpGroups.save).not.toHaveBeenCalled();
+  });
+
+  it('loads a group into the editor with its servers picked', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files'), server('search')],
+      [mcpGroup('mg-1', { name: 'research', serverIds: ['files'] })]));
+    await settle(fixture);
+
+    press(fixture, 'edit', '.mcp-groups .group-head-row');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector<HTMLInputElement>('#mcp-group-name')!.value)
+      .toBe('research');
+    expect(button(fixture, 'files', '.picker').classList).toContain('on');
+  });
+
+  it('says a group delete leaves every agent connected, and confirms first', async () => {
+    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { fixture, store } = onGroupsTab(withGroups(
+      [server('files')], [mcpGroup('mg-1', { serverIds: ['files'] })]));
+    await settle(fixture);
+
+    press(fixture, 'delete', '.mcp-groups .group-head-row');
+    await settle(fixture);
+
+    expect(confirmed.mock.calls[0][0]).toContain('stays connected');
+    expect(store.mcpGroups.remove).not.toHaveBeenCalled();
+    confirmed.mockRestore();
+  });
+
+  it('opens the deploy dialog for the group whose button was pressed', async () => {
+    const { fixture } = onGroupsTab(withGroups(
+      [server('files')], [mcpGroup('mg-1', { name: 'research', serverIds: ['files'] })]));
+    await settle(fixture);
+
+    press(fixture, 'deploy', '.mcp-groups .group-head-row');
+    await settle(fixture);
+
+    expect(el(fixture).querySelector('mc-deploy-dialog')).toBeTruthy();
+    // the explanation is projected by this page, not owned by the dialog
+    expect(text(fixture)).toContain('a top-up, not a sync');
   });
 });

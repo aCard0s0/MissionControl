@@ -289,6 +289,53 @@ a:hover { text-decoration: underline; }
   &:hover { color: var(--acc); }
 }
 
+// ── filed lists ─────────────────────────────────────────────────────────────
+// The band a group of rows is filed under, on the Skills and Prompts libraries.
+// Not a panel: a header that looked like a row would compete with the rows it
+// labels, so it is a rule and a name. Global because it is now literally the same
+// control on both pages — the second copy is what would drift.
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+
+  // the trailing bucket is not a thing anyone named, so it sits quieter and further down
+  &.loose { margin-top: 18px; .g-name { color: var(--faint); font-weight: 500; } }
+  &:first-child { margin-top: 0; }
+
+  .g-name {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .g-desc {
+    font-family: var(--font-ui);
+    font-size: 11.5px;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .spacer { flex: 1; }
+}
+
+// A set of chips picking rows out of a library — a group's membership, a guide's
+// parts. The guide editor keeps its own copy scoped to itself; component styles
+// outrank a bare class, so this does not reach in and change it.
+.picker {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+
+  .picker-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .lbl { font-size: 10px; letter-spacing: .12em; color: var(--faint); }
+  .picks { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .chip { cursor: pointer; }
+}
+
 // ── filter bar ──────────────────────────────────────────────────────────────
 // The control every page that filters a list puts above it. It was copied per
 // page, so the same bar had four looks: Blueprints wore a panel and gave its
@@ -306,6 +353,13 @@ a:hover { text-decoration: underline; }
 
   .lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
   .faint { font-size: 11px; }
+
+  // The bar has two halves: what narrows the list sits left of this, what switches
+  // or adds to it — a tab toggle, a `+ new` — sits right. Global because `.spacer`
+  // was only ever defined inside `.panel-h`, so every filter bar that reached for
+  // one got an inert span and its buttons stayed jammed against the last chip.
+  .spacer { flex: 1; }
+  .view-toggle { display: flex; gap: 6px; }
 
   // A label and the chips it governs, held together. A page filtering on one
   // facet does not need it; one filtering on four does, or a group's chips wrap

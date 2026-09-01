@@ -9,9 +9,12 @@ import { JobStore } from './job-store';
 import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
+import { McpGroupStore } from './mcp-group-store';
+import { PromptGroupStore } from './prompt-group-store';
 import { PromptStore } from './prompt-store';
 import { ProviderStore } from './provider-store';
 import { StoreContext } from './store-context';
+import { SkillGroupStore } from './skill-group-store';
 import { SkillGuideStore } from './skill-guide-store';
 import { SkillStore } from './skill-store';
 import { TemplateStore } from './template-store';
@@ -65,8 +68,11 @@ export class LiveSync {
   private readonly board = inject(BoardStore);
   private readonly templates = inject(TemplateStore);
   private readonly mcp = inject(McpCatalogStore);
+  private readonly mcpGroups = inject(McpGroupStore);
   private readonly prompts = inject(PromptStore);
+  private readonly promptGroups = inject(PromptGroupStore);
   private readonly skills = inject(SkillStore);
+  private readonly skillGroups = inject(SkillGroupStore);
   private readonly guides = inject(SkillGuideStore);
   private readonly providers = inject(ProviderStore);
   private readonly endpoints = inject(InferenceEndpointStore);
@@ -92,6 +98,8 @@ export class LiveSync {
       this.hosts.refresh(), this.endpoints.refresh(), this.providers.refreshRegistry(),
       this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
       this.prompts.refresh(), this.skills.refresh(), this.guides.refresh(),
+      this.skillGroups.refresh(), this.promptGroups.refresh(),
+      this.mcpGroups.refresh(),
       this.mcp.refresh(), this.mcp.refreshRetainedResources(),
     ]);
     await this.agents.refresh();   // needs the container list

@@ -212,7 +212,7 @@ class McpConfigStoreTest {
   }
 
   private static McpServerRequest validated(List<ConfigValueInput> environment) {
-    return new McpServerRequest("Example", "an example server", "managed", "dh-local", "http", null,
+    return new McpServerRequest("Example", "an example server", null, "managed", "dh-local", "http", null,
         "example/mcp:latest", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp",
         null, environment, List.of(), List.of(), null, List.of());
   }
@@ -221,7 +221,7 @@ class McpConfigStoreTest {
     SupportServiceRequest support = new SupportServiceRequest("database", "postgres:16-alpine",
         null, List.of(), List.of(), List.of(new ConfigValueInput(key, value, true, null)),
         List.of(), null);
-    return new McpServerRequest("Example", "an example server", "managed", "dh-local", "http", null,
+    return new McpServerRequest("Example", "an example server", null, "managed", "dh-local", "http", null,
         "example/mcp:latest", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp",
         null, List.of(), List.of(), List.of(), null, List.of(support));
   }
@@ -229,7 +229,7 @@ class McpConfigStoreTest {
   /** Only {@code configJson} is read by the store; the rest of the row is scaffolding. */
   private record ServerRowFixture(String configJson) {
     McpServerRepository.ServerRow asRow() {
-      return new McpServerRepository.ServerRow("mcp-1", "Example", "", "managed", "dh-local",
+      return new McpServerRepository.ServerRow("mcp-1", "Example", "", null, "managed", "dh-local",
           "mcp-1", configJson, "stopped", "missing", "idle", null, 1, 0, null, null, null, null,
           null, 0L, 0L);
     }

@@ -4,7 +4,7 @@ import { DockerHost, McpCatalogServer } from '../core/models';
 // a pure function, so the grouping rules are testable without rendering a page.
 
 /** One rendered section of the catalog. */
-export interface McpServerGroup {
+export interface McpServerSection {
   key: string;
   label: string;
   detail: string;
@@ -24,10 +24,10 @@ const UNASSIGNED = 'unassigned';
  * A managed server naming a host Mission Control no longer knows is still shown,
  * labelled by its raw id rather than dropped.
  */
-export function mcpServerGroups(
+export function mcpServerSections(
   servers: readonly McpCatalogServer[],
   hosts: readonly DockerHost[],
-): McpServerGroup[] {
+): McpServerSection[] {
   const managed = servers.filter(server => server.kind === 'managed');
   const external = servers.filter(server => server.kind === 'external');
   const stdio = servers.filter(server => server.kind === 'stdio');

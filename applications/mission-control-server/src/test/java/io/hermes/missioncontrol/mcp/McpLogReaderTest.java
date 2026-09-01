@@ -131,7 +131,7 @@ class McpLogReaderTest {
   }
 
   private static ServerRow row(String kind) {
-    return new ServerRow("srv-1", "Files", null, kind, "dh-local", SERVICE, "{}",
+    return new ServerRow("srv-1", "Files", null, null, kind, "dh-local", SERVICE, "{}",
         "running", "running", "idle", null, 1L, 1L, null, "ok", null, null, null, 0L, 0L);
   }
 

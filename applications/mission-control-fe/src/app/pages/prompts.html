@@ -6,13 +6,6 @@
   <div class="head-stats mono">
     <span>{{ visible().length }}/{{ prompts.prompts().length }} prompts</span>
   </div>
-  <div class="view-toggle mono" role="group" aria-label="prompt view">
-    <button class="chip" [class.on]="view() === 'compact'" (click)="setView('compact')"
-            title="one row each, bodies closed">compact</button>
-    <button class="chip" [class.on]="view() === 'expanded'" (click)="setView('expanded')"
-            title="every body open">expanded</button>
-  </div>
-  <button class="btn primary" (click)="newPrompt()">+ new prompt</button>
 </div>
 
 <div class="filter mono" data-reveal>
@@ -27,7 +20,74 @@
       <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
     }
   </div>
+
+  <span class="spacer"></span>
+
+  <div class="view-toggle" role="group" aria-label="prompt view">
+    <button class="chip" [class.on]="view() === 'compact'" (click)="setView('compact')"
+            title="one row each, bodies closed">compact</button>
+    <button class="chip" [class.on]="view() === 'expanded'" (click)="setView('expanded')"
+            title="every body open">expanded</button>
+  </div>
+  <button class="btn" (click)="newGroup()">+ new group</button>
+  <button class="btn primary" (click)="newPrompt()">+ new prompt</button>
 </div>
+
+@if (groupEditorOpen()) {
+  <div class="panel editor group-editor" data-reveal>
+    <div class="panel-h">
+      {{ groupEditId() ? 'EDIT GROUP' : 'NEW GROUP' }}
+      <span class="spacer"></span>
+      <span class="faint">{{ groupEditId() ?? 'unsaved' }}</span>
+    </div>
+    <div class="panel-b">
+      <div class="field">
+        <label for="group-name">name</label>
+        <input id="group-name" class="input" [(ngModel)]="gName" placeholder="incident triage" />
+      </div>
+
+      <div class="field">
+        <label for="group-description">description</label>
+        <input id="group-description" class="input" [(ngModel)]="gDescription"
+               placeholder="what these prompts have in common" />
+        <p class="lock-hint">a group files the library and nothing more — deleting one leaves
+          every prompt it named exactly where it is.</p>
+      </div>
+
+      <div class="picker">
+        <div class="picker-h mono">
+          <span class="lbl">prompts</span>
+          <span class="faint">{{ gPromptIds().length }} picked</span>
+        </div>
+        @if (prompts.prompts().length) {
+          <div class="picks">
+            @for (p of prompts.prompts(); track p.id) {
+              <button class="chip" [class.on]="gPromptIds().includes(p.id)"
+                      [class.warn]="!gPromptIds().includes(p.id) && filedElsewhere(p.id)"
+                      [title]="filedElsewhere(p.id)
+                                 ? 'already in the group ' + filedElsewhere(p.id)
+                                 : 'library prompt'"
+                      (click)="toggleGroupPrompt(p.id)">{{ p.title }}</button>
+            }
+          </div>
+          <p class="lock-hint">a prompt two groups both name is listed under both — the amber
+            chips are the ones another group already holds.</p>
+        } @else {
+          <p class="lock-hint">no prompts in the library yet — save one first and the group has
+            something to file.</p>
+        }
+      </div>
+
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button class="btn" (click)="cancelGroup()">cancel</button>
+        <button class="btn primary" [disabled]="!canSaveGroup()" (click)="saveGroup()">
+          {{ groupSaving() ? 'saving…' : 'save group' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
 
 @if (editorOpen()) {
   <div class="panel editor" data-reveal>
@@ -79,7 +139,24 @@
 }
 
 <div class="list" data-reveal>
-  @for (p of visible(); track p.id) {
+  @for (sec of sections(); track sec.key) {
+    <!-- no header on the one unlabelled section: with no groups at all this is the flat
+         list this page has always been, and a lone "ungrouped" band above it is noise -->
+    @if (sec.group || sections().length > 1) {
+      <div class="group-head mono" [class.loose]="!sec.group">
+        <span class="g-name">{{ sec.group?.name ?? 'ungrouped' }}</span>
+        <span class="chip off">{{ sec.items.length }}</span>
+        @if (sec.group; as group) {
+          @if (group.description) {
+            <span class="g-desc faint">{{ group.description }}</span>
+          }
+          <span class="spacer"></span>
+          <button class="btn sm ghost" (click)="editGroup(group)">edit</button>
+          <button class="btn sm danger ghost" (click)="removeGroup(group)">delete</button>
+        }
+      </div>
+    }
+    @for (p of sec.items; track p.id) {
     <div class="panel prompt" [class.open]="showBody(p)">
       <div class="panel-h">
         <button class="disc" (click)="toggleOpen(p)" [attr.aria-expanded]="showBody(p)"
@@ -108,7 +185,14 @@
         </div>
       }
     </div>
-  } @empty {
+    } @empty {
+      <div class="panel empty thin">
+        <p class="mono faint">nothing filed here yet — add prompts to this group with
+          <em>edit</em>.</p>
+      </div>
+    }
+  }
+  @if (!visible().length) {
     <div class="panel empty">
       @if (prompts.prompts().length) {
         <p class="mono dim">No prompt matches this search.</p>

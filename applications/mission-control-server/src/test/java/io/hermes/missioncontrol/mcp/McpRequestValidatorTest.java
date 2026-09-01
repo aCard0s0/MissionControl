@@ -16,7 +16,7 @@ class McpRequestValidatorTest {
   @Test
   void validatesAndNormalizesManagedInput() {
     var value = McpRequestValidator.validate(new McpServerRequest(
-        " Demo ", " description ", "MANAGED", "dh-local", "HTTP", null,
+        " Demo ", " description ", null, "MANAGED", "dh-local", "HTTP", null,
         "example/server:latest", "linux/arm64", List.of("node"), List.of("server.js"),
         null, List.of(), 1100, null, null, null,
         List.of(new ConfigValueInput("TOKEN", "value", true, false)), List.of(),
@@ -29,12 +29,45 @@ class McpRequestValidatorTest {
   }
 
   @Test
+  void keepsARepositoryLinkAndTrimsIt() {
+    var value = McpRequestValidator.validate(new McpServerRequest(
+        "Demo", null, "  https://github.com/o/r  ", "managed", "dh-local", "http", null,
+        "example/server:latest", null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp",
+        null, List.of(), List.of(), List.of(), null, List.of()));
+
+    assertEquals("https://github.com/o/r", value.repoUrl());
+  }
+
+  @Test
+  void treatsABlankRepositoryLinkAsAbsent() {
+    var value = McpRequestValidator.validate(new McpServerRequest(
+        "Demo", null, "   ", "managed", "dh-local", "http", null, "example/server:latest", null,
+        List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
+        List.of(), List.of(), List.of(), null, List.of()));
+
+    assertNull(value.repoUrl());
+  }
+
+  @Test
+  void refusesARepositoryLinkABrowserShouldNotFollow() {
+    // the value is rendered as an href, so the scheme is checked here rather than trusted to
+    // whichever client renders it
+    for (String hostile : List.of("javascript:alert(1)", "data:text/html,<script>", "file:///etc")) {
+      McpServerRequest request = new McpServerRequest(
+          "Demo", null, hostile, "managed", "dh-local", "http", null, "example/server:latest",
+          null, List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
+          List.of(), List.of(), List.of(), null, List.of());
+      assertThrows(IllegalArgumentException.class, () -> McpRequestValidator.validate(request));
+    }
+  }
+
+  @Test
   void rejectsUnsafeDeploymentShapes() {
     McpServerRequest bindLikeVolume = managed(List.of(new VolumeSpec("data", "/var/run/docker.sock")));
     assertThrows(IllegalArgumentException.class, () -> McpRequestValidator.validate(bindLikeVolume));
 
     McpServerRequest newlineCommand = new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/server:latest", null,
         List.of(), List.of("hello\nworld"), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null, List.of());
     assertThrows(IllegalArgumentException.class, () -> McpRequestValidator.validate(newlineCommand));
@@ -43,13 +76,13 @@ class McpRequestValidatorTest {
   @Test
   void externalAllowsHeadersButRejectsEnvironmentAndRedirectSchemes() {
     McpServerRequest withEnvironment = new McpServerRequest(
-        "Remote", null, "external", null, "sse", "https://example.test/sse", null, null,
+        "Remote", null, null, "external", null, "sse", "https://example.test/sse", null, null,
         List.of(), List.of(), null, List.of(), null, null, null, null,
         List.of(new ConfigValueInput("TOKEN", "x", true, false)), List.of(), List.of(), null, List.of());
     assertThrows(IllegalArgumentException.class, () -> McpRequestValidator.validate(withEnvironment));
 
     McpServerRequest fileUrl = new McpServerRequest(
-        "Remote", null, "external", null, "http", "file:///etc/passwd", null, null,
+        "Remote", null, null, "external", null, "http", "file:///etc/passwd", null, null,
         List.of(), List.of(), null, List.of(), null, null, null, null,
         List.of(), List.of(), List.of(), null, List.of());
     assertThrows(IllegalArgumentException.class, () -> McpRequestValidator.validate(fileUrl));
@@ -58,7 +91,7 @@ class McpRequestValidatorTest {
   @Test
   void stdioUsesExecutableAndArgsNotManagedCommand() {
     var value = McpRequestValidator.validate(new McpServerRequest(
-        "Local tool", null, "stdio", null, null, null, null, null,
+        "Local tool", null, null, "stdio", null, null, null, null, null,
         List.of(), List.of(), "npx", List.of("-y", "@example/mcp"), null, null,
         null, null, List.of(new ConfigValueInput("TOKEN", "x", true, false)),
         List.of(), List.of(), null, List.of()));
@@ -102,7 +135,7 @@ class McpRequestValidatorTest {
   void aComposeInterpolationSequenceIsRejectedInASupportServiceCommand() {
     // support services share the stack, and therefore the same process environment
     McpServerRequest request = new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/server:latest", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null,
         List.of(new SupportServiceRequest("db", "postgres:17", null,
@@ -117,7 +150,7 @@ class McpRequestValidatorTest {
     // file, only as a ${MC_MCP_…:-} reference, so they cannot interpolate — and rejecting
     // '$' here would refuse perfectly good passwords
     var value = McpRequestValidator.validate(new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/server:latest", null,
         List.of(), List.of("server.js"), null, List.of(), 1100, null, "/mcp", null,
         List.of(new ConfigValueInput("PASSWORD", "p$$w0rd${x}", true, false)), List.of(),
         List.of(), null, List.of()));
@@ -129,7 +162,7 @@ class McpRequestValidatorTest {
   void aDollarSignInAnImageReferenceWasAlreadyRejected() {
     // regression pin: the image pattern excludes '$', '{' and '}' already
     McpServerRequest request = new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/${MC_MCP_x}", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/${MC_MCP_x}", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null, List.of());
     assertThrows(IllegalArgumentException.class, () -> McpRequestValidator.validate(request));
@@ -561,7 +594,7 @@ class McpRequestValidatorTest {
     List<SupportServiceRequest> supportServices = List.of();
 
     McpServerRequest build() {
-      return new McpServerRequest(name, description, kind, hostId, transport, url, image, platform,
+      return new McpServerRequest(name, description, null, kind, hostId, transport, url, image, platform,
           entrypoint, command, stdioCommand, args, internalPort, publishedPort, path, crossHostUrl,
           environment, headers, volumes, healthcheck, supportServices);
     }
@@ -613,7 +646,7 @@ class McpRequestValidatorTest {
 
   private static McpServerRequest managed(List<VolumeSpec> volumes) {
     return new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/server:latest", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), volumes, null, List.of());
   }
@@ -621,7 +654,7 @@ class McpRequestValidatorTest {
   private static McpServerRequest managedWith(
       List<String> entrypoint, List<String> command, HealthcheckSpec healthcheck) {
     return new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/server:latest", null,
         entrypoint, command, null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), healthcheck, List.of());
   }
@@ -630,7 +663,7 @@ class McpRequestValidatorTest {
   void anAbsentListIsTreatedAsAnEmptyOneRatherThanARejection() {
     // an older client, or a form that never touched the field, sends null
     var value = McpRequestValidator.validate(new McpServerRequest(
-        "Demo", null, "managed", "dh-local", "http", null, "example/server:latest", null,
+        "Demo", null, null, "managed", "dh-local", "http", null, "example/server:latest", null,
         null, null, null, null, 1100, null, "/mcp", null,
         null, null, null, null, null));
 

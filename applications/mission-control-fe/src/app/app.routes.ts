@@ -10,7 +10,7 @@ export const routes: Routes = [
   { path: 'models', loadComponent: () => import('./pages/models').then(m => m.ModelsPage), title: 'Models · Mission Control' },
   { path: 'mcp-servers', loadComponent: () => import('./pages/mcp-servers').then(m => m.McpServersPage), title: 'MCP Servers · Mission Control' },
   { path: 'prompts', loadComponent: () => import('./pages/prompts').then(m => m.PromptsPage), title: 'Prompts · Mission Control' },
-  { path: 'skills', loadComponent: () => import('./pages/skills').then(m => m.SkillsPage), title: 'Skills · Mission Control' },
+  { path: 'skills', loadComponent: () => import('./pages/skills').then(m => m.SkillsPage), title: 'Skills & Guides · Mission Control' },
   { path: 'board', loadComponent: () => import('./pages/board').then(m => m.BoardPage), title: 'Ops Board · Mission Control' },
   { path: 'calendar', loadComponent: () => import('./pages/calendar').then(m => m.CalendarPage), title: 'Calendar · Mission Control' },
   { path: 'webhooks', loadComponent: () => import('./pages/webhooks').then(m => m.WebhooksPage), title: 'Webhooks · Mission Control' },

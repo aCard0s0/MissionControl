@@ -13,6 +13,8 @@ the secret envelope, and the generated route contract.
 | [prompt](prompt.md) | operator's text library. Nothing in a container reads it. |
 | [skill-library](skill-library.md) | skills the dashboard holds and deploys. `hub` is a pointer, `local` owns the files. |
 | [guide](guide.md) | prose composing several skills + MCP servers. Deploys as an umbrella SKILL.md the agent reads. |
+| [skill group](skill-group.md) | how the library is filed: a named set of skills, optionally pointing at the guide that explains it. No deploy. |
+| [prompt group](prompt-group.md) | the same filing over prompts. No guide link, no behaviour at all. |
 
 Stubs with no card body: `ServerLogBuffer` / `/api/server/logs`, `RuntimeConfigController`
 (`/config.js`), `AppProperties`, `SchemaUpgrades`, `StartupSummary`, notifications/toasts.

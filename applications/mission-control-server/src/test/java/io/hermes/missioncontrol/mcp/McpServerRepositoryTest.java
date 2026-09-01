@@ -37,7 +37,7 @@ class McpServerRepositoryTest {
   }
 
   private static ServerRow row(String id, String name) {
-    return new ServerRow(id, name, "desc", "managed", "dh-local", "svc-" + id, "{}",
+    return new ServerRow(id, name, "desc", null, "managed", "dh-local", "svc-" + id, "{}",
         "running", "stopped", "idle", null, 1L, 0L, null, null, null, null, null, 100L, 100L);
   }
 
@@ -104,7 +104,7 @@ class McpServerRepositoryTest {
   @Test
   void findByHostIsScopedAndFindBySeedKeyOnlyMatchesSeededRows() {
     repository.insert(row("mcp-1", "files"));
-    ServerRow onAnotherHost = new ServerRow("mcp-2", "remote-files", null, "managed", "dh-remote",
+    ServerRow onAnotherHost = new ServerRow("mcp-2", "remote-files", null, null, "managed", "dh-remote",
         "svc-2", "{}", "running", "stopped", "idle", null, 1L, 0L, "postgres-seed",
         null, null, null, null, 100L, 100L);
     repository.insert(onAnotherHost);
@@ -167,9 +167,9 @@ class McpServerRepositoryTest {
     // two editors both open revision 1. The first save wins; the second is told to reload
     // rather than silently overwriting an edit it never saw.
     assertTrue(repository.updateDefinition(
-        "mcp-1", "documents", "d", "{\"first\":1}", 2L, 1L, "idle", 1L));
+        "mcp-1", "documents", "d", null, "{\"first\":1}", 2L, 1L, "idle", 1L));
     assertFalse(repository.updateDefinition(
-        "mcp-1", "invoices", "d", "{\"second\":1}", 2L, 1L, "idle", 1L));
+        "mcp-1", "invoices", "d", null, "{\"second\":1}", 2L, 1L, "idle", 1L));
 
     ServerRow stored = repository.findById("mcp-1").orElseThrow();
     assertEquals("documents", stored.name());
@@ -200,7 +200,7 @@ class McpServerRepositoryTest {
     repository.failOperation("mcp-1", "boom");
 
     assertTrue(repository.updateDefinition(
-        "mcp-1", "documents", "new desc", "{\"a\":1}", 2L, 1L, "applying", 1L));
+        "mcp-1", "documents", "new desc", null, "{\"a\":1}", 2L, 1L, "applying", 1L));
     ServerRow updated = repository.findById("mcp-1").orElseThrow();
     assertEquals("documents", updated.name());
     assertEquals("{\"a\":1}", updated.configJson());
@@ -237,5 +237,19 @@ class McpServerRepositoryTest {
     assertTrue(repository.findById("mcp-1").isEmpty());
     assertEquals(1, repository.findAll().size());
     assertEquals("documents", repository.findAll().getFirst().name());
+  }
+
+  @Test
+  void theRepositoryLinkRoundTripsAndIsNullableOnAnOlderRow() {
+    // the column arrived through SchemaUpgrades, so a row written before it exists reads null
+    ServerRow row = row("mcp-1", "Files");
+    repository.insert(row);
+
+    assertNull(repository.findById("mcp-1").orElseThrow().repoUrl());
+
+    repository.updateDefinition("mcp-1", "Files", null, "https://github.com/o/r",
+        row.configJson(), row.revision() + 1, row.appliedRevision(), "idle", row.revision());
+
+    assertEquals("https://github.com/o/r", repository.findById("mcp-1").orElseThrow().repoUrl());
   }
 }

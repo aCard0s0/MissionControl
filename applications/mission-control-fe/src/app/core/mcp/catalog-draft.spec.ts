@@ -6,7 +6,8 @@ import {
 } from './catalog-draft';
 
 const draft = (patch: Partial<McpEditorDraft> = {}): McpEditorDraft => ({
-  id: null, hostLocked: false, name: ' Example ', description: ' server ', kind: 'managed',
+  id: null, hostLocked: false, name: ' Example ', description: ' server ',
+  repoUrl: ' https://github.com/o/r ', kind: 'managed',
   hostId: 'dh-local', transport: 'http', url: '', image: ' image:latest ', platform: '',
   entrypoint: ' node \n\n', command: 'server.js\n--port\n1100', stdioCommand: '', args: '',
   internalPort: 1100, publishedPort: null, path: '/mcp', crossHostUrl: '',
@@ -104,7 +105,8 @@ describe('MCP Servers editor', () => {
 });
 
 const storedServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer => ({
-  id: 'mcp-1', name: 'Example', description: 'server', kind: 'managed', hostId: 'dh-local',
+  id: 'mcp-1', name: 'Example', description: 'server', repoUrl: '', kind: 'managed',
+  hostId: 'dh-local',
   transport: 'http', url: null, image: 'image:latest', platform: null,
   entrypoint: ['node'], command: ['server.js'], stdioCommand: null, args: [],
   internalPort: 1100, publishedPort: null, path: '/mcp', crossHostUrl: null,

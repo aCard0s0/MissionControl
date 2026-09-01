@@ -3,12 +3,34 @@
     <div class="crumb mono">GLOBAL REGISTRY</div>
     <h2>MCP Servers</h2>
   </div>
-  <div class="head-actions">
+  <div class="head-stats mono">
+    @if (activeTab() === 'servers') {
+      <span>{{ catalog.servers().length }} registered</span>
+    } @else {
+      <span>{{ groups.groups().length }} group{{ groups.groups().length === 1 ? '' : 's' }}</span>
+    }
+  </div>
+</div>
+
+<!-- one bar, the shape every library page uses: the tab switch and this tab's `+ new` on the
+     right. Nothing narrows this list, so the left of the spacer is empty. -->
+<div class="filter mono" data-reveal>
+  <span class="spacer"></span>
+  <div class="view-toggle" role="group" aria-label="mcp view">
+    @for (t of tabs; track t) {
+      <button class="chip" [class.on]="activeTab() === t" (click)="activeTab.set(t)">{{ t }}</button>
+    }
+  </div>
+  @if (activeTab() === 'servers') {
     <button class="btn" (click)="openCreate('stdio')">+ stdio</button>
     <button class="btn" (click)="openCreate('external')">+ external</button>
     <button class="btn primary" (click)="openCreate('managed')">+ managed server</button>
-  </div>
+  } @else {
+    <button class="btn primary" (click)="newGroup()">+ new group</button>
+  }
 </div>
+
+@if (activeTab() === 'servers') {
 
 <div class="stack-note panel" data-reveal>
   <div class="panel-b">
@@ -24,7 +46,7 @@
 @if (catalog.loading() && !catalog.servers().length) {
   <div class="panel empty" data-reveal><p class="mono dim">Loading MCP server registry…</p></div>
 } @else {
-  @for (group of serverGroups(); track group.key) {
+  @for (group of serverSections(); track group.key) {
     <section class="panel server-group" data-reveal>
       <div class="panel-h">
         {{ group.label }}
@@ -53,20 +75,27 @@
                   <span class="chip info">{{ server.operationState }}…</span>
                 }
               </div>
-              @if (server.description) { <p class="description dim">{{ server.description }}</p> }
-              <div class="endpoint mono" [title]="displayEndpoint(server)">{{ displayEndpoint(server) }}</div>
-              <div class="meta mono faint">
-                @if (server.kind === 'managed') {
-                  <span>{{ server.image }}</span>
-                  <span>rev {{ server.appliedRevision }}/{{ server.revision }}</span>
-                  @if (server.publishedPort) { <span>published :{{ server.publishedPort }}</span> }
-                  @else { <span>internal only</span> }
-                } @else if (server.kind === 'external' && server.checkedAt) {
-                  <span>checked {{ clock(server.checkedAt) }}</span>
-                  @if (server.latencyMs !== null) { <span>{{ server.latencyMs }}ms</span> }
-                } @else if (server.kind === 'stdio') {
-                  <span>{{ server.args.length }} argument{{ server.args.length === 1 ? '' : 's' }}</span>
-                }
+              @if (server.description) {
+                <!-- one line, the rest on hover: the roster is for finding a server, and a
+                     paragraph per row is what made it long -->
+                <p class="description dim" [title]="server.description">{{ server.description }}</p>
+              }
+              <!-- endpoint and facts share a line rather than stacking two -->
+              <div class="server-facts mono">
+                <span class="endpoint" [title]="displayEndpoint(server)">{{ displayEndpoint(server) }}</span>
+                <span class="meta faint">
+                  @if (server.kind === 'managed') {
+                    <span>{{ server.image }}</span>
+                    <span>rev {{ server.appliedRevision }}/{{ server.revision }}</span>
+                    @if (server.publishedPort) { <span>published :{{ server.publishedPort }}</span> }
+                    @else { <span>internal only</span> }
+                  } @else if (server.kind === 'external' && server.checkedAt) {
+                    <span>checked {{ clock(server.checkedAt) }}</span>
+                    @if (server.latencyMs !== null) { <span>{{ server.latencyMs }}ms</span> }
+                  } @else if (server.kind === 'stdio') {
+                    <span>{{ server.args.length }} argument{{ server.args.length === 1 ? '' : 's' }}</span>
+                  }
+                </span>
               </div>
               @if (server.operationError || server.checkError) {
                 <p class="error mono">{{ server.operationError || server.checkError }}</p>
@@ -93,6 +122,10 @@
                   {{ server.checkStatus === 'checking' ? 'checking…' : 'check' }}
                 </button>
               }
+              @if (server.repoUrl) {
+                <a class="btn sm ghost" [href]="server.repoUrl" target="_blank"
+                   rel="noopener noreferrer" title="open the source repository">repo ↗</a>
+              }
               <button class="btn sm ghost" (click)="openEdit(server, true)">duplicate</button>
               <button class="btn sm ghost" (click)="openEdit(server)">edit</button>
               <button class="btn sm danger ghost" [disabled]="isBusy(server)" (click)="beginRemove(server)">remove</button>
@@ -107,7 +140,6 @@
       <p class="lock-hint">Add a managed service, external endpoint, or reusable stdio definition.</p>
     </div>
   }
-}
 
 <section class="panel retained" data-reveal>
   <div class="panel-h">
@@ -129,7 +161,117 @@
     }
   </div>
 </section>
+}
 
+} @else {
+
+<div class="mcp-groups" data-reveal>
+    @if (groupEditorOpen()) {
+      <div class="panel group-editor">
+        <div class="row">
+          <div class="field">
+            <label for="mcp-group-name">name</label>
+            <input id="mcp-group-name" class="input" [(ngModel)]="gName" placeholder="research" />
+          </div>
+          <div class="field">
+            <label for="mcp-group-description">description</label>
+            <input id="mcp-group-description" class="input" [(ngModel)]="gDescription"
+                   placeholder="what an agent needs this set for" />
+          </div>
+        </div>
+
+        <div class="picker">
+          <div class="picker-h mono">
+            <span class="lbl">servers</span>
+            <span class="faint">{{ gServerIds().length }} picked</span>
+          </div>
+          @if (catalog.servers().length) {
+            <div class="picks">
+              @for (server of catalog.servers(); track server.id) {
+                <button class="chip" [class.on]="gServerIds().includes(server.id)"
+                        [class.info]="!gServerIds().includes(server.id) && filedElsewhere(server.id)"
+                        [title]="filedElsewhere(server.id)
+                                   ? 'also in the group ' + filedElsewhere(server.id)
+                                   : server.kind + ' entry'"
+                        (click)="toggleGroupServer(server.id)">{{ server.name }}</button>
+              }
+            </div>
+            <p class="lock-hint">a server may be in several groups — an agent often needs the
+              same one for more than one job. Deploying connects each under its own name.</p>
+          } @else {
+            <p class="lock-hint">no servers registered yet — add one above and the group has
+              something to hold.</p>
+          }
+        </div>
+
+        <div class="editor-actions">
+          <span class="spacer"></span>
+          <button class="btn" (click)="cancelGroup()">cancel</button>
+          <button class="btn primary" [disabled]="!canSaveGroup()" (click)="saveGroup()">
+            {{ groupSaving() ? 'saving…' : 'save group' }}
+          </button>
+        </div>
+      </div>
+    }
+
+    @for (group of groups.groups(); track group.id) {
+      <div class="group-row">
+        <div class="group-head-row">
+          <strong>{{ group.name }}</strong>
+          <span class="chip off">{{ group.serverIds.length }} server{{ group.serverIds.length === 1 ? '' : 's' }}</span>
+          @if (group.description) { <span class="g-desc faint">{{ group.description }}</span> }
+          <span class="spacer"></span>
+          <button class="btn sm primary" (click)="deploying.set(group)">deploy</button>
+          <button class="btn sm ghost" (click)="editGroup(group)">edit</button>
+          <button class="btn sm danger ghost" (click)="removeGroup(group)">delete</button>
+        </div>
+
+        <div class="parts mono">
+          @for (server of groupServers(group); track server.id) {
+            <span class="chip" [class.info]="!server.missing" [class.warn]="server.missing"
+                  [title]="server.missing
+                             ? 'no longer in the catalog — a deploy will skip it'
+                             : 'catalog entry'">
+              {{ server.name }}{{ server.missing ? ' ⚠' : '' }}
+            </span>
+          } @empty {
+            <span class="faint">empty — add servers with edit</span>
+          }
+        </div>
+
+        <!-- read back off the agent links on every list, never stored: a count short of the
+             group size is an agent someone disconnected part of -->
+        <div class="agents mono">
+          <span class="lbl">on</span>
+          @for (agent of group.agents; track agent.hostId + agent.containerId + agent.profile) {
+            <span class="chip"
+                  [class.on]="agent.linked >= group.serverIds.length"
+                  [class.warn]="agent.linked < group.serverIds.length"
+                  [title]="agent.linked >= group.serverIds.length
+                             ? 'connected to every server in this group'
+                             : 'connected to ' + agent.linked + ' of ' + group.serverIds.length
+                               + ' — the rest were never connected, or were disconnected since'">
+              {{ agent.profile }} {{ agent.linked }}/{{ group.serverIds.length }}
+            </span>
+          } @empty {
+            <span class="faint">no agent yet</span>
+          }
+        </div>
+      </div>
+    } @empty {
+      @if (!groupEditorOpen()) {
+        <div class="panel empty">
+          <p class="mono dim">No groups yet.</p>
+          <p class="lock-hint">A group connects several catalog entries to an agent in one
+            action. The agents it reaches are read back from the connections themselves, so a
+            group is a set — not a record of who has it.</p>
+          <button class="btn primary" (click)="newGroup()">+ create one</button>
+        </div>
+      }
+    }
+</div>
+
+}
 @if (draft; as form) {
   <mc-mcp-server-editor [draft]="form" (saved)="draft = null" (closed)="draft = null" />
 }
@@ -180,4 +322,15 @@
 
 @if (logServer(); as server) {
   <mc-mcp-server-logs [server]="server" (closed)="logServer.set(null)" />
+}
+
+@if (deploying(); as target) {
+  <mc-deploy-dialog [label]="target.name" noun="MCP group" [run]="deployToAgent"
+                    (closed)="deploying.set(null)">
+    <p class="dim">Connects this group's {{ target.serverIds.length }}
+      server{{ target.serverIds.length === 1 ? '' : 's' }} to the chosen agent, each under its
+      own name.</p>
+    <p class="lock-hint">a top-up, not a sync: a server the agent already has is reported as
+      already connected and left alone, and nothing it has outside this group is touched.</p>
+  </mc-deploy-dialog>
 }

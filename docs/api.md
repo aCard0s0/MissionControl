@@ -48,8 +48,17 @@ entries are registry-only and therefore have no container lifecycle or logs.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions |
-| `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201 |
+| `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201. `repoUrl` is optional and must be `http://` or `https://` — it is rendered as a link, so the scheme is checked here rather than trusted to the client |
 | `PUT /api/mcp-servers/{id}` | complete structured definition | Kind and managed `hostId` are immutable; running deployment changes remain pending until Apply |
+
+`repoUrl` is documentation: where the entry comes from, for a person to open. Nothing fetches
+it — unlike a skill's repository, which `UpstreamCheck` parses to ask GitHub about releases —
+and it never reaches a profile's MCP config. It is a top-level column beside `description`
+rather than part of `config_json`, which is *how the thing runs*.
+
+Editing it bumps the entry's revision like any other edit, so a managed server with agents
+linked to it will show **apply required** afterwards. That is existing behaviour for
+`description` too, not a rule this field introduces.
 | `DELETE /api/mcp-servers/{id}` | — | Disables/unlinks Agent copies first; managed deletion returns 202 and preserves named volumes |
 | `POST …/{id}/start` | — | 202; applies pending config and starts the main/support services |
 | `POST …/{id}/stop` | — | 202; stops the main/support services without deleting them |
@@ -414,6 +423,97 @@ A skill deployed from the library writes into `<profileDir>/skills/<name>/` and 
 else: every relative path is validated segment by segment against the profile-name rule
 before it is concatenated, at most three segments deep — matching the `find -maxdepth 3`
 that lists them back — and nothing is written if any path in the set is rejected.
+
+## Prompt groups — dashboard-owned state in SQLite
+
+How the prompt library is filed: a named set of prompts. Organization only — no behaviour and
+no route that reaches a container, because a prompt is text for a person to paste.
+
+A different axis from a prompt's `category` and `tags`, which are a word and a loose label on
+one row: a group is a record, so it can be renamed, described and emptied as a unit.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/prompt-groups` | — | by name, not newest edit: these are the headers the prompt list is filed under, so their order is the page's reading order |
+| `POST /api/prompt-groups` | `{ name, description?, promptIds? }` | `name` carries no charset rule — nothing writes a group anywhere — but it is `NOCASE UNIQUE`, so a second `TRIAGE` beside `triage` is a 409. Blank, null and duplicate prompt ids are dropped, order kept |
+| `PUT /api/prompt-groups/{id}` | same body | replaces the membership; keeps `createdAt`; 404 rather than an insert |
+| `DELETE /api/prompt-groups/{id}` | — | idempotent. Every prompt the group named stays in the library — only the filing goes |
+
+Group DTO: `{ id, name, description, promptIds, createdAt, updatedAt }`.
+
+`promptIds` is stored as given and never checked against the `prompts` table, for the same
+reason a skill group's ids are not: the rows can be deleted at any time, so they are resolved
+on read and what is gone is dropped.
+
+The near-twin of [skill groups](#skill-groups--dashboard-owned-state-in-sqlite), and
+deliberately a separate table and controller rather than one polymorphic `groups` table with a
+`kind` column — the two hold ids from different tables, and every read would have to be told
+which.
+
+## MCP groups — dashboard-owned state in SQLite
+
+A named set of catalog entries, deployable onto an agent in one action. The only group in this
+application whose noun *does* something: a skill group and a prompt group file a library, this
+one also has a deploy, because the set an agent needs is usually several servers at once.
+
+**It records no agents.** Deploying a group connects each of its servers to one agent, and every
+one of those connections is already a row in `mcp_agent_links`. Which agents a group reaches is
+therefore derived from those links on every read, so the count can only ever say what the links
+say. A stored group-to-agent association would be a second source of truth: disconnect one
+server on the agent's own MCP tab and it would still claim the group was connected.
+
+Many-to-many in both directions falls out of that with no table saying so — the same group
+deploys onto as many agents as you like, an agent's links may come from several groups and from
+servers connected individually, and a server in two groups counts toward both.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/mcp-groups` | — | by name. Each group carries `agents`, derived from `mcp_agent_links`: one row per agent connected to *any* of its servers, with `linked` counting how many, most complete first |
+| `POST /api/mcp-groups` | `{ name, description?, serverIds? }` | `name` carries no charset rule — unlike an alias it never reaches a profile's config — but it is `NOCASE UNIQUE`, so a second `RESEARCH` beside `research` is a 409. Blank, null and duplicate server ids are dropped, order kept: that is the order a deploy connects them in |
+| `PUT /api/mcp-groups/{id}` | same body | replaces the membership; keeps `createdAt`; 404 rather than an insert |
+| `DELETE /api/mcp-groups/{id}` | — | idempotent, and reaches no agent: every connection the group ever made stays, and so does every server in the catalog. Only the set goes — disconnecting is the agent's own MCP tab |
+| `POST /api/mcp-groups/{id}/deploy` | `{ hostId, containerId, profile }` | → `{ profile, parts }` — connects every server in the group to one agent, one `DeployedPart` per server |
+
+Group DTO: `{ id, name, description, serverIds, agents, createdAt, updatedAt }`, where each
+agent is `{ hostId, containerId, profile, linked }`.
+
+The deploy follows the same rule a guide's does — *surface the error, do not roll back* — because
+it is several independent writes to an agent someone else owns. Undoing half of it would mean
+disconnecting servers that may have been on that agent before the group ever ran.
+
+**One difference from a guide's report: an alias the agent already has is `skipped`, not
+`failed`.** Topping up an agent that holds part of the group is the ordinary use of this button,
+and `connect` answers a conflict for a name already on the profile; calling that a failure would
+paint the normal case red. The reason reads `already connected`. A server gone from the catalog is
+`skipped` with `no longer in the catalog`; anything else is `failed` with its message.
+
+## Skill groups — dashboard-owned state in SQLite
+
+How the library is filed. A group is a named set of skills and, optionally, the guide that
+explains them — organization only, so there is no deploy here and no route that reaches a
+container.
+
+A different axis from a skill's `category`, which is one word on one skill: a group is a row,
+so it can be renamed, described, pointed at a guide, and hold skills that disagree about
+their category.
+
+| Method & path | Body / params | Notes |
+|---|---|---|
+| `GET /api/skill-groups` | — | by name, not newest edit: these are the headers the skills list is filed under, so their order is the page's reading order |
+| `POST /api/skill-groups` | `{ name, description?, skillIds?, guideId? }` | `name` is a label and carries no charset rule — nothing writes a group to disk — but it is `NOCASE UNIQUE`, so a second `PDF` beside `pdf` is a 409. Blank and duplicate skill ids are dropped, order kept. A blank `guideId` is stored as null |
+| `PUT /api/skill-groups/{id}` | same body | replaces the membership and the guide link; keeps `createdAt`; 404 rather than an insert |
+| `DELETE /api/skill-groups/{id}` | — | idempotent, and reaches nothing: every skill the group named stays in the library and the guide it pointed at stays where it is. Only the filing goes |
+
+Group DTO: `{ id, name, description, skillIds, guideId, createdAt, updatedAt }`.
+
+`skillIds` and `guideId` are stored as given and never checked against the other tables. The
+rows behind them can be deleted at any time — production runs with `PRAGMA foreign_keys` off,
+so a CASCADE would be decoration — so both are resolved on read and the page marks what is
+gone. Validating on write would only move the lie earlier.
+
+The association points group → guide rather than the other way about. A guide already owns
+the set it deploys; a group that wants deploying links the guide that does it rather than
+growing a deploy of its own.
 
 ## Guides — dashboard-owned state in SQLite
 

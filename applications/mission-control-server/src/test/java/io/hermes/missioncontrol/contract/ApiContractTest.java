@@ -10,6 +10,7 @@ import io.hermes.missioncontrol.agents.api.ApiKeyProviderDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.CronJobDto;
+import io.hermes.missioncontrol.agents.api.DeployedPart;
 import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.WebhookPlatformDto;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
@@ -29,10 +30,12 @@ import io.hermes.missioncontrol.agents.templates.McpServerSpec;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.board.BoardTask;
 import io.hermes.missioncontrol.prompts.Prompt;
+import io.hermes.missioncontrol.prompts.PromptGroup;
 import io.hermes.missioncontrol.skills.Skill;
 import io.hermes.missioncontrol.skills.SkillController;
 import io.hermes.missioncontrol.skills.SkillFile;
 import io.hermes.missioncontrol.skills.SkillGuide;
+import io.hermes.missioncontrol.skills.SkillGroup;
 import io.hermes.missioncontrol.skills.SkillGuideController;
 import io.hermes.missioncontrol.skills.UpstreamCheck;
 import io.hermes.missioncontrol.docker.ContainerDto;
@@ -44,6 +47,8 @@ import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.web.ServerLogController.ServerInfoDto;
 import io.hermes.missioncontrol.mcp.ConfigValueDto;
 import io.hermes.missioncontrol.mcp.HealthcheckSpec;
+import io.hermes.missioncontrol.mcp.McpGroupController;
+import io.hermes.missioncontrol.mcp.McpGroupDto;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.mcp.RetainedResourceDto;
 import io.hermes.missioncontrol.mcp.SupportServiceDto;
@@ -146,6 +151,9 @@ class ApiContractTest {
     CONTRACT.put("ApiMcpNamedVolume", VolumeSpec.class);
     CONTRACT.put("ApiMcpHealthcheck", HealthcheckSpec.class);
     CONTRACT.put("ApiMcpRetainedResource", RetainedResourceDto.class);
+    CONTRACT.put("ApiMcpGroup", McpGroupDto.class);
+    CONTRACT.put("ApiMcpGroupAgent", McpGroupDto.McpGroupAgentDto.class);
+    CONTRACT.put("ApiDeployedMcpGroup", McpGroupController.DeployedMcpGroup.class);
     // models / providers
     CONTRACT.put("ApiModelCatalog", ModelCatalogDto.class);
     CONTRACT.put("ApiPullState", PullStatusDto.class);
@@ -156,14 +164,16 @@ class ApiContractTest {
     CONTRACT.put("ApiBoardTask", BoardTask.class);
     // prompt library
     CONTRACT.put("ApiPrompt", Prompt.class);
+    CONTRACT.put("ApiPromptGroup", PromptGroup.class);
     // skill library
     CONTRACT.put("ApiSkill", Skill.class);
     CONTRACT.put("ApiSkillFile", SkillFile.class);
     CONTRACT.put("ApiImportedSkill", SkillController.ImportedSkill.class);
     CONTRACT.put("ApiUpstream", UpstreamCheck.Upstream.class);
+    CONTRACT.put("ApiSkillGroup", SkillGroup.class);
     // guides
     CONTRACT.put("ApiSkillGuide", SkillGuide.class);
-    CONTRACT.put("ApiDeployedPart", SkillGuideController.DeployedPart.class);
+    CONTRACT.put("ApiDeployedPart", DeployedPart.class);
     CONTRACT.put("ApiDeployedGuide", SkillGuideController.DeployedGuide.class);
   }
 

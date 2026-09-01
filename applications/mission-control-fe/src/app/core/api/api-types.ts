@@ -147,6 +147,48 @@ export interface ApiUpstream {
   checkedAt: number | null;
 }
 
+export interface ApiMcpGroupAgent {
+  hostId: string;
+  containerId: string;
+  profile: string;
+  linked: number;
+}
+
+export interface ApiMcpGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  serverIds: string[] | null;
+  agents: ApiMcpGroupAgent[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A group deploy answers the refreshed profile and one row per server. */
+export interface ApiDeployedMcpGroup {
+  profile: ApiAgentProfile | null;
+  parts: ApiDeployedPart[] | null;
+}
+
+export interface ApiPromptGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  promptIds: string[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ApiSkillGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  skillIds: string[] | null;
+  guideId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ApiSkillGuide {
   id: string;
   name: string;
@@ -289,6 +331,7 @@ export interface ApiMcpCatalogServer {
   id: string;
   name?: string;
   description?: string;
+  repoUrl?: string | null;
   kind?: string;
   hostId?: string | null;
   transport?: string;

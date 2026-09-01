@@ -34,6 +34,25 @@ under the lock plus a full container listing, and per host only one of each (`:7
 `applied_revision` by a successful Compose apply, and `pendingChanges` is just
 `revision > appliedRevision` (`mcp/McpServerDtoMapper.java:36`).
 
+## The repository link is documentation
+
+`repo_url` is a top-level column beside `description`, deliberately not inside `config_json`:
+that column is *how the thing runs*, and nothing about this ever reaches a profile's MCP config.
+Nothing fetches it either — unlike a [skill](../dashboard/skill-library.md)'s repository, which
+`UpstreamCheck` parses to ask GitHub about releases. This one is only ever opened by a person,
+from the `repo ↗` button on the roster.
+
+The scheme is validated to `http`/`https` at the boundary
+(`mcp/McpRequestValidator.java:314`). The value is rendered as an `href`, and a store that will
+hand it to any client should not rely on one client's framework to sanitize it.
+
+It arrived on a table that had already shipped, so it is a `SchemaUpgrades` column
+(`config/SchemaUpgrades.java:52`) rather than a bare `schema.sql` addition — and an entry
+written before it reads null.
+
+Editing it bumps the revision like any other edit, so a managed entry with linked agents shows
+**apply required** afterwards. Same as `description`; not a rule this field introduces.
+
 ## Shape
 
 `mcp_servers` — `schema.sql:59`. `name` is `COLLATE NOCASE UNIQUE`; `service_key` and `seed_key`
@@ -44,7 +63,7 @@ Three state columns, three enums: `desired_state`, `runtime_state`
 `operation_state` (`PROVISIONING|RECONCILING|STARTING|STOPPING|APPLYING|DELETING|IDLE|ERROR` —
 `mcp/McpOperationState.java:22`).
 
-**Config is allowlisted** (`mcp/McpRequestValidator.java:105`): image, list-form command,
+**Config is allowlisted** (`mcp/McpRequestValidator.java:106`): image, list-form command,
 environment, ports, support services, named volumes. Host binds, host networking, privileged
 mode, devices, capabilities and Docker-socket mounts are **rejected**.
 
@@ -55,6 +74,9 @@ with daemon access — as with all container environment variables.
 
 ## Connected to
 
+- **named-by:** any number of [MCP groups](mcp-group.md), by id in a JSON list — so unlike
+  `mcp_agent_links.server_id` there is no FK and no cascade. Deleting an entry leaves it in every
+  group that named it, and a group deploy reports it as skipped.
 - **owns:** its rendered Compose service in the [managed stack](managed-mcp-stack.md); its
   `mcp_retained_resources` rows; its support services and volumes
 - **owned-by:** a [Docker host](../docker/docker-host.md) when `managed` (`host_id`); nothing when

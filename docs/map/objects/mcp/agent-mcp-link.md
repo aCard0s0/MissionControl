@@ -17,7 +17,7 @@ The row saying "this [profile](../agents/profile.md) is connected to this
 ## Why this shape
 
 **A catalog link augments, but never replaces, the Agent's own materialized MCP configuration**
-— the schema says so where it is defined (`schema.sql:109`). Disabling an Agent entry therefore
+— the schema says so where it is defined (`schema.sql:113`). Disabling an Agent entry therefore
 *leaves the row*, with its connection details available for a later reconnect. That is why
 deletion of a link is a deliberate act and not a side effect of disabling one.
 
@@ -36,12 +36,12 @@ profile, on a 12-second poll**, and needs one column.
 
 ## Shape
 
-`mcp_agent_links` — `schema.sql:109`.
+`mcp_agent_links` — `schema.sql:113`.
 
 - PRIMARY KEY `(host_id, container_id, profile, alias)` — the alias is the profile's own name for
   the server, so the same catalog entry can be linked twice under different aliases.
 - `FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE`
-- Index on `server_id` — `schema.sql:122`
+- Index on `server_id` — `schema.sql:126`
 
 ## Connected to
 
@@ -51,6 +51,10 @@ profile, on a 12-second poll**, and needs one column.
 - **joins:** [Container](../docker/container.md) by `container_id` — **repointed when an upgrade
   mints a new id**, in the same transaction as `board_tasks`, via `ContainerIdListener`
   (`docker/ContainerUpdateService.java:53`)
+- **read-by:** [MCP group](mcp-group.md), which derives "which agents does this group reach"
+  from these rows and stores no association of its own. One direction only — nothing here knows
+  a group exists, and a group deploy writes these rows through `AgentMcpCatalogService.connect`
+  like any other connect.
 - **looks-like-but-is-not:** the profile's own MCP config inside the container. That is hermes'
   file; this row only records what we wrote into it and at which revision.
 
@@ -62,6 +66,8 @@ profile, on a 12-second poll**, and needs one column.
   [`mission-control-mcp-net`](managed-mcp-stack.md).
 - **Does not hit:** cross-host connections. Those require an **explicit agent-reachable URL**
   (`crossHostUrl`); the shared network only spans one daemon.
+- **Also hits what an [MCP group](mcp-group.md) reports.** Its agent coverage is a read of
+  these rows, so a change to this table's keys changes what a group can say about itself.
 
 ## Surfaces
 

@@ -50,6 +50,7 @@ export interface McpEditorDraft {
   hostLocked: boolean;
   name: string;
   description: string;
+  repoUrl: string;
   kind: McpCatalogKind;
   hostId: string;
   transport: McpTransport;
@@ -82,7 +83,7 @@ export function splitMcpLines(value: string): string[] {
 
 export function newMcpDraft(kind: McpCatalogKind, hostId: string): McpEditorDraft {
   return {
-    id: null, hostLocked: false, name: '', description: '', kind,
+    id: null, hostLocked: false, name: '', description: '', repoUrl: '', kind,
     hostId, transport: kind === 'stdio' ? 'stdio' : 'http',
     url: '', image: '', platform: '', entrypoint: '', command: '', stdioCommand: '', args: '',
     internalPort: kind === 'managed' ? DEFAULT_INTERNAL_PORT : null, publishedPort: null,
@@ -115,6 +116,7 @@ export function mcpDraftFromServer(server: McpCatalogServer, duplicate = false):
     hostLocked: !duplicate,
     name: duplicate ? `${server.name} copy` : server.name,
     description: server.description,
+    repoUrl: server.repoUrl,
     kind: server.kind,
     hostId: server.hostId ?? '',
     transport: server.transport,
@@ -152,7 +154,8 @@ export function mcpDraftToInput(draft: McpEditorDraft): McpCatalogServerInput {
   const external = draft.kind === 'external';
   const stdio = draft.kind === 'stdio';
   return {
-    name: draft.name.trim(), description: draft.description.trim(), kind: draft.kind,
+    name: draft.name.trim(), description: draft.description.trim(),
+    repoUrl: draft.repoUrl.trim(), kind: draft.kind,
     hostId: managed ? draft.hostId : null,
     transport: stdio ? 'stdio' : draft.transport,
     url: external ? draft.url.trim() : null,

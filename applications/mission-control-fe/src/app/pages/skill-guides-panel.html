@@ -12,6 +12,9 @@
   </div>
 
   <span class="spacer"></span>
+  <!-- the page's tab toggle, projected in: this bar is the only one on screen while
+       Guides is open, so it carries the switch out of it too -->
+  <ng-content />
   <button class="btn primary" (click)="newGuide()">+ new guide</button>
 </div>
 
@@ -155,7 +158,6 @@
         <p class="lock-hint">A guide teaches how to use several skills together. Deploying one
           puts every skill on the agent, links every MCP server it needs, and leaves the guide
           itself there as an umbrella skill the agent can read.</p>
-        <button class="btn primary" (click)="newGuide()">+ create one</button>
       }
     </div>
   }

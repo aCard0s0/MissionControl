@@ -29,7 +29,7 @@ whole design: the library splits by origin rather than picking one mechanism.
 Both halves are load-bearing. Storing a copy of a hub skill would be a second source of
 truth that goes stale the moment the Hub moves. Refusing to store local content would make
 dashboard-authored and curator-authored skills undeployable. The CHECK constraint at
-`schema.sql:154` and the branch at `skills/SkillController.java:149` are the two places that stay
+`schema.sql:207` and the branch at `skills/SkillController.java:149` are the two places that stay
 in step.
 
 A local deploy is an **overlay, not a sync**: it writes what the row holds and removes
@@ -37,9 +37,9 @@ nothing, so a file renamed in the library leaves its old copy on the agent.
 
 ## Shape
 
-- `skills` — `schema.sql:152`; `kind` CHECK at `:154`; `name` is `COLLATE NOCASE UNIQUE`
-  (`:160`) so `pdf` and `PDF` cannot both address `skills/pdf`; `files` is a JSON array in
-  TEXT, NULL for a hub row (`:167`); index on `category` (`:172`)
+- `skills` — `schema.sql:205`; `kind` CHECK at `:207`; `name` is `COLLATE NOCASE UNIQUE`
+  (`:213`) so `pdf` and `PDF` cannot both address `skills/pdf`; `files` is a JSON array in
+  TEXT, NULL for a hub row (`:220`); index on `category` (`:225`)
 - `Skill` / `SkillFile` — `skills/Skill.java`, `skills/SkillFile.java`
 - `SkillRepository` — plain JdbcTemplate, the `prompts` shape
 - `SkillController` — `/api/skills`, six routes, no service layer
@@ -93,7 +93,10 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 
 - **owns:** nothing on an agent. A deployed copy is not tracked.
 - **owned-by:** the dashboard
-- **joins:** a profile, only at the moment of a deploy or an import
+- **joins:** a profile, only at the moment of a deploy or an import; and any number of
+  [skill groups](skill-group.md), which name rows here to file them. A group holds the
+  ids, so nothing on a row says which group claims it, and deleting a group leaves the
+  row alone.
 - **looks-like-but-is-not:** the **Skill** an agent has (`agents/HermesSkills.java`,
   `SkillDto`), read through from that container's disk and listed on the agent's own Skills
   tab. Different lifetime, different owner: that one exists because a container has it, this
@@ -102,6 +105,9 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 - **looks-like-but-is-not:** a **Profile template** (`profile_templates.skills`), which
   holds skill *ids* to install when deploying a whole new agent. A blueprint creates an
   agent; this layers one skill onto an agent that exists.
+- **looks-like-but-is-not:** a [skill group](skill-group.md). A group is filing and has
+  no deploy at all; `category` on a row here is a filter, not a group. Both are on this
+  page and neither is the other.
 
 ## If you change this
 

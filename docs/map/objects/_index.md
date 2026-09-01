@@ -62,6 +62,7 @@ is most of the value.
 | ✓ | [MCP server entry](mcp/mcp-server-entry.md) | `mcp/McpRegistryService.java` | the catalog row. `definition` vs `live` — pick right. |
 | ✓ | [Managed MCP stack](mcp/managed-mcp-stack.md) | `mcp/ManagedMcpStack.java` | `mission-control-mcp` + its per-host Compose lock. |
 | ✓ | [MCP agent link](mcp/agent-mcp-link.md) | `mcp/AgentMcpLink.java` | profile ↔ entry, with the revision that shows drift. |
+| ✓ | [MCP group](mcp/mcp-group.md) | `mcp/McpGroupController.java` | a set of entries with a deploy. Stores no agents — coverage is derived from the links. |
 | · | Retained resource | `mcp/RetainedResource*.java` | volumes kept when a server is deleted. Purged deliberately. |
 | · | Support service | `mcp/SupportService{Dto,Request}.java` | a sidecar an entry may declare (e.g. a database). |
 | · | Volume / healthcheck spec | `mcp/{VolumeSpec,HealthcheckSpec}.java` | named volumes only; host binds rejected. |
@@ -84,6 +85,8 @@ is most of the value.
 | ✓ | [Prompt](dashboard/prompt.md) | `prompts/` | operator's text library. Nothing in a container reads it. |
 | ✓ | [Skill library](dashboard/skill-library.md) | `skills/` | skills the dashboard holds and deploys onto an agent. `hub` = a pointer, `local` = the files. |
 | ✓ | [Guide](dashboard/guide.md) | `skills/SkillGuideController.java` | prose composing several skills + MCP servers. Deploys as an umbrella SKILL.md the agent reads. |
+| ✓ | [Skill group](dashboard/skill-group.md) | `skills/SkillGroupController.java` | how the library is filed: a named set of skills, optionally pointing at the guide that explains it. No deploy. |
+| ✓ | [Prompt group](dashboard/prompt-group.md) | `prompts/PromptGroupController.java` | the same filing over prompts. No guide link — there is no prose object over prompts. |
 | · | Server log buffer | `web/ServerLogBuffer.java` | in-memory ring behind `/api/server/logs`. |
 | · | Runtime config | `web/RuntimeConfigController.java` | `/config.js` from `MC_*` — no rebuild to repoint the FE. |
 | · | App properties | `config/AppProperties.java` | every `MC_*` binding. Table in `architecture.md`. |

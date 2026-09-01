@@ -1,19 +1,27 @@
 import {
   ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { SkillGroupStore } from '../core/store/skill-group-store';
+import { SkillGuideStore } from '../core/store/skill-guide-store';
 import { SkillStore } from '../core/store/skill-store';
 import { AgentRef } from '../core/api/agent-ref';
-import { DeployedPart, Skill, SkillFile, SkillKind, Upstream, UpstreamStatus } from '../core/models';
+import {
+  DeployedPart, Skill, SkillFile, SkillGroup, SkillGuide, SkillKind, Upstream, UpstreamStatus,
+} from '../core/models';
 import { Reveal } from '../shared/reveal';
 import { DeployDialog } from './deploy-dialog';
 import { SkillGuidesPanel } from './skill-guides-panel';
+import { fileIntoSections, groupHolding } from '../core/filing';
 import { ago } from '../core/format';
 
 export type SkillsTab = 'skills' | 'guides';
 
 /** Hermes finds a skill by this file. A local skill without one cannot be loaded. */
 const SKILL_MD = 'SKILL.md';
+
+
 
 /** What a new local skill starts as, so the first save is one edit away rather than
  *  a blank textarea and a guess at the frontmatter. */
@@ -48,7 +56,7 @@ version: 1.0
 @Component({
   selector: 'mc-skills',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Reveal, DeployDialog, SkillGuidesPanel],
+  imports: [NgTemplateOutlet, FormsModule, Reveal, DeployDialog, SkillGuidesPanel],
   templateUrl: './skills.html',
   styleUrl: './skills.scss',
 })
@@ -62,6 +70,8 @@ export class SkillsPage {
   protected readonly activeTab = signal<SkillsTab>('skills');
 
   protected readonly skills = inject(SkillStore);
+  protected readonly groups = inject(SkillGroupStore);
+  protected readonly guides = inject(SkillGuideStore);
   protected readonly ago = ago;
 
   protected readonly query = signal('');
@@ -69,7 +79,7 @@ export class SkillsPage {
   protected readonly category = signal<string | null>(null);
   /** Kind filter, or null for both. */
   protected readonly kind = signal<SkillKind | null>(null);
-  /** The row whose files are expanded, or null. */
+  /** The row whose detail — description, then files — is open, or null. */
   protected readonly expanded = signal<string | null>(null);
   /** The skill being deployed, or null while no dialog is open. */
   protected readonly deploying = signal<Skill | null>(null);
@@ -100,6 +110,18 @@ export class SkillsPage {
    *  and removed by buttons rather than by `ngModel`. */
   protected readonly fFiles = signal<SkillFile[]>([]);
 
+  // ── the group editor ──────────────────────────────────────────────────────
+  protected readonly groupEditorOpen = signal(false);
+  /** The group being edited, or null while composing a new one. */
+  protected readonly groupEditId = signal<string | null>(null);
+  protected readonly groupSaving = signal(false);
+
+  protected gName = '';
+  protected gDescription = '';
+  /** Signals, for the same reason `fFiles` is one: chips write them, not `ngModel`. */
+  protected readonly gSkillIds = signal<string[]>([]);
+  protected readonly gGuideId = signal('');
+
   protected readonly visible = computed(() => {
     const category = this.category();
     const kind = this.kind();
@@ -113,9 +135,31 @@ export class SkillsPage {
     });
   });
 
+  /** Whether anything is narrowing the list. An empty group still shows its header when
+   *  nothing is filtered — a group you just made and have not filled yet has to be visible
+   *  to be filled — but a search that matches none of its skills hides it, because a header
+   *  with no rows under it reads as a match that is not there. */
+  protected readonly filtering = computed(() =>
+    !!this.query().trim() || this.category() !== null || this.kind() !== null);
+
+  protected readonly sections = computed(() => fileIntoSections(
+    this.visible(), this.groups.groups(), g => g.skillIds, this.filtering(), g => g.id));
+
+  /** The guide a group points at, or null — either because it points at none, or because the
+   *  guide has been deleted since. The two cases read differently on the header. */
+  protected guideOf(group: SkillGroup): SkillGuide | null {
+    return group.guideId ? this.guides.byId(group.guideId) : null;
+  }
+
+  protected filedElsewhere(skillId: string): string {
+    return groupHolding(this.groups.groups(), g => g.skillIds, skillId, this.groupEditId());
+  }
+
   constructor() {
-    // LiveSync loads the library at boot; this covers a deep link that lands here first
+    // LiveSync loads these at boot; this covers a deep link that lands here first
     void this.skills.refresh();
+    void this.groups.refresh();
+    void this.guides.refresh();
     effect(() => {
       const wanted = this.tab();
       if (wanted && this.tabs.includes(wanted as SkillsTab)) {
@@ -136,6 +180,13 @@ export class SkillsPage {
 
   protected toggleExpanded(skill: Skill): void {
     this.expanded.update(open => (open === skill.id ? null : skill.id));
+  }
+
+  /** Whether a row has anything to open. The description moved behind the disclosure to
+   *  keep the list scannable, so a hub row with one is expandable too — but a row with
+   *  neither description nor files must not offer a caret that reveals an empty box. */
+  protected hasDetail(skill: Skill): boolean {
+    return !!skill.description || skill.files.length > 0;
   }
 
   // ── editor ───────────────────────────────────────────────────────────────
@@ -279,5 +330,65 @@ export class SkillsPage {
     )) return;
     if (!await this.skills.remove(skill.id)) return;
     if (this.editId() === skill.id) this.cancel();
+  }
+
+  // ── groups ───────────────────────────────────────────────────────────────
+
+  protected newGroup(): void {
+    this.groupEditId.set(null);
+    this.gName = '';
+    this.gDescription = '';
+    this.gSkillIds.set([]);
+    this.gGuideId.set('');
+    this.groupEditorOpen.set(true);
+  }
+
+  protected editGroup(group: SkillGroup): void {
+    this.groupEditId.set(group.id);
+    this.gName = group.name;
+    this.gDescription = group.description;
+    this.gSkillIds.set([...group.skillIds]);
+    this.gGuideId.set(group.guideId);
+    this.groupEditorOpen.set(true);
+  }
+
+  protected cancelGroup(): void {
+    this.groupEditorOpen.set(false);
+    this.groupEditId.set(null);
+  }
+
+  protected toggleGroupSkill(id: string): void {
+    this.gSkillIds.update(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  }
+
+  /** Pressing the guide already picked clears it — the association is the optional half, and
+   *  a picker you cannot un-pick would make it compulsory in practice. */
+  protected pickGuide(id: string): void {
+    this.gGuideId.update(current => current === id ? '' : id);
+  }
+
+  protected canSaveGroup(): boolean {
+    return !this.groupSaving() && !!this.gName.trim();
+  }
+
+  protected async saveGroup(): Promise<void> {
+    if (!this.canSaveGroup()) return;
+    this.groupSaving.set(true);
+    const id = await this.groups.save({
+      name: this.gName.trim(),
+      description: this.gDescription.trim(),
+      skillIds: this.gSkillIds(),
+      guideId: this.gGuideId(),
+    }, this.groupEditId() ?? undefined);
+    this.groupSaving.set(false);
+    if (id) this.cancelGroup();
+  }
+
+  protected async removeGroup(group: SkillGroup): Promise<void> {
+    if (!confirm(
+      `Delete the group "${group.name}"? Its skills stay in the library — only the filing goes.`
+    )) return;
+    if (!await this.groups.remove(group.id)) return;
+    if (this.groupEditId() === group.id) this.cancelGroup();
   }
 }

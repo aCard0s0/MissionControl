@@ -1,51 +1,140 @@
 <div class="page-head" data-reveal>
   <div>
     <div class="crumb mono">GLOBAL LIBRARY</div>
-    <h2>Skills</h2>
+    <h2>Skills &amp; Guides</h2>
   </div>
   <div class="head-stats mono">
     @if (activeTab() === 'skills') {
       <span>{{ visible().length }}/{{ skills.skills().length }} skills</span>
     }
   </div>
-  <div class="view-toggle mono" role="group" aria-label="skills view">
+</div>
+
+<!-- One bar per tab, laid out the same way on both: what narrows the list on the
+     left, then the tab toggle and this tab's `+ new` on the right. Each tab owns its
+     own filters, so the toggle is projected into whichever bar is on screen rather
+     than living in a third bar of its own. -->
+<ng-template #viewTabs>
+  <div class="view-toggle" role="group" aria-label="skills view">
     @for (t of tabs; track t) {
       <button class="chip" [class.on]="activeTab() === t" (click)="activeTab.set(t)">{{ t }}</button>
     }
   </div>
-  @if (activeTab() === 'skills') {
-    <button class="btn primary" (click)="newSkill()">+ new skill</button>
-  }
-</div>
+</ng-template>
 
 @if (activeTab() === 'guides') {
-  <mc-skill-guides-panel data-reveal />
+  <mc-skill-guides-panel data-reveal>
+    <ng-container [ngTemplateOutlet]="viewTabs" />
+  </mc-skill-guides-panel>
+} @else {
+  <div class="filter mono" data-reveal>
+    <input class="input find" type="search" placeholder="search names, descriptions, files"
+           aria-label="search skills"
+           [value]="query()" (input)="onSearch($any($event.target).value)" />
+
+    <div class="facet">
+      <span class="lbl">kind</span>
+      <button class="chip" [class.on]="kind() === null" (click)="kind.set(null)">all</button>
+      <button class="chip" [class.on]="kind() === 'local'" (click)="kind.set('local')"
+              title="the library owns the files">local</button>
+      <button class="chip" [class.on]="kind() === 'hub'" (click)="kind.set('hub')"
+              title="installed from the Skills Hub by name">hub</button>
+    </div>
+
+    <div class="facet">
+      <span class="lbl">category</span>
+      <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
+      @for (c of skills.categories(); track c) {
+        <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
+      }
+    </div>
+
+    <span class="spacer"></span>
+    <ng-container [ngTemplateOutlet]="viewTabs" />
+    <button class="btn" (click)="newGroup()">+ new group</button>
+    <button class="btn primary" (click)="newSkill()">+ new skill</button>
+  </div>
 }
 
 @if (activeTab() === 'skills') {
 
-<div class="filter mono" data-reveal>
-  <input class="input find" type="search" placeholder="search names, descriptions, files"
-         aria-label="search skills"
-         [value]="query()" (input)="onSearch($any($event.target).value)" />
+@if (groupEditorOpen()) {
+  <div class="panel editor group-editor" data-reveal>
+    <div class="panel-h">
+      {{ groupEditId() ? 'EDIT GROUP' : 'NEW GROUP' }}
+      <span class="spacer"></span>
+      <span class="faint">{{ groupEditId() ?? 'unsaved' }}</span>
+    </div>
+    <div class="panel-b">
+      <div class="row">
+        <div class="field">
+          <label for="group-name">name</label>
+          <input id="group-name" class="input" [(ngModel)]="gName" placeholder="pdf" />
+        </div>
+      </div>
 
-  <div class="facet">
-    <span class="lbl">kind</span>
-    <button class="chip" [class.on]="kind() === null" (click)="kind.set(null)">all</button>
-    <button class="chip" [class.on]="kind() === 'local'" (click)="kind.set('local')"
-            title="the library owns the files">local</button>
-    <button class="chip" [class.on]="kind() === 'hub'" (click)="kind.set('hub')"
-            title="installed from the Skills Hub by name">hub</button>
-  </div>
+      <div class="field">
+        <label for="group-description">description</label>
+        <input id="group-description" class="input" [(ngModel)]="gDescription"
+               placeholder="what this set of skills has in common" />
+        <p class="lock-hint">a group files the library and nothing more — it has no deploy, and
+          deleting one leaves every skill it named exactly where it is.</p>
+      </div>
 
-  <div class="facet">
-    <span class="lbl">category</span>
-    <button class="chip" [class.on]="category() === null" (click)="category.set(null)">all</button>
-    @for (c of skills.categories(); track c) {
-      <button class="chip" [class.on]="category() === c" (click)="category.set(c)">{{ c }}</button>
-    }
+      <div class="picker">
+        <div class="picker-h mono">
+          <span class="lbl">skills</span>
+          <span class="faint">{{ gSkillIds().length }} picked</span>
+        </div>
+        @if (skills.skills().length) {
+          <div class="picks">
+            @for (s of skills.skills(); track s.id) {
+              <button class="chip" [class.on]="gSkillIds().includes(s.id)"
+                      [class.warn]="!gSkillIds().includes(s.id) && filedElsewhere(s.id)"
+                      [title]="filedElsewhere(s.id)
+                                 ? 'already in the group ' + filedElsewhere(s.id)
+                                 : 'library skill'"
+                      (click)="toggleGroupSkill(s.id)">{{ s.name }}</button>
+            }
+          </div>
+          <p class="lock-hint">a skill two groups both name is listed under both — the amber
+            chips are the ones another group already holds.</p>
+        } @else {
+          <p class="lock-hint">no skills in the library yet — save one first and the group has
+            something to file.</p>
+        }
+      </div>
+
+      <div class="picker">
+        <div class="picker-h mono">
+          <span class="lbl">guide</span>
+          <span class="faint">optional</span>
+        </div>
+        @if (guides.guides().length) {
+          <div class="picks">
+            <button class="chip" [class.on]="!gGuideId()" (click)="gGuideId.set('')">none</button>
+            @for (g of guides.guides(); track g.id) {
+              <button class="chip" [class.on]="gGuideId() === g.id"
+                      (click)="pickGuide(g.id)">{{ g.name }}</button>
+            }
+          </div>
+          <p class="lock-hint">the guide that explains this set. The link is a label here —
+            deploying is still the guide's own button on the Guides tab.</p>
+        } @else {
+          <p class="lock-hint">no guides yet — a group works without one.</p>
+        }
+      </div>
+
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button class="btn" (click)="cancelGroup()">cancel</button>
+        <button class="btn primary" [disabled]="!canSaveGroup()" (click)="saveGroup()">
+          {{ groupSaving() ? 'saving…' : 'save group' }}
+        </button>
+      </div>
+    </div>
   </div>
-</div>
+}
 
 @if (editorOpen()) {
   <div class="panel editor" data-reveal>
@@ -155,18 +244,46 @@
 }
 
 <div class="list" data-reveal>
-  @for (s of visible(); track s.id) {
+  @for (sec of sections(); track sec.key) {
+    <!-- no header on the one unlabelled section: with no groups at all this is the flat
+         list this page has always been, and a lone "ungrouped" band above it is noise -->
+    @if (sec.group || sections().length > 1) {
+      <div class="group-head mono" [class.loose]="!sec.group">
+        <span class="g-name">{{ sec.group?.name ?? 'ungrouped' }}</span>
+        <span class="chip off">{{ sec.items.length }}</span>
+        @if (sec.group; as group) {
+          @if (guideOf(group); as guide) {
+            <span class="chip info" title="the guide that explains this set">
+              guide: {{ guide.name }}
+            </span>
+          } @else if (group.guideId) {
+            <span class="chip warn"
+                  title="the guide this group pointed at has been deleted — edit the group to
+                         pick another, or clear the link">guide missing ⚠</span>
+          }
+          @if (group.description) {
+            <span class="g-desc faint">{{ group.description }}</span>
+          }
+          <span class="spacer"></span>
+          <button class="btn sm ghost" (click)="editGroup(group)">edit</button>
+          <button class="btn sm danger ghost" (click)="removeGroup(group)">delete</button>
+        }
+      </div>
+    }
+    @for (s of sec.items; track s.id) {
     <div class="panel skill" [class.open]="expanded() === s.id">
       <div class="panel-h">
-        @if (s.kind === 'local') {
-          <button class="disc" (click)="toggleExpanded(s)" [attr.aria-expanded]="expanded() === s.id"
-                  [title]="expanded() === s.id ? 'hide files' : 'show files'">
-            {{ expanded() === s.id ? '▾' : '▸' }}
+        @if (hasDetail(s)) {
+          <button class="open-row" (click)="toggleExpanded(s)"
+                  [attr.aria-expanded]="expanded() === s.id"
+                  [title]="expanded() === s.id ? 'collapse' : 'expand'">
+            <span class="disc" aria-hidden="true">{{ expanded() === s.id ? '▾' : '▸' }}</span>
+            <span class="title mono">{{ s.name }}</span>
           </button>
         } @else {
-          <span class="disc-gap" aria-hidden="true"></span>
+          <!-- nothing to open, but the name still lines up with the rows that have a caret -->
+          <span class="disc-gap" aria-hidden="true"></span><span class="title mono">{{ s.name }}</span>
         }
-        <span class="title mono">{{ s.name }}</span>
         <span class="chip" [class.custom]="s.kind === 'local'" [class.info]="s.kind === 'hub'"
               [title]="s.kind === 'hub' ? 'installed from the Skills Hub by name'
                                         : 'the library holds this skill\'s files'">{{ s.kind }}</span>
@@ -195,19 +312,26 @@
         <button class="btn sm ghost" (click)="edit(s)">edit</button>
         <button class="btn sm danger ghost" (click)="remove(s)">delete</button>
       </div>
-      <div class="panel-b">
-        @if (s.description) { <p class="desc dim">{{ s.description }}</p> }
-        @if (expanded() === s.id) {
+      @if (expanded() === s.id) {
+        <div class="panel-b">
+          @if (s.description) { <p class="desc dim">{{ s.description }}</p> }
           @for (f of s.files; track f.path) {
             <div class="file-view">
               <div class="file-name mono faint">{{ f.path }}</div>
               <pre class="body mono">{{ f.body }}</pre>
             </div>
           }
-        }
-      </div>
+        </div>
+      }
     </div>
-  } @empty {
+    } @empty {
+      <div class="panel empty thin">
+        <p class="mono faint">nothing filed here yet — add skills to this group with
+          <em>edit</em>.</p>
+      </div>
+    }
+  }
+  @if (!visible().length) {
     <div class="panel empty">
       @if (skills.skills().length) {
         <p class="mono dim">No skill matches this search.</p>

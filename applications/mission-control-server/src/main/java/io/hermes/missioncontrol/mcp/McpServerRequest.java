@@ -9,6 +9,7 @@ import java.util.List;
 public record McpServerRequest(
     String name,
     String description,
+    String repoUrl,
     String kind,
     String hostId,
     String transport,

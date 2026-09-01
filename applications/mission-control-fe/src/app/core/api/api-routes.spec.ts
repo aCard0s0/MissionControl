@@ -366,6 +366,58 @@ const cases: Record<string, Case> = {
     body: { hostId: 'dh-1', containerId: 'c1', profile: 'ops', skillName: 'pdf' },
   },
 
+  // ── mcp groups ─────────────────────────────────────────────────────────
+  'mcpGroups.list': { call: a => a.mcpGroups.list(), method: 'GET', url: '/api/mcp-groups' },
+  'mcpGroups.create': {
+    call: a => a.mcpGroups.create({ name: 'research' } as never), method: 'POST',
+    url: '/api/mcp-groups', body: { name: 'research' },
+  },
+  'mcpGroups.update': {
+    call: a => a.mcpGroups.update('mg 1', { name: 'research' } as never), method: 'PUT',
+    url: '/api/mcp-groups/mg%201', body: { name: 'research' },
+  },
+  'mcpGroups.remove': {
+    call: a => a.mcpGroups.remove('mg-1'), method: 'DELETE', url: '/api/mcp-groups/mg-1',
+  },
+  'mcpGroups.deploy': {
+    call: a => a.mcpGroups.deploy('mg 1', REF),
+    method: 'POST', url: '/api/mcp-groups/mg%201/deploy',
+    body: { hostId: 'dh-local', containerId: 'c-1', profile: 'atlas' },
+  },
+
+  // ── prompt groups ──────────────────────────────────────────────────────
+  'promptGroups.list': {
+    call: a => a.promptGroups.list(), method: 'GET', url: '/api/prompt-groups',
+  },
+  'promptGroups.create': {
+    call: a => a.promptGroups.create({ name: 'triage' } as never), method: 'POST',
+    url: '/api/prompt-groups', body: { name: 'triage' },
+  },
+  'promptGroups.update': {
+    call: a => a.promptGroups.update('pg 1', { name: 'triage' } as never), method: 'PUT',
+    url: '/api/prompt-groups/pg%201', body: { name: 'triage' },
+  },
+  'promptGroups.remove': {
+    call: a => a.promptGroups.remove('pg-1'), method: 'DELETE',
+    url: '/api/prompt-groups/pg-1',
+  },
+
+  // ── skill groups ───────────────────────────────────────────────────────
+  'skillGroups.list': {
+    call: a => a.skillGroups.list(), method: 'GET', url: '/api/skill-groups',
+  },
+  'skillGroups.create': {
+    call: a => a.skillGroups.create({ name: 'pdf' } as never), method: 'POST',
+    url: '/api/skill-groups', body: { name: 'pdf' },
+  },
+  'skillGroups.update': {
+    call: a => a.skillGroups.update('sg 1', { name: 'pdf' } as never), method: 'PUT',
+    url: '/api/skill-groups/sg%201', body: { name: 'pdf' },
+  },
+  'skillGroups.remove': {
+    call: a => a.skillGroups.remove('sg-1'), method: 'DELETE', url: '/api/skill-groups/sg-1',
+  },
+
   // ── guides ─────────────────────────────────────────────────────────────
   'guides.list': { call: a => a.guides.list(), method: 'GET', url: '/api/skill-guides' },
   'guides.create': {

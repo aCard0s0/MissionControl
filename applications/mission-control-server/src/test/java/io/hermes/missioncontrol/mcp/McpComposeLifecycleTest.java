@@ -197,7 +197,7 @@ class McpComposeLifecycleTest {
     // the record is one revision ahead of its stack; stopping it does not write that stack, so
     // marking it applied would hide a pending change the operator still has to apply
     String id = insertManaged("Files");
-    repository.updateDefinition(id, "Files", null, row(id).configJson(), 2, 1, "stopping",
+    repository.updateDefinition(id, "Files", null, null, row(id).configJson(), 2, 1, "stopping",
         row(id).revision());
 
     lifecycle.runStop(id);
@@ -468,7 +468,7 @@ class McpComposeLifecycleTest {
 
   @Test
   void anExternalRecordIsNeverAskedAboutAContainer() {
-    ServerRow external = new ServerRow("mcp-ext", "Remote", null, "external", HOST, null, "{}",
+    ServerRow external = new ServerRow("mcp-ext", "Remote", null, null, "external", HOST, null, "{}",
         "stopped", "unavailable", "idle", null, 1, 1, null, null, null, null, null, 0L, 0L);
 
     assertEquals("unavailable", lifecycle.refreshRuntime(external).runtimeState());
@@ -546,7 +546,7 @@ class McpComposeLifecycleTest {
   /** A managed record whose one dependency declares a named volume of its own. */
   private String insertManagedWithDatabase(String name) {
     McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
-        name, null, "managed", HOST, "http", null, "example/files:1", null,
+        name, null, null, "managed", HOST, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(), List.of(), List.of(), null,
         List.of(new SupportServiceRequest("database", "postgres:16-alpine", null,
@@ -565,7 +565,7 @@ class McpComposeLifecycleTest {
 
   private String insertExternal(String name) {
     McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
-        name, null, "external", null, "http", "https://example.test/mcp", null, null,
+        name, null, null, "external", null, "http", "https://example.test/mcp", null, null,
         List.of(), List.of(), null, List.of(), null, null, null, null,
         List.of(), List.of(), List.of(), null, List.of()));
     return insertRow(name, "external", null, configs.write(configs.store(validated, null)), "idle");
@@ -575,7 +575,7 @@ class McpComposeLifecycleTest {
       String name, String kind, String hostId, List<VolumeSpec> volumes,
       List<ConfigValueInput> environment, String operationState) {
     McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
-        name, null, kind, hostId, "http", null, "example/files:1", null,
+        name, null, null, kind, hostId, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         environment, List.of(), volumes, null, List.of()));
     return insertRow(name, kind, hostId, configs.write(configs.store(validated, null)), operationState);
@@ -586,7 +586,7 @@ class McpComposeLifecycleTest {
     McpConfigStore otherKey =
         new McpConfigStore(new SecretsAtRest(new SecretCipher("a-different-secret", "", false)), new ObjectMapper());
     McpServerRequest validated = McpRequestValidator.validate(new McpServerRequest(
-        "Files", null, "managed", HOST, "http", null, "example/files:1", null,
+        "Files", null, null, "managed", HOST, "http", null, "example/files:1", null,
         List.of(), List.of(), null, List.of(), 1100, null, "/mcp", null,
         List.of(new ConfigValueInput("TOKEN", "super-secret", true, false)),
         List.of(), List.of(), null, List.of()));
@@ -598,7 +598,7 @@ class McpComposeLifecycleTest {
       String name, String kind, String hostId, String configJson, String operationState) {
     // the service key is unique per host, so it follows the id — 'Files' yields SERVICE
     String id = "mcp-" + name.toLowerCase().replace(' ', '-');
-    repository.insert(new ServerRow(id, name, null, kind, hostId,
+    repository.insert(new ServerRow(id, name, null, null, kind, hostId,
         "managed".equals(kind) ? id : null, configJson,
         "stopped", "managed".equals(kind) ? "missing" : "unavailable", operationState, null,
         1, 0, null, null, null, null, null, 0L, 0L));

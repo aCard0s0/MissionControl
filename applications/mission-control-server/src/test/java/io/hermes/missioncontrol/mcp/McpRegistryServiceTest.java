@@ -203,7 +203,7 @@ class McpRegistryServiceTest {
         config.publishedPort(), config.path(), config.crossHostUrl(), config.environment(),
         config.headers(), config.volumes(), config.healthcheck(), config.supportServices());
     try {
-      repository.updateDefinition(row.id(), row.name(), row.description(),
+      repository.updateDefinition(row.id(), row.name(), row.description(), null,
           new ObjectMapper().writeValueAsString(broken), row.revision(), row.appliedRevision(),
           row.operationState(), row.revision());
     } catch (Exception e) {
@@ -212,7 +212,7 @@ class McpRegistryServiceTest {
   }
 
   private static McpServerRequest external(String name, String secret) {
-    return new McpServerRequest(name, "desc", "external", null, "http",
+    return new McpServerRequest(name, "desc", null, "external", null, "http",
         "https://example.test/mcp", null, null, List.of(), List.of(), null, List.of(),
         null, null, null, null, List.of(),
         List.of(new ConfigValueInput("Authorization", secret, true, false)),
