@@ -62,6 +62,7 @@ is most of the value.
 | ✓ | [MCP server entry](mcp/mcp-server-entry.md) | `mcp/McpRegistryService.java` | the catalog row. `definition` vs `live` — pick right. |
 | ✓ | [Managed MCP stack](mcp/managed-mcp-stack.md) | `mcp/ManagedMcpStack.java` | `mission-control-mcp` + its per-host Compose lock. |
 | ✓ | [MCP agent link](mcp/agent-mcp-link.md) | `mcp/AgentMcpLink.java` | profile ↔ entry, with the revision that shows drift. |
+| ✓ | [MCP group](mcp/mcp-group.md) | `mcp/McpGroupController.java` | a set of entries with a deploy. Stores no agents — coverage is derived from the links. |
 | · | Retained resource | `mcp/RetainedResource*.java` | volumes kept when a server is deleted. Purged deliberately. |
 | · | Support service | `mcp/SupportService{Dto,Request}.java` | a sidecar an entry may declare (e.g. a database). |
 | · | Volume / healthcheck spec | `mcp/{VolumeSpec,HealthcheckSpec}.java` | named volumes only; host binds rejected. |

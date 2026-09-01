@@ -26,7 +26,7 @@ rather than an invention — and it is the difference between the operator havin
 the *agent* having it. A guide the agent cannot read would leave it choosing between the
 parts with no idea they belong together.
 
-The guide's `name` is therefore a directory name as well as a label (`schema.sql:187`), and
+The guide's `name` is therefore a directory name as well as a label (`schema.sql:236`), and
 carries the same charset rule as a skill's.
 
 ## The deploy is not atomic, deliberately
@@ -35,14 +35,14 @@ Several independent writes to an agent someone else owns, and they fail one at a
 skill deleted from the library since the guide named it, an MCP alias already on that agent,
 a managed server that is not running.
 
-`skills/SkillGuideController.java:146` follows the rule
+`skills/SkillGuideController.java:136` follows the rule
 [profile-edit](../../processes/profile-edit.md) inherits from
 `agents/templates/TemplateApplier.java:60` — *layering onto a profile the caller does not own
 surfaces the error and does not roll back*. Undoing half a guide would mean removing skills
 and MCP entries that may have been on that agent **before the guide ever ran**.
 
 So it reports instead: one `DeployedPart` per part
-(`skills/SkillGuideController.java:69`), each `deployed | skipped | failed` with a reason.
+(`agents/api/DeployedPart.java:23`), each `deployed | skipped | failed` with a reason.
 `skipped` is "gone from the library or the catalog"; `failed` is "attempted and refused".
 
 A guide and a library skill of the same name both resolve to `skills/<name>/`, so a deploy
@@ -61,9 +61,9 @@ Two orderings are load-bearing:
 
 ## Shape
 
-- `skill_guides` — `schema.sql:183`; `name` is `COLLATE NOCASE UNIQUE` (`:187`) because two
+- `skill_guides` — `schema.sql:232`; `name` is `COLLATE NOCASE UNIQUE` (`:187`) because two
   guides would otherwise write the same umbrella directory; both id lists are JSON in TEXT
-  (`:191`); index on `category` (`:197`)
+  (`:240`); index on `category` (`:246`)
 - `SkillGuide` — `skills/SkillGuide.java`
 - `GuideDocument.render` — `skills/GuideDocument.java:30`, the umbrella SKILL.md
 - `SkillDeployer` — `skills/SkillDeployer.java:33`, shared with the skill library

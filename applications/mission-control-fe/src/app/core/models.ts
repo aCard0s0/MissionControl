@@ -193,6 +193,46 @@ export interface Skill {
 }
 
 /**
+ * One agent an MCP group reaches, and how completely.
+ *
+ * `linked` counts how many of the group's servers that agent is connected to — a group of four
+ * showing 2 is an agent someone half-disconnected. Derived from the agent links on every read,
+ * never stored, so it can only ever say what the links say.
+ */
+export interface McpGroupAgent {
+  hostId: string;
+  containerId: string;
+  profile: string;
+  linked: number;
+}
+
+/**
+ * An MCP group: a named set of catalog entries, deployable onto an agent in one action.
+ *
+ * The only group in this app that *does* something — a skill group and a prompt group file a
+ * library, this one also has a deploy. It records no agents: connecting a group writes the same
+ * `mcp_agent_links` rows the agent's own MCP tab writes, and {@link agents} is read back off
+ * them. Many-to-many in both directions falls out of that with nothing storing it — one group
+ * onto as many agents as you like, and an agent's links from several groups plus servers
+ * connected individually.
+ */
+export interface McpGroup {
+  id: string;
+  name: string;
+  description: string;
+  serverIds: string[];
+  agents: McpGroupAgent[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface McpGroupInput {
+  name: string;
+  description: string;
+  serverIds: string[];
+}
+
+/**
  * A prompt group: how the prompt library is filed. Organization only — no behaviour, and
  * deleting one leaves every prompt it named in the library.
  *

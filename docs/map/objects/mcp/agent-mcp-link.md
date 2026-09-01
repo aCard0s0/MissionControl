@@ -51,6 +51,10 @@ profile, on a 12-second poll**, and needs one column.
 - **joins:** [Container](../docker/container.md) by `container_id` — **repointed when an upgrade
   mints a new id**, in the same transaction as `board_tasks`, via `ContainerIdListener`
   (`docker/ContainerUpdateService.java:53`)
+- **read-by:** [MCP group](mcp-group.md), which derives "which agents does this group reach"
+  from these rows and stores no association of its own. One direction only — nothing here knows
+  a group exists, and a group deploy writes these rows through `AgentMcpCatalogService.connect`
+  like any other connect.
 - **looks-like-but-is-not:** the profile's own MCP config inside the container. That is hermes'
   file; this row only records what we wrote into it and at which revision.
 
@@ -62,6 +66,8 @@ profile, on a 12-second poll**, and needs one column.
   [`mission-control-mcp-net`](managed-mcp-stack.md).
 - **Does not hit:** cross-host connections. Those require an **explicit agent-reachable URL**
   (`crossHostUrl`); the shared network only spans one daemon.
+- **Also hits what an [MCP group](mcp-group.md) reports.** Its agent coverage is a read of
+  these rows, so a change to this table's keys changes what a group can say about itself.
 
 ## Surfaces
 

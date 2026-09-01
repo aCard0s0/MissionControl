@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.skills;
 
+import io.hermes.missioncontrol.agents.api.AgentTargetRequest;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;

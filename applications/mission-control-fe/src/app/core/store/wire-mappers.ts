@@ -1,6 +1,6 @@
 import {
   ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
-  ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpHealthcheck, ApiMcpRetainedResource,
+  ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpGroup, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
   ApiProfileTemplate, ApiPrompt, ApiPromptGroup, ApiPullState, ApiSkill, ApiSkillGroup, ApiSkillGuide, ApiDeployedPart, ApiUpstream, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
@@ -8,7 +8,7 @@ import {
 import {
   AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
-  McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
+  McpGroup, McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
   McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, PromptGroup, Skill, SkillGroup, SkillGuide, DeployedPart, Upstream,
   PullState, RunningModel, ServerInfo, SessionInfo, SetupApiKey, SetupKeyProvider,
   SetupMessaging,
@@ -279,6 +279,23 @@ export function toUpstream(api: ApiUpstream): Upstream {
     latest: api.latest ?? '',
     detail: api.detail ?? '',
     checkedAt: api.checkedAt ?? null,
+  };
+}
+
+export function toMcpGroup(api: ApiMcpGroup): McpGroup {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description ?? '',
+    serverIds: api.serverIds ?? [],
+    agents: (api.agents ?? []).map(a => ({
+      hostId: a.hostId,
+      containerId: a.containerId,
+      profile: a.profile,
+      linked: a.linked ?? 0,
+    })),
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
   };
 }
 

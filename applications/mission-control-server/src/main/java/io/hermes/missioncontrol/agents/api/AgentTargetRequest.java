@@ -1,4 +1,4 @@
-package io.hermes.missioncontrol.skills;
+package io.hermes.missioncontrol.agents.api;
 
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import jakarta.validation.constraints.NotBlank;
@@ -12,9 +12,10 @@ import jakarta.validation.constraints.Pattern;
  * {@code ProfilePaths} — the seam has to hold for callers that never came through a
  * controller.
  *
- * <p>Shared by both controllers in this package: a skill and a guide are deployed to an
- * agent the same way, and two copies of this would be two places to fix the day the
- * addressing changes.
+ * <p>Shared by every library that deploys onto an agent — a skill, a guide, an MCP group.
+ * They are all addressed the same way, and a copy per package would be several places to fix
+ * the day the addressing changes. It lives here, beside the DTOs those packages already share,
+ * rather than in whichever one happened to need it first.
  */
 public record AgentTargetRequest(
     @NotBlank String hostId,

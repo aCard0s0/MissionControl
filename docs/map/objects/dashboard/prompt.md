@@ -25,7 +25,7 @@ flag does not.
 ## Shape
 
 - `prompts` — `schema.sql:126`; `tags` is a JSON array in TEXT; index on `category` (`:133`)
-- `prompt_meta` — `schema.sql:141`, key/value
+- `prompt_meta` — `schema.sql:190`, key/value
 - Seeder: `prompts/PromptSeeder.java`
 
 ## Connected to

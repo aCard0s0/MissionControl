@@ -121,6 +121,35 @@ CREATE TABLE IF NOT EXISTS mcp_agent_links (
 
 CREATE INDEX IF NOT EXISTS idx_mcp_agent_links_server ON mcp_agent_links (server_id);
 
+-- A named set of catalog entries, deployable onto an agent in one action. The only group
+-- table in this schema whose noun does something: the other two file a library, this one
+-- also has a deploy.
+--
+-- It records NO agents, deliberately. Deploying a group connects each of its servers to one
+-- agent, and every one of those connections is already a row in mcp_agent_links. Which agents
+-- a group reaches is derived from those links, so the count can only ever say what the links
+-- say. A stored group-to-agent association would be a second source of truth: disconnect one
+-- server on the agent's own MCP tab and it would still claim the group was connected.
+--
+-- Many-to-many in both directions falls out of that with no table saying so — the same group
+-- deploys onto as many agents as you like, an agent's links may come from several groups and
+-- from servers connected individually, and a server in two groups counts toward both.
+--
+-- `server_ids` holds ids and not foreign keys, unlike mcp_agent_links.server_id: this is a
+-- JSON list, so there is nothing for a REFERENCES clause to attach to. An entry deleted from
+-- the catalog is reported as skipped by a deploy rather than silently dropped.
+CREATE TABLE IF NOT EXISTS mcp_groups (
+  id          TEXT PRIMARY KEY,
+  -- a label. Unlike an alias in mcp_agent_links it never reaches a profile's config, so it
+  -- carries no charset rule. NOCASE UNIQUE because two headers reading the same is the one
+  -- way this list becomes unreadable.
+  name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description TEXT,
+  server_ids  TEXT,   -- JSON array of mcp_servers.id
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 -- The prompt library: dashboard-owned text an operator keeps for later, with a
 -- category, notes and tags. Nothing inside a Hermes container reads it.
 CREATE TABLE IF NOT EXISTS prompts (

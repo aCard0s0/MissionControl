@@ -23,7 +23,7 @@ reaches a container, and there is no route that could.
 So the association points **group → guide**, not the other way about. A guide already owns
 the set it deploys and the button that does it; a group that wants deploying links that guide
 rather than growing a second, worse deploy of its own. `guideId` is null for a group that is
-filing and nothing more (`schema.sql:219`), which is what makes the link the optional half.
+filing and nothing more (`schema.sql:267`), which is what makes the link the optional half.
 
 ### Not the same axis as `category`
 
@@ -35,7 +35,7 @@ filter bar still filters by category *within* the filed view.
 ### The name is a label
 
 Unlike a skill's name or a guide's, nothing writes a group to disk, so it carries no
-directory charset rule (`schema.sql:215`) — only `COLLATE NOCASE UNIQUE`, because two headers
+directory charset rule (`schema.sql:264`) — only `COLLATE NOCASE UNIQUE`, because two headers
 reading the same is the one way the filed list stops being readable.
 
 ## A skill can be in two groups, and shows in both
@@ -51,8 +51,8 @@ package refuse.
 
 ## Shape
 
-- `skill_groups` — `schema.sql:210`; `name` is `COLLATE NOCASE UNIQUE` (`:215`); `skill_ids`
-  is JSON in TEXT (`:218`); `guide_id` is nullable (`:219`)
+- `skill_groups` — `schema.sql:259`; `name` is `COLLATE NOCASE UNIQUE` (`:264`); `skill_ids`
+  is JSON in TEXT (`:266`); `guide_id` is nullable (`:267`)
 - `SkillGroup` — `skills/SkillGroup.java`
 - `SkillGroupRepository` — `skills/SkillGroupRepository.java:43` reads **by name**, not
   newest-edit like every other library here: these are the headers the skills list is filed

@@ -55,6 +55,9 @@ with daemon access — as with all container environment variables.
 
 ## Connected to
 
+- **named-by:** any number of [MCP groups](mcp-group.md), by id in a JSON list — so unlike
+  `mcp_agent_links.server_id` there is no FK and no cascade. Deleting an entry leaves it in every
+  group that named it, and a group deploy reports it as skipped.
 - **owns:** its rendered Compose service in the [managed stack](managed-mcp-stack.md); its
   `mcp_retained_resources` rows; its support services and volumes
 - **owned-by:** a [Docker host](../docker/docker-host.md) when `managed` (`host_id`); nothing when

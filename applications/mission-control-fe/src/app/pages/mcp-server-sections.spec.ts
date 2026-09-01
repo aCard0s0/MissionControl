@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mcpServerGroups } from './mcp-server-groups';
+import { mcpServerSections } from './mcp-server-sections';
 import { catalogServer as server, dockerHost } from '../testing/models';
 
 const hosts = [
@@ -9,7 +9,7 @@ const hosts = [
 
 describe('MCP server grouping', () => {
   it('gives each Docker host its own managed section, named after the host', () => {
-    const groups = mcpServerGroups(
+    const groups = mcpServerSections(
       [server('a'), server('b', { hostId: 'dh-edge' }), server('c')], hosts);
 
     expect(groups.map(g => g.key)).toEqual(['managed-dh-local', 'managed-dh-edge']);
@@ -21,13 +21,13 @@ describe('MCP server grouping', () => {
   });
 
   it('orders hosts by first appearance, so a poll cannot reshuffle the sections', () => {
-    const groups = mcpServerGroups([server('a', { hostId: 'dh-edge' }), server('b')], hosts);
+    const groups = mcpServerSections([server('a', { hostId: 'dh-edge' }), server('b')], hosts);
 
     expect(groups.map(g => g.key)).toEqual(['managed-dh-edge', 'managed-dh-local']);
   });
 
   it('still shows a server whose host Mission Control no longer knows', () => {
-    const groups = mcpServerGroups([server('a', { hostId: 'dh-gone' })], hosts);
+    const groups = mcpServerSections([server('a', { hostId: 'dh-gone' })], hosts);
 
     expect(groups[0]).toMatchObject({
       key: 'managed-dh-gone', label: 'Managed stack — dh-gone',
@@ -36,7 +36,7 @@ describe('MCP server grouping', () => {
   });
 
   it('collects managed servers with no host at all under Unassigned', () => {
-    const groups = mcpServerGroups([server('a', { hostId: null })], hosts);
+    const groups = mcpServerSections([server('a', { hostId: null })], hosts);
 
     expect(groups[0]).toMatchObject({
       key: 'managed-unassigned', label: 'Managed stack — Unassigned',
@@ -44,9 +44,9 @@ describe('MCP server grouping', () => {
   });
 
   it('shows the external and stdio sections only once each has a member', () => {
-    expect(mcpServerGroups([server('a')], hosts).map(g => g.key)).toEqual(['managed-dh-local']);
+    expect(mcpServerSections([server('a')], hosts).map(g => g.key)).toEqual(['managed-dh-local']);
 
-    const all = mcpServerGroups([
+    const all = mcpServerSections([
       server('a'),
       server('b', { kind: 'external', hostId: null, url: 'https://mcp.example.test/mcp' }),
       server('c', { kind: 'stdio', hostId: null, stdioCommand: 'npx' }),
@@ -58,6 +58,6 @@ describe('MCP server grouping', () => {
   });
 
   it('answers with nothing at all for an empty catalog', () => {
-    expect(mcpServerGroups([], hosts)).toEqual([]);
+    expect(mcpServerSections([], hosts)).toEqual([]);
   });
 });

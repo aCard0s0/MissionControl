@@ -8,6 +8,7 @@ DELETE /api/agents/dh-local/c-1/atlas/webhooks/alerts
 DELETE /api/containers/dh-local/c-1
 DELETE /api/hosts/dh-local
 DELETE /api/inference-endpoints/mp-1
+DELETE /api/mcp-groups/mg-1
 DELETE /api/mcp-servers/mcp-1
 DELETE /api/mcp-servers/retained-resources/vol-1
 DELETE /api/profile-templates/pt-1
@@ -37,6 +38,7 @@ GET /api/inference-endpoints
 GET /api/inference-endpoints/mp-1/models
 GET /api/inference-endpoints/mp-1/pulls
 GET /api/inference-endpoints/mp-1/running
+GET /api/mcp-groups
 GET /api/mcp-servers
 GET /api/mcp-servers/mcp-1/logs?tail=40
 GET /api/mcp-servers/retained-resources
@@ -76,6 +78,8 @@ POST /api/inference-endpoints/mp-1/models/delete
 POST /api/inference-endpoints/mp-1/models/load
 POST /api/inference-endpoints/mp-1/models/pull
 POST /api/inference-endpoints/mp-1/models/unload
+POST /api/mcp-groups
+POST /api/mcp-groups/mg%201/deploy
 POST /api/mcp-servers
 POST /api/mcp-servers/mcp-1/check
 POST /api/mcp-servers/mcp-1/start
@@ -99,6 +103,7 @@ PUT /api/agents/dh-local/c-1/atlas/skills/ops
 PUT /api/agents/dh-local/c-1/atlas/skills/ops/content
 PUT /api/agents/dh-local/c-1/atlas/soul
 PUT /api/agents/dh-local/c-1/atlas/webhooks/platform
+PUT /api/mcp-groups/mg%201
 PUT /api/mcp-servers/mcp-1
 PUT /api/profile-templates/pt%201
 PUT /api/prompt-groups/pg%201

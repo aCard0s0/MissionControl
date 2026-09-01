@@ -4,7 +4,9 @@ import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.AgentTargetRequest;
 import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
+import io.hermes.missioncontrol.agents.api.DeployedPart;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
@@ -63,18 +65,6 @@ public class SkillGuideController {
       @Size(max = 60) String category,
       @Size(max = MAX_REFS) List<@Size(max = 64) String> skillIds,
       @Size(max = MAX_REFS) List<@Size(max = 64) String> mcpServerIds) {
-  }
-
-  /** What one part of a guide did. {@code detail} is null unless something went wrong. */
-  public record DeployedPart(String kind, String name, String status, String detail) {
-
-    static final String DEPLOYED = "deployed";
-    static final String SKIPPED = "skipped";
-    static final String FAILED = "failed";
-
-    static DeployedPart ok(String kind, String name) {
-      return new DeployedPart(kind, name, DEPLOYED, null);
-    }
   }
 
   /** The refreshed profile, plus one row per part so a half-applied guide is legible. */

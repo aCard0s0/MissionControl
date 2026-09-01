@@ -45,6 +45,7 @@ Other product-word / code-name disagreements:
 |---|---|
 | Agent (in the UI, one row per profile) | `ProfileSpec` / `HermesProfiles` — a *profile* inside a container, not a container |
 | MCP Servers page | `McpServerRepository` catalog rows, of three kinds: `managed`, `external`, `stdio` |
+| "group" on the MCP Servers page | the operator-made set in `mcp_groups` / `McpGroup` — **not** the roster's arrangement by kind and host, which is `mcpServerSections` (`pages/mcp-server-sections.ts`) and stored nowhere |
 | "the MCP project" | Compose project **`mission-control-mcp`**. A pre-existing project named `mcp` is never touched. |
 | ops board | `board_tasks` table, `BoardTask` |
 

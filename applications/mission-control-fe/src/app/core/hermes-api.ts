@@ -5,6 +5,7 @@ import { HostsApi } from './api/hosts-api';
 import { ApiHttp } from './api/http';
 import { terminalSocketUrl } from './api/terminal-socket';
 import { McpCatalogApi } from './api/mcp-catalog-api';
+import { McpGroupsApi } from './api/mcp-groups-api';
 import { PromptGroupsApi } from './api/prompt-groups-api';
 import { PromptsApi } from './api/prompts-api';
 import { InferenceEndpointsApi } from './api/inference-endpoints-api';
@@ -39,6 +40,7 @@ export class HermesApi {
   readonly containers: ContainersApi;
   readonly agents: AgentsApi;
   readonly mcp: McpCatalogApi;
+  readonly mcpGroups: McpGroupsApi;
   readonly prompts: PromptsApi;
   readonly promptGroups: PromptGroupsApi;
   /** The skill *library*. Per-agent skills live on `agents` — see SkillsApi. */
@@ -60,6 +62,7 @@ export class HermesApi {
     this.containers = new ContainersApi(this.http);
     this.agents = new AgentsApi(this.http);
     this.mcp = new McpCatalogApi(this.http);
+    this.mcpGroups = new McpGroupsApi(this.http);
     this.prompts = new PromptsApi(this.http);
     this.promptGroups = new PromptGroupsApi(this.http);
     this.skills = new SkillsApi(this.http);

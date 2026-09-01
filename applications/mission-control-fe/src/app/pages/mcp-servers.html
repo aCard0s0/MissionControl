@@ -24,7 +24,7 @@
 @if (catalog.loading() && !catalog.servers().length) {
   <div class="panel empty" data-reveal><p class="mono dim">Loading MCP server registry…</p></div>
 } @else {
-  @for (group of serverGroups(); track group.key) {
+  @for (group of serverSections(); track group.key) {
     <section class="panel server-group" data-reveal>
       <div class="panel-h">
         {{ group.label }}
@@ -109,6 +109,121 @@
   }
 }
 
+<!-- Operator-made sets of entries, with a deploy. Its own section rather than a second
+     arrangement of the roster above: that one is grouped by kind and host, and stacking a
+     user grouping on top of it would make neither readable. -->
+<section class="panel mcp-groups" data-reveal>
+  <div class="panel-h">
+    SERVER GROUPS
+    <span class="chip off">{{ groups.groups().length }}</span>
+    <span class="spacer"></span>
+    <button class="btn sm primary" (click)="newGroup()">+ new group</button>
+  </div>
+  <div class="panel-b">
+    @if (groupEditorOpen()) {
+      <div class="group-editor">
+        <div class="row">
+          <div class="field">
+            <label for="mcp-group-name">name</label>
+            <input id="mcp-group-name" class="input" [(ngModel)]="gName" placeholder="research" />
+          </div>
+          <div class="field">
+            <label for="mcp-group-description">description</label>
+            <input id="mcp-group-description" class="input" [(ngModel)]="gDescription"
+                   placeholder="what an agent needs this set for" />
+          </div>
+        </div>
+
+        <div class="picker">
+          <div class="picker-h mono">
+            <span class="lbl">servers</span>
+            <span class="faint">{{ gServerIds().length }} picked</span>
+          </div>
+          @if (catalog.servers().length) {
+            <div class="picks">
+              @for (server of catalog.servers(); track server.id) {
+                <button class="chip" [class.on]="gServerIds().includes(server.id)"
+                        [title]="filedElsewhere(server.id)
+                                   ? 'also in the group ' + filedElsewhere(server.id)
+                                   : server.kind + ' entry'"
+                        (click)="toggleGroupServer(server.id)">
+                  {{ server.name }}
+                  @if (filedElsewhere(server.id)) { <span class="faint">·</span> }
+                </button>
+              }
+            </div>
+            <p class="lock-hint">a server may be in several groups — an agent often needs the
+              same one for more than one job. Deploying connects each under its own name.</p>
+          } @else {
+            <p class="lock-hint">no servers registered yet — add one above and the group has
+              something to hold.</p>
+          }
+        </div>
+
+        <div class="editor-actions">
+          <span class="spacer"></span>
+          <button class="btn" (click)="cancelGroup()">cancel</button>
+          <button class="btn primary" [disabled]="!canSaveGroup()" (click)="saveGroup()">
+            {{ groupSaving() ? 'saving…' : 'save group' }}
+          </button>
+        </div>
+      </div>
+    }
+
+    @for (group of groups.groups(); track group.id) {
+      <div class="group-row">
+        <div class="group-head-row">
+          <strong>{{ group.name }}</strong>
+          <span class="chip off">{{ group.serverIds.length }} server{{ group.serverIds.length === 1 ? '' : 's' }}</span>
+          @if (group.description) { <span class="g-desc faint">{{ group.description }}</span> }
+          <span class="spacer"></span>
+          <button class="btn sm primary" (click)="deploying.set(group)">deploy</button>
+          <button class="btn sm ghost" (click)="editGroup(group)">edit</button>
+          <button class="btn sm danger ghost" (click)="removeGroup(group)">delete</button>
+        </div>
+
+        <div class="parts mono">
+          @for (server of groupServers(group); track server.id) {
+            <span class="chip" [class.info]="!server.missing" [class.warn]="server.missing"
+                  [title]="server.missing
+                             ? 'no longer in the catalog — a deploy will skip it'
+                             : 'catalog entry'">
+              {{ server.name }}{{ server.missing ? ' ⚠' : '' }}
+            </span>
+          } @empty {
+            <span class="faint">empty — add servers with edit</span>
+          }
+        </div>
+
+        <!-- read back off the agent links on every list, never stored: a count short of the
+             group size is an agent someone disconnected part of -->
+        <div class="agents mono">
+          <span class="lbl">on</span>
+          @for (agent of group.agents; track agent.hostId + agent.containerId + agent.profile) {
+            <span class="chip"
+                  [class.on]="agent.linked >= group.serverIds.length"
+                  [class.warn]="agent.linked < group.serverIds.length"
+                  [title]="agent.linked >= group.serverIds.length
+                             ? 'connected to every server in this group'
+                             : 'connected to ' + agent.linked + ' of ' + group.serverIds.length
+                               + ' — the rest were never connected, or were disconnected since'">
+              {{ agent.profile }} {{ agent.linked }}/{{ group.serverIds.length }}
+            </span>
+          } @empty {
+            <span class="faint">no agent yet</span>
+          }
+        </div>
+      </div>
+    } @empty {
+      @if (!groupEditorOpen()) {
+        <p class="lock-hint">A group connects several catalog entries to an agent in one action.
+          The agents it reaches are read back from the connections themselves, so a group is a
+          set — not a record of who has it.</p>
+      }
+    }
+  </div>
+</section>
+
 <section class="panel retained" data-reveal>
   <div class="panel-h">
     RETAINED DATA
@@ -180,4 +295,15 @@
 
 @if (logServer(); as server) {
   <mc-mcp-server-logs [server]="server" (closed)="logServer.set(null)" />
+}
+
+@if (deploying(); as target) {
+  <mc-deploy-dialog [label]="target.name" noun="MCP group" [run]="deployToAgent"
+                    (closed)="deploying.set(null)">
+    <p class="dim">Connects this group's {{ target.serverIds.length }}
+      server{{ target.serverIds.length === 1 ? '' : 's' }} to the chosen agent, each under its
+      own name.</p>
+    <p class="lock-hint">a top-up, not a sync: a server the agent already has is reported as
+      already connected and left alone, and nothing it has outside this group is touched.</p>
+  </mc-deploy-dialog>
 }

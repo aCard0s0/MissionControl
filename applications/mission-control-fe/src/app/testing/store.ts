@@ -16,6 +16,7 @@ import { JobStore } from '../core/store/job-store';
 import { LiveSync } from '../core/store/live-sync';
 import { LogStore } from '../core/store/log-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
+import { McpGroupStore } from '../core/store/mcp-group-store';
 import { PromptGroupStore } from '../core/store/prompt-group-store';
 import { PromptStore } from '../core/store/prompt-store';
 import { SkillGroupStore } from '../core/store/skill-group-store';
@@ -133,6 +134,7 @@ export const storeSlices = () => {
     get catalog() { return TestBed.inject(McpCatalogStore); },
     get prompts() { return TestBed.inject(PromptStore); },
     get promptGroups() { return TestBed.inject(PromptGroupStore); },
+    get mcpGroups() { return TestBed.inject(McpGroupStore); },
     // `skills` is the per-agent slice; the library is `skillLibrary`
     get skillLibrary() { return TestBed.inject(SkillStore); },
     get guides() { return TestBed.inject(SkillGuideStore); },
@@ -210,6 +212,7 @@ const SLICE_TOKENS = {
   guides: SkillGuideStore,
   skillGroups: SkillGroupStore,
   promptGroups: PromptGroupStore,
+  mcpGroups: McpGroupStore,
   templates: TemplateStore,
   terminal: TerminalRequestStore,
   webhooks: WebhookStore,

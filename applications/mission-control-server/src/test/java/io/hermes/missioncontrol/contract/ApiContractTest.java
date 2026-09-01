@@ -10,6 +10,7 @@ import io.hermes.missioncontrol.agents.api.ApiKeyProviderDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.CronJobDto;
+import io.hermes.missioncontrol.agents.api.DeployedPart;
 import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.WebhookPlatformDto;
 import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
@@ -46,6 +47,8 @@ import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.web.ServerLogController.ServerInfoDto;
 import io.hermes.missioncontrol.mcp.ConfigValueDto;
 import io.hermes.missioncontrol.mcp.HealthcheckSpec;
+import io.hermes.missioncontrol.mcp.McpGroupController;
+import io.hermes.missioncontrol.mcp.McpGroupDto;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.mcp.RetainedResourceDto;
 import io.hermes.missioncontrol.mcp.SupportServiceDto;
@@ -148,6 +151,9 @@ class ApiContractTest {
     CONTRACT.put("ApiMcpNamedVolume", VolumeSpec.class);
     CONTRACT.put("ApiMcpHealthcheck", HealthcheckSpec.class);
     CONTRACT.put("ApiMcpRetainedResource", RetainedResourceDto.class);
+    CONTRACT.put("ApiMcpGroup", McpGroupDto.class);
+    CONTRACT.put("ApiMcpGroupAgent", McpGroupDto.McpGroupAgentDto.class);
+    CONTRACT.put("ApiDeployedMcpGroup", McpGroupController.DeployedMcpGroup.class);
     // models / providers
     CONTRACT.put("ApiModelCatalog", ModelCatalogDto.class);
     CONTRACT.put("ApiPullState", PullStatusDto.class);
@@ -167,7 +173,7 @@ class ApiContractTest {
     CONTRACT.put("ApiSkillGroup", SkillGroup.class);
     // guides
     CONTRACT.put("ApiSkillGuide", SkillGuide.class);
-    CONTRACT.put("ApiDeployedPart", SkillGuideController.DeployedPart.class);
+    CONTRACT.put("ApiDeployedPart", DeployedPart.class);
     CONTRACT.put("ApiDeployedGuide", SkillGuideController.DeployedGuide.class);
   }
 
