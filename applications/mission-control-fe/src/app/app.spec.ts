@@ -77,7 +77,7 @@ describe('App shell', () => {
     const links = Array.from(el(fixture).querySelectorAll('nav a'))
       .map(a => (a.textContent ?? '').trim());
     expect(links).toEqual([
-      'Containers', 'Overview', 'Agents', 'Blueprints', 'Models',
+      'Containers', 'Overview', 'Agents', 'Blueprints', 'Models', 'Credentials',
       'MCP Servers', 'Prompts', 'Skills', 'Ops Board', 'Calendar', 'Webhooks',
       'CLI Reference', 'Server Logs',
     ]);

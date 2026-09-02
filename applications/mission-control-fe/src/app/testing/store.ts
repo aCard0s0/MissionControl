@@ -10,6 +10,7 @@ import { AgentStore } from '../core/store/agent-store';
 import { BoardStore } from '../core/store/board-store';
 import { ContainerLifecycle } from '../core/store/container-lifecycle';
 import { ContainerStore } from '../core/store/container-store';
+import { CredentialStore } from '../core/store/credential-store';
 import { HostStore } from '../core/store/host-store';
 import { ImageCatalogStore } from '../core/store/image-catalog-store';
 import { JobStore } from '../core/store/job-store';
@@ -125,6 +126,7 @@ export const storeSlices = () => {
     get hosts() { return TestBed.inject(HostStore); },
     get containers() { return TestBed.inject(ContainerStore); },
     get lifecycle() { return TestBed.inject(ContainerLifecycle); },
+    get credentials() { return TestBed.inject(CredentialStore); },
     get logs() { return TestBed.inject(LogStore); },
     get images() { return TestBed.inject(ImageCatalogStore); },
     get agents() { return TestBed.inject(AgentStore); },
@@ -196,6 +198,7 @@ const SLICE_TOKENS = {
   board: BoardStore,
   catalog: McpCatalogStore,
   containers: ContainerStore,
+  credentials: CredentialStore,
   ctx: StoreContext,
   hosts: HostStore,
   images: ImageCatalogStore,

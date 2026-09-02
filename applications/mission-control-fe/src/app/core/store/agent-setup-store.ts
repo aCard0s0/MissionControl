@@ -65,7 +65,10 @@ export class AgentSetupStore {
   }
 
   /** Empty/null entry value removes that key from the .env file. */
-  setEnv(agentId: string, entries: Array<{ key: string; value: string | null }>): Promise<AgentSetup | null> {
+  setEnv(
+    agentId: string,
+    entries: Array<{ key: string; value: string | null; credentialId?: string }>,
+  ): Promise<AgentSetup | null> {
     const resolved = this.agents.resolve(agentId);
     if (!resolved) {
       this.ctx.gone('profile');

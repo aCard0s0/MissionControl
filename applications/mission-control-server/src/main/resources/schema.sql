@@ -292,3 +292,30 @@ CREATE TABLE IF NOT EXISTS model_catalog (
 
 CREATE INDEX IF NOT EXISTS idx_model_catalog_provider ON model_catalog (provider, position);
 
+-- A credential saved once and offered as a dropdown wherever a key is typed: an agent's .env,
+-- the create-agent dialog, a blueprint's keys tab.
+--
+-- A bundle of entries rather than a single key, because that is the shape of the real things.
+-- HermesEnvCatalog.MESSAGING pairs a token with a home channel (TELEGRAM_BOT_TOKEN +
+-- TELEGRAM_HOME_CHANNEL), and a self-hosted provider takes a base URL alongside its key. One
+-- row per key would make an operator save and pick those halves separately.
+--
+-- `entries_json` is a JSON array of {key, value, secret} — the same shape as the StoredValue
+-- list inside mcp_servers.config_json. A secret entry's value is an `enc:v1:` envelope from
+-- SecretCipher; a non-secret entry's is plaintext, and is the only kind a response may carry.
+--
+-- Autofill only: picking a credential copies its value into the target then and there, and
+-- nothing records that it happened. There is deliberately no link back from an agent, a
+-- blueprint or a container to the row that filled it — a profile's .env is a file inside a
+-- container, so rotating this row could not propagate to it without a re-push either way.
+CREATE TABLE IF NOT EXISTS credentials (
+  id           TEXT PRIMARY KEY,
+  -- a label, not an env key. NOCASE UNIQUE because the name is what the dropdown shows, and
+  -- two options reading the same makes the picker a guess.
+  name         TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  description  TEXT,
+  entries_json TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+

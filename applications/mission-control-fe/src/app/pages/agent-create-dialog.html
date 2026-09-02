@@ -46,14 +46,29 @@
       @if (apiKeyRequired()) {
         <div class="field">
           <label for="new-api-key-stored">API key — stored in the profile's .env</label>
-          <div class="key-row">
-            <input id="new-api-key-stored" class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…"
-                   (blur)="refreshLive()" />
-            <button class="btn ghost key-refresh" type="button"
-                    title="fetch live model list from the provider"
-                    [disabled]="!apiKey.trim()"
-                    (click)="refreshLive()">↻</button>
-          </div>
+          @if (credentialChoices().length) {
+            <select class="select" aria-label="saved credential for this provider"
+                    [value]="apiKeyCredentialId"
+                    (change)="onCredentialPick($any($event.target).value)">
+              <option value="">type a key below</option>
+              @for (c of credentialChoices(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+              }
+            </select>
+          }
+          @if (!apiKeyCredentialId) {
+            <div class="key-row">
+              <input id="new-api-key-stored" class="input" type="password" [(ngModel)]="apiKey" placeholder="sk-…"
+                     (blur)="refreshLive()" />
+              <button class="btn ghost key-refresh" type="button"
+                      title="fetch live model list from the provider"
+                      [disabled]="!apiKey.trim()"
+                      (click)="refreshLive()">↻</button>
+            </div>
+          } @else {
+            <p class="lock-hint">taken from the saved credential on create — the model list
+              below cannot be refreshed live, because this page never holds the key.</p>
+          }
         </div>
       }
       <div class="field">
@@ -108,7 +123,7 @@
       <div class="modal-actions">
         <button class="btn ghost" (click)="closed.emit()">{{ busy() ? 'close' : 'cancel' }}</button>
         <button class="btn primary"
-                [disabled]="busy() || !name.trim() || !main.model || (apiKeyRequired() && !apiKey.trim()) || auxIncomplete()"
+                [disabled]="busy() || !name.trim() || !main.model || (apiKeyRequired() && !apiKey.trim() && !apiKeyCredentialId) || auxIncomplete()"
                 (click)="create()">
           @if (busy()) { <span class="spin" aria-hidden="true"></span> }
           {{ busy() ? 'creating…' : 'create profile' }}

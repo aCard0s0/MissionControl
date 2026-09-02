@@ -6,6 +6,7 @@ DELETE /api/agents/dh-local/c-1/atlas/sessions/sess%201
 DELETE /api/agents/dh-local/c-1/atlas/skills/ops
 DELETE /api/agents/dh-local/c-1/atlas/webhooks/alerts
 DELETE /api/containers/dh-local/c-1
+DELETE /api/credentials/cr-1
 DELETE /api/hosts/dh-local
 DELETE /api/inference-endpoints/mp-1
 DELETE /api/mcp-groups/mg-1
@@ -32,6 +33,7 @@ GET /api/board/tasks
 GET /api/containers
 GET /api/containers/dh-local/c-1/logs?tail=25
 GET /api/containers/dh-local/c-1/stats
+GET /api/credentials
 GET /api/hosts
 GET /api/images/tags?hostId=dh-local
 GET /api/inference-endpoints
@@ -70,6 +72,7 @@ POST /api/containers
 POST /api/containers/dh-local/c-1/start
 POST /api/containers/dh-local/c-1/stop
 POST /api/containers/dh-local/c-1/update
+POST /api/credentials
 POST /api/hosts
 POST /api/hosts/dh-local/check
 POST /api/inference-endpoints
@@ -103,6 +106,7 @@ PUT /api/agents/dh-local/c-1/atlas/skills/ops
 PUT /api/agents/dh-local/c-1/atlas/skills/ops/content
 PUT /api/agents/dh-local/c-1/atlas/soul
 PUT /api/agents/dh-local/c-1/atlas/webhooks/platform
+PUT /api/credentials/cr%201
 PUT /api/mcp-groups/mg%201
 PUT /api/mcp-servers/mcp-1
 PUT /api/profile-templates/pt%201

@@ -5,12 +5,13 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ActivityStore } from '../core/store/activity-store';
 import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { CredentialStore } from '../core/store/credential-store';
 import { AgentStore } from '../core/store/agent-store';
 import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { TemplateStore } from '../core/store/template-store';
 import {
-  AuthProvider, AuxiliaryModel, HermesContainer, InferenceEndpoint, ModelCatalog,
+  AuthProvider, AuxiliaryModel, Credential, HermesContainer, InferenceEndpoint, ModelCatalog,
 } from '../core/models';
 import { ModelPicker } from '../shared/model-picker';
 import {
@@ -47,6 +48,7 @@ export class AgentCreateDialog {
   private readonly providers = inject(ProviderStore);
   private readonly endpoints = inject(InferenceEndpointStore);
   private readonly setup = inject(AgentSetupStore);
+  private readonly credentials = inject(CredentialStore);
   private readonly activity = inject(ActivityStore);
 
   protected readonly busy = signal(false);
@@ -65,6 +67,8 @@ export class AgentCreateDialog {
   protected name = '';
   protected provider = 'nous';
   protected apiKey = '';
+  /** A saved credential picked instead of typing the key, or '' for none. */
+  protected apiKeyCredentialId = '';
   protected cloneFrom = '';
   protected fromTemplate = '';
 
@@ -120,6 +124,25 @@ export class AgentCreateDialog {
     } else if (template.model) {
       this.main.model = template.model;
     }
+  }
+
+  /**
+   * Saved credentials holding this provider's API-key variable.
+   *
+   * Filtered by the variable rather than by the provider name, which is what the server
+   * resolves too — the registry names the variable once (`LlmProvider.envVar`), so a
+   * credential saved for `ANTHROPIC_API_KEY` is offered for every provider that reads it.
+   */
+  protected credentialChoices(): Credential[] {
+    const envVar = this.providerInfo(this.provider)?.envVar;
+    return envVar ? this.credentials.providing(envVar) : [];
+  }
+
+  /** Choosing a credential clears the typed key: they are alternatives, and the server
+   *  prefers the id, so leaving a stale character on screen would misreport what was used. */
+  protected onCredentialPick(id: string): void {
+    this.apiKeyCredentialId = id;
+    if (id) this.apiKey = '';
   }
 
   /** Live catalog refresh straight from the provider API, for a catalog-backed
@@ -180,7 +203,7 @@ export class AgentCreateDialog {
   protected async create(): Promise<void> {
     const name = this.name.trim().toLowerCase().replace(/\s+/g, '-');
     if (!name || !this.main.model || this.busy()) return;
-    if (this.apiKeyRequired() && !this.apiKey.trim()) return;
+    if (this.apiKeyRequired() && !this.apiKey.trim() && !this.apiKeyCredentialId) return;
     if (this.auxIncomplete()) return;
     const primary = resolveProviderOption(this.provider, this.endpoints.endpoints());
     if (!primary) return;
@@ -195,6 +218,7 @@ export class AgentCreateDialog {
       provider: primary.provider,
       model: this.main.model,
       apiKey: this.apiKey.trim(),
+      apiKeyCredentialId: this.apiKeyCredentialId || undefined,
       cloneFrom: this.cloneFrom || undefined,
       baseUrl: primary.baseUrl,
       fromTemplate: this.fromTemplate || undefined,

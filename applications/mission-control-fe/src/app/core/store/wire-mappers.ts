@@ -1,12 +1,14 @@
 import {
-  ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiDockerHost, ApiImageTags,
+  ApiAgentProfile, ApiAgentSetup, ApiChatMessage, ApiCredential, ApiCredentialEntry,
+  ApiDockerHost, ApiImageTags,
   ApiMcpCatalogServer, ApiMcpConfigEntry, ApiMcpGroup, ApiMcpHealthcheck, ApiMcpRetainedResource,
   ApiMcpSupportService, ApiModelProvider, ApiLogLine, ApiEndpointModel, ApiInferenceEndpoint,
   ApiProfileTemplate, ApiPrompt, ApiPromptGroup, ApiPullState, ApiSkill, ApiSkillGroup, ApiSkillGuide, ApiDeployedPart, ApiUpstream, ApiServerInfo, ApiSession, ApiSetupApiKey,
   ApiRunningModel, ApiSetupAuthProvider, ApiSetupKeyProvider, ApiSetupMessaging,
 } from '../hermes-api';
 import {
-  AgentProfile, AgentSetup, AuthProvider, ChatMessage, DockerHost, DockerHostStatus, Gateway,
+  AgentProfile, AgentSetup, AuthProvider, ChatMessage, Credential, CredentialEntry,
+  DockerHost, DockerHostStatus, Gateway,
   ImageCatalog, LlmProvider, McpCatalogKind, McpCatalogServer, McpCheckStatus, McpConfigEntry,
   McpGroup, McpHealthcheck, McpRetainedResource, LogEntry, McpRuntimeState, McpSupportService,
   McpTransport, InferenceEndpoint, InferenceEndpointStatus, EndpointModel, ProfileTemplate, Prompt, PromptGroup, Skill, SkillGroup, SkillGuide, DeployedPart, Upstream,
@@ -308,6 +310,39 @@ export function toPromptGroup(api: ApiPromptGroup): PromptGroup {
     promptIds: api.promptIds ?? [],
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
+  };
+}
+
+/**
+ * A saved credential as the pickers and the library page read it.
+ *
+ * A secret entry's `value` is always `''` — the backend sends null and nothing else could be
+ * sent — so the form binds to a blank box and blank means "keep". An entry the backend does
+ * not mark recoverable is kept in the list rather than dropped: the operator has to see the
+ * loss to replace it.
+ */
+export function toCredential(api: ApiCredential): Credential {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description ?? '',
+    entries: (api.entries ?? []).map(toCredentialEntry),
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
+}
+
+function toCredentialEntry(api: ApiCredentialEntry): CredentialEntry {
+  const secret = !!api.secret;
+  return {
+    key: api.key,
+    // a secret's value is never sent; a plain entry missing one reads as empty, not absent
+    value: secret ? '' : api.value ?? '',
+    secret,
+    set: !!api.set,
+    // an entry whose flag did not arrive is treated as the more demanding case, so a picker
+    // warns rather than silently offering a key that will fail the write
+    recoverable: api.recoverable !== false,
   };
 }
 

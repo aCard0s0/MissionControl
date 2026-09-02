@@ -69,15 +69,21 @@ public record ProfileSpec(
     apiKey = blankToNull(apiKey);
   }
 
-  /** Interprets a request body: the one place the wire shape is read. */
-  public static ProfileSpec from(CreateAgentRequest request) {
+  /**
+   * Interprets a request body: the one place the wire shape is read.
+   *
+   * <p>{@code apiKey} is passed in rather than read off the request because the request may
+   * name a saved credential instead of carrying a value, and resolving that needs a collaborator
+   * this record has no business holding. The controller resolves; this still owns the shape.
+   */
+  public static ProfileSpec from(CreateAgentRequest request, String apiKey) {
     if (request == null) throw new IllegalArgumentException("request body is required");
     return new ProfileSpec(
         request.containerId(),
         request.name(),
         request.provider(),
         request.model(),
-        request.apiKey(),
+        apiKey,
         request.cloneFrom(),
         request.baseUrl(),
         request.auxiliary());

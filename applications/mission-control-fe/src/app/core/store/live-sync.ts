@@ -9,6 +9,7 @@ import { JobStore } from './job-store';
 import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
+import { CredentialStore } from './credential-store';
 import { McpGroupStore } from './mcp-group-store';
 import { PromptGroupStore } from './prompt-group-store';
 import { PromptStore } from './prompt-store';
@@ -69,6 +70,7 @@ export class LiveSync {
   private readonly templates = inject(TemplateStore);
   private readonly mcp = inject(McpCatalogStore);
   private readonly mcpGroups = inject(McpGroupStore);
+  private readonly credentials = inject(CredentialStore);
   private readonly prompts = inject(PromptStore);
   private readonly promptGroups = inject(PromptGroupStore);
   private readonly skills = inject(SkillStore);
@@ -99,7 +101,7 @@ export class LiveSync {
       this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
       this.prompts.refresh(), this.skills.refresh(), this.guides.refresh(),
       this.skillGroups.refresh(), this.promptGroups.refresh(),
-      this.mcpGroups.refresh(),
+      this.mcpGroups.refresh(), this.credentials.refresh(),
       this.mcp.refresh(), this.mcp.refreshRetainedResources(),
     ]);
     await this.agents.refresh();   // needs the container list

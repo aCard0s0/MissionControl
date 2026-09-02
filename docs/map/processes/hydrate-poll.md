@@ -21,7 +21,7 @@ pages render from.
 
 **There is one mode, and it is "talk to the real backend".** An unreachable backend shows an
 empty dashboard and a banner naming the address it could not reach, retrying every 10 s
-(`RETRY_MS`, `core/store/live-sync.ts:36`). That is deliberate and the architecture doc says why:
+(`RETRY_MS`, `core/store/live-sync.ts:38`). That is deliberate and the architecture doc says why:
 seeded demo inventory used to fill the same screens, and **an operator could not tell it from
 real state**.
 

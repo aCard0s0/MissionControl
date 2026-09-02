@@ -20,6 +20,7 @@ const NAV = [
   { path: '/agents', label: 'Agents', icon: 'user', exact: false },
   { path: '/profiles', label: 'Blueprints', icon: 'layers', exact: false },
   { path: '/models', label: 'Models', icon: 'chip', exact: false },
+  { path: '/credentials', label: 'Credentials', icon: 'key', exact: false },
   { path: '/mcp-servers', label: 'MCP Servers', icon: 'plug', exact: false },
   { path: '/prompts', label: 'Prompts', icon: 'message', exact: false },
   { path: '/skills', label: 'Skills', icon: 'wrench', exact: false },

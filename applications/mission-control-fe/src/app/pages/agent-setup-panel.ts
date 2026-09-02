@@ -3,8 +3,9 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AgentSetupStore } from '../core/store/agent-setup-store';
+import { CredentialStore } from '../core/store/credential-store';
 import { TerminalRequestStore } from '../core/store/terminal-request-store';
-import { AgentProfile } from '../core/models';
+import { AgentProfile, Credential } from '../core/models';
 import { StatusDot } from '../shared/status-dot';
 
 /**
@@ -15,6 +16,12 @@ import { StatusDot } from '../shared/status-dot';
  * `hermes status` inside the container and takes seconds — so re-entering the
  * tab renders the last answer immediately, and only an explicit refresh (or a
  * write, which answers with the new state) goes back to the container.
+ *
+ * The two editable panels also offer the credential library: any row whose variable a saved
+ * credential holds gets a picker beside its box. Choosing one posts the credential's *id* and
+ * the server resolves it, so this component never handles key material — which is also why
+ * the picker fills every row that credential covers at once rather than making an operator
+ * pick a messaging platform's token and home channel separately.
  */
 @Component({
   selector: 'mc-agent-setup-panel',
@@ -28,6 +35,7 @@ export class AgentSetupPanel {
 
   protected readonly setup = inject(AgentSetupStore);
   protected readonly terminal = inject(TerminalRequestStore);
+  private readonly credentials = inject(CredentialStore);
 
   protected readonly profileSetup = computed(() => this.setup.setupOf(this.agent().id));
   protected readonly setupLoading = computed(() => this.setup.isSetupLoading(this.agent().id));
@@ -36,6 +44,9 @@ export class AgentSetupPanel {
   protected readonly envBusy = signal<string | null>(null);
   /** tokenVar of the expanded messaging row. */
   protected readonly msgOpen = signal<string | null>(null);
+  /** env var → the credential picked for it, or '' for none. A signal, unlike
+   *  {@link envDrafts}: the picker writes it from a `(change)` handler, not `ngModel`. */
+  protected readonly envPicks = signal<Record<string, string>>({});
   protected envDrafts: Record<string, string> = {};
 
   constructor() {
@@ -46,6 +57,7 @@ export class AgentSetupPanel {
       untracked(() => {
         this.msgOpen.set(null);
         this.envDrafts = {};
+        this.envPicks.set({});
         void this.setup.setup(id);
       });
     });
@@ -69,7 +81,62 @@ export class AgentSetupPanel {
   }
 
   protected clearEnv(key: string): void {
+    this.envPicks.update(picks => ({ ...picks, [key]: '' }));
     this.applyEnv(key, null);
+  }
+
+  // ── the credential picker ─────────────────────────────────────────────────
+
+  /** Saved credentials holding a variable named `envVar`. Empty hides the picker entirely, so
+   *  the feature is invisible until the library has something to offer. */
+  protected credentialsFor(envVar: string): Credential[] {
+    return this.credentials.providing(envVar);
+  }
+
+  /** The credential picked for a variable, or '' for none. */
+  protected pickedFor(envVar: string): string {
+    return this.envPicks()[envVar] ?? '';
+  }
+
+  /**
+   * Records a pick and pre-fills every other variable the same credential covers.
+   *
+   * A credential is a bundle, so picking `TELEGRAM_BOT_TOKEN` from "Telegram ops" is also the
+   * answer for `TELEGRAM_HOME_CHANNEL`. Filling the siblings is a marker only — each row is
+   * still applied by its own button, and each carries the id rather than a value.
+   */
+  protected pickCredential(envVar: string, credentialId: string): void {
+    if (!credentialId) {
+      this.envPicks.update(picks => ({ ...picks, [envVar]: '' }));
+      return;
+    }
+    const picked = this.credentials.credentials().find(c => c.id === credentialId);
+    const covers = picked ? picked.entries.map(e => e.key) : [envVar];
+    this.envPicks.update(picks => {
+      const next = { ...picks };
+      for (const key of covers) {
+        // never overwrite a different credential the operator chose deliberately
+        if (!next[key] || key === envVar) next[key] = credentialId;
+      }
+      return next;
+    });
+  }
+
+  /** Applies the picked credential's value to one variable. Blank drafts and picks cannot both
+   *  be live: the button is only offered while a pick stands. */
+  protected applyPick(key: string): void {
+    const credentialId = this.pickedFor(key);
+    if (!credentialId) return;
+    this.envBusy.set(key);
+    this.setup.setEnv(this.agent().id, [{ key, value: null, credentialId }])
+      .catch(() => null)
+      .then(saved => {
+        if (saved) {
+          delete this.envDrafts[key];
+          this.envPicks.update(picks => ({ ...picks, [key]: '' }));
+        }
+      })
+      .finally(() => this.envBusy.set(null));
   }
 
   protected toggleMsg(tokenVar: string): void {

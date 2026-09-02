@@ -17,6 +17,9 @@ export interface CreateAgentRequest {
   provider: string;
   model: string;
   apiKey: string;
+  /** A saved credential to take the key from instead. Resolved on the server against the
+   *  chosen provider's variable, so the browser never holds the value. */
+  apiKeyCredentialId?: string;
   cloneFrom?: string;
   baseUrl?: string;
   fromTemplateId?: string;
@@ -99,7 +102,12 @@ export class AgentsApi {
   }
 
   /** Empty/null entry value removes that key from the profile's .env file. */
-  setEnv(ref: AgentRef, entries: Array<{ key: string; value: string | null }>): Promise<ApiAgentSetup> {
+  /** A blank `value` removes the variable; a `credentialId` names a saved credential to take
+   *  one from, resolved on the server so the browser never holds the value. */
+  setEnv(
+    ref: AgentRef,
+    entries: Array<{ key: string; value: string | null; credentialId?: string }>,
+  ): Promise<ApiAgentSetup> {
     return this.http.put(`${agentPath(ref)}/env`, { entries });
   }
 

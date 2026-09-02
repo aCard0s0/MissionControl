@@ -4,6 +4,7 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -20,6 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.hermes.missioncontrol.agents.AgentLifecycle;
+import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
@@ -30,6 +32,7 @@ import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -41,6 +44,7 @@ class AgentsControllerTest {
   private ProfileTemplateService templates;
   private AgentMcpCatalogService mcpCatalog;
   private AgentLifecycle lifecycle;
+  private CredentialService credentials;
   private MockMvc mvc;
 
   @BeforeEach
@@ -50,10 +54,11 @@ class AgentsControllerTest {
     templates = mock(ProfileTemplateService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
     lifecycle = mock(AgentLifecycle.class);
+    credentials = mock(CredentialService.class);
 
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentsController(
-            profiles, templates, lifecycle, hosts, mcpCatalog))
+            profiles, templates, lifecycle, hosts, mcpCatalog, credentials))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -166,6 +171,75 @@ class AgentsControllerTest {
 
     verify(profiles).create(eq(HOST), any(ProfileSpec.class));
     verifyNoInteractions(templates);
+  }
+
+  @Test
+  void aCreateNamingACredentialResolvesItAgainstTheChosenProvidersVariable() throws Exception {
+    // the client sends an id, never a key name: a credential id says which values may be read,
+    // and letting the caller also name the variable would let it read any of them
+    hostIsConnected();
+    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
+    when(credentials.valueFor("cr-1", "ANTHROPIC_API_KEY")).thenReturn("sk-from-the-vault");
+    when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
+
+    mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
+            {"hostId":"dh-local","containerId":"c1","name":"scout","provider":"anthropic",
+             "model":"claude-opus-5","apiKeyCredentialId":"cr-1"}
+            """))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<ProfileSpec> spec = ArgumentCaptor.forClass(ProfileSpec.class);
+    verify(profiles).create(eq(HOST), spec.capture());
+    assertEquals("sk-from-the-vault", spec.getValue().apiKey());
+  }
+
+  @Test
+  void aPickedCredentialBeatsAStaleCharacterLeftInTheKeyBox() throws Exception {
+    hostIsConnected();
+    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
+    when(credentials.valueFor("cr-1", "ANTHROPIC_API_KEY")).thenReturn("sk-from-the-vault");
+    when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
+
+    mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
+            {"hostId":"dh-local","containerId":"c1","name":"scout","provider":"anthropic",
+             "model":"claude-opus-5","apiKey":"sk-typed","apiKeyCredentialId":"cr-1"}
+            """))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<ProfileSpec> spec = ArgumentCaptor.forClass(ProfileSpec.class);
+    verify(profiles).create(eq(HOST), spec.capture());
+    assertEquals("sk-from-the-vault", spec.getValue().apiKey());
+  }
+
+  @Test
+  void aCredentialPickedForAProviderThatTakesNoKeyIsRefusedRatherThanDropped() throws Exception {
+    // an OAuth provider has no variable to fill, so silently ignoring the pick would create a
+    // keyless profile that reports itself configured
+    hostIsConnected();
+
+    mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
+            {"hostId":"dh-local","containerId":"c1","name":"scout","provider":"nous",
+             "model":"hermes-4","apiKeyCredentialId":"cr-1"}
+            """))
+        .andExpect(status().isBadRequest());
+
+    verifyNoInteractions(credentials);
+    verifyNoInteractions(profiles);
+  }
+
+  @Test
+  void aCreateWithNoCredentialNeverReachesTheCredentialStore() throws Exception {
+    hostIsConnected();
+    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
+    when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
+
+    mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
+            {"hostId":"dh-local","containerId":"c1","name":"scout","provider":"anthropic",
+             "model":"claude-opus-5","apiKey":"sk-typed"}
+            """))
+        .andExpect(status().isOk());
+
+    verifyNoInteractions(credentials);
   }
 
   @Test

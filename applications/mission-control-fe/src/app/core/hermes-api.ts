@@ -1,6 +1,7 @@
 import { AgentsApi } from './api/agents-api';
 import { BoardApi } from './api/board-api';
 import { ContainersApi } from './api/containers-api';
+import { CredentialsApi } from './api/credentials-api';
 import { HostsApi } from './api/hosts-api';
 import { ApiHttp } from './api/http';
 import { terminalSocketUrl } from './api/terminal-socket';
@@ -39,6 +40,7 @@ export class HermesApi {
   readonly hosts: HostsApi;
   readonly containers: ContainersApi;
   readonly agents: AgentsApi;
+  readonly credentials: CredentialsApi;
   readonly mcp: McpCatalogApi;
   readonly mcpGroups: McpGroupsApi;
   readonly prompts: PromptsApi;
@@ -61,6 +63,7 @@ export class HermesApi {
     this.hosts = new HostsApi(this.http);
     this.containers = new ContainersApi(this.http);
     this.agents = new AgentsApi(this.http);
+    this.credentials = new CredentialsApi(this.http);
     this.mcp = new McpCatalogApi(this.http);
     this.mcpGroups = new McpGroupsApi(this.http);
     this.prompts = new PromptsApi(this.http);

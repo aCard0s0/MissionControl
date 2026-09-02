@@ -8,12 +8,19 @@ import { providerNameOf, resolveProviderOption } from '../shared/provider-resolv
 // becomes one, what makes it saveable, and what the backend gets on save. Pure
 // functions, so every rule here is testable without rendering the page.
 
-/** A key being edited. A stored secret arrives with an empty `value`. */
+/**
+ * A key being edited. A stored secret arrives with an empty `value`.
+ *
+ * `credentialId` names a saved credential to copy this key's value from, and exists only
+ * between the pick and the save — the backend copies that credential's sealed envelope into
+ * the blueprint and stores no link, so a reloaded draft never carries one.
+ */
 export interface SecretRow {
   key: string;
   value: string;
   set: boolean;
   recoverable: boolean;
+  credentialId?: string;
 }
 
 /** The source id exists only in an editor request. The backend resolves it to a
@@ -143,7 +150,9 @@ export function profileDraftToInput(
     memory: draft.memory,
     skills: draft.skills,
     mcpServers: draft.mcpServers,
-    secrets: draft.secrets.map(secret => ({ key: secret.key, value: secret.value })),
+    secrets: draft.secrets.map(secret => ({
+      key: secret.key, value: secret.value, credentialId: secret.credentialId || undefined,
+    })),
   };
 }
 

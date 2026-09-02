@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 
 /** The glyphs the sidebar draws, one per destination. */
 export const NAV_ICONS = [
-  'box', 'chart', 'user', 'layers', 'chip', 'plug',
+  'box', 'chart', 'user', 'layers', 'chip', 'key', 'plug',
   'message', 'wrench', 'board', 'calendar', 'bolt', 'terminal', 'doc',
 ] as const;
 

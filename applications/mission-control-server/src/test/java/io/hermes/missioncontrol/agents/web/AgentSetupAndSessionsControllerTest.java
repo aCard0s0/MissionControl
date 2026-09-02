@@ -25,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
+import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
@@ -48,6 +49,7 @@ class AgentSetupAndSessionsControllerTest {
   private HermesSetup setup;
   private HermesProfiles profiles;
   private HostService hosts;
+  private CredentialService credentials;
   private MockMvc mvc;
 
   @BeforeEach
@@ -55,9 +57,10 @@ class AgentSetupAndSessionsControllerTest {
     setup = mock(HermesSetup.class);
     profiles = mock(HermesProfiles.class);
     hosts = mock(HostService.class);
+    credentials = mock(CredentialService.class);
     mvc = MockMvcBuilders
         .standaloneSetup(
-            new AgentSetupController(setup, hosts),
+            new AgentSetupController(setup, hosts, credentials),
             new AgentSessionsController(profiles, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
@@ -122,6 +125,65 @@ class AgentSetupAndSessionsControllerTest {
 
     verify(setup).putEnv(HOST, CONTAINER, PROFILE,
         List.of(new EnvEntry("ANTHROPIC_API_KEY", "sk-ant-x")));
+  }
+
+  @Test
+  void anEntryNamingACredentialIsResolvedBeforeTheWriterSeesIt() throws Exception {
+    // the browser posts an id and never holds the key; nothing below this layer knows
+    // credentials exist, so putEnv receives the two-argument form
+    hostIsConnected(hosts);
+    when(credentials.valueFor("cr-1", "ANTHROPIC_API_KEY")).thenReturn("sk-from-the-vault");
+    when(setup.putEnv(eq(HOST), eq(CONTAINER), eq(PROFILE), anyList())).thenReturn(setupReport(List.of()));
+
+    mvc.perform(put(BASE + "/env").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"entries\":[{\"key\":\"ANTHROPIC_API_KEY\",\"credentialId\":\"cr-1\"}]}"))
+        .andExpect(status().isOk());
+
+    verify(setup).putEnv(HOST, CONTAINER, PROFILE,
+        List.of(new EnvEntry("ANTHROPIC_API_KEY", "sk-from-the-vault")));
+  }
+
+  @Test
+  void aBatchMayMixTypedValuesAndPickedCredentials() throws Exception {
+    hostIsConnected(hosts);
+    when(credentials.valueFor("cr-1", "TELEGRAM_BOT_TOKEN")).thenReturn("bot-from-the-vault");
+    when(setup.putEnv(eq(HOST), eq(CONTAINER), eq(PROFILE), anyList())).thenReturn(setupReport(List.of()));
+
+    mvc.perform(put(BASE + "/env").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"entries\":[{\"key\":\"TELEGRAM_BOT_TOKEN\",\"credentialId\":\"cr-1\"},"
+                + "{\"key\":\"TELEGRAM_HOME_CHANNEL\",\"value\":\"#ops\"}]}"))
+        .andExpect(status().isOk());
+
+    verify(setup).putEnv(HOST, CONTAINER, PROFILE, List.of(
+        new EnvEntry("TELEGRAM_BOT_TOKEN", "bot-from-the-vault"),
+        new EnvEntry("TELEGRAM_HOME_CHANNEL", "#ops")));
+  }
+
+  @Test
+  void aBlankCredentialIdIsNoCredentialAtAll() throws Exception {
+    // an editor that sends "" rather than omitting the field must still be able to clear a
+    // variable, which is what a blank value means
+    hostIsConnected(hosts);
+    when(setup.putEnv(eq(HOST), eq(CONTAINER), eq(PROFILE), anyList())).thenReturn(setupReport(List.of()));
+
+    mvc.perform(put(BASE + "/env").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"entries\":[{\"key\":\"ANTHROPIC_API_KEY\",\"value\":\"\",\"credentialId\":\"\"}]}"))
+        .andExpect(status().isOk());
+
+    verifyNoInteractions(credentials);
+    verify(setup).putEnv(HOST, CONTAINER, PROFILE,
+        List.of(new EnvEntry("ANTHROPIC_API_KEY", "")));
+  }
+
+  @Test
+  void anEnvWriteWithNoEntriesAtAllStillReadsTheSetupBack() throws Exception {
+    hostIsConnected(hosts);
+    when(setup.putEnv(eq(HOST), eq(CONTAINER), eq(PROFILE), anyList())).thenReturn(setupReport(List.of()));
+
+    mvc.perform(put(BASE + "/env").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isOk());
+
+    verify(setup).putEnv(HOST, CONTAINER, PROFILE, List.of());
   }
 
   @Test
