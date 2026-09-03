@@ -1,7 +1,8 @@
-import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, Injectable, WritableSignal, signal } from '@angular/core';
 import { AgentRef } from '../api/agent-ref';
+import { ApiSkill } from '../hermes-api';
 import { Skill, SkillInput, Upstream } from '../models';
-import { StoreContext } from './store-context';
+import { LibraryStore } from './library-store';
 import { toSkill, toUpstream } from './wire-mappers';
 
 /**
@@ -11,14 +12,10 @@ import { toSkill, toUpstream } from './wire-mappers';
  * Distinct from `AgentSkillStore`, which toggles and edits the skills one profile already
  * has. Nothing here reads or writes an agent except `deploy` and `importFrom`, which are
  * the two crossings between the library and a container.
- *
- * Writes go to the backend first and are mirrored into the signal only once it agrees,
- * for the reason `PromptStore` gives: a skill that looked saved and was not would be
- * found missing much later.
  */
 @Injectable({ providedIn: 'root' })
-export class SkillStore {
-  readonly skills: WritableSignal<Skill[]> = signal([]);
+export class SkillStore extends LibraryStore<Skill, ApiSkill, SkillInput> {
+  readonly skills = this.items;
 
   /** Every category currently in use — what the page's filter chips are built from. */
   readonly categories = computed(() =>
@@ -31,42 +28,11 @@ export class SkillStore {
    */
   readonly upstream: WritableSignal<Record<string, Upstream>> = signal({});
 
-  private readonly ctx = inject(StoreContext);
+  protected readonly noun = 'skill';
+  protected readonly toModel = toSkill;
 
-  byId = (id: string | null): Skill | null =>
-    this.skills().find(s => s.id === id) ?? null;
-
-  async refresh(): Promise<void> {
-    try {
-      this.skills.set((await this.ctx.api.skills.list()).map(toSkill));
-    } catch { /* transient backend hiccup — keep last known state */ }
-  }
-
-  /** Create (no id) or update (id) a library skill. Returns the id, or '' on failure. */
-  async save(input: SkillInput, id?: string): Promise<string> {
-    try {
-      const saved = id
-        ? await this.ctx.api.skills.update(id, input)
-        : await this.ctx.api.skills.create(input);
-      this.upsert(toSkill(saved));
-      return saved.id;
-    } catch (e) {
-      this.ctx.toastFailure('save skill', e);
-      return '';
-    }
-  }
-
-  /** Answers whether the skill is gone, so a caller can close an editor open on it.
-   *  Removes the library row only — any copy already on an agent stays there. */
-  async remove(id: string): Promise<boolean> {
-    try {
-      await this.ctx.api.skills.remove(id);
-    } catch (e) {
-      this.ctx.toastFailure('delete skill', e);
-      return false;
-    }
-    this.skills.update(ss => ss.filter(s => s.id !== id));
-    return true;
+  protected wire() {
+    return this.ctx.api.skills;
   }
 
   /** Puts a library skill on one agent. Answers whether it landed. */
@@ -114,10 +80,5 @@ export class SkillStore {
 
   private setUpstream(id: string, state: Upstream): void {
     this.upstream.update(all => ({ ...all, [id]: state }));
-  }
-
-  /** Newest edit first, which is the order the backend lists in. */
-  private upsert(skill: Skill): void {
-    this.skills.update(ss => [skill, ...ss.filter(s => s.id !== skill.id)]);
   }
 }

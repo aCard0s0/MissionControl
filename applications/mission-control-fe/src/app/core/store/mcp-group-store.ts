@@ -1,7 +1,8 @@
-import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { AgentRef } from '../api/agent-ref';
+import { ApiMcpGroup } from '../hermes-api';
 import { DeployedPart, McpGroup, McpGroupInput } from '../models';
-import { StoreContext } from './store-context';
+import { byName, LibraryStore } from './library-store';
 import { toDeployedPart, toMcpGroup } from './wire-mappers';
 
 /**
@@ -15,49 +16,23 @@ import { toDeployedPart, toMcpGroup } from './wire-mappers';
  * from the links the deploy just wrote — without it the page would show the counts from before.
  */
 @Injectable({ providedIn: 'root' })
-export class McpGroupStore {
-  readonly groups: WritableSignal<McpGroup[]> = signal([]);
+export class McpGroupStore extends LibraryStore<McpGroup, ApiMcpGroup, McpGroupInput> {
+  readonly groups = this.items;
 
-  private readonly ctx = inject(StoreContext);
+  protected readonly noun = 'MCP group';
+  protected readonly toModel = toMcpGroup;
+  protected override readonly order = byName;
 
-
-  async refresh(): Promise<void> {
-    try {
-      this.groups.set((await this.ctx.api.mcpGroups.list()).map(toMcpGroup));
-    } catch { /* transient backend hiccup — keep last known state */ }
-  }
-
-  /** Create (no id) or update (id). Returns the id, or '' on failure. */
-  async save(input: McpGroupInput, id?: string): Promise<string> {
-    try {
-      const saved = id
-        ? await this.ctx.api.mcpGroups.update(id, input)
-        : await this.ctx.api.mcpGroups.create(input);
-      this.upsert(toMcpGroup(saved));
-      return saved.id;
-    } catch (e) {
-      this.ctx.toastFailure('save MCP group', e);
-      return '';
-    }
-  }
-
-  async remove(id: string): Promise<boolean> {
-    try {
-      await this.ctx.api.mcpGroups.remove(id);
-    } catch (e) {
-      this.ctx.toastFailure('delete MCP group', e);
-      return false;
-    }
-    this.groups.update(gs => gs.filter(g => g.id !== id));
-    return true;
+  protected wire() {
+    return this.ctx.api.mcpGroups;
   }
 
   /**
    * Connects a whole group to one agent.
    *
    * Answers the per-part report, or null when the request itself failed. A group that
-   * half-landed still returns its report — the caller renders it rather than treating a partial
-   * connect as a plain success or a plain failure.
+   * half-landed still returns its report — the caller renders it rather than treating a
+   * partial connect as a plain success or a plain failure.
    */
   async deploy(id: string, agent: AgentRef): Promise<DeployedPart[] | null> {
     let parts: DeployedPart[];
@@ -71,13 +46,5 @@ export class McpGroupStore {
     // the coverage counts are derived from the links this just wrote
     await this.refresh();
     return parts;
-  }
-
-  /** Kept by name, the order the backend reads them in: these are headers, so a save must not
-   *  move them. */
-  private upsert(group: McpGroup): void {
-    this.groups.update(gs => [
-      ...gs.filter(g => g.id !== group.id), group,
-    ].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
   }
 }

@@ -1,58 +1,29 @@
-import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable } from '@angular/core';
+import { ApiProfileTemplate } from '../hermes-api';
 import { ProfileTemplate, ProfileTemplateInput } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
-import { StoreContext } from './store-context';
+import { LibraryStore } from './library-store';
 import { toProfileTemplate } from './wire-mappers';
 
 /** Reusable agent blueprints — global, not scoped to a container. */
 @Injectable({ providedIn: 'root' })
-export class TemplateStore {
-  readonly templates: WritableSignal<ProfileTemplate[]>;
+export class TemplateStore
+  extends LibraryStore<ProfileTemplate, ApiProfileTemplate, ProfileTemplateInput> {
+  readonly templates = this.items;
 
   /** Every category in use, for the page's filter chips. */
   readonly categories = computed(() =>
     [...new Set(this.templates().map(t => t.category).filter(Boolean))].sort());
 
-  private readonly ctx = inject(StoreContext);
+  protected readonly noun = 'template';
+  protected readonly toModel = toProfileTemplate;
+
   private readonly containers = inject(ContainerStore);
   private readonly agents = inject(AgentStore);
 
-  constructor() {
-    this.templates = signal([]);
-  }
-
-  byId = (id: string | null): ProfileTemplate | null =>
-    this.templates().find(t => t.id === id) ?? null;
-
-  async refresh(): Promise<void> {
-    try {
-      this.templates.set((await this.ctx.api.templates.list()).map(toProfileTemplate));
-    } catch { /* transient backend hiccup — keep last known state */ }
-  }
-
-  /** Create (no id) or update (id) a template. Returns the id, or '' on failure. */
-  async save(input: ProfileTemplateInput, id?: string): Promise<string> {
-    try {
-      const saved = id
-        ? await this.ctx.api.templates.update(id, input)
-        : await this.ctx.api.templates.create(input);
-      this.upsert(toProfileTemplate(saved));
-      return saved.id;
-    } catch (e) {
-      this.ctx.toastFailure('save template', e);
-      return '';
-    }
-  }
-
-  async remove(id: string): Promise<void> {
-    try {
-      await this.ctx.api.templates.remove(id);
-    } catch (e) {
-      this.ctx.toastFailure('delete template', e);
-      return;
-    }
-    this.templates.update(ts => ts.filter(t => t.id !== id));
+  protected wire() {
+    return this.ctx.api.templates;
   }
 
   /** Deploy a template into a container as a new agent. Returns the agent id, or ''. */
@@ -94,9 +65,5 @@ export class TemplateStore {
       this.ctx.toastFailure('capture template', e);
       return '';
     }
-  }
-
-  private upsert(template: ProfileTemplate): void {
-    this.templates.update(ts => [template, ...ts.filter(x => x.id !== template.id)]);
   }
 }

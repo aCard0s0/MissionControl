@@ -32,6 +32,8 @@ export type { CreateAgentRequest } from './api/agents-api';
 export type { McpServerOperation } from './api/mcp-catalog-api';
 export { resizeFrame } from './api/terminal-socket';
 export type { ApiServerInfo } from './api/server-api';
+/** The four routes a library client answers — what `LibraryStore` reads and writes through. */
+export type { CrudApi } from './api/crud-api';
 
 export class HermesApi {
   private readonly base: string;
