@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ApiStats } from '../hermes-api';
 import { ContainerStatus, HermesContainer } from '../models';
 import { StoreContext } from './store-context';
@@ -14,7 +14,18 @@ const pushSample = (history: number[], value: number): number[] => [...history.s
 @Injectable({ providedIn: 'root' })
 export class ContainerStore {
   readonly containers: WritableSignal<HermesContainer[]>;
-  readonly selectedContainerId: WritableSignal<string>;
+
+  /**
+   * The container every page reads through. Readable here, written only by {@link select} —
+   * the listeners below are the reason. A public writable signal is a second way to change the
+   * selection that skips them, and `refresh` was taking it: a container recreated under a new
+   * id by an upgrade moved the selection without telling the caches keyed by the old one, so
+   * the jobs, logs and webhooks on screen stayed the previous container's until their next
+   * poll.
+   */
+  readonly selectedContainerId: Signal<string>;
+
+  private readonly selectedId = signal('');
 
   readonly selected = computed(() =>
     this.containers().find(c => c.id === this.selectedContainerId()) ?? null);
@@ -26,7 +37,7 @@ export class ContainerStore {
     return 'stopped';
   });
 
-  /** Notified after every explicit selection — see {@link select}. */
+  /** Notified after every selection — see {@link select}. */
   private readonly selectionListeners: Array<(id: string) => void> = [];
   private readonly netMeta = new Map<string, { rx: number; tx: number; at: number }>();
   private statsInFlight = false;
@@ -35,20 +46,28 @@ export class ContainerStore {
 
   constructor() {
     this.containers = signal([]);
-    this.selectedContainerId = signal('');
+    this.selectedContainerId = this.selectedId.asReadonly();
   }
 
   byId = (id: string): HermesContainer | null => this.containers().find(c => c.id === id) ?? null;
 
-  /** Runs `listener` whenever the operator (or a lifecycle action) picks a
-   *  container, so container-keyed caches can reset without this store having to
-   *  know about them. */
+  /** Runs `listener` whenever the selection changes, so container-keyed caches can reset
+   *  without this store having to know about them.
+   *
+   *  A listener list rather than an `effect` on the signal: these want *changes*, and an
+   *  effect also runs once on the value it starts with — three slices would each need their
+   *  own previous-value guard to un-say that. */
   onSelect(listener: (id: string) => void): void {
     this.selectionListeners.push(listener);
   }
 
+  /** The one writer. Every path that moves the selection — an operator's click, a lifecycle
+   *  action, a refresh finding the selected container gone — comes through here, so no path
+   *  can move it silently. */
   select(id: string): void {
-    this.selectedContainerId.set(id);
+    // no equality guard: re-picking the container already selected is what re-reads its log
+    // tail whole, and LogStore says why it must
+    this.selectedId.set(id);
     for (const listener of this.selectionListeners) listener(id);
   }
 
@@ -78,7 +97,7 @@ export class ContainerStore {
       // under a new id, and out-of-band removals happen too. Never clear on a
       // transient empty inventory.
       if (list.length && !list.some(c => c.id === this.selectedContainerId())) {
-        this.selectedContainerId.set(list[0].id);
+        this.select(list[0].id);
       }
     } catch { /* keep last inventory */ }
   }

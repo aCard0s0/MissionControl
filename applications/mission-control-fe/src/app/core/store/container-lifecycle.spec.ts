@@ -266,6 +266,23 @@ describe('ContainerLifecycle remove', () => {
     expect(containers.selectedContainerId()).toBe('');
   });
 
+  it('tells the caches keyed to the removed container that it is gone', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce([apiContainer()])
+      .mockResolvedValue([]);
+    const { lifecycle, containers } = await loaded({
+      list, remove: vi.fn().mockResolvedValue(undefined),
+    });
+    const listener = vi.fn();
+    containers.onSelect(listener);
+
+    await lifecycle.remove('c-1');
+
+    // this cleared the signal directly, so the jobs, logs and webhooks of a container the
+    // operator had just deleted stayed on screen until each next poll
+    expect(listener).toHaveBeenCalledWith('');
+  });
+
   it('re-reads after a failure, because the delete may have got past the container', async () => {
     const list = vi.fn().mockResolvedValue([apiContainer()]);
     const { lifecycle, ctx, containers } = await loaded({

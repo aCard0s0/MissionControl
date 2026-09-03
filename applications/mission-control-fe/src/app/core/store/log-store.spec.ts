@@ -33,9 +33,10 @@ describe('LogStore', () => {
   });
 
   it('keeps each container\'s tail, so switching back is immediate', async () => {
-    const logs = vi.fn()
-      .mockResolvedValueOnce([line(1, 'from c-1')])
-      .mockResolvedValueOnce([line(1, 'from c-2')]);
+    // answered per container, not per call: the first inventory selects one, and that
+    // selection reads its tail before the test asks for anything
+    const logs = vi.fn().mockImplementation(
+      (_host: string, id: string) => Promise.resolve([line(1, `from ${id}`)]));
     const { store, containers } = await loaded(logs);
     containers.select('c-1');
     await store.poll();
