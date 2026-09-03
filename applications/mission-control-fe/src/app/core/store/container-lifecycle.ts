@@ -100,7 +100,7 @@ export class ContainerLifecycle {
     if (!container) return this.ctx.gone('container');
     try {
       await this.ctx.api.containers.remove(container.hostId, id);
-      if (this.containers.selectedContainerId() === id) this.containers.selectedContainerId.set('');
+      if (this.containers.selectedContainerId() === id) this.containers.select('');
       await this.containers.refresh();
       return true;
     } catch (e) {

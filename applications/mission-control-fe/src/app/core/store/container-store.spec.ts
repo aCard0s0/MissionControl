@@ -96,6 +96,22 @@ describe('ContainerStore selection', () => {
 
     expect(listener).toHaveBeenCalledWith('c-1');
   });
+
+  it('tells them when a refresh moves the selection too, not only a click', async () => {
+    // an upgrade recreates the container under a new id. This used to write the signal
+    // directly, so the jobs, logs and webhooks on screen stayed the old container's until
+    // each happened to poll again
+    const list = vi.fn()
+      .mockResolvedValueOnce([apiContainer()])
+      .mockResolvedValue([apiContainer({ id: 'c-new' })]);
+    const { store } = await loaded([apiContainer()], { list });
+    const listener = vi.fn();
+    store.onSelect(listener);
+
+    await store.refresh();
+
+    expect(listener).toHaveBeenCalledWith('c-new');
+  });
 });
 
 describe('ContainerStore telemetry', () => {
