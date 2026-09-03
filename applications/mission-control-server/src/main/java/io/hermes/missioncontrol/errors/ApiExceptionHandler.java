@@ -4,7 +4,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.NestedExceptionUtils;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -53,25 +52,8 @@ public class ApiExceptionHandler {
     return ApiErrors.error(HttpStatus.CONFLICT, e.getMessage());
   }
 
-  /**
-   * A parameter Spring could not turn into what the handler asked for.
-   *
-   * <p>Mostly a client error — a word where a number belongs. But a {@code hostId} binds through
-   * a converter that resolves and probes the daemon ({@code web/WebConfig.addFormatters}), so a
-   * daemon that did not answer and a host id that does not exist both arrive here wrapped in
-   * Spring's conversion failure. Those are the statuses they would have had from the handler
-   * body — 503 and 404 — and reporting them as 400 would blame the caller for the fleet.
-   *
-   * <p>Only those two are unwrapped, and deliberately not {@link IllegalArgumentException}: a
-   * non-numeric {@code ?tail=} arrives as a {@link NumberFormatException}, which is one, and
-   * answering with its message ({@code For input string: "abc"}) loses the parameter name that
-   * makes the 400 useful.
-   */
   @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
   public ResponseEntity<Map<String, String>> unreadableRequest(Exception e) {
-    Throwable cause = NestedExceptionUtils.getMostSpecificCause(e);
-    if (cause instanceof UpstreamUnavailableException unavailable) return unavailable(unavailable);
-    if (cause instanceof NoSuchElementException missing) return notFound(missing);
     String detail = e instanceof MethodArgumentTypeMismatchException mismatch
         ? mismatch.getName() + " is not a valid " + expectedType(mismatch)
         : "request body is not readable";

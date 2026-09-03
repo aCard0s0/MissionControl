@@ -14,7 +14,6 @@ import io.hermes.missioncontrol.docker.ImageTagsDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.support.HostPathBinding;
 import java.util.List;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,8 +35,7 @@ class ImagesControllerTest {
     catalog = mock(ImageCatalogService.class);
     hosts = mock(HostService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new ImagesController(catalog))
-        .setConversionService(HostPathBinding.conversionService(hosts))
+        .standaloneSetup(new ImagesController(catalog, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

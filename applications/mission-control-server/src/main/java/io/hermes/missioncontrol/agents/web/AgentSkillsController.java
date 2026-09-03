@@ -3,7 +3,7 @@ package io.hermes.missioncontrol.agents.web;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
-import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,60 +21,62 @@ import jakarta.validation.constraints.NotBlank;
 class AgentSkillsController {
 
   private final HermesProfiles profiles;
+  private final HostService hosts;
 
-  AgentSkillsController(HermesProfiles profiles) {
+  AgentSkillsController(HermesProfiles profiles, HostService hosts) {
     this.profiles = profiles;
+    this.hosts = hosts;
   }
 
   @PutMapping("/{skillName}")
   public AgentProfileDto setEnabled(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName,
       @RequestBody SetSkillEnabledRequest request) {
     return profiles.setSkillEnabled(
-        host, containerId, name, skillName, request.enabled());
+        hosts.requireConnected(hostId), containerId, name, skillName, request.enabled());
   }
 
   @PostMapping
   public AgentProfileDto install(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody AddSkillRequest request) {
     return profiles.installSkill(
-        host, containerId, name, request.name());
+        hosts.requireConnected(hostId), containerId, name, request.name());
   }
 
   @DeleteMapping("/{skillName}")
   public AgentProfileDto uninstall(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName) {
     return profiles.uninstallSkill(
-        host, containerId, name, skillName);
+        hosts.requireConnected(hostId), containerId, name, skillName);
   }
 
   @GetMapping("/{skillName}/content")
   public SkillContentDto content(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName) {
-    return profiles.readSkillContent(host, containerId, name, skillName);
+    return profiles.readSkillContent(hosts.requireConnected(hostId), containerId, name, skillName);
   }
 
   @PutMapping("/{skillName}/content")
   public AgentProfileDto updateContent(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName,
       @RequestBody UpdateSkillContentRequest request) {
     return profiles.updateSkillContent(
-        host, containerId, name, skillName, request.body());
+        hosts.requireConnected(hostId), containerId, name, skillName, request.body());
   }
 
   public record SetSkillEnabledRequest(boolean enabled) {

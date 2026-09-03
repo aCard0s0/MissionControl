@@ -22,7 +22,6 @@ import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.support.HostPathBinding;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,8 +44,7 @@ class AgentSkillsControllerTest {
     profiles = mock(HermesProfiles.class);
     hosts = mock(HostService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new AgentSkillsController(profiles))
-        .setConversionService(HostPathBinding.conversionService(hosts))
+        .standaloneSetup(new AgentSkillsController(profiles, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -65,19 +63,14 @@ class AgentSkillsControllerTest {
   }
 
   @Test
-  void installingASkillRequiresAName() throws Exception {
-    // The host is resolved first now, because {hostId} binds to a probed DockerHostRef during
-    // argument binding and @Valid on the body runs after that. This used to assert
-    // verifyNoInteractions(hosts) — a malformed request cost nothing at all — and cannot: a
-    // bad body sent to a route whose daemon is down answers 503 rather than 400.
-    hostIsConnected(hosts);
-
+  void installingASkillRequiresANameAndNeverProbesTheHostWithoutOne() throws Exception {
     mvc.perform(post(BASE + "/skills")
             .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"  \"}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error").exists());
 
     verifyNoInteractions(profiles);
+    verifyNoInteractions(hosts);
   }
 
   @Test

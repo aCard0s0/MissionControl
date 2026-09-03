@@ -18,15 +18,9 @@ package io.hermes.missioncontrol.docker;
  *
  * <p>The only two ways to obtain one are {@code HostService.requireConnected} — which
  * refuses a daemon that did not answer — and {@code HostService.ref}, which does not probe
- * and is for background work that is not answering a request.
- *
- * <p>Which of the two produced a given ref is visible wherever one is obtained by hand. It is
- * not visible in a controller signature: a {@code hostId} in a path or a query parameter binds
- * to one through {@code web/WebConfig.addFormatters}, and that converter is
- * {@code requireConnected}, always. That is the trade — fifty-three handlers stopped opening
- * with the resolution line, and a reader now has to know the rule for the web layer instead of
- * seeing it. It holds because everything reached through a URL has a caller to answer 503 to;
- * anything that does not is background work, which never binds a parameter.
+ * and is for background work that is not answering a request. Which of the two a call site
+ * used is therefore visible at the call site, which is what the {@code hostId}/{@code url}
+ * split made impossible.
  *
  * @param id  the dashboard's host id, for rows that reference a host
  * @param url the daemon endpoint — {@code unix://…} or {@code tcp://…}

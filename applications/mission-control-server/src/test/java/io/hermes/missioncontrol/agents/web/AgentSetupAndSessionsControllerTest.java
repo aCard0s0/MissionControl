@@ -32,7 +32,6 @@ import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SessionDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.HostService;
-import io.hermes.missioncontrol.support.HostPathBinding;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,9 +60,8 @@ class AgentSetupAndSessionsControllerTest {
     credentials = mock(CredentialService.class);
     mvc = MockMvcBuilders
         .standaloneSetup(
-            new AgentSetupController(setup, credentials),
-            new AgentSessionsController(profiles))
-        .setConversionService(HostPathBinding.conversionService(hosts))
+            new AgentSetupController(setup, hosts, credentials),
+            new AgentSessionsController(profiles, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -97,15 +95,13 @@ class AgentSetupAndSessionsControllerTest {
 
   @Test
   void anEnvKeyThatIsNotAShellStyleNameIsRefusedBeforeAnythingIsWritten() throws Exception {
-    // the host binds before the body is validated — see AgentSkillsControllerTest
-    hostIsConnected(hosts);
-
     mvc.perform(put(BASE + "/env").contentType(MediaType.APPLICATION_JSON)
             .content("{\"entries\":[{\"key\":\"anthropic-api-key\",\"value\":\"sk-ant-x\"}]}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error").exists());
 
     verifyNoInteractions(setup);
+    verifyNoInteractions(hosts);
   }
 
   @Test

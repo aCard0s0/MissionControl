@@ -41,9 +41,7 @@ Two seams, one each, and both are shared on purpose:
 
 ## Steps
 
-1. Resolve the host at the edge — a `{hostId}` path segment binds straight to a probed
-   `DockerHostRef` through the converter in `web/WebConfig.java:54`, so the handler never
-   asks. A host id sent in a request body still calls `requireConnected` itself.
+1. Resolve the host at the edge; `requireConnected(hostId)`.
 2. Read: `HermesContainerFiles` → the path from `ProfilePaths` (`agents/ProfilePaths.java:28`).
 3. Write, as user `mc.terminal.user` (default `hermes`) — a root exec writing into
    `/opt/data` leaves files the agent can no longer read. **Two writers, and which one is

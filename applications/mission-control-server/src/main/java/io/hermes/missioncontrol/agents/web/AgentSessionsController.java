@@ -2,7 +2,7 @@ package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.SessionDto;
-import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.hosts.HostService;
 import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,36 +17,38 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentSessionsController {
 
   private final HermesProfiles profiles;
+  private final HostService hosts;
 
-  AgentSessionsController(HermesProfiles profiles) {
+  AgentSessionsController(HermesProfiles profiles, HostService hosts) {
     this.profiles = profiles;
+    this.hosts = hosts;
   }
 
   @GetMapping
   public List<SessionDto> list(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return profiles.listSessions(host, containerId, name);
+    return profiles.listSessions(hosts.requireConnected(hostId), containerId, name);
   }
 
   @GetMapping(value = "/{sessionId}", produces = MediaType.APPLICATION_JSON_VALUE)
   public String messages(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String sessionId) {
     // already a JSON array string emitted by the in-container query
     return profiles.readSessionMessages(
-        host, containerId, name, sessionId);
+        hosts.requireConnected(hostId), containerId, name, sessionId);
   }
 
   @DeleteMapping("/{sessionId}")
   public void delete(
-      @PathVariable("hostId") DockerHostRef host,
+      @PathVariable String hostId,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String sessionId) {
-    profiles.deleteSession(host, containerId, name, sessionId);
+    profiles.deleteSession(hosts.requireConnected(hostId), containerId, name, sessionId);
   }
 }
