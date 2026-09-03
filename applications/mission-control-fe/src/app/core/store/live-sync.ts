@@ -27,6 +27,9 @@ const POLL = {
   imageCatalogs: 300_000,
   stats: 3_000,
   logs: 5_000,
+  // 'connected' is a claim about now. The domain polls all keep their last state quietly on
+  // failure, so without this the banner could never come back once the first probe succeeded
+  health: 10_000,
 } as const;
 
 /** How long to wait before retrying an unreachable backend. */
@@ -107,9 +110,26 @@ export class LiveSync {
     this.schedule(() => this.images.refreshAll(), POLL.imageCatalogs);
     this.schedule(() => this.containers.pollStats(), POLL.stats);
     this.schedule(() => this.logs.poll(), POLL.logs);
+    this.schedule(() => this.checkHealth(), POLL.health);
     document.addEventListener('visibilitychange', () => this.catchUp());
     void this.containers.pollStats();
     void this.logs.poll();
+  }
+
+  /**
+   * The probe again, on a period. A backend that died mid-session otherwise stayed
+   * 'connected' forever: every domain poll swallows its failure and keeps its last state
+   * (deliberately — see {@link StoreContext.toastFailure}), so nothing else ever says the
+   * screen has gone stale. Recovery flips the banner back off; the domain polls were firing
+   * throughout, so the next tick of each is what re-fills the data.
+   */
+  private async checkHealth(): Promise<void> {
+    try {
+      await this.ctx.api.health();
+      this.ctx.backendStatus.set('connected');
+    } catch {
+      this.ctx.backendStatus.set('unreachable');
+    }
   }
 
   /**

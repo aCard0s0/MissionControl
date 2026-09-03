@@ -273,6 +273,40 @@ describe('LiveSync bootstrap', () => {
     expect(calls.length).toBeGreaterThan(whileHidden);
   });
 
+  it('raises the banner again when the backend dies mid-session', async () => {
+    // every domain poll keeps its last state quietly on failure, so the health poll is the
+    // only thing that can say the screen has gone stale — 'connected' used to be one-shot
+    backend();
+    const store = booted();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.ctx.backendStatus()).toBe('connected');
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('gone'))));
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(store.ctx.backendStatus()).toBe('unreachable');
+    expect(store.liveSync.notice()).toContain('backend unreachable');
+  });
+
+  it('drops the banner once the backend answers again', async () => {
+    backend();
+    const store = booted();
+    await vi.advanceTimersByTimeAsync(0);
+    const inventory = store.containers.containers().map(c => c.id);
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('gone'))));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(store.ctx.backendStatus()).toBe('unreachable');
+
+    backend();   // the backend comes back
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(store.ctx.backendStatus()).toBe('connected');
+    expect(store.liveSync.notice()).toBeNull();
+    // held throughout the outage, refreshed by the domain polls once it was back
+    expect(store.containers.containers().map(c => c.id)).toEqual(inventory);
+  });
+
   it('survives a backend that answers health and then falls over', async () => {
     const routes = backend();
     const store = booted();

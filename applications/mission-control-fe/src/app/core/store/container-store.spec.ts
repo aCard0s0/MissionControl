@@ -87,6 +87,28 @@ describe('ContainerStore selection', () => {
     expect(store.selectedContainerId()).toBe('c-2');
   });
 
+  it('drops a stale inventory response that a newer refresh superseded', async () => {
+    // the 10s poll fires against a slow daemon; a deploy completes and its own refresh lands
+    // first, with the new container. The poll's older list then arrives without it — applying
+    // it would let the auto-select move the selection off the container just deployed
+    let releaseStale!: (value: unknown) => void;
+    const stale = new Promise(resolve => { releaseStale = resolve; });
+    const list = vi.fn()
+      .mockResolvedValueOnce([apiContainer()])
+      .mockImplementationOnce(() => stale.then(() => [apiContainer()]))
+      .mockResolvedValue([apiContainer(), apiContainer({ id: 'c-new' })]);
+    const { store } = await loaded([apiContainer()], { list });
+
+    const poll = store.refresh();     // slow, holds the old list
+    await store.refresh();            // the deploy's refresh, with c-new
+    store.select('c-new');
+    releaseStale(null);
+    await poll;
+
+    expect(store.containers().map(c => c.id)).toEqual(['c-1', 'c-new']);
+    expect(store.selectedContainerId()).toBe('c-new');
+  });
+
   it('tells the caches keyed to a container that the operator switched', async () => {
     const { store } = await loaded([apiContainer()]);
     const listener = vi.fn();

@@ -69,6 +69,25 @@ describe('BoardStore', () => {
     expect(liveError(ctx)).toBe('move failed: task locked');
   });
 
+  it('rolls back only the refused card, not a move that landed meanwhile', async () => {
+    // the rollback used to restore a whole-board snapshot, which also reverted a second
+    // card the backend had already accepted — and the board is loaded once, not polled,
+    // so the screen disagreed with the backend until a reload
+    let refuse!: (reason: unknown) => void;
+    const failing = new Promise((_resolve, reject) => { refuse = reject; });
+    const moveTask = vi.fn()
+      .mockImplementationOnce(() => failing)
+      .mockResolvedValue(undefined);
+    const { store } = await loaded([task('t-1'), task('t-2')], { moveTask });
+
+    store.move('t-1', 'done');      // refused, slowly
+    store.move('t-2', 'review');    // lands while t-1 is still in flight
+    refuse(new Error('task locked'));
+    await flush();
+
+    expect(store.tasks().map(t => t.column)).toEqual(['queued', 'review']);
+  });
+
   it('drops the tasks of a container or a profile that is gone', async () => {
     const { store } = await loaded([
       task('t-1'), task('t-2', { agentId: 'a-scribe' }), task('t-3', { containerId: 'c-2' }),
