@@ -1,27 +1,17 @@
 import { ProfileTemplateInput } from '../models';
 import { ApiAgentProfile, ApiProfileTemplate } from './api-types';
 import { AgentRef } from './agent-ref';
+import { CrudApi } from './crud-api';
 import { ApiHttp, seg } from './http';
 
 /** `/api/profile-templates` — reusable agent blueprints, plus the capture and
- *  deploy calls that move configuration between a template and a live profile. */
-export class TemplatesApi {
-  constructor(private readonly http: ApiHttp) {}
-
-  list(): Promise<ApiProfileTemplate[]> {
-    return this.http.get('/api/profile-templates');
-  }
-
-  create(input: ProfileTemplateInput): Promise<ApiProfileTemplate> {
-    return this.http.post('/api/profile-templates', input);
-  }
-
-  update(id: string, input: ProfileTemplateInput): Promise<ApiProfileTemplate> {
-    return this.http.put(`/api/profile-templates/${seg(id)}`, input);
-  }
-
-  remove(id: string): Promise<void> {
-    return this.http.delete(`/api/profile-templates/${seg(id)}`);
+ *  deploy calls that move configuration between a template and a live profile.
+ *
+ *  Both of those name the profile `name`, not `profile` as the library deploys do,
+ *  so neither takes `agentTarget`. */
+export class TemplatesApi extends CrudApi<ApiProfileTemplate, ProfileTemplateInput> {
+  constructor(http: ApiHttp) {
+    super(http, '/api/profile-templates');
   }
 
   /** Snapshots a running profile into a new template. */

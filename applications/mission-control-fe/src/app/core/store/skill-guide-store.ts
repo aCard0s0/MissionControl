@@ -1,7 +1,8 @@
-import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, Injectable } from '@angular/core';
 import { AgentRef } from '../api/agent-ref';
+import { ApiSkillGuide } from '../hermes-api';
 import { DeployedPart, SkillGuide, SkillGuideInput } from '../models';
-import { StoreContext } from './store-context';
+import { LibraryStore } from './library-store';
 import { toDeployedPart, toSkillGuide } from './wire-mappers';
 
 /**
@@ -13,46 +14,17 @@ import { toDeployedPart, toSkillGuide } from './wire-mappers';
  * which half landed.
  */
 @Injectable({ providedIn: 'root' })
-export class SkillGuideStore {
-  readonly guides: WritableSignal<SkillGuide[]> = signal([]);
+export class SkillGuideStore extends LibraryStore<SkillGuide, ApiSkillGuide, SkillGuideInput> {
+  readonly guides = this.items;
 
   readonly categories = computed(() =>
     [...new Set(this.guides().map(g => g.category))].sort());
 
-  private readonly ctx = inject(StoreContext);
+  protected readonly noun = 'guide';
+  protected readonly toModel = toSkillGuide;
 
-  byId = (id: string | null): SkillGuide | null =>
-    this.guides().find(g => g.id === id) ?? null;
-
-  async refresh(): Promise<void> {
-    try {
-      this.guides.set((await this.ctx.api.guides.list()).map(toSkillGuide));
-    } catch { /* transient backend hiccup — keep last known state */ }
-  }
-
-  /** Create (no id) or update (id). Returns the id, or '' on failure. */
-  async save(input: SkillGuideInput, id?: string): Promise<string> {
-    try {
-      const saved = id
-        ? await this.ctx.api.guides.update(id, input)
-        : await this.ctx.api.guides.create(input);
-      this.upsert(toSkillGuide(saved));
-      return saved.id;
-    } catch (e) {
-      this.ctx.toastFailure('save guide', e);
-      return '';
-    }
-  }
-
-  async remove(id: string): Promise<boolean> {
-    try {
-      await this.ctx.api.guides.remove(id);
-    } catch (e) {
-      this.ctx.toastFailure('delete guide', e);
-      return false;
-    }
-    this.guides.update(gs => gs.filter(g => g.id !== id));
-    return true;
+  protected wire() {
+    return this.ctx.api.guides;
   }
 
   /**
@@ -70,9 +42,5 @@ export class SkillGuideStore {
       this.ctx.toastFailure('deploy guide', e);
       return null;
     }
-  }
-
-  private upsert(guide: SkillGuide): void {
-    this.guides.update(gs => [guide, ...gs.filter(g => g.id !== guide.id)]);
   }
 }
