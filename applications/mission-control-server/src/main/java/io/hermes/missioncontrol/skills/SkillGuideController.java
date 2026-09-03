@@ -211,7 +211,7 @@ public class SkillGuideController {
   private AgentProfileDto refreshedProfile(
       DockerHostRef host, String containerId, String profile, List<DeployedPart> parts) {
     try {
-      return mcpCatalog.enrich(host, profiles.get(host, containerId, profile));
+      return profiles.get(host, containerId, profile);
     } catch (RuntimeException failure) {
       log.warn("guide deploy: could not re-read profile '{}' afterwards: {}",
           profile, failure.getMessage());

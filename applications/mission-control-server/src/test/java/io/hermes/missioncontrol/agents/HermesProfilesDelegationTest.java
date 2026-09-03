@@ -68,7 +68,7 @@ class HermesProfilesDelegationTest {
     gatewayLogs = mock(HermesGatewayLogs.class);
     gatewayState = mock(HermesGatewayState.class);
     profiles = new HermesProfiles(files, env, modelConfig, skills, mcp, sessions, gatewayLogs,
-        gatewayState, new ProfileInventory(files));
+        gatewayState, new ProfileInventory(files), AgentsWiring.catalogLinks());
 
     when(files.requireProfileDir(HOST, CONTAINER, PROFILE)).thenReturn(DIR);
     when(files.readFile(any(), anyString(), anyString())).thenReturn("");

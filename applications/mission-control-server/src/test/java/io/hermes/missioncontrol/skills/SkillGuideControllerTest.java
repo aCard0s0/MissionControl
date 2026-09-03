@@ -68,7 +68,6 @@ class SkillGuideControllerTest {
     when(profiles.get(any(), anyString(), anyString())).thenReturn(mock(AgentProfileDto.class));
     registry = mock(McpRegistryService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
-    when(mcpCatalog.enrich(any(), any())).thenAnswer(call -> call.getArgument(1));
     HostService hosts = mock(HostService.class);
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
     mvc = MockMvcBuilders

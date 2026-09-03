@@ -4,7 +4,6 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.enrichmentIsTransparent;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
@@ -80,7 +79,6 @@ class AgentMcpControllerTest {
   @Test
   void addingAServerAssertsItIsCustomBeforeTheProfileIsWritten() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(profiles.addMcpServer(any(), anyString(), anyString(), any())).thenReturn(profile(PROFILE));
 
     mvc.perform(post(MCP).contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -119,7 +117,6 @@ class AgentMcpControllerTest {
   @Test
   void updatingChecksThePathNameNotTheBodyNameSoARenameStaysAtomic() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(profiles.updateMcpServer(any(), anyString(), anyString(), anyString(), any()))
         .thenReturn(profile(PROFILE));
 
@@ -146,7 +143,6 @@ class AgentMcpControllerTest {
   @Test
   void togglingAServerWritesTheFlag() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(profiles.setMcpServerEnabled(HOST, CONTAINER, PROFILE, SERVER, false)).thenReturn(profile(PROFILE));
 
     mvc.perform(put(MCP + "/" + SERVER + "/enabled")
@@ -160,7 +156,6 @@ class AgentMcpControllerTest {
   void removingAServerHandsTheResolvedHostToTheLifecycle() throws Exception {
     // the profile write and the link drop, and the order between them, are AgentLifecycleTest's
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(lifecycle.removeMcpServer(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));
 
     mvc.perform(delete(MCP + "/" + SERVER))
@@ -182,7 +177,6 @@ class AgentMcpControllerTest {
   @Test
   void theCatalogEndpointsCheckTheHostThenDelegateToTheCatalogService() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(mcpCatalog.connect(eq(HOST), eq(CONTAINER), eq(PROFILE), any(ConnectCatalogMcpRequest.class)))
         .thenReturn(profile(PROFILE));
     when(mcpCatalog.sync(HOST, CONTAINER, PROFILE, SERVER)).thenReturn(profile(PROFILE));

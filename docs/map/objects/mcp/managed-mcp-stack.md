@@ -61,7 +61,7 @@ name; Mission Control attaches *itself* for the same reason before probing one.
 
 - **Hits:** `ComposeStackRenderer`, `ComposeStackManager`, `McpComposeLifecycle`,
   `McpHealthProbe`, `McpStartupReconciler`, `McpServerDeletion`; and
-  `agents/AgentMcpCatalogService.java:260`, which is where the duplicated network literal used to
+  `agents/AgentMcpCatalogService.java:202`, which is where the duplicated network literal used to
   be and now reads `ManagedMcpStack.NETWORK`. Renaming the constant is safe *because* of that;
   re-introducing a literal anywhere is the failure this class exists to prevent.
 - **Does not hit:** any Hermes container's own deployment. Agents are *attached* to the network

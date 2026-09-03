@@ -4,7 +4,6 @@ import static io.hermes.missioncontrol.agents.web.AgentWebFixture.BASE;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.CONTAINER;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.enrichmentIsTransparent;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
@@ -19,7 +18,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
@@ -39,24 +37,21 @@ class AgentSkillsControllerTest {
 
   private HermesProfiles profiles;
   private HostService hosts;
-  private AgentMcpCatalogService mcpCatalog;
   private MockMvc mvc;
 
   @BeforeEach
   void setUp() {
     profiles = mock(HermesProfiles.class);
     hosts = mock(HostService.class);
-    mcpCatalog = mock(AgentMcpCatalogService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new AgentSkillsController(profiles, hosts, mcpCatalog))
+        .standaloneSetup(new AgentSkillsController(profiles, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
 
   @Test
-  void enablingASkillWritesTheFlagFromTheBodyAndAnswersWithTheEnrichedProfile() throws Exception {
+  void enablingASkillWritesTheFlagFromTheBodyAndAnswersWithTheWholeProfile() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(profiles.setSkillEnabled(HOST, CONTAINER, PROFILE, "refactor", false))
         .thenReturn(profile(PROFILE));
 
@@ -65,7 +60,6 @@ class AgentSkillsControllerTest {
         .andExpect(jsonPath("$.name").value(PROFILE));
 
     verify(profiles).setSkillEnabled(HOST, CONTAINER, PROFILE, "refactor", false);
-    verify(mcpCatalog).enrich(HOST, profile(PROFILE));
   }
 
   @Test
@@ -82,7 +76,6 @@ class AgentSkillsControllerTest {
   @Test
   void installingAndUninstallingASkillDelegate() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(profiles.installSkill(HOST, CONTAINER, PROFILE, "refactor")).thenReturn(profile(PROFILE));
     when(profiles.uninstallSkill(HOST, CONTAINER, PROFILE, "refactor")).thenReturn(profile(PROFILE));
 
@@ -98,7 +91,6 @@ class AgentSkillsControllerTest {
   @Test
   void readingAndWritingSkillContentDelegate() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(profiles.readSkillContent(HOST, CONTAINER, PROFILE, "refactor"))
         .thenReturn(new SkillContentDto("refactor", "/skills/refactor/SKILL.md", "# refactor", List.of()));
     when(profiles.updateSkillContent(HOST, CONTAINER, PROFILE, "refactor", "# rewritten"))

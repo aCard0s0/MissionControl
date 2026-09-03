@@ -50,32 +50,6 @@ class AgentMcpCatalogServiceTest {
       new AgentMcpCatalogService(registry, links, hosts, docker, profiles);
 
   @Test
-  void enrichesMaterializedAgentEntryWithCatalogRevisionMetadata() {
-    AgentMcpServerDto local = new AgentMcpServerDto(
-        "tools", "tools", "http", true, "connected", 4, 12L, null, 100L,
-        "http://tools:1100/mcp", null, null);
-    AgentProfileDto profile = profile(List.of(local));
-    AgentMcpLink link = new AgentMcpLink(
-        "dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1);
-    var catalog = mock(McpServerDto.class);
-    when(catalog.revision()).thenReturn(3L);
-    when(links.list("dh-local", "container", "default")).thenReturn(List.of(link));
-    when(registry.definition("mcp-1")).thenReturn(catalog);
-
-    AgentMcpServerDto enriched = service.enrich(HOST, profile).mcp().getFirst();
-
-    assertEquals("catalog", enriched.origin());
-    assertEquals("mcp-1", enriched.catalogServerId());
-    assertEquals(2L, enriched.syncedRevision());
-    assertEquals(3L, enriched.catalogRevision());
-    assertTrue(enriched.updateAvailable());
-    // and it costs a row read, not a daemon round trip: this runs once per profile on every
-    // /api/agents poll, and the live view forks `docker compose ps` under the host's compose
-    // lock — the same lock that serializes provision/start/stop
-    verify(registry, never()).live(anyString());
-  }
-
-  @Test
   void sameHostConnectAttachesNetworkAndMaterializesSecretsServerSide() {
     var catalog = mock(McpServerDto.class);
     when(catalog.id()).thenReturn("mcp-1");
@@ -85,15 +59,11 @@ class AgentMcpCatalogServiceTest {
     when(catalog.runtimeState()).thenReturn("running");
     when(catalog.transport()).thenReturn("http");
     when(catalog.revision()).thenReturn(7L);
-    // connect reads the live view (it refuses a server that is not running) and then enriches
-    // the profile it wrote, which reads the stored definition
+    // connect reads the live view, because it refuses a server that is not running
     when(registry.live("mcp-1")).thenReturn(catalog);
-    when(registry.definition("mcp-1")).thenReturn(catalog);
     when(registry.sameHostConnectionUrl("mcp-1")).thenReturn("http://mcp-tools:1100/mcp");
     when(registry.materializedHeaders("mcp-1"))
         .thenReturn(Map.of("Authorization", "Bearer secret"));
-    when(links.list("dh-local", "container", "default")).thenReturn(List.of(
-        new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 7, 1, 1)));
     when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
     when(profiles.addMcpServer(
         org.mockito.ArgumentMatchers.eq(HOST),
@@ -121,9 +91,13 @@ class AgentMcpCatalogServiceTest {
     assertEquals("Bearer secret", definition.getValue().headers().get("Authorization"));
     verify(links).upsert(org.mockito.ArgumentMatchers.argThat(
         value -> "mcp-1".equals(value.serverId()) && value.syncedRevision() == 7));
-    // connect writes the link row; the overlay that turns it into a catalog-owned entry is
-    // enrich's, which the API applies once on the way out rather than here
-    assertEquals("catalog", service.enrich(HOST, result).mcp().getFirst().origin());
+    // and the row goes in before the profile write, so that write's own read-back — every
+    // profile read passes through CatalogLinkOverlay — already reports the entry as catalog-
+    // owned. Reversed, the response called the server it had just connected custom.
+    InOrder order = inOrder(links, profiles);
+    order.verify(links).upsert(org.mockito.ArgumentMatchers.any());
+    order.verify(profiles).addMcpServer(any(), anyString(), anyString(), any());
+    assertEquals(profile(List.of(custom("tools"))), result);
   }
 
   @Test
@@ -143,38 +117,6 @@ class AgentMcpCatalogServiceTest {
             new ConnectCatalogMcpRequest("mcp-1", "tools")));
 
     assertTrue(error.getMessage().contains("cross-host URL"));
-  }
-
-  @Test
-  void aLinkWhoseEntryIsNoLongerOnTheProfileIsDroppedDuringEnrichment() {
-    // what a removal leaves behind if its link cleanup could not run. The page has no row left
-    // to offer an unlink on, and until the row is gone assertCustom refuses the alias to
-    // whatever is added under it next — so the listing has to be what clears it.
-    when(links.list("dh-local", "container", "default")).thenReturn(List.of(
-        new AgentMcpLink("dh-local", "container", "default", "gone", "mcp-1", 2, 1, 1)));
-
-    AgentProfileDto result = service.enrich(HOST, profile(List.of(custom("tools"))));
-
-    assertEquals(1, result.mcp().size());
-    assertEquals("custom", result.mcp().getFirst().origin());
-    verify(links).delete("dh-local", "container", "default", "gone");
-    verifyNoInteractions(registry);
-  }
-
-  @Test
-  void aProfileWhoseConfigCouldNotBeReadStrandsNothing() {
-    // readFile cannot tell an unreadable config.yaml from an absent one, so a profile that
-    // could not be read reports no MCP entries — indistinguishable from one whose entries were
-    // all removed. Pruning on that would drop every link the agent has.
-    when(links.list("dh-local", "container", "default")).thenReturn(List.of(
-        new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1)));
-    AgentProfileDto unreadable = new AgentProfileDto(
-        "container:default", "container", "default", "", "idle", "nous", "model", "",
-        "/opt/data", "", "", "", List.of(), List.of(), List.of(), GatewayDto.unknown(), 0);
-
-    service.enrich(HOST, unreadable);
-
-    verify(links, never()).delete(anyString(), anyString(), anyString(), anyString());
   }
 
   private static AgentProfileDto profile(List<AgentMcpServerDto> mcp) {
@@ -484,47 +426,6 @@ class AgentMcpCatalogServiceTest {
     verify(links, never()).delete(any(), anyString(), anyString(), anyString());
   }
 
-  // ── enrich ──────────────────────────────────────────────────────────────
-
-  @Test
-  void anUnlinkedEntryPassesThroughEnrichmentUntouched() {
-    when(links.list("dh-local", "container", "default")).thenReturn(List.of());
-
-    AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("mine")))).mcp().getFirst();
-
-    assertEquals("custom", result.origin());
-    assertNull(result.catalogServerId());
-    verifyNoInteractions(registry);
-  }
-
-  @Test
-  void aLinkPointingAtADeletedCatalogEntryIsCleanedUpDuringEnrichment() {
-    // the catalog row can be deleted outside this path; the Agent keeps its working definition
-    // and stops being told an update is available
-    when(links.list("dh-local", "container", "default"))
-        .thenReturn(List.of(link("tools", "container")));
-    when(registry.definition("mcp-1")).thenThrow(new NoSuchElementException("unknown MCP server: mcp-1"));
-
-    AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("tools")))).mcp().getFirst();
-
-    assertEquals("custom", result.origin());
-    verify(links).delete("dh-local", "container", "default", "tools");
-  }
-
-  @Test
-  void anEntryAtTheCurrentCatalogRevisionIsNotReportedAsUpdatable() {
-    McpServerDto source = mock(McpServerDto.class);
-    when(source.revision()).thenReturn(2L);
-    when(links.list("dh-local", "container", "default"))
-        .thenReturn(List.of(new AgentMcpLink("dh-local", "container", "default", "tools", "mcp-1", 2, 1, 1)));
-    when(registry.definition("mcp-1")).thenReturn(source);
-
-    AgentMcpServerDto result = service.enrich(HOST, profile(List.of(custom("tools")))).mcp().getFirst();
-
-    assertEquals("catalog", result.origin());
-    assertFalse(result.updateAvailable());
-  }
-
   // ── fixtures ────────────────────────────────────────────────────────────
 
   private void hostIsUp() {
@@ -596,9 +497,8 @@ class AgentMcpCatalogServiceTest {
     when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
     when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("tools"))));
-    enrichesTransparently();
 
-    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "tools"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1","tools"));
 
     assertEquals("https://peer.test/mcp", capturedAdd().url());
     verify(docker, never()).connectNetwork(any(), anyString(), anyString());
@@ -611,17 +511,12 @@ class AgentMcpCatalogServiceTest {
     when(profiles.get(HOST, "container", "default")).thenReturn(profile(List.of()));
     when(profiles.addMcpServer(any(), anyString(), anyString(), any()))
         .thenReturn(profile(List.of(custom("files"))));
-    enrichesTransparently();
 
-    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1", "files"));
+    service.connect(HOST, "container", "default", new ConnectCatalogMcpRequest("mcp-1","files"));
 
     assertNull(capturedAdd().url());
     // one argument carrying a space stays one argument
     assertEquals(List.of("a b"), capturedAdd().args());
     verify(docker, never()).connectNetwork(any(), anyString(), anyString());
-  }
-
-  private void enrichesTransparently() {
-    when(links.list(any(), anyString(), anyString())).thenReturn(List.of());
   }
 }

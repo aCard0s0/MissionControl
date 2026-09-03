@@ -1,7 +1,6 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.AgentLifecycle;
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ModelProviderRegistry;
 import io.hermes.missioncontrol.agents.ProfileSpec;
@@ -45,7 +44,6 @@ public class AgentsController {
   private final ProfileTemplateService templates;
   private final AgentLifecycle lifecycle;
   private final HostService hosts;
-  private final AgentMcpCatalogService mcpCatalog;
   private final CredentialService credentials;
 
   public AgentsController(
@@ -53,22 +51,17 @@ public class AgentsController {
       ProfileTemplateService templates,
       AgentLifecycle lifecycle,
       HostService hosts,
-      AgentMcpCatalogService mcpCatalog,
       CredentialService credentials) {
     this.profiles = profiles;
     this.templates = templates;
     this.lifecycle = lifecycle;
     this.hosts = hosts;
-    this.mcpCatalog = mcpCatalog;
     this.credentials = credentials;
   }
 
   @GetMapping
   public List<AgentProfileDto> list(@RequestParam String hostId, @RequestParam String containerId) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return profiles.list(host, containerId).stream()
-        .map(profile -> mcpCatalog.enrich(host, profile))
-        .toList();
+    return profiles.list(hosts.requireConnected(hostId), containerId);
   }
 
   @PostMapping
@@ -79,9 +72,9 @@ public class AgentsController {
     if (templateId != null && !templateId.isBlank()) {
       // Create the request-configured base and layer the template's
       // soul/memory/skills/mcp/secrets as one owned, rollback-safe operation.
-      return mcpCatalog.enrich(host, templates.createFromTemplate(templateId, host, spec));
+      return templates.createFromTemplate(templateId, host, spec);
     }
-    return mcpCatalog.enrich(host, profiles.create(host, spec));
+    return profiles.create(host, spec);
   }
 
   /**
@@ -126,9 +119,8 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateConfigRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.updateConfig(
-        host, containerId, name, request.configYaml()));
+    return profiles.updateConfig(
+        hosts.requireConnected(hostId), containerId, name, request.configYaml());
   }
 
   /** What a stop, restart or replace of this container would interrupt. Read by the
@@ -158,16 +150,14 @@ public class AgentsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody(required = false) PauseAgentRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.pause(
-        host, containerId, name, request == null ? null : request.reason()));
+    return profiles.pause(hosts.requireConnected(hostId), containerId, name,
+        request == null ? null : request.reason());
   }
 
   @PostMapping("/{hostId}/{containerId}/{name}/resume")
   public AgentProfileDto resume(
       @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.resume(host, containerId, name));
+    return profiles.resume(hosts.requireConnected(hostId), containerId, name);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/logs")

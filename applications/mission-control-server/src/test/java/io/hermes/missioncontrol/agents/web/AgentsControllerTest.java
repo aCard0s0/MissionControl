@@ -22,7 +22,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.credentials.CredentialService;
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
@@ -42,7 +41,6 @@ class AgentsControllerTest {
   private HermesProfiles profiles;
   private HostService hosts;
   private ProfileTemplateService templates;
-  private AgentMcpCatalogService mcpCatalog;
   private AgentLifecycle lifecycle;
   private CredentialService credentials;
   private MockMvc mvc;
@@ -52,13 +50,12 @@ class AgentsControllerTest {
     profiles = mock(HermesProfiles.class);
     hosts = mock(HostService.class);
     templates = mock(ProfileTemplateService.class);
-    mcpCatalog = mock(AgentMcpCatalogService.class);
     lifecycle = mock(AgentLifecycle.class);
     credentials = mock(CredentialService.class);
 
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentsController(
-            profiles, templates, lifecycle, hosts, mcpCatalog, credentials))
+            profiles, templates, lifecycle, hosts, credentials))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -122,18 +119,16 @@ class AgentsControllerTest {
   }
 
   @Test
-  void listingEnrichesEveryProfileWithItsCatalogLinks() throws Exception {
+  void listingAnswersWithEveryProfileTheContainerHas() throws Exception {
+    // the catalog overlay each of these carries is part of the profile read now, so there is
+    // nothing for this handler to add — see CatalogLinkOverlayTest
     hostIsConnected();
     when(profiles.list(HOST, CONTAINER)).thenReturn(List.of(profile("scout"), profile("scribe")));
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
 
     mvc.perform(get("/api/agents").param("hostId", HOST.id()).param("containerId", CONTAINER))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].name").value("scout"))
         .andExpect(jsonPath("$[1].name").value("scribe"));
-
-    verify(mcpCatalog).enrich(HOST, profile("scout"));
-    verify(mcpCatalog).enrich(HOST, profile("scribe"));
   }
 
   @Test
@@ -141,7 +136,6 @@ class AgentsControllerTest {
     // the template path layers soul/memory/skills/mcp/secrets onto the new profile as one
     // rollback-safe operation, so it must not be reachable by accident from the plain path
     hostIsConnected();
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
     when(templates.createFromTemplate(eq("tpl-1"), eq(HOST), any(ProfileSpec.class)))
         .thenReturn(profile("scout"));
 
@@ -160,7 +154,6 @@ class AgentsControllerTest {
   void aBlankTemplateIdIsTreatedAsNoTemplate() throws Exception {
     // the dashboard sends "" for "no template", and that must not look up a template named ""
     hostIsConnected();
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
     when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
 
     mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
@@ -178,7 +171,6 @@ class AgentsControllerTest {
     // the client sends an id, never a key name: a credential id says which values may be read,
     // and letting the caller also name the variable would let it read any of them
     hostIsConnected();
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
     when(credentials.valueFor("cr-1", "ANTHROPIC_API_KEY")).thenReturn("sk-from-the-vault");
     when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
 
@@ -196,7 +188,6 @@ class AgentsControllerTest {
   @Test
   void aPickedCredentialBeatsAStaleCharacterLeftInTheKeyBox() throws Exception {
     hostIsConnected();
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
     when(credentials.valueFor("cr-1", "ANTHROPIC_API_KEY")).thenReturn("sk-from-the-vault");
     when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
 
@@ -230,7 +221,6 @@ class AgentsControllerTest {
   @Test
   void aCreateWithNoCredentialNeverReachesTheCredentialStore() throws Exception {
     hostIsConnected();
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
     when(profiles.create(eq(HOST), any(ProfileSpec.class))).thenReturn(profile("scout"));
 
     mvc.perform(post("/api/agents").contentType(MediaType.APPLICATION_JSON).content("""
@@ -270,7 +260,6 @@ class AgentsControllerTest {
   @Test
   void updatingTheSoulAndTheConfigDelegateTheirBodies() throws Exception {
     hostIsConnected();
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
     when(profiles.updateConfig(HOST, CONTAINER, "scout", "model: opus\n")).thenReturn(profile("scout"));
 
     mvc.perform(put(BASE + "/soul").contentType(MediaType.APPLICATION_JSON)

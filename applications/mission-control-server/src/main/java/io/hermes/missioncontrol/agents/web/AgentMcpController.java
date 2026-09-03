@@ -55,8 +55,7 @@ class AgentMcpController {
       @Valid @RequestBody AddMcpServerRequest request) {
     DockerHostRef host = hosts.requireConnected(hostId);
     mcpCatalog.assertCustom(host, containerId, name, request.name());
-    return mcpCatalog.enrich(host,
-        profiles.addMcpServer(host, containerId, name, McpServerDefinition.from(request)));
+    return profiles.addMcpServer(host, containerId, name, McpServerDefinition.from(request));
   }
 
   /** Replaces a custom MCP definition in one config write. The body name may
@@ -70,9 +69,8 @@ class AgentMcpController {
       @Valid @RequestBody AddMcpServerRequest request) {
     DockerHostRef host = hosts.requireConnected(hostId);
     mcpCatalog.assertCustom(host, containerId, name, serverName);
-    return mcpCatalog.enrich(host,
-        profiles.updateMcpServer(
-            host, containerId, name, serverName, McpServerDefinition.from(request)));
+    return profiles.updateMcpServer(
+        host, containerId, name, serverName, McpServerDefinition.from(request));
   }
 
   /** Disconnect/reconnect is deliberately separate from permanent deletion so
@@ -84,9 +82,8 @@ class AgentMcpController {
       @PathVariable String name,
       @PathVariable String serverName,
       @Valid @RequestBody SetMcpServerEnabledRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.setMcpServerEnabled(
-        host, containerId, name, serverName, request.enabled()));
+    return profiles.setMcpServerEnabled(
+        hosts.requireConnected(hostId), containerId, name, serverName, request.enabled());
   }
 
   /** Permanently forgets the saved definition. Use the enabled endpoint for a
@@ -97,8 +94,8 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, lifecycle.removeMcpServer(host, containerId, name, serverName));
+    return lifecycle.removeMcpServer(
+        hosts.requireConnected(hostId), containerId, name, serverName);
   }
 
   @PostMapping("/catalog")
@@ -107,8 +104,7 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody ConnectCatalogMcpRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, mcpCatalog.connect(host, containerId, name, request));
+    return mcpCatalog.connect(hosts.requireConnected(hostId), containerId, name, request);
   }
 
   @PostMapping("/{serverName}/sync")
@@ -117,8 +113,7 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, mcpCatalog.sync(host, containerId, name, serverName));
+    return mcpCatalog.sync(hosts.requireConnected(hostId), containerId, name, serverName);
   }
 
   @DeleteMapping("/{serverName}/link")
@@ -127,8 +122,7 @@ class AgentMcpController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String serverName) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, mcpCatalog.unlink(host, containerId, name, serverName));
+    return mcpCatalog.unlink(hosts.requireConnected(hostId), containerId, name, serverName);
   }
 
   @PostMapping("/{serverName}/test")

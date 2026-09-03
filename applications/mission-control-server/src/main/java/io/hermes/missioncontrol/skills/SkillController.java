@@ -1,6 +1,5 @@
 package io.hermes.missioncontrol.skills;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
@@ -95,17 +94,15 @@ public class SkillController {
   private final UpstreamCheck upstream;
   private final HermesProfiles profiles;
   private final HostService hosts;
-  private final AgentMcpCatalogService mcpCatalog;
 
   public SkillController(
       SkillRepository repository, SkillDeployer deployer, UpstreamCheck upstream,
-      HermesProfiles profiles, HostService hosts, AgentMcpCatalogService mcpCatalog) {
+      HermesProfiles profiles, HostService hosts) {
     this.repository = repository;
     this.deployer = deployer;
     this.upstream = upstream;
     this.profiles = profiles;
     this.hosts = hosts;
-    this.mcpCatalog = mcpCatalog;
   }
 
   @GetMapping
@@ -174,9 +171,8 @@ public class SkillController {
   public AgentProfileDto deploy(
       @PathVariable String id, @Valid @RequestBody AgentTargetRequest request) {
     Skill skill = repository.find(id).orElseThrow(() -> unknown(id));
-    DockerHostRef host = hosts.requireConnected(request.hostId());
-    return mcpCatalog.enrich(host, deployer.deploy(
-        host, request.containerId(), request.profile(), skill));
+    return deployer.deploy(hosts.requireConnected(request.hostId()),
+        request.containerId(), request.profile(), skill);
   }
 
   /**

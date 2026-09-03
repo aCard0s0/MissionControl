@@ -112,7 +112,7 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 ## If you change this
 
 - **Hits:** `SkillRepository`, `SkillController`, `HermesProfiles.installSkillFiles`
-  (`agents/HermesProfiles.java:264`), `HermesSkills.writeSkillFiles`/`readSkillFiles`,
+  (`agents/HermesProfiles.java:273`), `HermesSkills.writeSkillFiles`/`readSkillFiles`,
   `ProfilePaths.skillFile`, `pages/skills.ts`, `pages/skill-deploy-dialog.ts`,
   `core/store/skill-store.ts`, and the `save to library` button on
   `pages/agent-skills-panel.html`.

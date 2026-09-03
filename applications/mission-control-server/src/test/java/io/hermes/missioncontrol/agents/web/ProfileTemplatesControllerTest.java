@@ -2,7 +2,6 @@ package io.hermes.missioncontrol.agents.web;
 
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.HOST;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.PROFILE;
-import static io.hermes.missioncontrol.agents.web.AgentWebFixture.enrichmentIsTransparent;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsConnected;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.hostIsDown;
 import static io.hermes.missioncontrol.agents.web.AgentWebFixture.profile;
@@ -19,7 +18,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
@@ -37,25 +35,19 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * The template endpoints. Templates are dashboard-owned, so the interesting rule is which
  * of these seven endpoints needs a live Docker host and which must work with every daemon
  * in the fleet down.
- *
- * <p>Wired like the sibling controller tests, because
- * {@code deploy} answers with an agent profile and every profile the API returns is enriched
- * with its catalog links on the way out.
  */
 class ProfileTemplatesControllerTest {
 
   private ProfileTemplateService service;
   private HostService hosts;
-  private AgentMcpCatalogService mcpCatalog;
   private MockMvc mvc;
 
   @BeforeEach
   void setUp() {
     service = mock(ProfileTemplateService.class);
     hosts = mock(HostService.class);
-    mcpCatalog = mock(AgentMcpCatalogService.class);
     mvc = MockMvcBuilders
-        .standaloneSetup(new ProfileTemplatesController(service, hosts, mcpCatalog))
+        .standaloneSetup(new ProfileTemplatesController(service, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -122,7 +114,6 @@ class ProfileTemplatesControllerTest {
   @Test
   void captureAndDeployPassTheResolvedHostUrlRatherThanTheHostId() throws Exception {
     hostIsConnected(hosts);
-    enrichmentIsTransparent(mcpCatalog);
     when(service.captureFromAgent(any(), anyString(), anyString(), org.mockito.ArgumentMatchers.any()))
         .thenReturn(template());
     when(service.deploy(anyString(), any(), anyString(), anyString())).thenReturn(profile(PROFILE));
@@ -143,27 +134,6 @@ class ProfileTemplatesControllerTest {
     // fail at the transport layer
     verify(service).captureFromAgent(HOST, "c1", "scout", "researcher");
     verify(service).deploy("pt-1", HOST, "c1", "scout");
-  }
-
-  /**
-   * A deployed profile is a profile, and every profile the API answers with carries its
-   * catalog links. This route used to resolve its own host and hand the applier's result
-   * straight back, so a template deploy was the one profile read that skipped both the link
-   * overlay and the stranded-link sweep that goes with it.
-   */
-  @Test
-  void aDeployedProfileLeavesEnrichedLikeEveryOtherProfileTheApiReturns() throws Exception {
-    hostIsConnected(hosts);
-    when(service.deploy(anyString(), any(), anyString(), anyString())).thenReturn(profile(PROFILE));
-    when(mcpCatalog.enrich(eq(HOST), any())).thenReturn(profile("enriched"));
-
-    mvc.perform(post("/api/profile-templates/pt-1/deploy")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"hostId\":\"dh-local\",\"containerId\":\"c1\",\"name\":\"scout\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.name").value("enriched"));
-
-    verify(mcpCatalog).enrich(eq(HOST), any());
   }
 
   @Test

@@ -38,6 +38,8 @@ import org.springframework.stereotype.Service;
  *   <li>{@link HermesGatewayState} — the platforms and runtime state in
  *       {@code gateway_state.json}, and the {@code ESTOP} pause sentinel
  *   <li>{@link ProfileInventory} — which profiles the container has at all
+ *   <li>{@link CatalogLinkOverlay} — the dashboard-owned MCP catalog links, laid over the
+ *       entries the container reports
  * </ul>
  *
  * <p>The mutating endpoints all return the whole profile, so each one reads as
@@ -56,6 +58,7 @@ public class HermesProfiles {
   private final HermesGatewayLogs gatewayLogs;
   private final HermesGatewayState gatewayState;
   private final ProfileInventory inventory;
+  private final CatalogLinkOverlay catalogLinks;
 
   public HermesProfiles(
       HermesContainerFiles files,
@@ -66,7 +69,8 @@ public class HermesProfiles {
       HermesSessions sessions,
       HermesGatewayLogs gatewayLogs,
       HermesGatewayState gatewayState,
-      ProfileInventory inventory) {
+      ProfileInventory inventory,
+      CatalogLinkOverlay catalogLinks) {
     this.files = files;
     this.env = env;
     this.modelConfig = modelConfig;
@@ -76,6 +80,7 @@ public class HermesProfiles {
     this.gatewayLogs = gatewayLogs;
     this.gatewayState = gatewayState;
     this.inventory = inventory;
+    this.catalogLinks = catalogLinks;
   }
 
   // ── inventory ──────────────────────────────────────────────────────────────
@@ -105,6 +110,10 @@ public class HermesProfiles {
    * <p>The four are read in one exec rather than four. This runs once per profile inside
    * {@link #list}, which the agents page polls every twelve seconds, so each read here is paid
    * for by every profile in the container on every poll.
+   *
+   * <p>The one place an {@link AgentProfileDto} is built, which is why the catalog-link overlay
+   * is applied here: a profile that leaves this method is the only kind of profile there is, so
+   * nothing downstream can forget to ask for it — see {@link CatalogLinkOverlay}.
    */
   private AgentProfileDto readProfile(DockerHostRef host, String containerId, String name) {
     String dir = ProfilePaths.profileDir(name);
@@ -119,7 +128,7 @@ public class HermesProfiles {
     List<SkillDto> skillList = skills.list(host, containerId, name, configMap);
     List<AgentMcpServerDto> mcpList = mcp.list(host, containerId, name, configMap);
     HermesGatewayState.Reading gateway = gatewayState.read(host, containerId, name);
-    return new AgentProfileDto(
+    return catalogLinks.enrich(host, new AgentProfileDto(
         ProfilePaths.profileId(containerId, name),
         containerId,
         name,
@@ -136,7 +145,7 @@ public class HermesProfiles {
         mcpList,
         gateway.integrations(),
         gateway.gateway(),
-        System.currentTimeMillis());
+        System.currentTimeMillis()));
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────────

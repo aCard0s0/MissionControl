@@ -56,25 +56,12 @@ class AgentLifecycleTest {
     // the order matters: if the link were dropped first and the profile write then failed, the
     // entry would be left in config.yaml with nothing recording where it came from
     when(profiles.removeMcpServer(HOST, CONTAINER, "scout", "files")).thenReturn(profile());
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(call -> call.getArgument(1));
 
     assertEquals("scout", lifecycle.removeMcpServer(HOST, CONTAINER, "scout", "files").name());
 
     InOrder order = inOrder(profiles, mcpCatalog);
     order.verify(profiles).removeMcpServer(HOST, CONTAINER, "scout", "files");
     order.verify(mcpCatalog).forgetLink(HOST, CONTAINER, "scout", "files");
-  }
-
-  @Test
-  void aRemovalAnswersWithTheProfileAsTheRemainingLinksLeaveIt() {
-    // the response is what the page redraws from, so it has to carry the catalog overlay
-    // rather than the raw hermes read the profile write handed back
-    AgentProfileDto enriched = profile();
-    when(profiles.removeMcpServer(any(), anyString(), anyString(), anyString()))
-        .thenReturn(profile());
-    when(mcpCatalog.enrich(eq(HOST), any())).thenReturn(enriched);
-
-    assertEquals(enriched, lifecycle.removeMcpServer(HOST, CONTAINER, "scout", "files"));
   }
 
   // ── the cleanup that runs after the container write has landed ────────────
@@ -94,7 +81,8 @@ class AgentLifecycleTest {
   void aCleanupThatKeepsFailingDoesNotFailARequestWhoseContainerWriteLanded() {
     // the profile is gone; answering 500 would say it is not. The link row left behind is
     // reachable afterwards — delete tolerates a profile that is already gone, so a retry
-    // reaches the cleanup, and enrich drops a link whose entry is no longer on the profile
+    // reaches the cleanup, and the overlay every profile read passes through drops a link
+    // whose entry is no longer on the profile
     doThrow(new RuntimeException("database is locked"))
         .when(mcpCatalog).deleteAgentLinks(HOST, CONTAINER, "scout");
 
@@ -107,7 +95,6 @@ class AgentLifecycleTest {
   @Test
   void theSameHoldsForAnMcpEntryRemoval() {
     when(profiles.removeMcpServer(HOST, CONTAINER, "scout", "files")).thenReturn(profile());
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(call -> call.getArgument(1));
     doThrow(new RuntimeException("database is locked"))
         .when(mcpCatalog).forgetLink(HOST, CONTAINER, "scout", "files");
 
