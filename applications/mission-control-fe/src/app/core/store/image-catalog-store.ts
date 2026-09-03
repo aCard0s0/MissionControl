@@ -1,5 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { ApiImageTags } from '../hermes-api';
+import { mapPool } from '../map-pool';
 import { ImageCatalog } from '../models';
 import { ContainerStore } from './container-store';
 import { HostStore } from './host-store';
@@ -50,6 +51,6 @@ export class ImageCatalogStore {
     const ids = this.hosts.hosts()
       .filter(h => h.status === 'connected' && hosted.has(h.id))
       .map(h => h.id);
-    await this.ctx.mapPool(ids, 4, id => this.refresh(id, force));
+    await mapPool(ids, 4, id => this.refresh(id, force));
   }
 }

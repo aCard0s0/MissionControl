@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ApiCronJob, ApiCronJobRequest } from '../hermes-api';
+import { mapPool } from '../map-pool';
 import { CronJob } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
@@ -53,7 +54,7 @@ export class JobStore {
         return;
       }
       let anyScheduler = false;
-      const lists = await this.ctx.mapPool(profiles, 6, async profile => {
+      const lists = await mapPool(profiles, 6, async profile => {
         const resolved = this.agents.resolve(profile.id);
         if (!resolved) return [];
         try {

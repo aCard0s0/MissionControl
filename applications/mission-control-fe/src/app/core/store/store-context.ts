@@ -104,20 +104,4 @@ export class StoreContext {
     this.toast(`${subject} is no longer available`);
     return false;
   }
-
-  /** Run `fn` over `items` with at most `limit` in flight at once. Caps the
-   *  per-container fan-out of the pollers so a slow daemon can't open dozens of
-   *  concurrent requests every tick. */
-  async mapPool<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-    const results: R[] = new Array(items.length);
-    let next = 0;
-    const worker = async () => {
-      while (next < items.length) {
-        const idx = next++;
-        results[idx] = await fn(items[idx]);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-    return results;
-  }
 }

@@ -10,13 +10,8 @@ import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
 import { CredentialStore } from './credential-store';
-import { McpGroupStore } from './mcp-group-store';
-import { PromptGroupStore } from './prompt-group-store';
-import { PromptStore } from './prompt-store';
 import { ProviderStore } from './provider-store';
 import { StoreContext } from './store-context';
-import { SkillGroupStore } from './skill-group-store';
-import { SkillGuideStore } from './skill-guide-store';
 import { SkillStore } from './skill-store';
 import { TemplateStore } from './template-store';
 
@@ -69,13 +64,8 @@ export class LiveSync {
   private readonly board = inject(BoardStore);
   private readonly templates = inject(TemplateStore);
   private readonly mcp = inject(McpCatalogStore);
-  private readonly mcpGroups = inject(McpGroupStore);
   private readonly credentials = inject(CredentialStore);
-  private readonly prompts = inject(PromptStore);
-  private readonly promptGroups = inject(PromptGroupStore);
   private readonly skills = inject(SkillStore);
-  private readonly skillGroups = inject(SkillGroupStore);
-  private readonly guides = inject(SkillGuideStore);
   private readonly providers = inject(ProviderStore);
   private readonly endpoints = inject(InferenceEndpointStore);
   private readonly images = inject(ImageCatalogStore);
@@ -96,12 +86,14 @@ export class LiveSync {
   private async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
+    // What is loaded here is what something other than its own page reads: a dialog, a
+    // panel, a picker. The libraries whose only reader is their own page — prompts, guides
+    // and the three group families — are not, because that page loads them when it opens and
+    // loading them here as well meant a deep link to it fetched each one twice at once.
     await Promise.all([
       this.hosts.refresh(), this.endpoints.refresh(), this.providers.refreshRegistry(),
       this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
-      this.prompts.refresh(), this.skills.refresh(), this.guides.refresh(),
-      this.skillGroups.refresh(), this.promptGroups.refresh(),
-      this.mcpGroups.refresh(), this.credentials.refresh(),
+      this.skills.refresh(), this.credentials.refresh(),
       this.mcp.refresh(), this.mcp.refreshRetainedResources(),
     ]);
     await this.agents.refresh();   // needs the container list

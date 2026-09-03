@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ApiOutboundWebhookRequest, ApiSubscribeWebhookRequest, ApiWebhooks } from '../hermes-api';
+import { mapPool } from '../map-pool';
 import { OutboundWebhook, WebhookListener, WebhookRoute } from '../models';
 import { AgentStore } from './agent-store';
 import { ContainerStore } from './container-store';
@@ -60,7 +61,7 @@ export class WebhookStore {
         this.outbound.set([]);
         return;
       }
-      const answers = await this.ctx.mapPool(profiles, 6, async profile => {
+      const answers = await mapPool(profiles, 6, async profile => {
         const resolved = this.agents.resolve(profile.id);
         if (!resolved) return null;
         try {

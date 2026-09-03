@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ApiStats } from '../hermes-api';
+import { mapPool } from '../map-pool';
 import { ContainerStatus, HermesContainer } from '../models';
 import { StoreContext } from './store-context';
 
@@ -118,7 +119,7 @@ export class ContainerStore {
       const running = this.containers().filter(c => c.status === 'running' || c.status === 'unhealthy');
       const byHost = new Map<string, string[]>();
       for (const c of running) byHost.set(c.hostId, [...(byHost.get(c.hostId) ?? []), c.id]);
-      await this.ctx.mapPool([...byHost], 4, async ([hostId, ids]) => {
+      await mapPool([...byHost], 4, async ([hostId, ids]) => {
         try {
           const samples = await this.ctx.api.containers.statsBatch(hostId, ids);
           for (const [id, s] of Object.entries(samples)) this.applySample(id, s);

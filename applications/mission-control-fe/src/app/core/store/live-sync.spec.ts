@@ -185,6 +185,23 @@ describe('LiveSync bootstrap', () => {
     expect(store.containers.selectedContainerId()).toBe('c-live');
   });
 
+  it('leaves a library nothing but its own page reads to that page', async () => {
+    const calls = backend();
+    booted();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const paths = calls.map(url => url.split('?')[0]);
+    // read by a dialog, a panel or a picker that never loads them, so boot must
+    expect(paths).toEqual(expect.arrayContaining(['/api/skills', '/api/credentials']));
+    // loaded by the page that owns them, on entry. Fetching them here as well meant a deep
+    // link to that page asked for each of them twice at once
+    expect(paths).not.toContain('/api/prompts');
+    expect(paths).not.toContain('/api/prompt-groups');
+    expect(paths).not.toContain('/api/skill-groups');
+    expect(paths).not.toContain('/api/skill-guides');
+    expect(paths).not.toContain('/api/mcp-groups');
+  });
+
   it('adopts the profiles of every container it found', async () => {
     backend();
     const store = booted();
