@@ -50,7 +50,7 @@ fires them.
 
 - **Hits:** `HermesCron`, `HermesCli` (shared helpers), `AgentCronController`,
   `pages/calendar.ts`, `core/store/job-store.ts` — which polls on a **30 s** period, the slowest
-  useful one, because reading is one exec per profile (`core/store/live-sync.ts:29`).
+  useful one, because reading is one exec per profile (`core/store/live-sync.ts:26`).
 - **Does not hit:** [Webhook subscription](webhook-subscription.md). Both are per-profile hermes
   features read the same way, and both go through `HermesCli`, but they share no state.
 

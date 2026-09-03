@@ -61,14 +61,6 @@ describe('HermesApi request handling', () => {
       .rejects.toThrow('host still owns two containers');
   });
 
-  it('carries the status on the error, not only in the text', async () => {
-    // a caller that has to tell "gone" from "backend broke" reads `status`
-    // instead of pattern-matching a message the backend wrote
-    respond(JSON.stringify({ error: 'no such profile' }), { status: 404 });
-    await expect(new HermesApi('').hosts.list())
-      .rejects.toMatchObject({ name: 'ApiError', status: 404, message: 'no such profile' });
-  });
-
   it('falls back to the status code when the error body is not JSON', async () => {
     // an nginx/gateway 502 is HTML, and JSON.parse on it must not mask the failure
     respond('<html>502 Bad Gateway</html>', { status: 502 });

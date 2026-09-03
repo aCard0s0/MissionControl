@@ -8,8 +8,8 @@ produces: []
 
 # hydrate-poll
 
-The frontend's clock. Probe the backend, load everything once it answers, then keep each domain
-fresh on its own period. `LiveSync` — `core/store/live-sync.ts:43`.
+The frontend's clock. Probe the backend, load what more than one page needs once it answers,
+then keep each domain fresh on its own period. `LiveSync` — `core/store/live-sync.ts:40`.
 
 ## Input → Movement → Output
 
@@ -21,11 +21,11 @@ pages render from.
 
 **There is one mode, and it is "talk to the real backend".** An unreachable backend shows an
 empty dashboard and a banner naming the address it could not reach, retrying every 10 s
-(`RETRY_MS`, `core/store/live-sync.ts:38`). That is deliberate and the architecture doc says why:
+(`RETRY_MS`, `core/store/live-sync.ts:33`). That is deliberate and the architecture doc says why:
 seeded demo inventory used to fill the same screens, and **an operator could not tell it from
 real state**.
 
-**The periods are staggered on purpose** (`core/store/live-sync.ts:24`): container state moves
+**The periods are staggered on purpose** (`core/store/live-sync.ts:21`): container state moves
 fastest, published image tags change on the order of days and each lookup probes the daemon.
 
 | Domain | Period | Why |
@@ -51,9 +51,12 @@ output**.
 1. Read `window.__MC_CONFIG__` — served by the backend at `/config.js`, dev default in
    `public/config.js`. Carries `apiBaseUrl` and `dockerSocket`.
 2. `probeBackend()`; on failure set the banner and retry in `RETRY_MS`
-   (`core/store/live-sync.ts:88`).
-3. Load every domain once through its store.
-4. Start one timer per domain from `POLL` (`core/store/live-sync.ts:24`).
+   (`core/store/live-sync.ts:82`).
+3. Load through its store every domain something other than one page reads
+   (`core/store/live-sync.ts:86`). A library whose only reader is its own page — prompts,
+   guides, and the three group families — is **not** loaded here: that page loads it on entry,
+   and doing both meant a deep link fetched it twice at once.
+4. Start one timer per domain from `POLL` (`core/store/live-sync.ts:21`).
 
 ## If you change this
 

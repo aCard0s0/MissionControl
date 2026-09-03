@@ -1,19 +1,11 @@
-// What a failed call is, and how it becomes something an operator can read.
-// Both live here rather than beside one caller: a rejection is displayed in
-// three different shapes across this app — a toast, an inline panel error, a
-// log-tail banner — and each used to re-derive the message its own way.
-
-/**
- * A non-2xx answer from the backend, carrying the status alongside whatever the
- * body said. {@link ApiHttp} throws this so a caller that wants to react to the
- * status — not only show the text — has it without re-parsing a message.
- */
-export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+// How a failed call becomes something an operator can read. Here rather than beside one
+// caller: a rejection is displayed in three different shapes across this app — a toast, an
+// inline panel error, a log-tail banner — and each used to re-derive the message its own way.
+//
+// There is no error class of our own. One carried the HTTP status for "a caller that has to
+// tell 404 from 500", and in the whole app no caller ever read it: every one of them shows
+// the words. A backend answer says what went wrong in its `error` body, which is what
+// `ApiHttp` puts in the message.
 
 /**
  * The message a thrown value carries, tolerating the shapes that are not

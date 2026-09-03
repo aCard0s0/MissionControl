@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { AgentRef, ApiAgentProfile } from '../hermes-api';
+import { mapPool } from '../map-pool';
 import { AgentProfile, Integration, LogEntry, NewAgent } from '../models';
 import { ContainerStore } from './container-store';
 import { StoreContext } from './store-context';
@@ -86,7 +87,7 @@ export class AgentStore {
         return;
       }
       const prev = this.agents();
-      const lists = await this.ctx.mapPool(containers, 6, c => {
+      const lists = await mapPool(containers, 6, c => {
         if (c.status === 'stopped') return Promise.resolve(prev.filter(a => a.containerId === c.id));
         return this.ctx.api.agents.list(c.hostId, c.id)
           .then(list => list.map(a => keepPendingProbes(toAgentProfile(a), prev)))
