@@ -25,7 +25,7 @@ const loaded = async (groups: ApiMcpGroup[], api: Record<string, unknown> = {}) 
 describe('McpGroupStore', () => {
   it('reads the groups and fills in the fields the wire leaves null', async () => {
     const { store } = await loaded([
-      apiGroup('mg-1', { description: null, serverIds: null, agents: null }),
+      apiGroup('mg-1', { description: null, serverIds: [], agents: [] }),
     ]);
 
     expect(store.groups()[0]).toMatchObject({

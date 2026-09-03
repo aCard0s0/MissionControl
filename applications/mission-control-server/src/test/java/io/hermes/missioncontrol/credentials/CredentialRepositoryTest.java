@@ -37,6 +37,18 @@ class CredentialRepositoryTest {
   }
 
   @Test
+  void aBlankEntriesColumnReadsAsHoldingNothing() {
+    // what the dashboard's wire types promise: `entries` is a list, never null. The column is
+    // NOT NULL, so blank is the only way in — by hand
+    database.jdbc().update("""
+        INSERT INTO credentials (id, name, description, entries_json, created_at, updated_at)
+        VALUES ('cr-blank', 'empty', NULL, '', 1, 2)
+        """);
+
+    assertTrue(repository.find("cr-blank").orElseThrow().entries().isEmpty());
+  }
+
+  @Test
   void twoCredentialsCannotShareANameThatDiffersOnlyInCase() {
     // the name is what the dropdown shows; two options reading the same makes it a guess
     repository.insert(credential("cr-1", "anthropic"));

@@ -17,7 +17,7 @@ const loaded = async (groups: ApiPromptGroup[], api: Record<string, unknown> = {
 
 describe('PromptGroupStore', () => {
   it('reads the groups and fills in the fields the wire leaves null', async () => {
-    const { store } = await loaded([apiGroup('pg-1', { description: null, promptIds: null })]);
+    const { store } = await loaded([apiGroup('pg-1', { description: null, promptIds: [] })]);
 
     expect(store.groups()[0]).toMatchObject({ id: 'pg-1', description: '', promptIds: [] });
   });

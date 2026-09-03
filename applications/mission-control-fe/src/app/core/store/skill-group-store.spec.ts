@@ -18,7 +18,7 @@ const loaded = async (groups: ApiSkillGroup[], api: Record<string, unknown> = {}
 describe('SkillGroupStore', () => {
   it('reads the groups and fills in the fields the wire leaves null', async () => {
     const { store } = await loaded([
-      apiGroup('sg-1', { description: null, skillIds: null, guideId: null }),
+      apiGroup('sg-1', { description: null, skillIds: [], guideId: null }),
     ]);
 
     expect(store.groups()[0]).toMatchObject({

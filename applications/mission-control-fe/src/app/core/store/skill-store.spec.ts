@@ -31,9 +31,9 @@ describe('SkillStore', () => {
   });
 
   it('reads a hub row that carries no files as an empty file list', async () => {
-    // the backend stores NULL rather than [] for a hub row, and the page branches on
-    // the kind rather than on the file count
-    const { store } = await loaded([apiSkill('s-1', { kind: 'hub', files: null })]);
+    // the column is NULL for a hub row; the read side answers [] for it, so the page
+    // branches on the kind rather than on the file count
+    const { store } = await loaded([apiSkill('s-1', { kind: 'hub', files: [] })]);
 
     expect(store.skills()[0]).toMatchObject({ kind: 'hub', files: [] });
   });

@@ -24,7 +24,7 @@ const loaded = async (guides: ApiSkillGuide[], api: Record<string, unknown> = {}
 describe('SkillGuideStore', () => {
   it('reads the library and fills in the fields the wire leaves null', async () => {
     const { store } = await loaded([
-      apiGuide('g-1', { description: null, skillIds: null, mcpServerIds: null, category: '' }),
+      apiGuide('g-1', { description: null, skillIds: [], mcpServerIds: [], category: '' }),
     ]);
 
     expect(store.guides()[0]).toMatchObject({

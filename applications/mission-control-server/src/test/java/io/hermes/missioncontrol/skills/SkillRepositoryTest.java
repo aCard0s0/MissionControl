@@ -40,6 +40,21 @@ class SkillRepositoryTest {
   }
 
   @Test
+  void anAbsentOrUnreadableFilesColumnReadsAsAnEmptyList() {
+    // what the dashboard's wire types promise: `files` is a list, never null. A hub row
+    // stores NULL there and a hand-edited row can store anything
+    database.jdbc().update("""
+        INSERT INTO skills (id, kind, name, description, category, repo_url, version, files,
+            created_at, updated_at)
+        VALUES ('s-hub', 'hub', 'pdf', NULL, 'docs', NULL, NULL, NULL, 1, 2),
+               ('s-bad', 'local', 'odt', NULL, 'docs', NULL, NULL, 'not json', 1, 2)
+        """);
+
+    assertTrue(repository.find("s-hub").orElseThrow().files().isEmpty());
+    assertTrue(repository.find("s-bad").orElseThrow().files().isEmpty());
+  }
+
+  @Test
   void aKindOtherThanHubOrLocalIsRefusedByTheDatabase() {
     Skill bogus = new Skill("s-1", "sideload", "pdf", null, "general", null, null,
         List.of(), 1_000L, 1_000L);

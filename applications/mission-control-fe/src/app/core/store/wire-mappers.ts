@@ -250,7 +250,7 @@ export function toPrompt(api: ApiPrompt): Prompt {
     body: api.body ?? '',
     category: api.category || 'general',
     notes: api.notes ?? '',
-    tags: api.tags ?? [],
+    tags: api.tags,
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };
@@ -268,7 +268,7 @@ export function toSkill(api: ApiSkill): Skill {
     category: api.category || 'general',
     repoUrl: api.repoUrl ?? '',
     version: api.version ?? '',
-    files: (api.files ?? []).map(f => ({ path: f.path, body: f.body ?? '' })),
+    files: api.files.map(f => ({ path: f.path, body: f.body ?? '' })),
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };
@@ -290,8 +290,8 @@ export function toMcpGroup(api: ApiMcpGroup): McpGroup {
     id: api.id,
     name: api.name,
     description: api.description ?? '',
-    serverIds: api.serverIds ?? [],
-    agents: (api.agents ?? []).map(a => ({
+    serverIds: api.serverIds,
+    agents: api.agents.map(a => ({
       hostId: a.hostId,
       containerId: a.containerId,
       profile: a.profile,
@@ -307,7 +307,7 @@ export function toPromptGroup(api: ApiPromptGroup): PromptGroup {
     id: api.id,
     name: api.name,
     description: api.description ?? '',
-    promptIds: api.promptIds ?? [],
+    promptIds: api.promptIds,
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };
@@ -326,7 +326,7 @@ export function toCredential(api: ApiCredential): Credential {
     id: api.id,
     name: api.name,
     description: api.description ?? '',
-    entries: (api.entries ?? []).map(toCredentialEntry),
+    entries: api.entries.map(toCredentialEntry),
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };
@@ -351,7 +351,7 @@ export function toSkillGroup(api: ApiSkillGroup): SkillGroup {
     id: api.id,
     name: api.name,
     description: api.description ?? '',
-    skillIds: api.skillIds ?? [],
+    skillIds: api.skillIds,
     guideId: api.guideId ?? '',
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
@@ -365,8 +365,8 @@ export function toSkillGuide(api: ApiSkillGuide): SkillGuide {
     description: api.description ?? '',
     body: api.body ?? '',
     category: api.category || 'general',
-    skillIds: api.skillIds ?? [],
-    mcpServerIds: api.mcpServerIds ?? [],
+    skillIds: api.skillIds,
+    mcpServerIds: api.mcpServerIds,
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };
