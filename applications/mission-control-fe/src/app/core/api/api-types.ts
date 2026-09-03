@@ -3,6 +3,14 @@ import { BoardColumn, TemplateMcp } from '../models';
 // Wire shapes for mission-control-server. Everything the backend sends or
 // accepts is declared here; the clients under this folder only compose URLs and
 // the store maps these onto the domain models in ../models.
+//
+// `| null` means the backend can actually send null, and the mapper answers for it. It is not
+// a hedge: the id and file lists on the libraries below are not null because the read side
+// cannot produce one — `IdList.read`, `PromptRepository.readTags`, `SkillRepository.files`,
+// `CredentialRepository.entries` and `ProfileTemplateRepository.readList` each answer an empty
+// list for an absent, blank or unparseable column, so an old row cannot produce one either.
+// Declaring them nullable anyway bought a `?? []` in the mapper and a spec that fed a null the
+// backend has no way to send.
 
 /** A docker daemon, as the backend describes it. Every field past the id is optional on the
  *  wire: a host that has never answered a probe has no engine, version or latency to report. */
@@ -107,7 +115,7 @@ export interface ApiPrompt {
   body: string;
   category: string;
   notes: string | null;
-  tags: string[] | null;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -127,7 +135,7 @@ export interface ApiSkill {
   category: string;
   repoUrl: string | null;
   version: string | null;
-  files: ApiSkillFile[] | null;
+  files: ApiSkillFile[];
   createdAt: number;
   updatedAt: number;
 }
@@ -158,8 +166,8 @@ export interface ApiMcpGroup {
   id: string;
   name: string;
   description: string | null;
-  serverIds: string[] | null;
-  agents: ApiMcpGroupAgent[] | null;
+  serverIds: string[];
+  agents: ApiMcpGroupAgent[];
   createdAt: number;
   updatedAt: number;
 }
@@ -186,7 +194,7 @@ export interface ApiCredential {
   id: string;
   name: string;
   description: string | null;
-  entries: ApiCredentialEntry[] | null;
+  entries: ApiCredentialEntry[];
   createdAt: number;
   updatedAt: number;
 }
@@ -195,7 +203,7 @@ export interface ApiPromptGroup {
   id: string;
   name: string;
   description: string | null;
-  promptIds: string[] | null;
+  promptIds: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -204,7 +212,7 @@ export interface ApiSkillGroup {
   id: string;
   name: string;
   description: string | null;
-  skillIds: string[] | null;
+  skillIds: string[];
   guideId: string | null;
   createdAt: number;
   updatedAt: number;
@@ -216,8 +224,8 @@ export interface ApiSkillGuide {
   description: string | null;
   body: string;
   category: string;
-  skillIds: string[] | null;
-  mcpServerIds: string[] | null;
+  skillIds: string[];
+  mcpServerIds: string[];
   createdAt: number;
   updatedAt: number;
 }

@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: claude/skill-library @ ae0ebd6 · 2026-08-29
+verified: main @ ae0ebd6 · 2026-08-29
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/skills/SkillGuideController.java
 ---
 

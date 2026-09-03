@@ -18,10 +18,10 @@ const loaded = async (prompts: ApiPrompt[], api: Record<string, unknown> = {}) =
 
 describe('PromptStore', () => {
   it('reads the library and fills in the fields the wire leaves null', async () => {
-    const { store } = await loaded([apiPrompt('p-1', { notes: null, tags: null, category: '' })]);
+    const { store } = await loaded([apiPrompt('p-1', { notes: null, category: '' })]);
 
     expect(store.prompts()[0]).toMatchObject({
-      id: 'p-1', notes: '', tags: [], category: 'general',
+      id: 'p-1', notes: '', category: 'general',
     });
   });
 

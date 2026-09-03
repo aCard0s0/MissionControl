@@ -4,7 +4,14 @@ The catalog for a tree you do not hold in your head. It answers *what is X* and 
 moves if I change X*. It is not a second spec: [docs/architecture.md](../architecture.md)
 owns the as-built "why", and the code owns the truth. Every card cites both.
 
-Verified against `main @ 976a9c9` · 2026-08-28.
+**The stamp is per card, not per map.** Each card's `verified:` names the commit its claims
+were last read against; there is no single date for the tree. Twelve cards were re-read against
+`main @ 7d99214` (2026-09-03) — the ones whose subject changed since `976a9c9`. The rest still
+say `976a9c9`, and that is the honest answer: nothing about them changed, and bumping a stamp
+without reading the card is worse than a stamp that admits its age.
+
+`MapIntegrityTest` is not this check. It proves a citation lands on *something*, which is why a
+citation can point at the wrong real line and still pass — two did, and are fixed.
 
 ## Where things live
 

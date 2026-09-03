@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: claude/skill-library @ 8d85b3d · 2026-09-01
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/skills/SkillGroupController.java
 ---
 
@@ -74,8 +74,10 @@ package refuse.
   neither.
 - **looks-like-but-is-not:** a skill's `category`. See *Not the same axis* above.
 - **looks-like-but-is-not:** a [prompt group](prompt-group.md), the same shape over the
-  prompt library. Two tables and two controllers on purpose; they share only the
-  `.group-head` and `.picker` CSS in `styles.scss`. Only this one can point at a guide.
+  prompt library. Two tables and two controllers on purpose — but on the frontend they share
+  the store (`core/store/library-store.ts`), the editor state (`GroupDraft`), the filing
+  (`fileIntoSections`) and the `.group-head` / `.picker` CSS. Only this one can point at a
+  guide, which is why `saveGroup` on the Skills page builds its own payload.
 
 ## If you change this
 

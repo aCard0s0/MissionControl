@@ -21,7 +21,7 @@ const loaded = async (credentials: ApiCredential[], api: Record<string, unknown>
 
 describe('CredentialStore', () => {
   it('reads the credentials and fills in the fields the wire leaves null', async () => {
-    const { store } = await loaded([apiCredential('cr-1', { description: null, entries: null })]);
+    const { store } = await loaded([apiCredential('cr-1', { description: null, entries: [] })]);
 
     expect(store.credentials()[0]).toMatchObject({ id: 'cr-1', description: '', entries: [] });
   });

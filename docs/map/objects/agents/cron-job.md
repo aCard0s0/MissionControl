@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: main @ 976a9c9 · 2026-08-28
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/HermesCron.java
 ---
 
