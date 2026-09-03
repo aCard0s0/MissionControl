@@ -12,19 +12,19 @@ import { ApiHttp, seg } from './http';
  * its delete answers the entry rather than nothing, and a client that has to lie about its
  * own contract to fit a base class is the wrong client for one.
  */
-export class CrudApi<W, I> {
+export class CrudApi<T, I> {
   /** Protected so a subclass can compose its own routes off the same base. */
   constructor(protected readonly http: ApiHttp, private readonly path: string) {}
 
-  list(): Promise<W[]> {
+  list(): Promise<T[]> {
     return this.http.get(this.path);
   }
 
-  create(input: I): Promise<W> {
+  create(input: I): Promise<T> {
     return this.http.post(this.path, input);
   }
 
-  update(id: string, input: I): Promise<W> {
+  update(id: string, input: I): Promise<T> {
     return this.http.put(`${this.path}/${seg(id)}`, input);
   }
 
