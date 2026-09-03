@@ -7,6 +7,7 @@ import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
 import { StoreContext } from '../core/store/store-context';
+import { CredentialStore } from '../core/store/credential-store';
 import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate, TemplateMcp } from '../core/models';
 import { AGENT_ICONS, AgentIconView } from '../shared/agent-icon';
@@ -52,6 +53,7 @@ export class ProfileEditorPanel {
   private readonly providers = inject(ProviderStore);
   private readonly endpoints = inject(InferenceEndpointStore);
   private readonly templates = inject(TemplateStore);
+  private readonly credentials = inject(CredentialStore);
   protected readonly saving = signal(false);
 
   protected readonly icons = AGENT_ICONS;
@@ -85,6 +87,8 @@ export class ProfileEditorPanel {
   protected mcpCatalogAlias = '';
   protected secretKey = '';
   protected secretValue = '';
+  /** A saved credential picked for the row being added, or '' for a typed value. */
+  protected secretCredentialId = '';
 
   constructor() {
     // a different draft means a different blueprint (or a fresh one): half-typed
@@ -211,16 +215,48 @@ export class ProfileEditorPanel {
   }
 
   // ── keys ────────────────────────────────────────────────────────────────
+
+  /**
+   * Every secret a saved credential holds, as one flat list of options.
+   *
+   * Flattened rather than nested because of how an operator arrives here: they remember "the
+   * production Anthropic key", not `ANTHROPIC_API_KEY`. Picking an option fills the variable
+   * name too, so the credential is the thing chosen and the key falls out of it.
+   *
+   * Plain entries are left out — a blueprint's keys list is its secrets, and a home channel
+   * belongs in the profile's config rather than here.
+   */
+  protected credentialKeys(): Array<{ id: string; key: string; label: string }> {
+    return this.credentials.credentials().flatMap(c =>
+      c.entries.filter(e => e.secret && e.set && e.recoverable)
+        .map(e => ({ id: c.id, key: e.key, label: `${c.name} · ${e.key}` })));
+  }
+
+  /** Picking a credential names the variable as well, and clears the typed value: the two are
+   *  alternatives, and the backend copies the credential's envelope rather than any value. */
+  protected pickSecretCredential(option: string): void {
+    const [id, key] = option ? option.split('\u0000') : ['', ''];
+    this.secretCredentialId = id;
+    if (id) {
+      this.secretKey = key;
+      this.secretValue = '';
+    }
+  }
+
   protected addSecret(): void {
     const key = this.secretKey.trim().toUpperCase();
     if (!key || !envKeyValid(key)) return;
-    const value = this.secretValue;
+    const credentialId = this.secretCredentialId;
+    const value = credentialId ? '' : this.secretValue;
     const draft = this.draft();
     draft.secrets = [
       ...draft.secrets.filter(s => s.key !== key),
-      { key, value, set: !!value, recoverable: !!value },
+      credentialId
+        // set/recoverable are true because the backend refuses a credential it cannot open
+        ? { key, value: '', set: true, recoverable: true, credentialId }
+        : { key, value, set: !!value, recoverable: !!value },
     ];
-    this.secretKey = this.secretValue = '';
+    this.secretKey = this.secretValue = this.secretCredentialId = '';
   }
 
   protected removeSecret(key: string): void {
@@ -254,7 +290,7 @@ export class ProfileEditorPanel {
     this.newSkill = '';
     this.mcpForm.reset();
     this.mcpCatalogId = this.mcpCatalogAlias = '';
-    this.secretKey = this.secretValue = '';
+    this.secretKey = this.secretValue = this.secretCredentialId = '';
   }
 }
 

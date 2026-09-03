@@ -8,6 +8,7 @@ export const routes: Routes = [
   { path: 'agents/:id', loadComponent: () => import('./pages/agent-detail').then(m => m.AgentDetailPage), title: 'Agent · Mission Control' },
   { path: 'profiles', loadComponent: () => import('./pages/agent-profiles').then(m => m.AgentProfilesPage), title: 'Blueprints · Mission Control' },
   { path: 'models', loadComponent: () => import('./pages/models').then(m => m.ModelsPage), title: 'Models · Mission Control' },
+  { path: 'credentials', loadComponent: () => import('./pages/credentials').then(m => m.CredentialsPage), title: 'Credentials · Mission Control' },
   { path: 'mcp-servers', loadComponent: () => import('./pages/mcp-servers').then(m => m.McpServersPage), title: 'MCP Servers · Mission Control' },
   { path: 'prompts', loadComponent: () => import('./pages/prompts').then(m => m.PromptsPage), title: 'Prompts · Mission Control' },
   { path: 'skills', loadComponent: () => import('./pages/skills').then(m => m.SkillsPage), title: 'Skills & Guides · Mission Control' },

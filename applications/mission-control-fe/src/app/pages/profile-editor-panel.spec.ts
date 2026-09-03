@@ -3,7 +3,7 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { McpCatalogServer, ProfileTemplate } from '../core/models';
+import { Credential, McpCatalogServer, ProfileTemplate } from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
 import { AGENT_ICONS } from '../shared/agent-icon';
@@ -19,7 +19,11 @@ const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
 });
 
 /** Only what the panel reaches for on the store, so nothing here touches a backend. */
-const storeStub = (templates: ProfileTemplate[] = [], catalog: McpCatalogServer[] = []) => ({
+const storeStub = (
+  templates: ProfileTemplate[] = [],
+  catalog: McpCatalogServer[] = [],
+  credentials: Credential[] = [],
+) => ({
   catalog: {
     servers: signal(catalog),
     byId: (id: string | null) => catalog.find(s => s.id === id) ?? null,
@@ -31,6 +35,7 @@ const storeStub = (templates: ProfileTemplate[] = [], catalog: McpCatalogServer[
     llmProviders: signal([]),
   },
   endpoints: { endpoints: signal([]) },
+  credentials: { credentials: signal(credentials) },
   templates: {
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
     categories: signal([...new Set(templates.map(t => t.category).filter(Boolean))].sort()),
@@ -86,6 +91,30 @@ const render = async (
   fixture.detectChanges();
   if (groups === 'open') openAllGroups(fixture);
   return { fixture, store, host: fixture.componentInstance };
+};
+
+/** A saved credential holding one secret. */
+const credential = (
+  id: string, name: string, key: string, patch: object = {},
+): Credential => ({
+  id, name, description: '', createdAt: 1, updatedAt: 1,
+  entries: [{ key, value: '', secret: true, set: true, recoverable: true, ...patch }],
+});
+
+const credentialPicker = (fixture: TestFixture) =>
+  el(fixture).querySelector<HTMLSelectElement>('.add-row select[aria-label="saved credential"]');
+
+/** Awaits stability like {@link typeInto}: the picker writes `secretKey`, which `ngModel`
+ *  flushes into the key box only on the next beat. */
+const pickCredential = async (
+  fixture: TestFixture & { whenStable(): Promise<unknown> }, value: string,
+): Promise<void> => {
+  const select = credentialPicker(fixture);
+  if (!select) throw new Error('no credential picker');
+  select.value = value;
+  select.dispatchEvent(new Event('change'));
+  await fixture.whenStable();
+  fixture.detectChanges();
 };
 
 const submit = (fixture: TestFixture): HTMLButtonElement =>
@@ -388,6 +417,70 @@ describe('ProfileEditorPanel keys', () => {
     addRow(fixture, 'keys');
 
     expect(draft.secrets).toEqual([]);
+  });
+
+  it('offers no credential picker while the library holds no usable secret', async () => {
+    // and an unrecoverable one does not count: picking it would only fail the save
+    const { fixture } = await render(storeStub([], [], [
+      credential('cr-1', 'anthropic prod', 'ANTHROPIC_API_KEY', { recoverable: false }),
+    ]), newProfileDraft());
+
+    expect(credentialPicker(fixture)).toBeNull();
+  });
+
+  it('names the credential and the variable in one option, because that is how it is found',
+    async () => {
+      const { fixture } = await render(storeStub([], [], [
+        credential('cr-1', 'anthropic prod', 'ANTHROPIC_API_KEY'),
+      ]), newProfileDraft());
+
+      expect(Array.from(credentialPicker(fixture)!.options).map(o => o.textContent?.trim()))
+        .toEqual(['type a key', 'anthropic prod · ANTHROPIC_API_KEY']);
+    });
+
+  it('stores the credential id and fills the variable name from the pick', async () => {
+    // the operator remembers the credential, not the env var — so picking one names the key
+    const draft = newProfileDraft();
+    const { fixture } = await render(storeStub([], [], [
+      credential('cr-1', 'anthropic prod', 'ANTHROPIC_API_KEY'),
+    ]), draft);
+
+    await pickCredential(fixture, 'cr-1\u0000ANTHROPIC_API_KEY');
+    expect(rowInput(fixture, 'keys').value).toBe('ANTHROPIC_API_KEY');
+    addRow(fixture, 'keys');
+
+    expect(draft.secrets).toEqual([{
+      key: 'ANTHROPIC_API_KEY', value: '', set: true, recoverable: true, credentialId: 'cr-1',
+    }]);
+  });
+
+  it('hides the value box while a credential is picked, so only one can be sent', async () => {
+    const { fixture } = await render(storeStub([], [], [
+      credential('cr-1', 'anthropic prod', 'ANTHROPIC_API_KEY'),
+    ]), newProfileDraft());
+    expect(el(fixture).querySelector('.add-row input[type="password"]')).not.toBeNull();
+
+    await pickCredential(fixture, 'cr-1\u0000ANTHROPIC_API_KEY');
+
+    expect(el(fixture).querySelector('.add-row input[type="password"]')).toBeNull();
+  });
+
+  it('unsets the pick again and goes back to a typed value', async () => {
+    const draft = newProfileDraft();
+    const { fixture } = await render(storeStub([], [], [
+      credential('cr-1', 'anthropic prod', 'ANTHROPIC_API_KEY'),
+    ]), draft);
+
+    await pickCredential(fixture, 'cr-1\u0000ANTHROPIC_API_KEY');
+    await pickCredential(fixture, '');
+
+    await typeInto(fixture, rowInput(fixture, 'keys'), 'OPENAI_API_KEY');
+    await typeInto(fixture, rowInput(fixture, 'keys', 1), 'sk-typed');
+    addRow(fixture, 'keys');
+
+    expect(draft.secrets).toEqual([
+      { key: 'OPENAI_API_KEY', value: 'sk-typed', set: true, recoverable: true },
+    ]);
   });
 
   it('removes a key from the list', async () => {

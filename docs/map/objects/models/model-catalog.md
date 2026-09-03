@@ -34,7 +34,7 @@ says `config | live` (`models/ModelCatalogDto.java:10`) but the service emits `c
 | `config` | `:71`, `:125` | the curated compiled-in list |
 | `live` | `:121` | fetched from the provider just now, with a key |
 
-The frontend union is `'config' \| 'live' \| string` (`core/api/api-types.ts:340`) — the
+The frontend union is `'config' \| 'live' \| string` (`core/api/api-types.ts:468`) — the
 trailing `\| string` is what lets `catalog` type-check without being named.
 [docs/api.md:148](../../../api.md) **has it right** (`source: catalog` / `source: config`), so the
 record comment and the FE union are the two that are incomplete, not the doc.

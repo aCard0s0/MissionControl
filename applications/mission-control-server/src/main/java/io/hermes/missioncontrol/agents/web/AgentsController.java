@@ -3,12 +3,14 @@ package io.hermes.missioncontrol.agents.web;
 import io.hermes.missioncontrol.agents.AgentLifecycle;
 import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
+import io.hermes.missioncontrol.agents.ModelProviderRegistry;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
 import io.hermes.missioncontrol.agents.api.ContainerActivityDto;
 import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
+import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.docker.LogLineDto;
 import io.hermes.missioncontrol.hosts.HostService;
@@ -44,18 +46,21 @@ public class AgentsController {
   private final AgentLifecycle lifecycle;
   private final HostService hosts;
   private final AgentMcpCatalogService mcpCatalog;
+  private final CredentialService credentials;
 
   public AgentsController(
       HermesProfiles profiles,
       ProfileTemplateService templates,
       AgentLifecycle lifecycle,
       HostService hosts,
-      AgentMcpCatalogService mcpCatalog) {
+      AgentMcpCatalogService mcpCatalog,
+      CredentialService credentials) {
     this.profiles = profiles;
     this.templates = templates;
     this.lifecycle = lifecycle;
     this.hosts = hosts;
     this.mcpCatalog = mcpCatalog;
+    this.credentials = credentials;
   }
 
   @GetMapping
@@ -69,7 +74,7 @@ public class AgentsController {
   @PostMapping
   public AgentProfileDto create(@Valid @RequestBody CreateAgentRequest request) {
     DockerHostRef host = hosts.requireConnected(request.hostId());
-    ProfileSpec spec = ProfileSpec.from(request);
+    ProfileSpec spec = ProfileSpec.from(request, apiKey(request));
     String templateId = request.fromTemplateId();
     if (templateId != null && !templateId.isBlank()) {
       // Create the request-configured base and layer the template's
@@ -77,6 +82,27 @@ public class AgentsController {
       return mcpCatalog.enrich(host, templates.createFromTemplate(templateId, host, spec));
     }
     return mcpCatalog.enrich(host, profiles.create(host, spec));
+  }
+
+  /**
+   * The key to write into the new profile's {@code .env}: a saved credential's value when the
+   * dialog picked one, the typed value otherwise.
+   *
+   * <p>The variable is resolved from the chosen provider here rather than sent by the client —
+   * a credential id names which values may be read, and letting the caller also name the key
+   * would let it read any of them.
+   */
+  private String apiKey(CreateAgentRequest request) {
+    String credentialId = request.apiKeyCredentialId();
+    if (credentialId == null || credentialId.isBlank()) return request.apiKey();
+    String envVar = ModelProviderRegistry.envVar(request.provider());
+    if (envVar == null) {
+      // an OAuth provider, or one this build does not know: there is no variable to fill, so a
+      // picked credential has nowhere to go and silently dropping it creates a keyless profile
+      throw new IllegalArgumentException(
+          "provider '" + request.provider() + "' takes no API key");
+    }
+    return credentials.valueFor(credentialId, envVar);
   }
 
   @DeleteMapping("/{hostId}/{containerId}/{name}")

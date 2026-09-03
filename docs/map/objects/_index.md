@@ -77,7 +77,8 @@ is most of the value.
 | | Noun | Owner | One line |
 |---|---|---|---|
 | ✓ | [API contract](dashboard/api-contract.md) | `applications/api-contract.txt` | generated; both sides assert on it; CI fails on drift. |
-| ✓ | [Secret](dashboard/secret.md) | `secrets/SecretsAtRest.java` | four rules, one envelope at a time, two callers. |
+| ✓ | [Secret](dashboard/secret.md) | `secrets/SecretsAtRest.java` | four rules, one envelope at a time, four callers. |
+| ✓ | [Credential](dashboard/credential.md) | `credentials/CredentialService.java` | a key saved once, offered as a dropdown wherever one is typed. A bundle of variables; autofill only, so it has no dependents. |
 | ✓ | [Terminal session](dashboard/terminal-session.md) | `shared/terminal-session.ts` | one xterm ↔ one `docker exec`. The column floor. |
 | ✓ | [Scrim](dashboard/scrim.md) | `shared/scrim.ts` | the backdrop: click-outside and Escape. The only way any dialog is dismissed. |
 | · | Field caption | `styles.scss` (`.field-cap`) | a caption over what a `<label>` cannot name; the group carries `aria-labelledby`. |

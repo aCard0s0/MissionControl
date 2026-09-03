@@ -256,6 +256,51 @@ export interface PromptGroupInput {
 }
 
 /**
+ * One variable a credential fills.
+ *
+ * `value` is `''` for a secret — the server never returns key material, so `set` and
+ * `recoverable` are all a form has to go on. A plain entry (a messaging home channel, a base
+ * URL) carries its value, because a picker that could not show it would be useless for the
+ * pair it belongs to.
+ */
+export interface CredentialEntry {
+  key: string;
+  value: string;
+  secret: boolean;
+  set: boolean;                   // a value is stored
+  recoverable: boolean;           // the stored value still decrypts
+}
+
+/**
+ * A credential saved once and offered as a dropdown wherever a key is typed: an agent's
+ * `.env`, the create-agent dialog, a blueprint's keys tab.
+ *
+ * A bundle of entries, not a single key, because that is the shape of the real things — a
+ * messaging platform is a bot token plus a home channel, and a self-hosted provider takes a
+ * base URL alongside its key.
+ *
+ * Autofill only. Picking one copies its value into the target then and there and the link
+ * ends: deleting a credential breaks nothing already written, and rotating it changes nothing
+ * already written either.
+ */
+export interface Credential {
+  id: string;
+  name: string;
+  description: string;
+  entries: CredentialEntry[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A credential on the way out. A blank `value` on a secret entry keeps the stored one —
+ *  the editor never receives ciphertext, so blank is how it says "unchanged". */
+export interface CredentialInput {
+  name: string;
+  description: string;
+  entries: Array<{ key: string; value: string; secret: boolean }>;
+}
+
+/**
  * A skill group: how the library is filed, and optionally which guide explains the set.
  *
  * Organization only — a group has no deploy, and deleting one leaves every skill it named in
@@ -667,6 +712,8 @@ export interface NewAgent {
   provider: string;
   model: string;
   apiKey: string;
+  /** id of a saved credential to take the key from instead of `apiKey`. */
+  apiKeyCredentialId?: string;
   /** id of a profile to copy files from. */
   cloneFrom?: string;
   baseUrl?: string;
@@ -745,7 +792,7 @@ export interface ProfileTemplateInput {
   memory: string;
   skills: string[];
   mcpServers: TemplateMcp[];
-  secrets: Array<{ key: string; value: string }>;
+  secrets: Array<{ key: string; value: string; credentialId?: string }>;
 }
 
 export interface CronJob {

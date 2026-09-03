@@ -62,3 +62,7 @@
   .env-row { flex-wrap: wrap; row-gap: 6px; .key-in { width: 100%; } }
   .msg-config { padding-left: 0; .msg-field { flex-wrap: wrap; row-gap: 6px; label { min-width: 0; } .input { max-width: none; } } }
 }
+
+// The saved-credential picker on an editable row. Narrow on purpose: it sits where the value
+// box does, and a full-width select would push the set/clear buttons off a two-column panel.
+.cred-pick { max-width: 150px; font-size: 11px; }

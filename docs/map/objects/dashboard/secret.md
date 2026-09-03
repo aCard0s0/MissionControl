@@ -10,11 +10,12 @@ entity: applications/mission-control-server/src/main/java/io/hermes/missioncontr
 # Secret
 
 A credential the dashboard stores encrypted: a [profile template's](../agents/profile-template.md)
-API keys, and an [MCP server entry's](../mcp/mcp-server-entry.md) secret environment values and
-headers. `SecretsAtRest` owns the rules; `SecretCipher` owns the `enc:v1:` envelope.
+API keys, an [MCP server entry's](../mcp/mcp-server-entry.md) secret environment values and
+headers, and a [Credential's](credential.md) entries. `SecretsAtRest` owns the rules;
+`SecretCipher` owns the `enc:v1:` envelope.
 
-Not an API resource — there is no `/api/secrets`. It is a **trust boundary**, and both storing
-packages route through it.
+Not an API resource — there is no `/api/secrets`. It is a **trust boundary**, and all three
+storing packages route through it.
 
 ## Why this shape
 
@@ -58,15 +59,19 @@ shapes stay with their owners.
 - **owned-by:** nothing — it is the boundary
 - **joins:** [Profile template](../agents/profile-template.md) `secrets` column;
   [MCP server entry](../mcp/mcp-server-entry.md) secret env + headers, passed to Compose at
-  execution time and never written into generated YAML
+  execution time and never written into generated YAML; [Credential](credential.md)
+  `entries_json`, whose envelopes are copied verbatim into a template's `secrets` when one is
+  picked there — same key on both sides, so that copy never decrypts
 - **looks-like-but-is-not:** a [webhook](../agents/webhook-subscription.md) HMAC secret. Hermes
   generates and stores those in plaintext; they never pass through here.
 
 ## If you change this
 
-- **Hits:** both storing packages at once — `mcp/McpConfigStore` **and**
-  `agents/templates/TemplateSecrets`. That is the entire reason the class exists; changing one
-  caller's behaviour without the other is how the drift happened.
+- **Hits:** all three storing packages at once — `mcp/McpConfigStore`,
+  `agents/templates/TemplateSecrets` **and** `credentials/CredentialService`. That is the entire
+  reason the class exists; changing one caller's behaviour without the others is how the drift
+  happened. The third one calls this class directly rather than reimplementing the rules over
+  its own value record, which is what the other two did.
 - **Does not hit:** runtime visibility. Encryption at rest is not encryption in use — container
   environment values remain visible to any principal with Docker-daemon access, and the
   architecture doc says so plainly.
@@ -77,7 +82,7 @@ shapes stay with their owners.
 |---|---|
 | `MC_SECRET_KEY` / `_PREVIOUS` | the key material |
 | `.mission-control.env` (gitignored) | where `./mc` keeps it |
-| SQLite `profile_templates.secrets`, `mcp_servers.config_json` | ciphertext at rest |
+| SQLite `profile_templates.secrets`, `mcp_servers.config_json`, `credentials.entries_json` | ciphertext at rest |
 
 ## See
 

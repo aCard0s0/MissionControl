@@ -18,7 +18,9 @@ import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.McpServerDefinition;
 import io.hermes.missioncontrol.agents.api.AddMcpServerRequest;
 import io.hermes.missioncontrol.agents.ProfileSpec;
+import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import io.hermes.missioncontrol.secrets.SecretCipher;
@@ -90,6 +92,72 @@ class ProfileTemplateServiceTest {
     // SecretRef exposes only key/set/recoverable — there is no field that could
     // carry the raw value or a suffix of it back to the client.
     assertFalse(ref.toString().contains("sk-ant"), "no secret material in the DTO");
+  }
+
+  @Test
+  void aSecretNamingACredentialStoresThatCredentialsEnvelopeVerbatim() {
+    // ciphertext to ciphertext: both stores are sealed under the same MC_SECRET_KEY, so a
+    // blueprint can carry a key the editor never held and nothing decrypts on the way
+    CredentialService credentials = Mockito.mock(CredentialService.class);
+    ProfileTemplateService withVault =
+        TemplatesWiring.service(repository, cipher, null, null, null, credentials);
+    when(credentials.envelopeFor("cr-1", "ANTHROPIC_API_KEY"))
+        .thenReturn(cipher.encrypt("sk-from-the-vault"));
+    when(repository.existsByName("ops")).thenReturn(false);
+
+    ProfileTemplateDto dto = withVault.create(request("ops",
+        List.of(new SecretInput("ANTHROPIC_API_KEY", null, "cr-1"))));
+
+    assertTrue(dto.secrets().get(0).set());
+    assertTrue(dto.secrets().get(0).recoverable());
+    ArgumentCaptor<ProfileTemplate> saved = ArgumentCaptor.forClass(ProfileTemplate.class);
+    verify(repository).insert(saved.capture());
+    assertEquals("sk-from-the-vault", cipher.decrypt(saved.getValue().secrets().get(0).enc()));
+  }
+
+  @Test
+  void aCredentialThisKeyCannotOpenIsRefusedRatherThanCopiedForward() {
+    // carrying a dead envelope into a second row makes the loss look freshly stored, and the
+    // operator only discovers it when a deploy writes nothing
+    CredentialService credentials = Mockito.mock(CredentialService.class);
+    ProfileTemplateService withVault =
+        TemplatesWiring.service(repository, cipher, null, null, null, credentials);
+    when(credentials.envelopeFor("cr-1", "ANTHROPIC_API_KEY"))
+        .thenThrow(new ResourceConflictException("credential 'anthropic' cannot be decrypted"));
+    when(repository.existsByName("ops")).thenReturn(false);
+
+    assertThrows(ResourceConflictException.class, () -> withVault.create(request("ops",
+        List.of(new SecretInput("ANTHROPIC_API_KEY", null, "cr-1")))));
+    verify(repository, never()).insert(any());
+  }
+
+  @Test
+  void aTypedSecretNeverReachesTheCredentialStore() {
+    CredentialService credentials = Mockito.mock(CredentialService.class);
+    ProfileTemplateService withVault =
+        TemplatesWiring.service(repository, cipher, null, null, null, credentials);
+    when(repository.existsByName("ops")).thenReturn(false);
+
+    withVault.create(request("ops", List.of(new SecretInput("ANTHROPIC_API_KEY", "sk-typed"))));
+
+    verifyNoInteractions(credentials);
+  }
+
+  @Test
+  void aBlankCredentialIdFallsBackToTheTypedValue() {
+    // an editor that sends "" rather than omitting the field must still be able to save a
+    // typed key
+    CredentialService credentials = Mockito.mock(CredentialService.class);
+    ProfileTemplateService withVault =
+        TemplatesWiring.service(repository, cipher, null, null, null, credentials);
+    when(repository.existsByName("ops")).thenReturn(false);
+
+    withVault.create(request("ops", List.of(new SecretInput("ANTHROPIC_API_KEY", "sk-typed", "  "))));
+
+    verifyNoInteractions(credentials);
+    ArgumentCaptor<ProfileTemplate> saved = ArgumentCaptor.forClass(ProfileTemplate.class);
+    verify(repository).insert(saved.capture());
+    assertEquals("sk-typed", cipher.decrypt(saved.getValue().secrets().get(0).enc()));
   }
 
   @Test

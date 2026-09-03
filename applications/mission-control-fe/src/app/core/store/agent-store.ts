@@ -122,6 +122,7 @@ export class AgentStore {
         provider: request.provider,
         model: request.model,
         apiKey: request.apiKey,
+        apiKeyCredentialId: request.apiKeyCredentialId || undefined,
         cloneFrom: request.cloneFrom ? this.byId(request.cloneFrom)?.name : undefined,
         baseUrl: request.baseUrl,
         fromTemplateId: request.fromTemplate || undefined,

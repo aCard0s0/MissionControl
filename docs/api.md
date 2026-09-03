@@ -83,7 +83,7 @@ host networking, privileged mode, devices, and capabilities are not accepted.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/agents` | `?hostId=&containerId=` | one DTO per profile (`/opt/data` = `default`, plus `/opt/data/profiles/*`) |
-| `POST /api/agents` | `{ hostId, containerId, name, provider, model, apiKey?, cloneFrom?, auxiliary? }` | `hermes profile create`, then sets model + auxiliary tasks + provider API key |
+| `POST /api/agents` | `{ hostId, containerId, name, provider, model, apiKey?, apiKeyCredentialId?, cloneFrom?, auxiliary? }` | `hermes profile create`, then sets model + auxiliary tasks + provider API key. `apiKeyCredentialId` names a [saved credential](#credentials--dashboard-owned-state-in-sqlite) to take the key from instead of `apiKey`, and wins when both arrive |
 | `DELETE /api/agents/{hostId}/{containerId}/{name}` | — | `hermes profile delete --yes` |
 | `GET  …/{name}/logs` | `?tail=100` (max 500) | profile-scoped supervised gateway log from `/opt/data/logs/gateways/{name}`; returns `{ ts, level, source, msg }` |
 | `PUT  …/{name}/soul` | `{ soul }` | writes `SOUL.md` |
@@ -107,7 +107,7 @@ host networking, privileged mode, devices, and capabilities are not accepted.
 | `DELETE …/{name}/webhooks/outbound/{index}` | — | 404 on a stale index rather than rewriting its neighbour |
 | `PUT  …/{name}/config` | `{ configYaml }` | full config.yaml replace — validated as a YAML mapping (400 otherwise); platform tokens (slack, whatsapp, honcho, …) and `model.default` / `model.base_url` overrides live here |
 | `GET  …/{name}/setup` | — | the profile's `.env` and what `hermes status` makes of it; degrades to the `.env` alone when status cannot run |
-| `PUT  …/{name}/env` | `{ entries: [{ key, value }] }` | batch `.env` write; **a blank value removes the variable** |
+| `PUT  …/{name}/env` | `{ entries: [{ key, value, credentialId? }] }` | batch `.env` write; **a blank value removes the variable**. `credentialId` names a [saved credential](#credentials--dashboard-owned-state-in-sqlite) to take this key's value from, resolved server-side so the browser never holds it |
 | `POST …/{name}/env/init` | — | seeds the `.env` only if the profile has none; answers with the setup either way |
 | `GET  …/{containerId}/auth-providers` | — | which vendors this **container** holds credentials for. Container-scoped, not per profile: credentials live in the data volume, so it answers from the `default` profile and takes no name |
 | `GET  …/{name}/skills/{skillName}/content` | — | `{ name, path, body, files }` — the skill's own markdown, plus the other files in its directory |
@@ -209,11 +209,59 @@ ciphertext to send back.
 |---|---|---|
 | `GET /api/profile-templates` | — | |
 | `GET /api/profile-templates/{id}` | — | |
-| `POST /api/profile-templates` | `{ name, icon?, description?, category?, provider?, model?, baseUrl?, cwd?, soul?, memory?, skills?, mcpServers?, secrets? }` | |
+| `POST /api/profile-templates` | `{ name, icon?, description?, category?, provider?, model?, baseUrl?, cwd?, soul?, memory?, skills?, mcpServers?, secrets? }` | each secret is `{ key, value?, credentialId? }` — see [credentials](#credentials--dashboard-owned-state-in-sqlite) for the id form |
 | `PUT /api/profile-templates/{id}` | same as POST | |
 | `DELETE /api/profile-templates/{id}` | — | |
 | `POST /api/profile-templates/capture` | `{ hostId, containerId, name, templateName? }` | builds a template out of a live profile |
 | `POST /api/profile-templates/{id}/deploy` | `{ hostId, containerId, name? }` | creates the profile and answers with it — enriched with its catalog links like every other profile this API returns |
+
+## Credentials — dashboard-owned state in SQLite
+
+A key or token saved once and offered as a dropdown wherever one is typed: an agent's `.env`,
+the create-agent dialog, a blueprint's keys tab. Encrypted at rest under `MC_SECRET_KEY`
+through the same boundary the templates and the MCP catalog use, so a blank secret on an update
+means *keep the one you hold*.
+
+A credential is a **bundle** of variables, not one key, because that is the shape of the things
+being saved: a messaging platform is a bot token plus a home channel, and a self-hosted provider
+is a base URL plus a key. One row per variable would make an operator save and pick the halves
+separately.
+
+**No route here resolves a value, so none can return one.** A secret entry reports `set` and
+`recoverable` and carries no `value`, not even a suffix; a non-secret entry's value is returned,
+because a home channel is nothing to hide and a picker that could not show it would be useless.
+The three writes that take a credential id belong to the resources they write, listed below, and
+each resolves the id server-side — so key material never reaches the browser at all, which is
+stricter than `GET /api/agents/.../webhooks/{route}/secret`.
+
+**Autofill only.** Picking a credential copies its value into the target then and there and
+nothing records that it happened. Deleting one breaks nothing already written, and rotating one
+changes nothing already written — a profile's `.env` is a file inside a container, so no stored
+association could propagate to it without a re-push either way.
+
+| Method & path | Body | Notes |
+|---|---|---|
+| `GET /api/credentials` | — | by name, `NOCASE` — this list is a dropdown, so an option that moves when an unrelated row is renamed makes the picker unreadable |
+| `POST /api/credentials` | `{ name, description?, entries?: [{ key, value, secret }] }` | `name` is `NOCASE UNIQUE`. Each `key` must match `[A-Z][A-Z0-9_]{1,63}` — the strict `.env` form, not the looser MCP env-key rule, because a `.env` is the only place these land. Max 32 entries. A blank value on a *new* secret is a 400, not a save that stored nothing |
+| `PUT /api/credentials/{id}` | same body | replaces the entry list — an entry left out is one the editor deleted, so there is no `clear` flag. A blank secret keeps and re-seals the stored envelope; one this key can no longer open is preserved, never overwritten. 404 rather than an insert |
+| `DELETE /api/credentials/{id}` | — | idempotent, and reaches nothing |
+
+Credential DTO: `{ id, name, description, entries, createdAt, updatedAt }`, where each entry is
+`{ key, value, secret, set, recoverable }` and `value` is null whenever `secret`.
+
+There is deliberately no apply-to-an-agent route. Picking a credential on the Setup tab fills
+every row that credential covers, so a bundle is already one choice; a route that wrote them in
+one request would save a button press and duplicate the resolution below.
+
+Three routes take a credential id instead of a typed value, each resolving it server-side. A
+secret the current key cannot decrypt fails the whole write with a 409 rather than writing a
+blank:
+
+| Route | Field | Resolves against |
+|---|---|---|
+| `PUT /api/agents/{hostId}/{containerId}/{name}/env` | `entries[].credentialId` | that entry's own `key` |
+| `POST /api/agents` | `apiKeyCredentialId` | the chosen provider's API-key variable, from `ModelProviderRegistry` — a provider that takes no key is a 400, not a silent drop |
+| `POST` / `PUT /api/profile-templates` | `secrets[].credentialId` | that secret's own `key`. Copies the credential's sealed envelope verbatim: same `MC_SECRET_KEY` on both sides, so nothing decrypts. An unrecoverable envelope is refused rather than carried forward, where it would look freshly stored |
 
 ## Model catalogs — what the create-agent form offers
 

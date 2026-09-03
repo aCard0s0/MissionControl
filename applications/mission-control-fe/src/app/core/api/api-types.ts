@@ -170,6 +170,27 @@ export interface ApiDeployedMcpGroup {
   parts: ApiDeployedPart[] | null;
 }
 
+/** One variable a credential fills. `value` is present only when the entry is not secret —
+ *  a home channel or a base URL. A secret entry reports set/recoverable and carries no value,
+ *  not even a suffix: a picker posts the credential's id back and never handles key material. */
+export interface ApiCredentialEntry {
+  key: string;
+  value: string | null;
+  secret: boolean;
+  set: boolean;
+  recoverable: boolean;
+}
+
+/** A credential saved once and offered wherever a key is typed. */
+export interface ApiCredential {
+  id: string;
+  name: string;
+  description: string | null;
+  entries: ApiCredentialEntry[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ApiPromptGroup {
   id: string;
   name: string;

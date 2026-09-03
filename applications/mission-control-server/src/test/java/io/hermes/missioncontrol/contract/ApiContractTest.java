@@ -38,6 +38,8 @@ import io.hermes.missioncontrol.skills.SkillGuide;
 import io.hermes.missioncontrol.skills.SkillGroup;
 import io.hermes.missioncontrol.skills.SkillGuideController;
 import io.hermes.missioncontrol.skills.UpstreamCheck;
+import io.hermes.missioncontrol.credentials.api.CredentialDto;
+import io.hermes.missioncontrol.credentials.api.CredentialEntryDto;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.ImageTagDto;
 import io.hermes.missioncontrol.docker.ImageTagsDto;
@@ -144,6 +146,9 @@ class ApiContractTest {
     CONTRACT.put("ApiProfileTemplate", ProfileTemplateDto.class);
     CONTRACT.put("ApiTemplateSecret", SecretRef.class);
     CONTRACT.put("TemplateMcp", McpServerSpec.class);
+    // credentials
+    CONTRACT.put("ApiCredential", CredentialDto.class);
+    CONTRACT.put("ApiCredentialEntry", CredentialEntryDto.class);
     // mcp catalog
     CONTRACT.put("ApiMcpCatalogServer", McpServerDto.class);
     CONTRACT.put("ApiMcpConfigEntry", ConfigValueDto.class);

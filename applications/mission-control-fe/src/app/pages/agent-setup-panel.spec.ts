@@ -1,10 +1,11 @@
 import '@angular/compiler';
 import { Component, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentSetupPanel } from './agent-setup-panel';
 import { buttonWith, el } from '../testing/dom';
 import { agent } from '../testing/models';
+import { Credential } from '../core/models';
 import { provideStores } from '../testing/store';
 
 const setupFor = (name: string, patch: object = {}) => ({
@@ -51,8 +52,22 @@ const storeStub = () => {
       return Promise.resolve(cache()[id]);
     }),
   };
-  return { setup, terminal: { open: vi.fn() }, cache, loading };
+  const saved = signal<Credential[]>([]);
+  const credentials = {
+    credentials: saved,
+    providing: (envVar: string) =>
+      saved().filter(c => c.entries.some(e => e.key === envVar)),
+  };
+  return { setup, terminal: { open: vi.fn() }, credentials, cache, loading, saved };
 };
+
+/** A saved credential holding one secret per key given. */
+const credential = (id: string, name: string, keys: string[]): Credential => ({
+  id, name, description: '', createdAt: 1, updatedAt: 1,
+  entries: keys.map(key => ({ key, value: '', secret: true, set: true, recoverable: true })),
+});
+
+
 
 @Component({
   imports: [AgentSetupPanel],
@@ -71,6 +86,20 @@ const render = (store: ReturnType<typeof storeStub>) => {
 };
 
 const profile = (id = 'a-atlas', name = 'atlas') => agent(id, { name });
+
+/** The picker beside a row. These selects carry an aria-label rather than sitting in a
+ *  labelled `.field`, so the shared `choose` helper cannot address them. */
+const picker = (fixture: ComponentFixture<Host>, envVar: string) =>
+  el(fixture).querySelector<HTMLSelectElement>(
+    `select[aria-label="saved credential for ${envVar}"]`);
+
+const pick = (fixture: ComponentFixture<Host>, envVar: string, value: string) => {
+  const select = picker(fixture, envVar);
+  if (!select) throw new Error(`no picker for ${envVar}`);
+  select.value = value;
+  select.dispatchEvent(new Event('change'));
+  fixture.detectChanges();
+};
 
 describe('AgentSetupPanel', () => {
   it('reads the setup when it opens, and renders what came back', async () => {
@@ -189,6 +218,113 @@ describe('AgentSetupPanel', () => {
     buttonWith(fixture, 'close').click();
     fixture.detectChanges();
     expect(el(fixture).querySelector('.msg-config')).toBeNull();
+  });
+
+  // ── the credential picker ────────────────────────────────────────────────
+
+  it('offers no picker at all while the library holds nothing for that variable', async () => {
+    // the feature stays invisible until it has something to offer
+    const store = storeStub();
+    store.saved.set([credential('cr-1', 'openai', ['OPENAI_API_KEY'])]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(picker(fixture, 'ANTHROPIC_API_KEY')).toBeNull();
+  });
+
+  it('offers the credentials holding that row\'s variable', async () => {
+    const store = storeStub();
+    store.saved.set([
+      credential('cr-1', 'anthropic prod', ['ANTHROPIC_API_KEY']),
+      credential('cr-2', 'openai', ['OPENAI_API_KEY']),
+    ]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const options = Array.from(picker(fixture, 'ANTHROPIC_API_KEY')!.options)
+      .map(o => o.textContent?.trim());
+    expect(options).toEqual(['saved…', 'anthropic prod']);
+  });
+
+  it('posts the credential id and no value, so the browser never holds the key', async () => {
+    const store = storeStub();
+    store.saved.set([credential('cr-1', 'anthropic prod', ['ANTHROPIC_API_KEY'])]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    pick(fixture, 'ANTHROPIC_API_KEY', 'cr-1');
+    buttonWith(fixture, 'use').click();
+    await fixture.whenStable();
+
+    expect(store.setup.setEnv).toHaveBeenCalledWith('a-atlas', [
+      { key: 'ANTHROPIC_API_KEY', value: null, credentialId: 'cr-1' },
+    ]);
+  });
+
+  it('replaces the value box while a credential is picked, so only one can be sent', async () => {
+    const store = storeStub();
+    store.saved.set([credential('cr-1', 'anthropic prod', ['ANTHROPIC_API_KEY'])]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelector('.key-in')).not.toBeNull();
+
+    pick(fixture, 'ANTHROPIC_API_KEY', 'cr-1');
+
+    expect(el(fixture).querySelector('.key-in')).toBeNull();
+    expect(buttonWith(fixture, 'use')).not.toBeNull();
+  });
+
+  it('fills every variable the same credential covers, because it is a bundle', async () => {
+    // picking "Telegram ops" on the token row is also the answer for the home channel
+    const store = storeStub();
+    store.saved.set([
+      credential('cr-1', 'telegram ops', ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_HOME_CHANNEL']),
+    ]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    buttonWith(fixture, 'configure').click();
+    fixture.detectChanges();
+
+    pick(fixture, 'TELEGRAM_BOT_TOKEN', 'cr-1');
+
+    expect(picker(fixture, 'TELEGRAM_HOME_CHANNEL')!.value).toBe('cr-1');
+  });
+
+  it('lets the picker be unset again, and types a value instead', async () => {
+    const store = storeStub();
+    store.saved.set([credential('cr-1', 'anthropic prod', ['ANTHROPIC_API_KEY'])]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    pick(fixture, 'ANTHROPIC_API_KEY', 'cr-1');
+    pick(fixture, 'ANTHROPIC_API_KEY', '');
+
+    expect(el(fixture).querySelector('.key-in')).not.toBeNull();
+  });
+
+  it('forgets the picks when the tab switches profile', async () => {
+    // a pick belongs to the profile it was made on; carrying it over would apply a key to
+    // an agent nobody chose it for
+    const store = storeStub();
+    store.saved.set([credential('cr-1', 'anthropic prod', ['ANTHROPIC_API_KEY'])]);
+    const fixture = render(store);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    pick(fixture, 'ANTHROPIC_API_KEY', 'cr-1');
+
+    fixture.componentInstance.agent.set(profile('a-scribe', 'scribe'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(picker(fixture, 'ANTHROPIC_API_KEY')!.value).toBe('');
   });
 
   it('says the read is running rather than claiming the setup is empty', () => {

@@ -8,6 +8,7 @@ import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.SecretInput;
 import io.hermes.missioncontrol.secrets.SecretRef;
@@ -60,6 +61,7 @@ public class ProfileTemplateService {
   private final TemplateMcpSnapshots snapshots;
   private final HermesProfiles profiles;
   private final HermesSetup setup;
+  private final CredentialService credentials;
 
   public ProfileTemplateService(
       ProfileTemplateRepository repository,
@@ -67,13 +69,15 @@ public class ProfileTemplateService {
       TemplateApplier applier,
       TemplateMcpSnapshots snapshots,
       HermesProfiles profiles,
-      HermesSetup setup) {
+      HermesSetup setup,
+      CredentialService credentials) {
     this.repository = repository;
     this.secrets = secrets;
     this.applier = applier;
     this.snapshots = snapshots;
     this.profiles = profiles;
     this.setup = setup;
+    this.credentials = credentials;
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -219,6 +223,13 @@ public class ProfileTemplateService {
       String key = s.key().trim();
       if (!ENV_KEY.matcher(key).matches()) {
         throw new IllegalArgumentException("invalid secret key: " + key);
+      }
+      if (s.credentialId() != null && !s.credentialId().isBlank()) {
+        // ciphertext to ciphertext: both sides are sealed under the same MC_SECRET_KEY, so this
+        // copy never decrypts. envelopeFor refuses one this key cannot open rather than
+        // carrying the loss forward into a second row where it looks freshly stored.
+        stored.add(new StoredSecret(key, credentials.envelopeFor(s.credentialId(), key)));
+        continue;
       }
       String value = s.value();
       if (value != null && value.length() > MAX_SECRET_LEN) {

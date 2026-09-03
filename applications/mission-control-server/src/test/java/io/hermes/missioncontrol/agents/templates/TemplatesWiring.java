@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.templates;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
+import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretsAtRest;
@@ -29,7 +30,8 @@ final class TemplatesWiring {
       SecretCipher cipher,
       HermesProfiles profiles,
       HermesSetup setup,
-      McpRegistryService registry) {
+      McpRegistryService registry,
+      CredentialService credentials) {
     TemplateSecrets secrets = new TemplateSecrets(new SecretsAtRest(cipher));
     return new ProfileTemplateService(
         repository,
@@ -37,7 +39,18 @@ final class TemplatesWiring {
         new TemplateApplier(profiles, setup, secrets),
         new TemplateMcpSnapshots(registry, secrets),
         profiles,
-        setup);
+        setup,
+        credentials);
+  }
+
+  /** For the flows where no secret names a saved credential. */
+  static ProfileTemplateService service(
+      ProfileTemplateRepository repository,
+      SecretCipher cipher,
+      HermesProfiles profiles,
+      HermesSetup setup,
+      McpRegistryService registry) {
+    return service(repository, cipher, profiles, setup, registry, null);
   }
 
   /** For the flows that never reach the catalog. */
@@ -46,7 +59,7 @@ final class TemplatesWiring {
       SecretCipher cipher,
       HermesProfiles profiles,
       HermesSetup setup) {
-    return service(repository, cipher, profiles, setup, null);
+    return service(repository, cipher, profiles, setup, null, null);
   }
 
   /**

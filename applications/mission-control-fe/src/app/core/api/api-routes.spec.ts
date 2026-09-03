@@ -366,6 +366,20 @@ const cases: Record<string, Case> = {
     body: { hostId: 'dh-1', containerId: 'c1', profile: 'ops', skillName: 'pdf' },
   },
 
+  // ── credentials ────────────────────────────────────────────────────────
+  'credentials.list': { call: a => a.credentials.list(), method: 'GET', url: '/api/credentials' },
+  'credentials.create': {
+    call: a => a.credentials.create({ name: 'anthropic prod' } as never), method: 'POST',
+    url: '/api/credentials', body: { name: 'anthropic prod' },
+  },
+  'credentials.update': {
+    call: a => a.credentials.update('cr 1', { name: 'anthropic prod' } as never), method: 'PUT',
+    url: '/api/credentials/cr%201', body: { name: 'anthropic prod' },
+  },
+  'credentials.remove': {
+    call: a => a.credentials.remove('cr-1'), method: 'DELETE', url: '/api/credentials/cr-1',
+  },
+
   // ── mcp groups ─────────────────────────────────────────────────────────
   'mcpGroups.list': { call: a => a.mcpGroups.list(), method: 'GET', url: '/api/mcp-groups' },
   'mcpGroups.create': {

@@ -221,19 +221,36 @@
               @for (s of form.secrets; track s.key) {
                 <div class="line mono">
                   <span class="ln-name">{{ s.key }}</span>
-                  <mc-status [status]="s.set ? (s.recoverable ? 'connected' : 'error') : 'off'"
-                             [label]="s.set ? (s.recoverable ? 'set' : 'unreadable') : 'unset'" />
-                  @if (s.set && s.recoverable) { <span class="ln-detail faint">leave blank to keep</span> }
-                  @if (s.set && !s.recoverable) { <span class="ln-detail faint">unreadable (key changed) · enter to restore</span> }
-                  <input class="input key-inp" type="password" [(ngModel)]="s.value"
-                         [placeholder]="s.set ? 'new value (optional)' : 'value'" />
+                  @if (s.credentialId) {
+                    <mc-status status="connected" label="from a credential" />
+                    <span class="ln-detail faint">copied on save — the value is never read here</span>
+                  } @else {
+                    <mc-status [status]="s.set ? (s.recoverable ? 'connected' : 'error') : 'off'"
+                               [label]="s.set ? (s.recoverable ? 'set' : 'unreadable') : 'unset'" />
+                    @if (s.set && s.recoverable) { <span class="ln-detail faint">leave blank to keep</span> }
+                    @if (s.set && !s.recoverable) { <span class="ln-detail faint">unreadable (key changed) · enter to restore</span> }
+                    <input class="input key-inp" type="password" [(ngModel)]="s.value"
+                           [placeholder]="s.set ? 'new value (optional)' : 'value'" />
+                  }
                   <button class="btn ghost sm" type="button" (click)="removeSecret(s.key)">remove</button>
                 </div>
               }
               @if (!form.secrets.length) { <span class="faint mono empty-note">no keys</span> }
               <div class="add-row">
-                <input class="input" [(ngModel)]="secretKey" placeholder="ANTHROPIC_API_KEY" />
-                <input class="input" type="password" [(ngModel)]="secretValue" placeholder="value" />
+                @if (credentialKeys().length) {
+                  <select class="select" aria-label="saved credential"
+                          (change)="pickSecretCredential($any($event.target).value)">
+                    <option value="">type a key</option>
+                    @for (o of credentialKeys(); track o.id + o.key) {
+                      <option [value]="o.id + '\u0000' + o.key">{{ o.label }}</option>
+                    }
+                  </select>
+                }
+                <input class="input" [(ngModel)]="secretKey" placeholder="ANTHROPIC_API_KEY"
+                       [readOnly]="!!secretCredentialId" />
+                @if (!secretCredentialId) {
+                  <input class="input" type="password" [(ngModel)]="secretValue" placeholder="value" />
+                }
                 <button class="btn sm" type="button" (click)="addSecret()">add</button>
               </div>
         </div>
