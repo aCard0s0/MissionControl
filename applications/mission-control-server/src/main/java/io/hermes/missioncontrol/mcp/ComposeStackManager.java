@@ -1,7 +1,7 @@
 package io.hermes.missioncontrol.mcp;
 
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
-import io.hermes.missioncontrol.hosts.HostService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,38 +19,42 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/** Executes Docker Compose without a shell and serializes all mutations per daemon. */
+/**
+ * Executes Docker Compose without a shell and serializes all mutations per daemon.
+ *
+ * <p>Takes the daemon it is to talk to as a {@link DockerHostRef}. It used to take a
+ * {@code hostId} and resolve it through {@code HostService} at each of the nine places it needed
+ * a {@code --host} argument, so a single operation resolved the same host up to four times —
+ * exactly the scattering {@link DockerHostRef} was introduced to end, still in place in this one
+ * package. Nothing here decides which daemon to use, so nothing here needs the registry.
+ */
 @Component
 class ComposeStackManager {
 
-  private final HostService hosts;
   private final Path baseDirectory;
   private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
-  ComposeStackManager(
-      HostService hosts,
-      @Value("${mc.mcp-stack-dir:./data/mcp-stacks}") String baseDirectory) {
-    this.hosts = hosts;
+  ComposeStackManager(@Value("${mc.mcp-stack-dir:./data/mcp-stacks}") String baseDirectory) {
     this.baseDirectory = Path.of(baseDirectory).toAbsolutePath().normalize();
   }
 
   String execute(
-      String hostId,
+      DockerHostRef host,
       ComposeStackRenderer.Rendered rendered,
       List<String> composeArguments,
       Duration timeout) {
-    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
     lock.lock();
     try {
-      verifyOwnedOrMissing(hostId, "network", ManagedMcpStack.NETWORK);
+      verifyOwnedOrMissing(host, "network", ManagedMcpStack.NETWORK);
       for (List<String> volumes : rendered.volumeNames().values()) {
-        for (String volume : volumes) verifyOwnedOrMissing(hostId, "volume", volume);
+        for (String volume : volumes) verifyOwnedOrMissing(host, "volume", volume);
       }
       for (List<String> services : rendered.serviceNames().values()) {
-        for (String service : services) verifyComposeServiceOwnership(hostId, service);
+        for (String service : services) verifyComposeServiceOwnership(host, service);
       }
-      Path composeFile = write(hostId, rendered.yaml());
-      List<String> command = composeBase(hostId, composeFile);
+      Path composeFile = write(host, rendered.yaml());
+      List<String> command = composeBase(host, composeFile);
       command.addAll(composeArguments);
       return run(command, rendered.processEnvironment(), timeout);
     } finally {
@@ -58,23 +62,23 @@ class ComposeStackManager {
     }
   }
 
-  void writeOnly(String hostId, ComposeStackRenderer.Rendered rendered) {
-    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+  void writeOnly(DockerHostRef host, ComposeStackRenderer.Rendered rendered) {
+    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
     lock.lock();
     try {
-      write(hostId, rendered.yaml());
+      write(host, rendered.yaml());
     } finally {
       lock.unlock();
     }
   }
 
-  String serviceContainerId(String hostId, String serviceKey) {
-    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+  String serviceContainerId(DockerHostRef host, String serviceKey) {
+    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
     lock.lock();
     try {
-      Path composeFile = stackPath(hostId);
+      Path composeFile = stackPath(host);
       if (!Files.exists(composeFile)) return null;
-      List<String> command = composeBase(hostId, composeFile);
+      List<String> command = composeBase(host, composeFile);
       command.addAll(List.of("ps", "--all", "-q", serviceKey));
       String output = run(command, Map.of(), Duration.ofSeconds(20)).trim();
       return output.isBlank() ? null : output.lines().findFirst().orElse(null);
@@ -89,17 +93,17 @@ class ComposeStackManager {
    * <p>Read back from the label {@link ComposeStackRenderer} writes rather than from the file,
    * because the reason for asking is to find what the file no longer declares.
    */
-  List<String> servicesOf(String hostId, String serverId) {
-    return labelled(hostId, List.of(
-        "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
+  List<String> servicesOf(DockerHostRef host, String serverId) {
+    return labelled(host, List.of(
+        "docker", "--host", host.url(), "ps", "--all",
         "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
         "--format", "{{.Label \"com.docker.compose.service\"}}"));
   }
 
   /** The managed volume names this catalog record currently has on the daemon. */
-  List<String> volumesOf(String hostId, String serverId) {
-    return labelled(hostId, List.of(
-        "docker", "--host", hosts.ref(hostId).url(), "volume", "ls",
+  List<String> volumesOf(DockerHostRef host, String serverId) {
+    return labelled(host, List.of(
+        "docker", "--host", host.url(), "volume", "ls",
         "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
         "--format", "{{.Name}}"));
   }
@@ -120,9 +124,9 @@ class ComposeStackManager {
    * <p>Read from the labels rather than through Compose, which is what lets one call cover every
    * record — and is how {@link #servicesOf} and {@link #volumesOf} already work.
    */
-  Map<String, String> containerIdsByService(String hostId) {
-    List<String> rows = labelled(hostId, List.of(
-        "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
+  Map<String, String> containerIdsByService(DockerHostRef host) {
+    List<String> rows = labelled(host, List.of(
+        "docker", "--host", host.url(), "ps", "--all",
         "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
         "--format", "{{.Label \"com.docker.compose.service\"}}\t{{.ID}}"));
     Map<String, String> byService = new LinkedHashMap<>();
@@ -148,15 +152,15 @@ class ComposeStackManager {
    * named ones this stack creates are untouched by it — they outlive the container on purpose,
    * and the caller records them as retained instead.
    */
-  void removeServices(String hostId, String serverId, List<String> services, Duration timeout) {
+  void removeServices(DockerHostRef host, String serverId, List<String> services, Duration timeout) {
     if (services.isEmpty()) return;
-    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
     lock.lock();
     try {
-      String url = hosts.ref(hostId).url();
+      String url = host.url();
       for (String service : services) {
         for (String id : containerIds(url, serverId, service)) {
-          Optional<String> owner = inspectOwner(hostId, "container", id);
+          Optional<String> owner = inspectOwner(host, "container", id);
           // listed a moment ago and gone by the time it was inspected: nothing left to remove
           if (owner.isEmpty()) continue;
           if (!ManagedMcpStack.PROJECT.equals(owner.get())) {
@@ -179,8 +183,8 @@ class ComposeStackManager {
         "--format", "{{.ID}}"), Map.of(), Duration.ofSeconds(20)));
   }
 
-  private List<String> labelled(String hostId, List<String> command) {
-    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+  private List<String> labelled(DockerHostRef host, List<String> command) {
+    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
     lock.lock();
     try {
       return lines(run(command, Map.of(), Duration.ofSeconds(20)));
@@ -200,19 +204,19 @@ class ComposeStackManager {
    *     caller's record of it is simply out of date. Both guards below still run first: this is
    *     "already gone", not "skip the checks"
    */
-  boolean purgeVolume(String hostId, String volumeName) {
+  boolean purgeVolume(DockerHostRef host, String volumeName) {
     if (volumeName == null || !volumeName.startsWith(ManagedMcpStack.PROJECT + "-")) {
       throw new IllegalArgumentException("refusing to purge a volume not owned by Mission Control MCP");
     }
-    ReentrantLock lock = locks.computeIfAbsent(hostId, ignored -> new ReentrantLock());
+    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
     lock.lock();
     try {
-      Optional<String> owner = inspectOwner(hostId, "volume", volumeName);
+      Optional<String> owner = inspectOwner(host, "volume", volumeName);
       if (owner.isEmpty()) return false;
       if (!ManagedMcpStack.PROJECT.equals(owner.get())) {
         throw new IllegalArgumentException("refusing to purge a volume not labeled as Mission Control MCP-owned");
       }
-      run(List.of("docker", "--host", hosts.ref(hostId).url(), "volume", "rm", volumeName),
+      run(List.of("docker", "--host", host.url(), "volume", "rm", volumeName),
           Map.of(), Duration.ofMinutes(2));
       return true;
     } finally {
@@ -220,8 +224,9 @@ class ComposeStackManager {
     }
   }
 
-  Path stackPath(String hostId) {
-    if (hostId == null || !hostId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,99}")) {
+  Path stackPath(DockerHostRef host) {
+    String hostId = host.id();
+    if (!hostId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,99}")) {
       throw new IllegalArgumentException("invalid docker host id");
     }
     Path path = baseDirectory.resolve(hostId).resolve("compose.yaml").normalize();
@@ -229,8 +234,8 @@ class ComposeStackManager {
     return path;
   }
 
-  private Path write(String hostId, String yaml) {
-    Path target = stackPath(hostId);
+  private Path write(DockerHostRef host, String yaml) {
+    Path target = stackPath(host);
     try {
       Files.createDirectories(target.getParent());
       Path temporary = Files.createTempFile(target.getParent(), "compose-", ".yaml.tmp");
@@ -246,31 +251,31 @@ class ComposeStackManager {
     }
   }
 
-  private List<String> composeBase(String hostId, Path composeFile) {
+  private List<String> composeBase(DockerHostRef host, Path composeFile) {
     return new ArrayList<>(List.of(
-        "docker", "--host", hosts.ref(hostId).url(), "compose",
+        "docker", "--host", host.url(), "compose",
         "--project-name", ManagedMcpStack.PROJECT,
         "--file", composeFile.toString()));
   }
 
   /** Refuses a name that exists and belongs to someone else. Absent is fine: Compose may
    *  safely create it. */
-  private void verifyOwnedOrMissing(String hostId, String type, String name) {
-    Optional<String> owner = inspectOwner(hostId, type, name);
+  private void verifyOwnedOrMissing(DockerHostRef host, String type, String name) {
+    Optional<String> owner = inspectOwner(host, type, name);
     if (owner.isPresent() && !ManagedMcpStack.PROJECT.equals(owner.get())) {
       throw new IllegalArgumentException(
           "a " + type + " named '" + name + "' already exists but is not owned by Mission Control MCP");
     }
   }
 
-  private void verifyComposeServiceOwnership(String hostId, String service) {
+  private void verifyComposeServiceOwnership(DockerHostRef host, String service) {
     String ids = run(List.of(
-        "docker", "--host", hosts.ref(hostId).url(), "ps", "--all",
+        "docker", "--host", host.url(), "ps", "--all",
         "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
         "--filter", "label=com.docker.compose.service=" + service,
         "--format", "{{.ID}}"), Map.of(), Duration.ofSeconds(20));
     for (String id : ids.lines().map(String::trim).filter(value -> !value.isEmpty()).toList()) {
-      Optional<String> owner = inspectOwner(hostId, "container", id);
+      Optional<String> owner = inspectOwner(host, "container", id);
       // gone between the listing and the inspect: there is nothing left to refuse to touch
       if (owner.isPresent() && !ManagedMcpStack.PROJECT.equals(owner.get())) {
         throw new IllegalArgumentException(
@@ -289,11 +294,11 @@ class ComposeStackManager {
    * with no detail and left the retained row in place — un-purgeable, because every retry took
    * the same path.
    */
-  private Optional<String> inspectOwner(String hostId, String type, String name) {
+  private Optional<String> inspectOwner(DockerHostRef host, String type, String name) {
     // containers expose their labels under .Config.Labels; networks and volumes at the top level
     String labels = "container".equals(type) ? ".Config.Labels" : ".Labels";
     List<String> command = List.of(
-        "docker", "--host", hosts.ref(hostId).url(), type, "inspect",
+        "docker", "--host", host.url(), type, "inspect",
         "--format", "{{ index " + labels + " \"" + ManagedMcpStack.OWNER_LABEL + "\" }}", name);
     try {
       return Optional.of(run(command, Map.of(), Duration.ofSeconds(20)).trim());

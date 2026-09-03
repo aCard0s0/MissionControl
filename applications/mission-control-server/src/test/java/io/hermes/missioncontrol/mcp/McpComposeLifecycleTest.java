@@ -47,6 +47,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class McpComposeLifecycleTest {
 
   private static final String HOST = "dh-local";
+  /** The ref the compose seam is handed now that it no longer resolves the id itself. */
+  private static final DockerHostRef HOST_REF = new DockerHostRef(HOST, "unix:///sock");
   private static final String SERVICE = "mcp-files";
 
   private SqliteTestDatabase database;
@@ -123,12 +125,12 @@ class McpComposeLifecycleTest {
     // remembers the origin of
     String id = insertManaged("Files");
     String departedVolume = "mission-control-mcp-" + SERVICE + "-database-data";
-    when(compose.servicesOf(HOST, id)).thenReturn(List.of(SERVICE, SERVICE + "-database"));
-    when(compose.volumesOf(HOST, id)).thenReturn(List.of(departedVolume));
+    when(compose.servicesOf(HOST_REF, id)).thenReturn(List.of(SERVICE, SERVICE + "-database"));
+    when(compose.volumesOf(HOST_REF, id)).thenReturn(List.of(departedVolume));
 
     lifecycle.runStart(id, false);
 
-    verify(compose).removeServices(HOST, id, List.of(SERVICE + "-database"), Duration.ofMinutes(2));
+    verify(compose).removeServices(HOST_REF, id, List.of(SERVICE + "-database"), Duration.ofMinutes(2));
     RetainedResourceDto kept = retained.findAll().getFirst();
     assertEquals(departedVolume, kept.name());
     assertEquals("Files", kept.serverName(), "the retained row carries the name the operator knew");
@@ -140,12 +142,12 @@ class McpComposeLifecycleTest {
   void aDependencyStillInTheDefinitionIsLeftRunningAndItsVolumeIsNotRetained() {
     String id = insertManagedWithDatabase("Files");
     ComposeStackRenderer.Rendered stack = lifecycle.renderHost(HOST);
-    when(compose.servicesOf(HOST, id)).thenReturn(stack.serviceNames().get(id));
-    when(compose.volumesOf(HOST, id)).thenReturn(stack.volumeNames().get(id));
+    when(compose.servicesOf(HOST_REF, id)).thenReturn(stack.serviceNames().get(id));
+    when(compose.volumesOf(HOST_REF, id)).thenReturn(stack.volumeNames().get(id));
 
     lifecycle.runStart(id, false);
 
-    verify(compose).removeServices(HOST, id, List.of(), Duration.ofMinutes(2));
+    verify(compose).removeServices(HOST_REF, id, List.of(), Duration.ofMinutes(2));
     assertTrue(retained.findAll().isEmpty(), "a declared volume is part of the stack, not stranded");
   }
 
@@ -154,7 +156,7 @@ class McpComposeLifecycleTest {
     // it stays stranded until the operator purges it, so every later start finds it again
     String id = insertManaged("Files");
     String departedVolume = "mission-control-mcp-" + SERVICE + "-database-data";
-    when(compose.volumesOf(HOST, id)).thenReturn(List.of(departedVolume));
+    when(compose.volumesOf(HOST_REF, id)).thenReturn(List.of(departedVolume));
 
     lifecycle.runStart(id, false);
     lifecycle.runStart(id, false);
@@ -167,11 +169,11 @@ class McpComposeLifecycleTest {
     // an update to a stopped record re-provisions straight away, which is where a dependency
     // dropped by that same update has to be reclaimed
     String id = insertManaged("Files");
-    when(compose.servicesOf(HOST, id)).thenReturn(List.of(SERVICE, SERVICE + "-cache"));
+    when(compose.servicesOf(HOST_REF, id)).thenReturn(List.of(SERVICE, SERVICE + "-cache"));
 
     lifecycle.provisionStopped(id);
 
-    verify(compose).removeServices(HOST, id, List.of(SERVICE + "-cache"), Duration.ofMinutes(2));
+    verify(compose).removeServices(HOST_REF, id, List.of(SERVICE + "-cache"), Duration.ofMinutes(2));
   }
 
   @Test
@@ -179,7 +181,7 @@ class McpComposeLifecycleTest {
     // the container is already up by then; recording an error would have the operator retry a
     // start that succeeded
     String id = insertManaged("Files");
-    when(compose.servicesOf(HOST, id))
+    when(compose.servicesOf(HOST_REF, id))
         .thenThrow(new UpstreamUnavailableException("could not start Docker CLI"));
 
     lifecycle.runStart(id, false);
@@ -241,17 +243,17 @@ class McpComposeLifecycleTest {
     lifecycle.runDelete(removed);
 
     InOrder order = inOrder(compose);
-    order.verify(compose).execute(anyString(), any(), any(), any());
+    order.verify(compose).execute(any(), any(), any(), any());
     ArgumentCaptor<ComposeStackRenderer.Rendered> rewritten =
         ArgumentCaptor.forClass(ComposeStackRenderer.Rendered.class);
-    order.verify(compose).writeOnly(anyString(), rewritten.capture());
+    order.verify(compose).writeOnly(any(), rewritten.capture());
     assertEquals(List.of(kept), List.copyOf(rewritten.getValue().serviceNames().keySet()));
   }
 
   @Test
   void aDeleteThatFailsLeavesTheRecordBehindInErrorSoItCanBeRetried() {
     String id = insertManaged("Files");
-    when(compose.execute(anyString(), any(), any(), any()))
+    when(compose.execute(any(), any(), any(), any()))
         .thenThrow(new UpstreamUnavailableException("Docker Compose operation failed: container in use"));
 
     lifecycle.runDelete(id);
@@ -269,7 +271,7 @@ class McpComposeLifecycleTest {
     // the operator's only evidence is the row: an operation that fails silently reads as one
     // still in progress, forever
     String id = insertManaged("Files");
-    when(compose.execute(anyString(), any(), any(), any()))
+    when(compose.execute(any(), any(), any(), any()))
         .thenThrow(new UpstreamUnavailableException("Docker Compose operation failed: no such image"));
 
     lifecycle.provisionStopped(id);
@@ -292,7 +294,7 @@ class McpComposeLifecycleTest {
 
     assertTrue(row(id).operationError().contains("secret value is unrecoverable: TOKEN"),
         row(id).operationError());
-    verify(compose, never()).execute(anyString(), any(), any(), any());
+    verify(compose, never()).execute(any(), any(), any(), any());
   }
 
   @Test
@@ -338,7 +340,7 @@ class McpComposeLifecycleTest {
   @Test
   void theRuntimeStateIsRefreshedFromWhatTheDaemonActuallyReports() {
     String id = insertIdleManaged("Files");
-    when(compose.serviceContainerId(HOST, SERVICE)).thenReturn("cid");
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid");
     when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("cid", "running")));
 
@@ -349,7 +351,7 @@ class McpComposeLifecycleTest {
   @Test
   void anUnhealthyContainerIsRecordedAsAnErrorBecauseThatIsWhatItIsForAnMcpServer() {
     String id = insertIdleManaged("Files");
-    when(compose.serviceContainerId(HOST, SERVICE)).thenReturn("cid");
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid");
     when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("cid", "unhealthy")));
 
@@ -359,12 +361,12 @@ class McpComposeLifecycleTest {
   @Test
   void aContainerTheDaemonNoLongerListsIsUnknownAndNoContainerAtAllIsMissing() {
     String id = insertIdleManaged("Files");
-    when(compose.serviceContainerId(HOST, SERVICE)).thenReturn("cid");
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid");
     when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("someone-else", "running")));
     assertEquals("unknown", lifecycle.refreshRuntime(row(id)).runtimeState());
 
-    when(compose.serviceContainerId(HOST, SERVICE)).thenReturn(null);
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn(null);
     assertEquals("missing", lifecycle.refreshRuntime(row(id)).runtimeState());
   }
 
@@ -377,7 +379,7 @@ class McpComposeLifecycleTest {
 
     assertEquals("provisioning", lifecycle.refreshRuntime(row(id)).operationState());
 
-    verify(compose, never()).serviceContainerId(anyString(), anyString());
+    verify(compose, never()).serviceContainerId(any(), anyString());
   }
 
   @Test
@@ -385,7 +387,7 @@ class McpComposeLifecycleTest {
     // inventory is best-effort: the lifecycle records its own failures, and a GET on the catalog
     // must not turn into a 503 because one host is down
     String id = insertIdleManaged("Files");
-    when(compose.serviceContainerId(HOST, SERVICE))
+    when(compose.serviceContainerId(HOST_REF, SERVICE))
         .thenThrow(new UpstreamUnavailableException("could not start Docker CLI"));
 
     assertEquals("missing", lifecycle.refreshRuntime(row(id)).runtimeState());
@@ -401,7 +403,7 @@ class McpComposeLifecycleTest {
     String files = insertIdleManaged("Files");
     String docs = insertIdleManaged("Docs");
     String gone = insertIdleManaged("Gone");
-    when(compose.containerIdsByService(HOST))
+    when(compose.containerIdsByService(HOST_REF))
         .thenReturn(Map.of("mcp-files", "cid-files", "mcp-docs", "cid-docs"));
     when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true)).thenReturn(
         List.of(container("cid-files", "running"), container("cid-docs", "unhealthy")));
@@ -414,16 +416,16 @@ class McpComposeLifecycleTest {
     assertEquals("missing", byId(refreshed, gone).runtimeState());
     assertEquals("running", row(files).runtimeState(), "the refreshed state is persisted");
 
-    verify(compose, times(1)).containerIdsByService(HOST);
+    verify(compose, times(1)).containerIdsByService(HOST_REF);
     verify(docker, times(1)).listContainers(new DockerHostRef(HOST, "unix:///sock"), true);
-    verify(compose, never()).serviceContainerId(anyString(), anyString());
+    verify(compose, never()).serviceContainerId(any(), anyString());
   }
 
   @Test
   void aListingLeavesRowsTheDaemonCannotSpeakForExactlyAsTheyWere() {
     String provisioning = insertManaged("Files");
     String external = insertExternal("Remote docs");
-    when(compose.containerIdsByService(HOST)).thenReturn(Map.of("mcp-files", "cid-files"));
+    when(compose.containerIdsByService(HOST_REF)).thenReturn(Map.of("mcp-files", "cid-files"));
 
     List<ServerRow> refreshed = lifecycle.refreshRuntime(repository.findAll());
 
@@ -440,10 +442,10 @@ class McpComposeLifecycleTest {
     String local = insertIdleManaged("Files");
     String remote = insert("Docs", "managed", "dh-remote", List.of(), List.of(), "idle");
     when(hosts.ref("dh-remote")).thenReturn(new DockerHostRef("dh-remote", "tcp://remote:2375"));
-    when(compose.containerIdsByService(HOST)).thenReturn(Map.of("mcp-files", "cid-files"));
+    when(compose.containerIdsByService(HOST_REF)).thenReturn(Map.of("mcp-files", "cid-files"));
     when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
         .thenReturn(List.of(container("cid-files", "running")));
-    when(compose.containerIdsByService("dh-remote"))
+    when(compose.containerIdsByService(new DockerHostRef("dh-remote", "tcp://remote:2375")))
         .thenThrow(new UpstreamUnavailableException("could not start Docker CLI"));
 
     List<ServerRow> refreshed = lifecycle.refreshRuntime(repository.findAll());
@@ -451,8 +453,8 @@ class McpComposeLifecycleTest {
     // the reachable host still answers; a catalog GET must not 503 because one daemon is down
     assertEquals("running", byId(refreshed, local).runtimeState());
     assertEquals("missing", byId(refreshed, remote).runtimeState());
-    verify(compose, times(1)).containerIdsByService(HOST);
-    verify(compose, times(1)).containerIdsByService("dh-remote");
+    verify(compose, times(1)).containerIdsByService(HOST_REF);
+    verify(compose, times(1)).containerIdsByService(new DockerHostRef("dh-remote", "tcp://remote:2375"));
   }
 
   @Test
@@ -472,7 +474,7 @@ class McpComposeLifecycleTest {
         "stopped", "unavailable", "idle", null, 1, 1, null, null, null, null, null, 0L, 0L);
 
     assertEquals("unavailable", lifecycle.refreshRuntime(external).runtimeState());
-    verify(compose, never()).serviceContainerId(anyString(), anyString());
+    verify(compose, never()).serviceContainerId(any(), anyString());
   }
 
   // ── rendering ───────────────────────────────────────────────────────────
@@ -515,14 +517,14 @@ class McpComposeLifecycleTest {
   private List<String> composeArguments() {
     ArgumentCaptor<List<String>> arguments = ArgumentCaptor.forClass(List.class);
     verify(compose, org.mockito.Mockito.atLeastOnce())
-        .execute(anyString(), any(), arguments.capture(), any());
+        .execute(any(), any(), arguments.capture(), any());
     return arguments.getValue();
   }
 
   private Duration composeTimeout() {
     ArgumentCaptor<Duration> timeout = ArgumentCaptor.forClass(Duration.class);
     verify(compose, org.mockito.Mockito.atLeastOnce())
-        .execute(anyString(), any(), any(), timeout.capture());
+        .execute(any(), any(), any(), timeout.capture());
     return timeout.getValue();
   }
 

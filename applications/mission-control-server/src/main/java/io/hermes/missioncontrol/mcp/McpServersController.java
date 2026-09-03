@@ -35,7 +35,7 @@ public class McpServersController {
   public ResponseEntity<McpServerDto> create(@RequestBody McpServerRequest request) {
     McpServerDto created = registry.create(request);
     URI location = URI.create("/api/mcp-servers/" + created.id());
-    return "managed".equals(created.kind())
+    return McpServerKind.MANAGED.is(created.kind())
         ? ResponseEntity.accepted().location(location).body(created)
         : ResponseEntity.created(location).body(created);
   }
@@ -52,7 +52,7 @@ public class McpServersController {
   @DeleteMapping("/{id}")
   public ResponseEntity<McpServerDto> delete(@PathVariable String id) {
     McpServerDto result = deletion.delete(id);
-    return "managed".equals(result.kind()) ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
+    return McpServerKind.MANAGED.is(result.kind()) ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
   }
 
   @PostMapping("/{id}/start")

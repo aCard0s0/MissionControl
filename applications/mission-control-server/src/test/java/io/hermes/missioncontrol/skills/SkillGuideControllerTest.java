@@ -74,8 +74,8 @@ class SkillGuideControllerTest {
     HostService hosts = mock(HostService.class);
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
     mvc = MockMvcBuilders
-        .standaloneSetup(new SkillGuideController(
-            repository, skills, new SkillDeployer(profiles), registry, mcpCatalog, profiles, hosts))
+        .standaloneSetup(new SkillGuideController(repository, hosts, new GuideDeploy(
+            skills, new SkillDeployer(profiles), registry, mcpCatalog, profiles)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

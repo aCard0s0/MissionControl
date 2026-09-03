@@ -127,8 +127,8 @@ public class McpRegistryService {
   public String sameHostConnectionUrl(String id) {
     ServerRow row = requireRow(id);
     StoredConfig config = configs.read(row);
-    if ("managed".equals(row.kind())) return McpServerDtoMapper.connectionUrl(row, config);
-    return "external".equals(row.kind()) ? config.url() : null;
+    if (McpServerKind.MANAGED.is(row.kind())) return McpServerDtoMapper.connectionUrl(row, config);
+    return McpServerKind.EXTERNAL.is(row.kind()) ? config.url() : null;
   }
 
   public List<LogLineDto> logs(String id, int tail) {
@@ -144,7 +144,7 @@ public class McpRegistryService {
       throw new ResourceConflictException("an MCP server named '" + validated.name() + "' already exists");
     }
     String id = "mcp-" + UUID.randomUUID().toString().substring(0, 12);
-    boolean managed = "managed".equals(validated.kind());
+    boolean managed = McpServerKind.MANAGED.is(validated.kind());
     String serviceKey = managed ? "mcp-" + id.substring(4, 12) : null;
     StoredConfig config = configs.store(validated, null);
     long now = System.currentTimeMillis();
@@ -180,9 +180,9 @@ public class McpRegistryService {
     ensureSupportServicesNotRenamed(previous, validated);
     StoredConfig config = configs.store(validated, previous);
     long revision = existing.revision() + 1;
-    boolean recreateStopped = "managed".equals(existing.kind())
+    boolean recreateStopped = McpServerKind.MANAGED.is(existing.kind())
         && "stopped".equals(existing.desiredState());
-    long applied = "managed".equals(existing.kind()) ? existing.appliedRevision() : revision;
+    long applied = McpServerKind.MANAGED.is(existing.kind()) ? existing.appliedRevision() : revision;
     boolean written = repository.updateDefinition(
         id, validated.name(), validated.description(), validated.repoUrl(),
         configs.write(config), revision, applied,
@@ -239,7 +239,7 @@ public class McpRegistryService {
       throw new ResourceConflictException(
           "the MCP server is still linked to one or more Agents; disable and unlink them, then retry");
     }
-    if (!"managed".equals(row.kind())) {
+    if (!McpServerKind.MANAGED.is(row.kind())) {
       repository.delete(id);
       return mapper.toDto(row);
     }
@@ -311,7 +311,7 @@ public class McpRegistryService {
 
   private ServerRow requireManaged(String id) {
     ServerRow row = requireRow(id);
-    if (!"managed".equals(row.kind())) {
+    if (!McpServerKind.MANAGED.is(row.kind())) {
       throw new IllegalArgumentException("container lifecycle applies only to managed MCP servers");
     }
     return row;
@@ -376,6 +376,6 @@ public class McpRegistryService {
 
   /** A managed record must name a host this dashboard knows; resolving the URL proves it. */
   private void hostsForManaged(McpServerRequest value) {
-    if ("managed".equals(value.kind())) hosts.ref(value.hostId());
+    if (McpServerKind.MANAGED.is(value.kind())) hosts.ref(value.hostId());
   }
 }

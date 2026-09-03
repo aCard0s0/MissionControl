@@ -59,20 +59,39 @@ class McpHealthProbe {
     this.docker = docker;
   }
 
-  /** Probes the record and writes the verdict onto it. The caller re-reads it. */
-  void check(ServerRow row) {
-    if ("stdio".equals(row.kind())) {
-      throw new IllegalArgumentException("reachability checks do not apply to stdio MCP servers");
+  /**
+   * What a probe concluded. The two probe paths compute one of these and this class writes it
+   * once, in {@link #check} — they used to reach for {@code repository.updateCheck} at each of
+   * their own exits, nine call sites for one decision, which made "what can land in
+   * {@code check_status}" a question you answered by reading every branch.
+   */
+  record Verdict(String status, String error, Long latencyMs) {
+
+    static Verdict connected(long latencyMs) {
+      return new Verdict("connected", null, latencyMs);
     }
-    if ("managed".equals(row.kind())) checkManaged(row);
-    else checkExternal(row);
+
+    /** Latency is deliberately absent: a failed probe has no round trip to report. */
+    static Verdict error(String reason) {
+      return new Verdict("error", reason, null);
+    }
   }
 
-  private void checkExternal(ServerRow row) {
-    String id = row.id();
+  /** Probes the record and writes the verdict onto it. The caller re-reads it. */
+  void check(ServerRow row) {
+    if (McpServerKind.STDIO.is(row.kind())) {
+      throw new IllegalArgumentException("reachability checks do not apply to stdio MCP servers");
+    }
+    // one timestamp for the whole probe, taken before it starts rather than per exit
+    long checkedAt = System.currentTimeMillis();
+    Verdict verdict = McpServerKind.MANAGED.is(row.kind()) ? checkManaged(row) : checkExternal(row);
+    repository.updateCheck(
+        row.id(), verdict.status(), verdict.error(), checkedAt, verdict.latencyMs());
+  }
+
+  private Verdict checkExternal(ServerRow row) {
     StoredConfig config = configs.read(row);
     long started = System.nanoTime();
-    long checkedAt = System.currentTimeMillis();
     try {
       HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(config.url()))
           .timeout(Duration.ofSeconds(5)).method("HEAD", HttpRequest.BodyPublishers.noBody());
@@ -80,27 +99,23 @@ class McpHealthProbe {
         request.header(header.getKey(), header.getValue());
       }
       HttpResponse<Void> response = http.send(request.build(), HttpResponse.BodyHandlers.discarding());
-      long latency = Math.max(0, (System.nanoTime() - started) / 1_000_000);
-      repository.updateCheck(id, "connected", null, checkedAt, latency);
-      log.debug("external MCP {} responded with HTTP {}", id, response.statusCode());
+      log.debug("external MCP {} responded with HTTP {}", row.id(), response.statusCode());
+      return Verdict.connected(Math.max(0, (System.nanoTime() - started) / 1_000_000));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      repository.updateCheck(id, "error", "reachability check interrupted", checkedAt, null);
+      return Verdict.error("reachability check interrupted");
     } catch (Exception e) {
       // a refused connection often carries no message at all; the managed path has
       // always fallen back to the exception type, and an operator needs the same
       // detail here rather than an "error" row with a blank reason
-      repository.updateCheck(id, "error", rootMessage(e), checkedAt, null);
+      return Verdict.error(rootMessage(e));
     }
   }
 
-  private void checkManaged(ServerRow row) {
-    String id = row.id();
+  private Verdict checkManaged(ServerRow row) {
     StoredConfig config = configs.read(row);
-    long checkedAt = System.currentTimeMillis();
     if (!"running".equals(row.runtimeState())) {
-      repository.updateCheck(id, "error", "server is not running", checkedAt, null);
-      return;
+      return Verdict.error("server is not running");
     }
     String target;
     try {
@@ -110,8 +125,7 @@ class McpHealthProbe {
       joinMcpNetworkIfLocal(row);
       target = probeTarget(row, config);
     } catch (RuntimeException unreachable) {
-      repository.updateCheck(id, "error", unreachable.getMessage(), checkedAt, null);
-      return;
+      return Verdict.error(unreachable.getMessage());
     }
 
     long started = System.nanoTime();
@@ -136,16 +150,16 @@ class McpHealthProbe {
       // response head and drops the subscription instead of waiting for a body that never ends.
       response.body().subscribe(new CancellingSubscriber());
 
-      long latency = Math.max(0, (System.nanoTime() - started) / 1_000_000);
       String contentType = response.headers().firstValue("content-type").orElse("");
       String failure = probeFailure(response.statusCode(), contentType, config, target);
-      if (failure == null) repository.updateCheck(id, "connected", null, checkedAt, latency);
-      else repository.updateCheck(id, "error", failure, checkedAt, null);
+      return failure == null
+          ? Verdict.connected(Math.max(0, (System.nanoTime() - started) / 1_000_000))
+          : Verdict.error(failure);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      repository.updateCheck(id, "error", "reachability check interrupted", checkedAt, null);
+      return Verdict.error("reachability check interrupted");
     } catch (Exception e) {
-      repository.updateCheck(id, "error", target + " — " + rootMessage(e), checkedAt, null);
+      return Verdict.error(target + " — " + rootMessage(e));
     }
   }
 

@@ -124,7 +124,7 @@ class McpManagedLifecycleTest {
   void aFailingComposeCallRecordsTheErrorAndDoesNotLeaveTheRowBusy() {
     McpServerDto created = createManaged();
     org.mockito.Mockito.doThrow(new RuntimeException("compose up failed: no such image"))
-        .when(compose).execute(anyString(), any(), any(), any());
+        .when(compose).execute(any(), any(), any(), any());
 
     service.start(created.id());
 
@@ -139,13 +139,13 @@ class McpManagedLifecycleTest {
   void aRowLeftInErrorCanStillBeRetried() {
     McpServerDto created = createManaged();
     org.mockito.Mockito.doThrow(new RuntimeException("transient daemon failure"))
-        .when(compose).execute(anyString(), any(), any(), any());
+        .when(compose).execute(any(), any(), any(), any());
     service.start(created.id());
     assertEquals("error", repository.findById(created.id()).orElseThrow().operationState());
 
     // re-stub with doReturn: a when(...) call here would re-invoke the throwing mock
     org.mockito.Mockito.doReturn("ok")
-        .when(compose).execute(anyString(), any(), any(), any());
+        .when(compose).execute(any(), any(), any(), any());
     service.start(created.id());
 
     ServerRow row = repository.findById(created.id()).orElseThrow();

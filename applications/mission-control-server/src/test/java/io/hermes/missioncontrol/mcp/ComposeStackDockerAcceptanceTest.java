@@ -58,6 +58,7 @@ class ComposeStackDockerAcceptanceTest {
 
   private static final String HOST = "dh-acceptance";
   private static final String SOCKET = "unix:///var/run/docker.sock";
+  private static final DockerHostRef HOST_REF = new DockerHostRef(HOST, SOCKET);
   /** Small, quick to pull, and stays up while sleeping. */
   private static final String IMAGE = "busybox:1.36";
 
@@ -89,7 +90,7 @@ class ComposeStackDockerAcceptanceTest {
     when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", SOCKET));
     McpConfigStore configs =
         new McpConfigStore(new SecretsAtRest(new SecretCipher("acceptance-secret", "", false)), new ObjectMapper());
-    compose = new ComposeStackManager(hosts, stackDirectory.toString());
+    compose = new ComposeStackManager(stackDirectory.toString());
     lifecycle = new McpComposeLifecycle(repository, retained, hosts, mock(
         io.hermes.missioncontrol.docker.DockerGateway.class), compose, new ComposeStackRenderer(),
         configs, Executors.newSingleThreadExecutor());
@@ -132,7 +133,7 @@ class ComposeStackDockerAcceptanceTest {
     // 2a. the batched lookup the catalog listing reads runtime state through. Everything else
     //     substitutes the CLI, so this is the only thing that can say whether the daemon
     //     accepts the --format template and prints the tab-separated pair it is asked for
-    assertEquals(containerId(), compose.containerIdsByService(HOST).get(serviceKey),
+    assertEquals(containerId(), compose.containerIdsByService(HOST_REF).get(serviceKey),
         "the batched service lookup did not find the container compose ps reports");
 
     // 3. stop, with the grace timeout the code passes
@@ -152,7 +153,7 @@ class ComposeStackDockerAcceptanceTest {
     assertEquals(HOST, kept.hostId());
 
     // 5. purge: only now is the data gone
-    compose.purgeVolume(HOST, volumeName);
+    compose.purgeVolume(HOST_REF, volumeName);
     assertFalse(volumeExists(), "purging left the volume behind");
   }
 
@@ -164,7 +165,7 @@ class ComposeStackDockerAcceptanceTest {
     run("docker", "volume", "create", volumeName);
 
     IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
-        () -> compose.execute(HOST, lifecycle.renderHost(HOST),
+        () -> compose.execute(HOST_REF, lifecycle.renderHost(HOST),
             List.of("up", "--no-start", serviceKey), java.time.Duration.ofMinutes(2)));
 
     assertTrue(refused.getMessage().contains("not owned by Mission Control MCP"), refused.getMessage());
@@ -176,7 +177,7 @@ class ComposeStackDockerAcceptanceTest {
     run("docker", "volume", "create", volumeName);
 
     IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
-        () -> compose.purgeVolume(HOST, volumeName));
+        () -> compose.purgeVolume(HOST_REF, volumeName));
 
     assertTrue(refused.getMessage().contains("not labeled"), refused.getMessage());
     assertTrue(volumeExists(), "a volume we do not own must survive the refusal");

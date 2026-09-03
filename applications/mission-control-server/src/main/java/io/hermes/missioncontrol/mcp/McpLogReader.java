@@ -34,7 +34,7 @@ class McpLogReader {
   }
 
   List<LogLineDto> logs(ServerRow row, int tail) {
-    if (!"managed".equals(row.kind())) {
+    if (!McpServerKind.MANAGED.is(row.kind())) {
       throw new IllegalArgumentException("logs are available only for managed MCP servers");
     }
     StoredConfig config = configs.read(row);
@@ -46,7 +46,7 @@ class McpLogReader {
     List<LogLineDto> result = new ArrayList<>();
     DockerHostRef host = hosts.ref(row.hostId());
     for (String serviceName : serviceNames) {
-      String containerId = compose.serviceContainerId(row.hostId(), serviceName);
+      String containerId = compose.serviceContainerId(host, serviceName);
       if (containerId == null) continue;
       for (LogLineDto line : docker.logs(host, containerId, Math.min(Math.max(tail, 1), 500), null)) {
         result.add(new LogLineDto(line.ts(), line.level(), serviceName, line.msg()));

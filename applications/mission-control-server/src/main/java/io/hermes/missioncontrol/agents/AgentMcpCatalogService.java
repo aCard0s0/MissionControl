@@ -12,6 +12,7 @@ import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.mcp.ManagedMcpStack;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
+import io.hermes.missioncontrol.mcp.McpServerKind;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -86,7 +87,7 @@ public class AgentMcpCatalogService {
     if (current.mcp().stream().anyMatch(server -> alias.equals(server.name()))) {
       return Optional.empty();
     }
-    if ("managed".equals(source.kind()) && !"running".equals(source.runtimeState())) {
+    if (McpServerKind.MANAGED.is(source.kind()) && !"running".equals(source.runtimeState())) {
       throw new ResourceConflictException("managed MCP server is not running: " + source.name());
     }
     McpServerDefinition definition = materialize(host, containerId, source, alias, true);
@@ -192,7 +193,7 @@ public class AgentMcpCatalogService {
       McpServerDto source,
       String alias,
       boolean enabled) {
-    if ("stdio".equals(source.kind())) {
+    if (McpServerKind.STDIO.is(source.kind())) {
       String command = source.stdioCommand();
       if (command == null || command.isBlank()) {
         throw new IllegalArgumentException("catalog stdio server has no command: " + source.name());
@@ -224,7 +225,7 @@ public class AgentMcpCatalogService {
    */
   private void joinMcpNetwork(
       DockerHostRef agentHost, String containerId, McpServerDto source) {
-    if (!"managed".equals(source.kind()) || !agentHost.id().equals(source.hostId())) return;
+    if (!McpServerKind.MANAGED.is(source.kind()) || !agentHost.id().equals(source.hostId())) return;
     docker.connectNetwork(agentHost, containerId, ManagedMcpStack.NETWORK);
   }
 
@@ -232,7 +233,7 @@ public class AgentMcpCatalogService {
    *  host by Compose service name over the shared MCP network, one on another host by the
    *  address its operator published. A pure lookup — see {@link #joinMcpNetwork}. */
   private String connectionEndpoint(DockerHostRef agentHost, McpServerDto source) {
-    if (!"managed".equals(source.kind())) return source.url();
+    if (!McpServerKind.MANAGED.is(source.kind())) return source.url();
     if (agentHost.id().equals(source.hostId())) {
       return registry.sameHostConnectionUrl(source.id());
     }

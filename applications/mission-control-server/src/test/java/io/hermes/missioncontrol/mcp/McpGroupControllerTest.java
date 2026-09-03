@@ -67,7 +67,7 @@ class McpGroupControllerTest {
     HostService hosts = mock(HostService.class);
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
     mvc = MockMvcBuilders
-        .standaloneSetup(new McpGroupController(repository, registry, links, mcpCatalog, hosts))
+        .standaloneSetup(new McpGroupController(repository, links, hosts, new McpGroupDeploy(registry, mcpCatalog)))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

@@ -35,7 +35,7 @@ Several independent writes to an agent someone else owns, and they fail one at a
 skill deleted from the library since the guide named it, an MCP alias already on that agent,
 a managed server that is not running.
 
-`skills/SkillGuideController.java:137` follows the rule
+`skills/GuideDeploy.java:63` follows the rule
 [profile-edit](../../processes/profile-edit.md) inherits from
 `agents/templates/TemplateApplier.java:60` — *layering onto a profile the caller does not own
 surfaces the error and does not roll back*. Undoing half a guide would mean removing skills
@@ -44,7 +44,7 @@ and MCP entries that may have been on that agent **before the guide ever ran**.
 So it reports instead: one `DeployedPart` per part
 (`agents/api/DeployedPart.java:23`), each `deployed | skipped | failed` with a reason.
 `skipped` is "gone from the library or the catalog", or — for an MCP server — "already on the
-agent" (`skills/SkillGuideController.java:179`); `failed` is "attempted and refused".
+agent" (`skills/GuideDeploy.java:99`); `failed` is "attempted and refused".
 
 An already-connected server is still named in the umbrella document, because that document tells
 the agent what it can reach and it can reach that one. This route used to call the case `failed`
@@ -73,6 +73,8 @@ Two orderings are load-bearing:
 - `SkillGuide` — `skills/SkillGuide.java`
 - `GuideDocument.render` — `skills/GuideDocument.java:30`, the umbrella SKILL.md
 - `SkillDeployer` — `skills/SkillDeployer.java:33`, shared with the skill library
+- `GuideDeploy` — `skills/GuideDeploy.java:39`, the deploy itself; the controller only
+  resolves the guide and the host
 
 ## Connected to
 
@@ -94,7 +96,8 @@ Two orderings are load-bearing:
 
 ## If you change this
 
-- **Hits:** `SkillGuideRepository`, `SkillGuideController`, `GuideDocument`, `SkillDeployer`,
+- **Hits:** `SkillGuideRepository`, `SkillGuideController`, `GuideDeploy`, `GuideDocument`,
+  `SkillDeployer`,
   `pages/skill-guides-panel.ts`, `pages/guide-deploy-dialog.ts`,
   `core/store/skill-guide-store.ts`.
 - **Changing the umbrella document's shape hits hermes' parser**, not just this app: the
