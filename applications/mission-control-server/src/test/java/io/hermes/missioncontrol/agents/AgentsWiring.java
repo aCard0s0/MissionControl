@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.docker.DockerExecService;
+import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
+import io.hermes.missioncontrol.mcp.McpRegistryService;
 import java.util.function.Supplier;
 
 /**
@@ -72,6 +74,19 @@ final class AgentsWiring {
         new HermesSessions(files, json),
         new HermesGatewayLogs(files),
         new HermesGatewayState(files, json),
-        new ProfileInventory(files));
+        new ProfileInventory(files),
+        catalogLinks());
+  }
+
+  /**
+   * The catalog overlay over mocked stores, so a profile read carries no links.
+   *
+   * <p>The real class over empty repositories rather than a mock of it: every profile read goes
+   * through it now, and a bare mock would answer null instead of the profile — a failure a long
+   * way from its cause. What it does with links of its own is {@link CatalogLinkOverlayTest}'s.
+   */
+  static CatalogLinkOverlay catalogLinks() {
+    return new CatalogLinkOverlay(
+        mock(AgentMcpLinkRepository.class), mock(McpRegistryService.class));
   }
 }

@@ -57,12 +57,17 @@ Several independent writes to an agent someone else owns. Same rule as
 `DeployedPart` per part. Undoing half of it would mean disconnecting servers that may have been
 on that agent **before the group ever ran**.
 
-**One difference from a guide's report, and it matters:** an alias the agent already has is
-`skipped`, not `failed` (`mcp/McpGroupController.java:168`). `AgentMcpCatalogService.connect`
-answers a `ResourceConflictException` for a name already on the profile, and topping up an agent
-that holds part of the group is the *ordinary* use of this button — calling that a failure would
-paint the normal case red. The operator's question is "is this server on the agent?", and the
-answer is yes either way. The reason reads `already connected`.
+**An alias the agent already has is `skipped`, not `failed`** (`mcp/McpGroupController.java:149`).
+Topping up an agent that holds part of the group is the *ordinary* use of this button — calling
+that a failure would paint the normal case red. The operator's question is "is this server on the
+agent?", and the answer is yes either way. The reason reads `already connected`.
+
+**`AgentMcpCatalogService.connectIfAbsent` is what says so** (`agents/AgentMcpCatalogService.java:79`).
+It reports the case instead of throwing, and `connect` — the single-server route, where an alias
+already there really is a 409 — is the wrapper that turns it back into one. This handler and a
+[guide](../dashboard/guide.md)'s deploy each used to recognise it by matching `getMessage()`
+against a private copy of that conflict's prose; one of them classified it the other way, so the
+same event was `skipped` here and `failed` there.
 
 A server gone from the catalog is `skipped` with `no longer in the catalog`. Anything else is
 `failed` with its message.

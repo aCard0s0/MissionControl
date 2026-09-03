@@ -12,25 +12,23 @@ import io.hermes.missioncontrol.mcp.AgentMcpLinkRepository;
 import io.hermes.missioncontrol.mcp.ManagedMcpStack;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Set;
+import java.util.Optional;
 import java.util.regex.Pattern;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
  * Materializes catalog definitions into Hermes profile YAML while the catalog
  * link itself remains dashboard-owned SQLite state.
+ *
+ * <p>Writing the link is this class's; laying it back over a profile that is being read is
+ * {@link CatalogLinkOverlay}'s, which every profile read passes through. The two ends used to
+ * be here together, which made "a profile leaves the API enriched" a rule each controller had
+ * to apply for itself.
  */
 @Service
 public class AgentMcpCatalogService {
-
-  private static final Logger log = LoggerFactory.getLogger(AgentMcpCatalogService.class);
 
   private static final Pattern ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}");
 
@@ -53,7 +51,32 @@ public class AgentMcpCatalogService {
     this.profiles = profiles;
   }
 
+  /**
+   * Connects a catalog server to an Agent, refusing an alias the Agent already has.
+   *
+   * <p>For the one route that connects one server because someone asked for that server: an
+   * alias already there is a conflict, because nothing was done and the caller should know. A
+   * caller connecting a <em>set</em> wants {@link #connectIfAbsent} instead.
+   */
   public AgentProfileDto connect(
+      DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
+    return connectIfAbsent(host, containerId, profile, request)
+        .orElseThrow(() -> new ResourceConflictException("an MCP server named '"
+            + alias(request.alias()) + "' already exists on this Agent"));
+  }
+
+  /**
+   * As {@link #connect}, with an alias the Agent already has reported rather than thrown:
+   * {@link Optional#empty()} means nothing was written because the server is already there.
+   *
+   * <p>Here because both callers that connect a set of servers — a
+   * {@code /api/mcp-groups/{id}/deploy} and a {@code /api/skill-guides/{id}/deploy} — need it,
+   * and topping up an Agent that has some of the set already is the ordinary use of both. They
+   * used to recognise the case by matching {@code getMessage()} against a copy of the prose
+   * {@link #connect} throws, one of them did not, and so the same event was {@code skipped} on
+   * one route and {@code failed} on the other.
+   */
+  public Optional<AgentProfileDto> connectIfAbsent(
       DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
     String alias = alias(request.alias());
     // the one call here that acts on whether the server is up, so the one that pays for a
@@ -61,17 +84,24 @@ public class AgentMcpCatalogService {
     var source = registry.live(request.serverId());
     AgentProfileDto current = profiles.get(host, containerId, profile);
     if (current.mcp().stream().anyMatch(server -> alias.equals(server.name()))) {
-      throw new ResourceConflictException("an MCP server named '" + alias + "' already exists on this Agent");
+      return Optional.empty();
     }
     if ("managed".equals(source.kind()) && !"running".equals(source.runtimeState())) {
       throw new ResourceConflictException("managed MCP server is not running: " + source.name());
     }
     McpServerDefinition definition = materialize(host, containerId, source, alias, true);
-    AgentProfileDto updated = profiles.addMcpServer(host, containerId, profile, definition);
+    // The link row goes in first, so that the profile write's own read-back already carries it
+    // — every profile is read through CatalogLinkOverlay, and one taken before the row exists
+    // reports the server it just connected as custom. The two halves are ordered the other way
+    // round in AgentLifecycle, where the fragile half failing must leave nothing behind; here
+    // the reverse is true. A link written for a profile write that then fails is a stranded
+    // row, which the overlay drops on the next read of that profile and a retry simply
+    // overwrites — where a profile write landing without its link leaves an entry that reads
+    // as custom, with nothing recording that it came from the catalog and nothing to heal it.
     long now = System.currentTimeMillis();
     links.upsert(new AgentMcpLink(
         host.id(), containerId, profile, alias, source.id(), source.revision(), now, now));
-    return updated;
+    return Optional.of(profiles.addMcpServer(host, containerId, profile, definition));
   }
 
   public AgentProfileDto sync(
@@ -89,12 +119,15 @@ public class AgentMcpCatalogService {
         .orElseThrow(() -> new NoSuchElementException("unknown MCP server on Agent: " + alias));
     McpServerDefinition definition = materialize(
         host, containerId, source, alias, existing.enabled());
-    AgentProfileDto updated = profiles.updateMcpServer(
-        host, containerId, profile, alias, definition);
+    // Here the config write goes first, unlike connect: the row records which revision was
+    // applied, so writing it before the write it claims would report an agent as in sync with
+    // a definition it never received. The cost is the extra read below — the read-back inside
+    // updateMcpServer predates the new revision, so it cannot be the answer.
+    profiles.updateMcpServer(host, containerId, profile, alias, definition);
     links.upsert(new AgentMcpLink(
         host.id(), containerId, profile, alias, source.id(), source.revision(),
         link.createdAt(), System.currentTimeMillis()));
-    return updated;
+    return profiles.get(host, containerId, profile);
   }
 
   public AgentProfileDto unlink(
@@ -150,71 +183,6 @@ public class AgentMcpCatalogService {
         throw new ResourceConflictException("could not disable MCP entry " + link.alias());
       }
       links.delete(link.hostId(), link.containerId(), link.profile(), link.alias());
-    }
-  }
-
-  /**
-   * Overlays the dashboard-owned catalog link onto each MCP entry the profile reports.
-   *
-   * <p>Called by every controller that answers with a profile, and only by those — it used to
-   * be called from here as well, by the three catalog methods above, which meant the rule "a
-   * profile leaves the API enriched" had two homes and the template deploy route landed in
-   * neither.
-   *
-   * <p>Runs once per profile on every {@code /api/agents} listing, which the dashboard polls,
-   * so it reads catalog rows through {@link McpRegistryService#definition} and never
-   * {@code live}: the only field it needs is the current revision, and refreshing runtime
-   * state here meant one {@code docker compose ps} — taken under the host's compose lock, the
-   * same one that serializes provision/start/stop — per linked entry per profile per poll.
-   *
-   * <p>It is also where a link outliving what it described is dropped: one whose catalog entry
-   * is gone, and one whose entry is no longer on the profile. Both are stranded rows nothing
-   * else reaches — the second is what a removal leaves if its cleanup could not run, and the
-   * page has no row left to offer an unlink on — and until they are gone {@link #assertCustom}
-   * refuses the alias to whatever is added under it next.
-   */
-  public AgentProfileDto enrich(DockerHostRef host, AgentProfileDto profile) {
-    Map<String, AgentMcpLink> byAlias = new HashMap<>();
-    for (AgentMcpLink link : links.list(host.id(), profile.containerId(), profile.name())) {
-      byAlias.put(link.alias(), link);
-    }
-    List<AgentMcpServerDto> servers = new ArrayList<>();
-    for (AgentMcpServerDto server : profile.mcp()) {
-      AgentMcpLink link = byAlias.remove(server.name());
-      if (link == null) {
-        servers.add(server);
-        continue;
-      }
-      try {
-        long currentRevision = registry.definition(link.serverId()).revision();
-        servers.add(server.linkedTo(link.serverId(), link.syncedRevision(), currentRevision));
-      } catch (NoSuchElementException deletedCatalogEntry) {
-        links.delete(host.id(), profile.containerId(), profile.name(), server.name());
-        servers.add(server);
-      }
-    }
-    dropStrandedLinks(host, profile, byAlias.keySet());
-    return profile.withMcp(servers);
-  }
-
-  /**
-   * The links left over once every entry the profile reports has claimed its own.
-   *
-   * <p>Guarded on the profile carrying a {@code config.yaml} at all, because an empty read is
-   * ambiguous: {@code HermesContainerFiles.readFile} cannot tell an unreadable file from an
-   * absent one, and a profile whose config could not be read reports no MCP entries — which
-   * would otherwise look exactly like a profile whose entries were all removed, and strand
-   * nothing while dropping everything.
-   */
-  private void dropStrandedLinks(
-      DockerHostRef host, AgentProfileDto profile, Set<String> aliases) {
-    if (aliases.isEmpty() || profile.configYaml() == null || profile.configYaml().isBlank()) {
-      return;
-    }
-    for (String alias : aliases) {
-      log.info("dropping catalog link {} on agent {}: the entry is no longer in its config",
-          alias, profile.name());
-      links.delete(host.id(), profile.containerId(), profile.name(), alias);
     }
   }
 

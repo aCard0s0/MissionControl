@@ -23,12 +23,18 @@ deletion of a link is a deliberate act and not a side effect of disabling one.
 
 **The link stores a revision, which is how drift is visible.** `synced_revision` records the
 catalog entry's revision at the moment the profile was written, and the read path compares it to
-the entry's current one (`agents/AgentMcpCatalogService.java:189`). If the catalog entry moved on,
+the entry's current one (`agents/CatalogLinkOverlay.java:76`). If the catalog entry moved on,
 the profile is out of date and the page can say so.
+
+**That read path is the profile read itself.** `CatalogLinkOverlay` is applied inside
+`HermesProfiles.readProfile` (`agents/HermesProfiles.java:131`), which is the only place an
+`AgentProfileDto` is built — so there is no such thing as a profile without its links. It was a
+public method each controller called for itself, which is how a group deploy came to answer with
+one that had none.
 
 The same read path is where a **deleted catalog entry** self-heals: a `NoSuchElementException`
 from `definition()` deletes the orphan link rather than failing the listing
-(`agents/AgentMcpCatalogService.java:191`). The FK is `ON DELETE CASCADE`, so this only covers
+(`agents/CatalogLinkOverlay.java:78`). The FK is `ON DELETE CASCADE`, so this only covers
 rows the cascade did not reach.
 
 This is also the path that made `definition` vs `live` matter: it runs **per linked entry, per
@@ -60,8 +66,9 @@ profile, on a 12-second poll**, and needs one column.
 
 ## If you change this
 
-- **Hits:** `AgentMcpCatalogService`, `AgentMcpController`, `McpServerDeletion`,
-  `ContainerUpdateService.remap`, `pages/agent-mcp-panel.ts`, `core/store/agent-mcp-store.ts`;
+- **Hits:** `AgentMcpCatalogService`, `CatalogLinkOverlay`, `AgentMcpController`,
+  `McpServerDeletion`, `ContainerUpdateService.remap`, `pages/agent-mcp-panel.ts`,
+  `core/store/agent-mcp-store.ts`;
   and the same-host network attachment — connecting a link attaches the Hermes container to
   [`mission-control-mcp-net`](managed-mcp-stack.md).
 - **Does not hit:** cross-host connections. Those require an **explicit agent-reachable URL**
@@ -80,3 +87,5 @@ profile, on a 12-second poll**, and needs one column.
 ## See
 
 - Source: `applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/AgentMcpCatalogService.java`
+  — writing a link. Reading one back onto a profile is
+  `applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/CatalogLinkOverlay.java`

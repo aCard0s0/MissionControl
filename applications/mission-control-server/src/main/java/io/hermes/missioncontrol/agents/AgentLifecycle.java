@@ -36,8 +36,8 @@ import org.springframework.stereotype.Service;
  *       reference a replaced container
  *   <li>what is left behind is reachable afterwards: {@link HermesProfiles#delete} tolerates a
  *       profile that is already gone so the delete can simply be retried, and
- *       {@link AgentMcpCatalogService#enrich} drops a link whose entry is no longer on the
- *       profile, so the agents listing heals a stranded one on its next poll
+ *       {@link CatalogLinkOverlay} drops a link whose entry is no longer on the profile, so
+ *       the agents listing heals a stranded one on its next poll
  * </ul>
  *
  * <p>This is the {@code agents}-side counterpart of {@code mcp/McpServerDeletion} and
@@ -80,8 +80,14 @@ public class AgentLifecycle {
    * Dropping it first and then failing the profile write — the likelier of the two — would
    * also leave the entry in {@code config.yaml} with nothing recording where it came from.
    *
-   * @return the profile as it stands afterwards, before catalog links are overlaid —
-   *     {@code AgentMcpCatalogService.enrich} does that for every profile the API answers with
+   * <p>The profile write's own read-back passes through {@link CatalogLinkOverlay}, which finds
+   * the link stranded — its entry is gone from the config by then — and drops it. So on the
+   * ordinary path the cleanup below has already happened and is a no-op. It stays for the path
+   * the overlay deliberately will not act on: a profile whose {@code config.yaml} could not be
+   * read reports no MCP entries, which the overlay cannot tell from a profile whose entries
+   * were all removed, so it strands nothing rather than dropping everything.
+   *
+   * @return the profile as it stands afterwards
    */
   public AgentProfileDto removeMcpServer(
       DockerHostRef host, String containerId, String name, String serverName) {

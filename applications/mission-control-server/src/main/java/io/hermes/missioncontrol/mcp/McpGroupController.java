@@ -42,10 +42,11 @@ import org.springframework.web.bind.annotation.RestController;
  * server. Undoing half of it would mean disconnecting servers that may have been on that agent
  * before the group ever ran.
  *
- * <p><b>An alias already taken is reported as skipped, not failed.</b> That is the one place
- * this differs from a guide's report. Connecting a group whose servers an agent partly has is
- * the normal way to top one up, and {@code connect} rejects a duplicate alias with a conflict;
- * calling that a failure would paint the ordinary case red.
+ * <p><b>An alias already taken is reported as skipped, not failed.</b> Connecting a group whose
+ * servers an agent partly has is the normal way to top one up, so calling that a failure would
+ * paint the ordinary case red. It is {@code AgentMcpCatalogService.connectIfAbsent} that says
+ * so, not this class reading the message a conflict carried: a guide's deploy asks the same
+ * question and used to get the other answer.
  *
  * <p>Which agents a group reaches is read back from {@code mcp_agent_links} on every list and
  * stored nowhere; {@link McpGroup} says why at length.
@@ -57,9 +58,6 @@ public class McpGroupController {
   private static final Logger log = LoggerFactory.getLogger(McpGroupController.class);
 
   private static final int MAX_SERVERS = 64;
-
-  /** The message {@code AgentMcpCatalogService.connect} rejects a taken alias with. */
-  private static final String ALIAS_TAKEN = "already exists on this Agent";
 
   public record UpsertMcpGroupRequest(
       @NotBlank @Size(max = 80) String name,
@@ -145,33 +143,23 @@ public class McpGroupController {
       String name = serverId;
       try {
         name = registry.definition(serverId).name();
-        latest = mcpCatalog.connect(host, containerId, profile,
-            new ConnectCatalogMcpRequest(serverId, name));
-        parts.add(DeployedPart.ok("mcp", name));
+        AgentProfileDto connected = mcpCatalog.connectIfAbsent(host, containerId, profile,
+            new ConnectCatalogMcpRequest(serverId, name)).orElse(null);
+        if (connected == null) {
+          parts.add(new DeployedPart("mcp", name, DeployedPart.SKIPPED, "already connected"));
+        } else {
+          latest = connected;
+          parts.add(DeployedPart.ok("mcp", name));
+        }
       } catch (NoSuchElementException gone) {
         parts.add(new DeployedPart("mcp", name, DeployedPart.SKIPPED, "no longer in the catalog"));
       } catch (RuntimeException failure) {
-        parts.add(reportFailure(name, failure));
+        log.warn("mcp group deploy: server '{}' failed: {}", name, failure.getMessage());
+        parts.add(new DeployedPart("mcp", name, DeployedPart.FAILED, failure.getMessage()));
       }
     }
 
     return new DeployedMcpGroup(latest, List.copyOf(parts));
-  }
-
-  /**
-   * An alias the agent already has reads as {@code skipped}, not {@code failed}.
-   *
-   * <p>Topping up an agent that has some of the group already is the ordinary use of this
-   * button, and the operator's question — "is this server on the agent?" — has the answer yes
-   * either way.
-   */
-  private static DeployedPart reportFailure(String name, RuntimeException failure) {
-    String message = failure.getMessage() == null ? "" : failure.getMessage();
-    if (message.contains(ALIAS_TAKEN)) {
-      return new DeployedPart("mcp", name, DeployedPart.SKIPPED, "already connected");
-    }
-    log.warn("mcp group deploy: server '{}' failed: {}", name, message);
-    return new DeployedPart("mcp", name, DeployedPart.FAILED, message);
   }
 
   /**

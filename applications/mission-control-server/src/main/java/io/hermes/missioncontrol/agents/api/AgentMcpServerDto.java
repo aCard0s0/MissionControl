@@ -19,8 +19,8 @@ public record AgentMcpServerDto(
     Long catalogRevision,
     boolean updateAvailable) {
 
-  /** A server read directly from Hermes config is custom until the controller
-   * overlays a dashboard-owned catalog link. */
+  /** A server read directly from Hermes config is custom until the profile read
+   * overlays a dashboard-owned catalog link — see {@code agents/CatalogLinkOverlay}. */
   public AgentMcpServerDto(
       String id,
       String name,

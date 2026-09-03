@@ -1,10 +1,8 @@
 package io.hermes.missioncontrol.agents.web;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.SkillContentDto;
-import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,13 +22,10 @@ class AgentSkillsController {
 
   private final HermesProfiles profiles;
   private final HostService hosts;
-  private final AgentMcpCatalogService mcpCatalog;
 
-  AgentSkillsController(
-      HermesProfiles profiles, HostService hosts, AgentMcpCatalogService mcpCatalog) {
+  AgentSkillsController(HermesProfiles profiles, HostService hosts) {
     this.profiles = profiles;
     this.hosts = hosts;
-    this.mcpCatalog = mcpCatalog;
   }
 
   @PutMapping("/{skillName}")
@@ -40,9 +35,8 @@ class AgentSkillsController {
       @PathVariable String name,
       @PathVariable String skillName,
       @RequestBody SetSkillEnabledRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.setSkillEnabled(
-        host, containerId, name, skillName, request.enabled()));
+    return profiles.setSkillEnabled(
+        hosts.requireConnected(hostId), containerId, name, skillName, request.enabled());
   }
 
   @PostMapping
@@ -51,9 +45,8 @@ class AgentSkillsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody AddSkillRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.installSkill(
-        host, containerId, name, request.name()));
+    return profiles.installSkill(
+        hosts.requireConnected(hostId), containerId, name, request.name());
   }
 
   @DeleteMapping("/{skillName}")
@@ -62,9 +55,8 @@ class AgentSkillsController {
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String skillName) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.uninstallSkill(
-        host, containerId, name, skillName));
+    return profiles.uninstallSkill(
+        hosts.requireConnected(hostId), containerId, name, skillName);
   }
 
   @GetMapping("/{skillName}/content")
@@ -83,9 +75,8 @@ class AgentSkillsController {
       @PathVariable String name,
       @PathVariable String skillName,
       @RequestBody UpdateSkillContentRequest request) {
-    DockerHostRef host = hosts.requireConnected(hostId);
-    return mcpCatalog.enrich(host, profiles.updateSkillContent(
-        host, containerId, name, skillName, request.body()));
+    return profiles.updateSkillContent(
+        hosts.requireConnected(hostId), containerId, name, skillName, request.body());
   }
 
   public record SetSkillEnabledRequest(boolean enabled) {

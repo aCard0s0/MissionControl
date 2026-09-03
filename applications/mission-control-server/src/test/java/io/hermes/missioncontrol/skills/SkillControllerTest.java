@@ -17,7 +17,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.SkillFilesDto;
@@ -63,12 +62,10 @@ class SkillControllerTest {
     profiles = mock(HermesProfiles.class);
     HostService hosts = mock(HostService.class);
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
-    AgentMcpCatalogService mcpCatalog = mock(AgentMcpCatalogService.class);
-    when(mcpCatalog.enrich(any(), any())).thenAnswer(call -> call.getArgument(1));
     upstream = mock(UpstreamCheck.class);
     mvc = MockMvcBuilders
         .standaloneSetup(new SkillController(
-            repository, new SkillDeployer(profiles), upstream, profiles, hosts, mcpCatalog))
+            repository, new SkillDeployer(profiles), upstream, profiles, hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

@@ -25,6 +25,7 @@ import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.support.SqliteTestDatabase;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,8 +62,8 @@ class McpGroupControllerTest {
     links = new AgentMcpLinkRepository(database.jdbc());
     registry = mock(McpRegistryService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
-    when(mcpCatalog.connect(any(), anyString(), anyString(), any()))
-        .thenReturn(mock(AgentProfileDto.class));
+    when(mcpCatalog.connectIfAbsent(any(), anyString(), anyString(), any()))
+        .thenReturn(Optional.of(mock(AgentProfileDto.class)));
     HostService hosts = mock(HostService.class);
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
     mvc = MockMvcBuilders
@@ -267,9 +268,9 @@ class McpGroupControllerTest {
         .andExpect(jsonPath("$.parts[0].status").value("deployed"))
         .andExpect(jsonPath("$.parts[1].status").value("deployed"));
 
-    verify(mcpCatalog).connect(eq(HOST), eq("c-1"), eq("atlas"),
+    verify(mcpCatalog).connectIfAbsent(eq(HOST), eq("c-1"), eq("atlas"),
         eq(new ConnectCatalogMcpRequest("m-1", "files")));
-    verify(mcpCatalog).connect(eq(HOST), eq("c-1"), eq("atlas"),
+    verify(mcpCatalog).connectIfAbsent(eq(HOST), eq("c-1"), eq("atlas"),
         eq(new ConnectCatalogMcpRequest("m-2", "search")));
   }
 
@@ -291,11 +292,13 @@ class McpGroupControllerTest {
 
   @Test
   void anAliasTheAgentAlreadyHasReadsAsSkippedRatherThanFailed() throws Exception {
-    // topping up an agent that has part of the group is the ordinary use of this button
+    // topping up an agent that has part of the group is the ordinary use of this button. The
+    // catalog service reports the case rather than throwing prose for this handler to match —
+    // matching it is how a guide's deploy came to call the same event a failure.
     repository.insert(new McpGroup("mg-1", "research", null, List.of("m-1"), 1_000L, 1_000L));
     known("m-1", "files");
-    when(mcpCatalog.connect(any(), anyString(), anyString(), any())).thenThrow(
-        new ResourceConflictException("an MCP server named 'files' already exists on this Agent"));
+    when(mcpCatalog.connectIfAbsent(any(), anyString(), anyString(), any()))
+        .thenReturn(Optional.empty());
 
     mvc.perform(post("/api/mcp-groups/mg-1/deploy").contentType(MediaType.APPLICATION_JSON)
             .content(TARGET))
@@ -308,7 +311,7 @@ class McpGroupControllerTest {
   void reportsARealRefusalAsFailedWithItsReason() throws Exception {
     repository.insert(new McpGroup("mg-1", "research", null, List.of("m-1"), 1_000L, 1_000L));
     known("m-1", "files");
-    when(mcpCatalog.connect(any(), anyString(), anyString(), any())).thenThrow(
+    when(mcpCatalog.connectIfAbsent(any(), anyString(), anyString(), any())).thenThrow(
         new ResourceConflictException("managed MCP server is not running: files"));
 
     mvc.perform(post("/api/mcp-groups/mg-1/deploy").contentType(MediaType.APPLICATION_JSON)

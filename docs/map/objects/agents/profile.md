@@ -12,7 +12,8 @@ entity: applications/mission-control-server/src/main/java/io/hermes/missioncontr
 One hermes agent identity inside a [container](../docker/container.md): its SOUL, config,
 memory, skills, sessions, MCP connections, cron jobs and webhook routes. Code names
 `ProfileSpec` (validated create input), `HermesProfiles` (the service), `ProfilePaths` (every
-path and the CLI spelling), `ProfileInventory` (which exist).
+path and the CLI spelling), `ProfileInventory` (which exist), `CatalogLinkOverlay` (the MCP
+catalog links every read carries).
 
 **The UI calls this an Agent. One container holds several.** Every per-agent route is
 `/api/agents/{hostId}/{containerId}/{name}` — three keys, because a profile name is only unique
@@ -35,6 +36,13 @@ constructor, so it holds for both flows.
 `ProfileInventory` is a separate component because two unrelated callers need the same listing:
 the agent inventory, and the webhook code working out which ports the *other* profiles already
 bound (`agents/ProfileInventory.java:8`).
+
+**Every profile is read through `CatalogLinkOverlay`** (`agents/HermesProfiles.java:131`), which
+lays the dashboard's [MCP catalog links](../mcp/agent-mcp-link.md) over the entries the container
+reports. It sits in the read because `readProfile` is the only place an `AgentProfileDto` is
+built; as a public method on `AgentMcpCatalogService` it was fifteen call sites in six
+controllers, and the two that forgot it answered with profiles whose catalog-linked MCP entries
+read as custom (`agents/CatalogLinkOverlay.java:51`).
 
 ## Shape
 

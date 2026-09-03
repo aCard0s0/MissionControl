@@ -1,6 +1,5 @@
 package io.hermes.missioncontrol.agents.web;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.templates.DeployFromTemplateRequest;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateDto;
@@ -20,27 +19,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.constraints.NotBlank;
 
-/**
- * Reusable agent blueprints — dashboard-owned, applied when deploying agents.
- *
- * <p>{@link #deploy} answers with an agent profile, so it must pass it through
- * {@link AgentMcpCatalogService#enrich} like every other profile this API returns — one sent
- * without that is both missing its catalog links and skipping the stranded-link sweep every
- * other profile read performs.
- */
+/** Reusable agent blueprints — dashboard-owned, applied when deploying agents. */
 @RestController
 @RequestMapping("/api/profile-templates")
 public class ProfileTemplatesController {
 
   private final ProfileTemplateService service;
   private final HostService hosts;
-  private final AgentMcpCatalogService mcpCatalog;
 
-  public ProfileTemplatesController(
-      ProfileTemplateService service, HostService hosts, AgentMcpCatalogService mcpCatalog) {
+  public ProfileTemplatesController(ProfileTemplateService service, HostService hosts) {
     this.service = service;
     this.hosts = hosts;
-    this.mcpCatalog = mcpCatalog;
   }
 
   @GetMapping
@@ -80,7 +69,7 @@ public class ProfileTemplatesController {
   public AgentProfileDto deploy(
       @PathVariable String id, @Valid @RequestBody DeployFromTemplateRequest request) {
     DockerHostRef host = hosts.requireConnected(request.hostId());
-    return mcpCatalog.enrich(host, service.deploy(id, host, request.containerId(), request.name()));
+    return service.deploy(id, host, request.containerId(), request.name());
   }
 
   /** Snapshot a running agent's config into a new reusable template. */

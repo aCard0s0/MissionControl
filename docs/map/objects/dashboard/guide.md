@@ -43,7 +43,13 @@ and MCP entries that may have been on that agent **before the guide ever ran**.
 
 So it reports instead: one `DeployedPart` per part
 (`agents/api/DeployedPart.java:23`), each `deployed | skipped | failed` with a reason.
-`skipped` is "gone from the library or the catalog"; `failed` is "attempted and refused".
+`skipped` is "gone from the library or the catalog", or — for an MCP server — "already on the
+agent" (`skills/SkillGuideController.java:179`); `failed` is "attempted and refused".
+
+An already-connected server is still named in the umbrella document, because that document tells
+the agent what it can reach and it can reach that one. This route used to call the case `failed`
+while an [MCP group](../mcp/mcp-group.md) deploy called it `skipped` — both were reading the
+message a conflict carried; `AgentMcpCatalogService.connectIfAbsent` now answers it for both.
 
 A guide and a library skill of the same name both resolve to `skills/<name>/`, so a deploy
 that wrote the umbrella there would replace that skill's own `SKILL.md` — silently, and on the

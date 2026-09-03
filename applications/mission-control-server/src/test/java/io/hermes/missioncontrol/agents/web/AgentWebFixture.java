@@ -1,10 +1,7 @@
 package io.hermes.missioncontrol.agents.web;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
-import io.hermes.missioncontrol.agents.AgentMcpCatalogService;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
@@ -15,9 +12,11 @@ import java.util.List;
 /**
  * Shared setup for the {@code /api/agents/**} controller tests.
  *
- * <p>All five controllers resolve their host through {@link HostService#requireConnected} and
- * answer with a profile enriched by {@link AgentMcpCatalogService}, so every test file needs
- * the same two stubs and the same profile fixture.
+ * <p>All five controllers resolve their host through {@link HostService#requireConnected}, so
+ * every test file needs the same stub and the same profile fixture. The catalog overlay these
+ * used to stub as well is now part of the profile read itself — see
+ * {@code agents/CatalogLinkOverlay} — so a controller answering with a profile has nothing
+ * left to remember.
  */
 final class AgentWebFixture {
 
@@ -35,11 +34,6 @@ final class AgentWebFixture {
   static void hostIsDown(HostService hosts) {
     when(hosts.requireConnected(HOST.id()))
         .thenThrow(new UpstreamUnavailableException("docker host not connected"));
-  }
-
-  /** Makes the enrichment transparent so a test can assert on what the service returned. */
-  static void enrichmentIsTransparent(AgentMcpCatalogService mcpCatalog) {
-    when(mcpCatalog.enrich(eq(HOST), any())).thenAnswer(invocation -> invocation.getArgument(1));
   }
 
   static AgentProfileDto profile(String name) {

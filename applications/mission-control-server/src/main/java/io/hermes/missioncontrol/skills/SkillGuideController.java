@@ -166,15 +166,20 @@ public class SkillGuideController {
       String name = serverId;
       try {
         name = registry.definition(serverId).name();
-        mcpCatalog.connect(host, containerId, profile,
-            new ConnectCatalogMcpRequest(serverId, name));
+        boolean connected = mcpCatalog
+            .connectIfAbsent(host, containerId, profile, new ConnectCatalogMcpRequest(serverId, name))
+            .isPresent();
+        // Either way the server the guide wanted is on the agent, so it belongs in the
+        // umbrella document below. An alias already there reads as skipped rather than
+        // failed — the same answer a group deploy gives, now that both ask
+        // AgentMcpCatalogService rather than reading the message a conflict carried.
         linkedServers.add(name);
-        parts.add(DeployedPart.ok("mcp", name));
+        parts.add(connected
+            ? DeployedPart.ok("mcp", name)
+            : new DeployedPart("mcp", name, DeployedPart.SKIPPED, "already connected"));
       } catch (NoSuchElementException gone) {
         parts.add(new DeployedPart("mcp", name, DeployedPart.SKIPPED, "no longer in the catalog"));
       } catch (RuntimeException failure) {
-        // an alias already on the agent is the common one, and it is not a problem: the
-        // server the guide wanted is already there
         parts.add(failed("mcp", name, failure));
       }
     }
@@ -211,7 +216,7 @@ public class SkillGuideController {
   private AgentProfileDto refreshedProfile(
       DockerHostRef host, String containerId, String profile, List<DeployedPart> parts) {
     try {
-      return mcpCatalog.enrich(host, profiles.get(host, containerId, profile));
+      return profiles.get(host, containerId, profile);
     } catch (RuntimeException failure) {
       log.warn("guide deploy: could not re-read profile '{}' afterwards: {}",
           profile, failure.getMessage());
