@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.mcp;
 
+import io.hermes.missioncontrol.common.Text;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -307,21 +308,16 @@ final class McpRequestValidator {
   /**
    * The repository link, if there is one, and only if it is one a browser should follow.
    *
-   * <p>The value is rendered as an {@code href} on the roster, so the scheme is checked at the
-   * boundary rather than trusted. Angular sanitizes a bound href as well, but a store that will
-   * hand this to any client should not be relying on one client's framework to make it safe.
+   * <p>The scheme rule is {@link Text#httpLinkOrNull}, shared with the skill library, which
+   * stores the same field and renders it the same way. What is added here is
+   * {@link #optional}: the length cap and the control-character check every scalar in this
+   * validator gets.
    *
    * <p>Nothing fetches it — unlike a skill's repository, which {@code UpstreamCheck} parses to
    * ask GitHub about releases. This one is only ever opened by a person.
    */
   private static String repoUrl(String value) {
-    String url = optional(value, "repoUrl", 500);
-    if (url == null) return null;
-    String scheme = url.toLowerCase(Locale.ROOT);
-    if (!scheme.startsWith("http://") && !scheme.startsWith("https://")) {
-      throw new IllegalArgumentException("repoUrl must start with http:// or https://");
-    }
-    return url;
+    return Text.httpLinkOrNull(optional(value, "repoUrl", 500), "repoUrl");
   }
 
   private static String optional(String value, String field, int maxLen) {

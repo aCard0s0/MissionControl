@@ -45,7 +45,7 @@ ownership guard into "exists but is not owned by Mission Control MCP".
 
 1. Validate the request against the allowlist — image, list-form command, environment, ports,
    support services, named volumes. Host binds, host networking, privileged mode, devices,
-   capabilities and Docker-socket mounts are rejected (`mcp/McpRequestValidator.java:106`).
+   capabilities and Docker-socket mounts are rejected (`mcp/McpRequestValidator.java:107`).
 2. Bump `revision` on the row. `pendingChanges` is now true, being simply
    `revision > appliedRevision` (`mcp/McpServerDtoMapper.java:36`).
 3. `ComposeStackRenderer` writes the host's file: project `mission-control-mcp`, network

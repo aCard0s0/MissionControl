@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.skills;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -167,6 +168,42 @@ class SkillControllerTest {
             """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.category").value(SkillController.DEFAULT_CATEGORY));
+  }
+
+  @Test
+  void aRepositoryLinkABrowserShouldNotFollowIsRejectedAndNothingIsWritten() throws Exception {
+    // the value is rendered as an href on the library page, so the scheme is checked here
+    // rather than trusted to whichever client renders it
+    for (String hostile : List.of("javascript:alert(1)", "data:text/html,<script>", "file:///etc")) {
+      mvc.perform(post("/api/skills").contentType(MediaType.APPLICATION_JSON).content("""
+              {"kind":"local","name":"pdf","repoUrl":"%s",
+               "files":[{"path":"SKILL.md","body":"# pdf"}]}
+              """.formatted(hostile)))
+          .andExpect(status().isBadRequest());
+    }
+
+    assertTrue(repository.findAll().isEmpty());
+  }
+
+  @Test
+  void aStoredRowCarryingAnUnfollowableLinkFailsItsNextSaveRatherThanBeingGrandfathered()
+      throws Exception {
+    // Rows predating this guard exist, and the editor round-trips repoUrl, so an operator
+    // editing an unrelated field on one gets a 400 naming the field. That is the deliberate
+    // answer: validating only a *changed* value would let a stored `javascript:` survive
+    // every future save, which is the one thing a guard on an href must not do. The value
+    // is already dead — Angular refuses it and UpstreamCheck reads nothing from it — and
+    // the field is optional, so clearing it is always the way out.
+    repository.insert(new Skill("s-1", Skill.LOCAL, "pdf", null, "docs", "github.com/o/r", "1.0",
+        List.of(new SkillFile("SKILL.md", "# pdf")), 1_000L, 1_000L));
+
+    mvc.perform(put("/api/skills/s-1").contentType(MediaType.APPLICATION_JSON).content("""
+            {"kind":"local","name":"pdf","description":"a new description",
+             "repoUrl":"github.com/o/r","files":[{"path":"SKILL.md","body":"# pdf"}]}
+            """))
+        .andExpect(status().isBadRequest());
+
+    assertNull(repository.find("s-1").orElseThrow().description());
   }
 
   @Test

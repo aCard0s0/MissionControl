@@ -432,7 +432,7 @@ truth that goes stale the moment the Hub moves, which is why the split exists.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/skills` | `?category=` | newest edit first; a blank category is not a filter |
-| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400 |
+| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400. `repoUrl` is optional and must be `http://` or `https://`, the same rule the MCP catalog applies — it is rendered as a link |
 | `PUT /api/skills/{id}` | same body | replaces everything an editor owns and keeps `createdAt`; 404 rather than an insert when the skill is gone |
 | `DELETE /api/skills/{id}` | — | idempotent. Removes the library row only — a copy already deployed onto an agent stays exactly where it is |
 | `POST /api/skills/{id}/deploy` | `{ hostId, containerId, profile }` | puts the skill on one agent and answers with the refreshed profile. A `hub` row runs `hermes skills install <name> --force`; a `local` row has its files written into `<profileDir>/skills/<name>/` |
@@ -454,7 +454,23 @@ every page load.
 validated against GitHub's own name charset, and the API URL is built from those two words —
 so a URL an operator typed cannot make the server issue a request of their choosing. Anything
 that is not a `https://github.com/<owner>/<repo>` root answers `unsupported` without a
-lookup. GitHub is read at `releases/latest`, falling back to the newest tag for a repository
+lookup.
+
+The two rules are deliberately not the same rule. **The save** admits `http://` and
+`https://` and nothing else, because that is the only question a store rendering an `href`
+gets to ask — `common/Text.httpLinkOrNull`, shared with the MCP catalog so the two cannot
+drift again. **The check** is stricter still and refuses everything else with `unsupported`,
+because it is the one that reaches the network. A link that saves and reports `unsupported`
+is a valid state: a skill kept from GitLab is a row worth having.
+
+The save rule is newer than the field, so **a row stored before it fails its next save** —
+the editor sends `repoUrl` back with everything else, so an operator editing an unrelated
+field on such a row gets a 400 naming it, and clearing the field is the way out. That is on
+purpose: validating only a *changed* value would let a stored `javascript:` outlive every
+future save, which is the one thing a guard on an `href` must not allow. Such a value is
+already inert — Angular refuses to bind it and the upstream check reads nothing from it.
+
+GitHub is read at `releases/latest`, falling back to the newest tag for a repository
 that cuts no releases.
 
 Readings are cached ten minutes per repository (one minute for a failure) and the check never

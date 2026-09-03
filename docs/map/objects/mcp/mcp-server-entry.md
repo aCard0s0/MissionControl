@@ -44,8 +44,12 @@ Nothing fetches it either — unlike a [skill](../dashboard/skill-library.md)'s 
 from the `repo ↗` button on the roster.
 
 The scheme is validated to `http`/`https` at the boundary
-(`mcp/McpRequestValidator.java:314`). The value is rendered as an `href`, and a store that will
-hand it to any client should not rely on one client's framework to sanitize it.
+(`mcp/McpRequestValidator.java:320`). The value is rendered as an `href`, and a store that will
+hand it to any client should not rely on one client's framework to sanitize it. The rule itself
+lives in `common/Text.java:38`, shared with the [skill
+library](../dashboard/skill-library.md), which stores the same field and renders it the same
+way — for a while the two disagreed, and only this one had the guard. What this validator adds
+on top is the length cap and the control-character check every scalar here gets.
 
 It arrived on a table that had already shipped, so it is a `SchemaUpgrades` column
 (`config/SchemaUpgrades.java:52`) rather than a bare `schema.sql` addition — and an entry
@@ -64,7 +68,7 @@ Three state columns, three enums: `desired_state`, `runtime_state`
 `operation_state` (`PROVISIONING|RECONCILING|STARTING|STOPPING|APPLYING|DELETING|IDLE|ERROR` —
 `mcp/McpOperationState.java:22`).
 
-**Config is allowlisted** (`mcp/McpRequestValidator.java:106`): image, list-form command,
+**Config is allowlisted** (`mcp/McpRequestValidator.java:107`): image, list-form command,
 environment, ports, support services, named volumes. Host binds, host networking, privileged
 mode, devices, capabilities and Docker-socket mounts are **rejected**.
 
