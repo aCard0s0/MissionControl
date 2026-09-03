@@ -58,24 +58,24 @@
 
 @if (activeTab() === 'skills') {
 
-@if (groupEditorOpen()) {
+@if (groupDraft.open()) {
   <div class="panel editor group-editor" data-reveal>
     <div class="panel-h">
-      {{ groupEditId() ? 'EDIT GROUP' : 'NEW GROUP' }}
+      {{ groupDraft.editId() ? 'EDIT GROUP' : 'NEW GROUP' }}
       <span class="spacer"></span>
-      <span class="faint">{{ groupEditId() ?? 'unsaved' }}</span>
+      <span class="faint">{{ groupDraft.editId() ?? 'unsaved' }}</span>
     </div>
     <div class="panel-b">
       <div class="row">
         <div class="field">
           <label for="group-name">name</label>
-          <input id="group-name" class="input" [(ngModel)]="gName" placeholder="pdf" />
+          <input id="group-name" class="input" [(ngModel)]="groupDraft.name" placeholder="pdf" />
         </div>
       </div>
 
       <div class="field">
         <label for="group-description">description</label>
-        <input id="group-description" class="input" [(ngModel)]="gDescription"
+        <input id="group-description" class="input" [(ngModel)]="groupDraft.description"
                placeholder="what this set of skills has in common" />
         <p class="lock-hint">a group files the library and nothing more — it has no deploy, and
           deleting one leaves every skill it named exactly where it is.</p>
@@ -84,17 +84,17 @@
       <div class="picker">
         <div class="picker-h mono">
           <span class="lbl">skills</span>
-          <span class="faint">{{ gSkillIds().length }} picked</span>
+          <span class="faint">{{ groupDraft.ids().length }} picked</span>
         </div>
         @if (skills.skills().length) {
           <div class="picks">
             @for (s of skills.skills(); track s.id) {
-              <button class="chip" [class.on]="gSkillIds().includes(s.id)"
-                      [class.warn]="!gSkillIds().includes(s.id) && filedElsewhere(s.id)"
+              <button class="chip" [class.on]="groupDraft.ids().includes(s.id)"
+                      [class.warn]="!groupDraft.ids().includes(s.id) && filedElsewhere(s.id)"
                       [title]="filedElsewhere(s.id)
                                  ? 'already in the group ' + filedElsewhere(s.id)
                                  : 'library skill'"
-                      (click)="toggleGroupSkill(s.id)">{{ s.name }}</button>
+                      (click)="groupDraft.toggle(s.id)">{{ s.name }}</button>
             }
           </div>
           <p class="lock-hint">a skill two groups both name is listed under both — the amber
@@ -127,9 +127,9 @@
 
       <div class="editor-actions">
         <span class="spacer"></span>
-        <button class="btn" (click)="cancelGroup()">cancel</button>
-        <button class="btn primary" [disabled]="!canSaveGroup()" (click)="saveGroup()">
-          {{ groupSaving() ? 'saving…' : 'save group' }}
+        <button class="btn" (click)="groupDraft.close()">cancel</button>
+        <button class="btn primary" [disabled]="!groupDraft.canSave()" (click)="saveGroup()">
+          {{ groupDraft.saving() ? 'saving…' : 'save group' }}
         </button>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { HostStore } from '../core/store/host-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { McpGroupStore } from '../core/store/mcp-group-store';
-import { groupHolding } from '../core/filing';
+import { GroupDraft, groupHolding } from '../core/filing';
 import { clock } from '../core/format';
 import { mcpDisplayEndpoint, mcpEntryBusy, mcpOperationActive } from '../core/mcp/catalog-rules';
 import {
@@ -75,17 +75,11 @@ export class McpServersPage {
     mcpServerSections(this.catalog.servers(), this.hosts.hosts()));
 
   // ── groups ──────────────────────────────────────────────────────────────
-  protected readonly groupEditorOpen = signal(false);
-  /** The group being edited, or null while composing a new one. */
-  protected readonly groupEditId = signal<string | null>(null);
-  protected readonly groupSaving = signal(false);
+  /** The group editor's state — open, editing which, and what is picked. */
+  protected readonly groupDraft = new GroupDraft();
+
   /** The group being deployed, or null while no dialog is open. */
   protected readonly deploying = signal<McpGroup | null>(null);
-
-  protected gName = '';
-  protected gDescription = '';
-  /** A signal, unlike the fields above: chips write it, not `ngModel`. */
-  protected readonly gServerIds = signal<string[]>([]);
 
   /** A field, not an inline arrow in the template: the dialog's `run` input would otherwise
    *  take a new function identity on every change detection pass. */
@@ -111,48 +105,21 @@ export class McpServersPage {
   }
 
   protected filedElsewhere(serverId: string): string {
-    return groupHolding(this.groups.groups(), g => g.serverIds, serverId, this.groupEditId());
+    return groupHolding(this.groups.groups(), g => g.serverIds, serverId, this.groupDraft.editId());
   }
 
   protected newGroup(): void {
-    this.groupEditId.set(null);
-    this.gName = '';
-    this.gDescription = '';
-    this.gServerIds.set([]);
-    this.groupEditorOpen.set(true);
+    this.groupDraft.begin();
   }
 
   protected editGroup(group: McpGroup): void {
-    this.groupEditId.set(group.id);
-    this.gName = group.name;
-    this.gDescription = group.description;
-    this.gServerIds.set([...group.serverIds]);
-    this.groupEditorOpen.set(true);
+    this.groupDraft.begin(group, group.serverIds);
   }
 
-  protected cancelGroup(): void {
-    this.groupEditorOpen.set(false);
-    this.groupEditId.set(null);
-  }
-
-  protected toggleGroupServer(id: string): void {
-    this.gServerIds.update(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
-  }
-
-  protected canSaveGroup(): boolean {
-    return !this.groupSaving() && !!this.gName.trim();
-  }
-
-  protected async saveGroup(): Promise<void> {
-    if (!this.canSaveGroup()) return;
-    this.groupSaving.set(true);
-    const id = await this.groups.save({
-      name: this.gName.trim(),
-      description: this.gDescription.trim(),
-      serverIds: this.gServerIds(),
-    }, this.groupEditId() ?? undefined);
-    this.groupSaving.set(false);
-    if (id) this.cancelGroup();
+  protected saveGroup(): Promise<void> {
+    return this.groupDraft.save(this.groups, f => ({
+      name: f.name, description: f.description, serverIds: f.ids,
+    }));
   }
 
   protected async removeGroup(group: McpGroup): Promise<void> {
@@ -160,8 +127,7 @@ export class McpServersPage {
       `Delete the group "${group.name}"? Every agent it connected stays connected — only the `
       + `set goes. Disconnecting is each agent's own MCP tab.`
     )) return;
-    if (!await this.groups.remove(group.id)) return;
-    if (this.groupEditId() === group.id) this.cancelGroup();
+    if (await this.groups.remove(group.id)) this.groupDraft.closeIf(group.id);
   }
 
   // ── editor ──────────────────────────────────────────────────────────────

@@ -93,7 +93,7 @@ roster, which is what it is about.
   group tables
 - `McpGroupController` — `/api/mcp-groups`, five routes: four for the set, one deploy
 - `AgentMcpLinkRepository.findByServer` — where the coverage comes from
-- `pages/mcp-servers.ts:94` resolves the ids for display and marks what the catalog has lost
+- `pages/mcp-servers.ts:99` resolves the ids for display and marks what the catalog has lost
 
 ## Connected to
 
