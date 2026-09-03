@@ -529,10 +529,11 @@ The deploy follows the same rule a guide's does — *surface the error, do not r
 it is several independent writes to an agent someone else owns. Undoing half of it would mean
 disconnecting servers that may have been on that agent before the group ever ran.
 
-**One difference from a guide's report: an alias the agent already has is `skipped`, not
-`failed`.** Topping up an agent that holds part of the group is the ordinary use of this button,
-and `connect` answers a conflict for a name already on the profile; calling that a failure would
-paint the normal case red. The reason reads `already connected`. A server gone from the catalog is
+**An alias the agent already has is `skipped`, not `failed`**, with the reason `already
+connected`. Topping up an agent that holds part of the group is the ordinary use of this button,
+so calling it a failure would paint the normal case red. A guide's deploy answers the same way,
+and both get the answer from `AgentMcpCatalogService.connectIfAbsent` rather than from the text
+of a conflict — which is how the two used to disagree. A server gone from the catalog is
 `skipped` with `no longer in the catalog`; anything else is `failed` with its message.
 
 ## Skill groups — dashboard-owned state in SQLite
@@ -600,8 +601,10 @@ part rather than a single status:
   "detail": null }
 ```
 
-`skipped` means the part is gone from the library or the catalog; `failed` means the write
-was attempted and refused, and `detail` carries the reason. `profile` is null when the agent
+`skipped` means the part is gone from the library or the catalog, or — for an MCP server — is
+already on the agent (`already connected`), which the umbrella document still names because the
+agent can in fact reach it. `failed` means the write was attempted and refused, and `detail`
+carries the reason. `profile` is null when the agent
 could not be read back afterwards — the parts had already landed by then, so the report is
 answered without it rather than thrown away with a 500.
 

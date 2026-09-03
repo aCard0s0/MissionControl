@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,8 @@ class SkillGuideControllerTest {
     when(profiles.get(any(), anyString(), anyString())).thenReturn(mock(AgentProfileDto.class));
     registry = mock(McpRegistryService.class);
     mcpCatalog = mock(AgentMcpCatalogService.class);
+    when(mcpCatalog.connectIfAbsent(any(), anyString(), anyString(), any()))
+        .thenReturn(Optional.of(mock(AgentProfileDto.class)));
     HostService hosts = mock(HostService.class);
     when(hosts.requireConnected(anyString())).thenReturn(HOST);
     mvc = MockMvcBuilders
@@ -216,7 +219,7 @@ class SkillGuideControllerTest {
 
     verify(profiles).installSkillFiles(HOST, "c1", "ops", "pdf-tools",
         Map.of("SKILL.md", "# pdf-tools"));
-    verify(mcpCatalog).connect(eq(HOST), eq("c1"), eq("ops"), any());
+    verify(mcpCatalog).connectIfAbsent(eq(HOST), eq("c1"), eq("ops"), any());
     // the umbrella names what landed, so the agent knows the set
     assertTrue(umbrella().contains("`pdf-tools`"));
     assertTrue(umbrella().contains("`postgres`"));
@@ -251,23 +254,27 @@ class SkillGuideControllerTest {
 
   @Test
   void anAliasAlreadyOnTheAgentIsReportedRatherThanFailingTheDeploy() throws Exception {
-    // the common case, and not really a problem: the server the guide wanted is there
+    // the common case, and not really a problem: the server the guide wanted is there. This
+    // route used to report it as failed while a group deploy called the same event skipped,
+    // because each recognised it by matching the message a conflict carried; the catalog
+    // service answers the question once now.
     storeSkill("s-1", "pdf-tools");
     catalogServer("m-1", "postgres");
-    when(mcpCatalog.connect(any(), anyString(), anyString(), any()))
-        .thenThrow(new ResourceConflictException("an MCP server named 'postgres' already exists"));
+    when(mcpCatalog.connectIfAbsent(any(), anyString(), anyString(), any()))
+        .thenReturn(Optional.empty());
     repository.insert(guide(List.of("s-1"), List.of("m-1")));
 
     mvc.perform(post("/api/skill-guides/g-1/deploy").contentType(MediaType.APPLICATION_JSON)
             .content(target()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.parts[1].status").value("failed"))
-        .andExpect(jsonPath("$.parts[1].detail").value(
-            "an MCP server named 'postgres' already exists"));
+        .andExpect(jsonPath("$.parts[1].status").value("skipped"))
+        .andExpect(jsonPath("$.parts[1].detail").value("already connected"));
 
-    // the skill still landed, and the umbrella still went out
+    // the skill still landed, and the umbrella went out naming the server: it is on the
+    // agent, which is the only thing that document is telling the agent
     verify(profiles).installSkillFiles(any(), anyString(), anyString(), eq("pdf-tools"), any());
     assertTrue(umbrella().contains("`pdf-tools`"));
+    assertTrue(umbrella().contains("`postgres`"), "an available server was not named: " + umbrella());
   }
 
   @Test
@@ -275,7 +282,7 @@ class SkillGuideControllerTest {
     // telling the agent to reach for something that is not there is worse than silence
     storeSkill("s-1", "pdf-tools");
     catalogServer("m-1", "postgres");
-    when(mcpCatalog.connect(any(), anyString(), anyString(), any()))
+    when(mcpCatalog.connectIfAbsent(any(), anyString(), anyString(), any()))
         .thenThrow(new ResourceConflictException("not running"));
     repository.insert(guide(List.of("s-1"), List.of("m-1")));
 

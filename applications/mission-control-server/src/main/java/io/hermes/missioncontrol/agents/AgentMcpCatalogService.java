@@ -14,6 +14,7 @@ import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
@@ -50,7 +51,32 @@ public class AgentMcpCatalogService {
     this.profiles = profiles;
   }
 
+  /**
+   * Connects a catalog server to an Agent, refusing an alias the Agent already has.
+   *
+   * <p>For the one route that connects one server because someone asked for that server: an
+   * alias already there is a conflict, because nothing was done and the caller should know. A
+   * caller connecting a <em>set</em> wants {@link #connectIfAbsent} instead.
+   */
   public AgentProfileDto connect(
+      DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
+    return connectIfAbsent(host, containerId, profile, request)
+        .orElseThrow(() -> new ResourceConflictException("an MCP server named '"
+            + alias(request.alias()) + "' already exists on this Agent"));
+  }
+
+  /**
+   * As {@link #connect}, with an alias the Agent already has reported rather than thrown:
+   * {@link Optional#empty()} means nothing was written because the server is already there.
+   *
+   * <p>Here because both callers that connect a set of servers — a
+   * {@code /api/mcp-groups/{id}/deploy} and a {@code /api/skill-guides/{id}/deploy} — need it,
+   * and topping up an Agent that has some of the set already is the ordinary use of both. They
+   * used to recognise the case by matching {@code getMessage()} against a copy of the prose
+   * {@link #connect} throws, one of them did not, and so the same event was {@code skipped} on
+   * one route and {@code failed} on the other.
+   */
+  public Optional<AgentProfileDto> connectIfAbsent(
       DockerHostRef host, String containerId, String profile, ConnectCatalogMcpRequest request) {
     String alias = alias(request.alias());
     // the one call here that acts on whether the server is up, so the one that pays for a
@@ -58,7 +84,7 @@ public class AgentMcpCatalogService {
     var source = registry.live(request.serverId());
     AgentProfileDto current = profiles.get(host, containerId, profile);
     if (current.mcp().stream().anyMatch(server -> alias.equals(server.name()))) {
-      throw new ResourceConflictException("an MCP server named '" + alias + "' already exists on this Agent");
+      return Optional.empty();
     }
     if ("managed".equals(source.kind()) && !"running".equals(source.runtimeState())) {
       throw new ResourceConflictException("managed MCP server is not running: " + source.name());
@@ -75,7 +101,7 @@ public class AgentMcpCatalogService {
     long now = System.currentTimeMillis();
     links.upsert(new AgentMcpLink(
         host.id(), containerId, profile, alias, source.id(), source.revision(), now, now));
-    return profiles.addMcpServer(host, containerId, profile, definition);
+    return Optional.of(profiles.addMcpServer(host, containerId, profile, definition));
   }
 
   public AgentProfileDto sync(
