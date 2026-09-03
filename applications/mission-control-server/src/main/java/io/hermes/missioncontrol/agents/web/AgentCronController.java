@@ -4,7 +4,7 @@ import io.hermes.missioncontrol.agents.HermesCron;
 import io.hermes.missioncontrol.agents.api.CreateCronJobRequest;
 import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.UpdateCronJobRequest;
-import io.hermes.missioncontrol.hosts.HostService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -24,74 +24,72 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentCronController {
 
   private final HermesCron cron;
-  private final HostService hosts;
 
-  AgentCronController(HermesCron cron, HostService hosts) {
+  AgentCronController(HermesCron cron) {
     this.cron = cron;
-    this.hosts = hosts;
   }
 
   @GetMapping
   public CronJobsDto list(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return cron.list(hosts.requireConnected(hostId), containerId, name);
+    return cron.list(host, containerId, name);
   }
 
   @PostMapping
   public CronJobsDto create(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody CreateCronJobRequest request) {
-    return cron.create(hosts.requireConnected(hostId), containerId, name, request);
+    return cron.create(host, containerId, name, request);
   }
 
   @PatchMapping("/{jobId}")
   public CronJobsDto update(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId,
       @RequestBody UpdateCronJobRequest request) {
-    return cron.update(hosts.requireConnected(hostId), containerId, name, jobId, request);
+    return cron.update(host, containerId, name, jobId, request);
   }
 
   @PostMapping("/{jobId}/pause")
   public CronJobsDto pause(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.setEnabled(hosts.requireConnected(hostId), containerId, name, jobId, false);
+    return cron.setEnabled(host, containerId, name, jobId, false);
   }
 
   @PostMapping("/{jobId}/resume")
   public CronJobsDto resume(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.setEnabled(hosts.requireConnected(hostId), containerId, name, jobId, true);
+    return cron.setEnabled(host, containerId, name, jobId, true);
   }
 
   /** Asks for the job on the next scheduler tick, rather than waiting for its schedule. */
   @PostMapping("/{jobId}/run")
   public CronJobsDto runNow(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.runNow(hosts.requireConnected(hostId), containerId, name, jobId);
+    return cron.runNow(host, containerId, name, jobId);
   }
 
   @DeleteMapping("/{jobId}")
   public CronJobsDto remove(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String jobId) {
-    return cron.remove(hosts.requireConnected(hostId), containerId, name, jobId);
+    return cron.remove(host, containerId, name, jobId);
   }
 }

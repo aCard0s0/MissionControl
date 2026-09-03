@@ -5,6 +5,12 @@ All responses are JSON. Errors: `{ "error": "<message>" }` with 400 / 404 / 409 
 A request the daemon itself rejects (a malformed image reference, an unacceptable body) is a 400, not a
 502 — 502 is reserved for the daemon or its registry failing, including rejected registry credentials.
 
+**A `{hostId}` in the path is resolved before the body is read.** It binds to an already-probed
+host, so an unknown host id is 404 and an unreachable daemon 503 — *ahead of* any complaint about
+the body. A malformed request to a route whose daemon is down therefore answers 503, not 400. A
+host id sent inside a request body is resolved in the handler, so those routes validate the body
+first.
+
 ## Meta
 
 | Method & path | Returns |

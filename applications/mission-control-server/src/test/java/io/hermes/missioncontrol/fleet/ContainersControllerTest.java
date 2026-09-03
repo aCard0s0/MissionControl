@@ -25,6 +25,7 @@ import io.hermes.missioncontrol.docker.StatsDto;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.DockerHostDto;
 import io.hermes.missioncontrol.hosts.HostService;
+import io.hermes.missioncontrol.support.HostPathBinding;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -61,6 +62,7 @@ class ContainersControllerTest {
     updates = mock(ContainerUpdateService.class);
     mvc = MockMvcBuilders
         .standaloneSetup(new ContainersController(docker, hosts, updates))
+        .setConversionService(HostPathBinding.conversionService(hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

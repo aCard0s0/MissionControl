@@ -31,6 +31,7 @@ import io.hermes.missioncontrol.agents.api.ConnectCatalogMcpRequest;
 import io.hermes.missioncontrol.agents.api.McpTestResult;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.HostService;
+import io.hermes.missioncontrol.support.HostPathBinding;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,7 +72,8 @@ class AgentMcpControllerTest {
     lifecycle = mock(AgentLifecycle.class);
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentMcpController(
-            profiles, mcpCatalog, lifecycle, hosts))
+            profiles, mcpCatalog, lifecycle))
+        .setConversionService(HostPathBinding.conversionService(hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }
@@ -105,13 +107,15 @@ class AgentMcpControllerTest {
 
   @Test
   void addingAServerRequiresANameAndATransport() throws Exception {
+    // the host binds before the body is validated — see AgentSkillsControllerTest
+    hostIsConnected(hosts);
+
     mvc.perform(post(MCP).contentType(MediaType.APPLICATION_JSON)
             .content("{\"name\":\"\",\"transport\":\"\"}"))
         .andExpect(status().isBadRequest());
 
     verifyNoInteractions(profiles);
     verifyNoInteractions(lifecycle);
-    verifyNoInteractions(hosts);
   }
 
   @Test
@@ -167,11 +171,13 @@ class AgentMcpControllerTest {
 
   @Test
   void connectingToTheCatalogRequiresBothAServerIdAndAnAlias() throws Exception {
+    hostIsConnected(hosts);
+
     mvc.perform(post(MCP + "/catalog")
             .contentType(MediaType.APPLICATION_JSON).content("{\"serverId\":\"srv-1\",\"alias\":\"\"}"))
         .andExpect(status().isBadRequest());
 
-    verifyNoInteractions(hosts);
+    verifyNoInteractions(mcpCatalog);
   }
 
   @Test

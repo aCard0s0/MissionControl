@@ -28,6 +28,7 @@ import io.hermes.missioncontrol.agents.api.IntegrationDto;
 import io.hermes.missioncontrol.agents.templates.ProfileTemplateService;
 import io.hermes.missioncontrol.errors.ApiExceptionHandler;
 import io.hermes.missioncontrol.hosts.HostService;
+import io.hermes.missioncontrol.support.HostPathBinding;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,7 @@ class AgentsControllerTest {
     mvc = MockMvcBuilders
         .standaloneSetup(new AgentsController(
             profiles, templates, lifecycle, hosts, credentials))
+        .setConversionService(HostPathBinding.conversionService(hosts))
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
   }

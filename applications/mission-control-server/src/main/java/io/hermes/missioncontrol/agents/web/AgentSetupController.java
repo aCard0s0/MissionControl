@@ -5,7 +5,7 @@ import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.AuthProviderDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.credentials.CredentialService;
-import io.hermes.missioncontrol.hosts.HostService;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import jakarta.validation.Valid;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,12 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentSetupController {
 
   private final HermesSetup setup;
-  private final HostService hosts;
   private final CredentialService credentials;
 
-  AgentSetupController(HermesSetup setup, HostService hosts, CredentialService credentials) {
+  AgentSetupController(HermesSetup setup, CredentialService credentials) {
     this.setup = setup;
-    this.hosts = hosts;
     this.credentials = credentials;
   }
 
@@ -39,34 +37,34 @@ class AgentSetupController {
    *  surfaced in the create-agent modal. */
   @GetMapping("/auth-providers")
   public List<AuthProviderDto> authProviders(
-      @PathVariable String hostId, @PathVariable String containerId) {
-    return setup.setup(hosts.requireConnected(hostId), containerId, "default").authProviders();
+      @PathVariable("hostId") DockerHostRef host, @PathVariable String containerId) {
+    return setup.setup(host, containerId, "default").authProviders();
   }
 
   @GetMapping("/{name}/setup")
   public AgentSetupDto setup(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return setup.setup(hosts.requireConnected(hostId), containerId, name);
+    return setup.setup(host, containerId, name);
   }
 
   @PutMapping("/{name}/env")
   public AgentSetupDto putEnv(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody SetEnvRequest request) {
     return setup.putEnv(
-        hosts.requireConnected(hostId), containerId, name, resolved(request.entries()));
+        host, containerId, name, resolved(request.entries()));
   }
 
   @PostMapping("/{name}/env/init")
   public AgentSetupDto initEnv(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return setup.initEnv(hosts.requireConnected(hostId), containerId, name);
+    return setup.initEnv(host, containerId, name);
   }
 
   /**

@@ -68,10 +68,12 @@ public class ContainersController {
     return result;
   }
 
-  // Every endpoint below resolves through requireConnected, so a daemon that is down is
-  // reported as a 503 before the container is touched. They used to take the host row's url
-  // unprobed, which left the same outage surfacing as a 502 'docker daemon error' — the
-  // failure ImagesController's comment already said every such endpoint should avoid.
+  // Every endpoint below takes its host as an already-resolved, already-probed ref — the
+  // converter in web/WebConfig binds a {hostId} through requireConnected — so a daemon that is
+  // down is reported as a 503 before the container is touched. They used to take the host row's
+  // url unprobed, which left the same outage surfacing as a 502 'docker daemon error' — the
+  // failure ImagesController's comment already said every such endpoint should avoid. The
+  // deploy below is the exception, because its host id arrives in the body.
   /**
    * The newest sample for every named container on one host, in one request.
    *
@@ -89,15 +91,15 @@ public class ContainersController {
    */
   @GetMapping("/{hostId}/stats")
   public Map<String, StatsDto> stats(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @RequestParam List<String> ids) {
-    return docker.stats(hosts.requireConnected(hostId), ids);
+    return docker.stats(host, ids);
   }
 
   /** Retained for a single container; the fleet view uses the batched form above. */
   @GetMapping("/{hostId}/{id}/stats")
-  public StatsDto stats(@PathVariable String hostId, @PathVariable String id) {
-    return docker.stats(hosts.requireConnected(hostId), id);
+  public StatsDto stats(@PathVariable("hostId") DockerHostRef host, @PathVariable String id) {
+    return docker.stats(host, id);
   }
 
   /**
@@ -109,11 +111,11 @@ public class ContainersController {
    */
   @GetMapping("/{hostId}/{id}/logs")
   public List<LogLineDto> logs(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String id,
       @RequestParam(defaultValue = "100") int tail,
       @RequestParam(required = false) Long since) {
-    return docker.logs(hosts.requireConnected(hostId), id, tail, since);
+    return docker.logs(host, id, tail, since);
   }
 
   @PostMapping
@@ -125,13 +127,13 @@ public class ContainersController {
   }
 
   @PostMapping("/{hostId}/{id}/start")
-  public void start(@PathVariable String hostId, @PathVariable String id) {
-    docker.start(hosts.requireConnected(hostId), id);
+  public void start(@PathVariable("hostId") DockerHostRef host, @PathVariable String id) {
+    docker.start(host, id);
   }
 
   @PostMapping("/{hostId}/{id}/stop")
-  public void stop(@PathVariable String hostId, @PathVariable String id) {
-    docker.stop(hosts.requireConnected(hostId), id);
+  public void stop(@PathVariable("hostId") DockerHostRef host, @PathVariable String id) {
+    docker.stop(host, id);
   }
 
   /**
@@ -140,14 +142,14 @@ public class ContainersController {
    */
   @PostMapping("/{hostId}/{id}/update")
   public Map<String, String> update(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String id,
       @Valid @RequestBody UpdateContainerRequest request) {
-    return Map.of("id", updates.update(hosts.requireConnected(hostId), id, request.version()));
+    return Map.of("id", updates.update(host, id, request.version()));
   }
 
   @DeleteMapping("/{hostId}/{id}")
-  public void remove(@PathVariable String hostId, @PathVariable String id) {
-    docker.remove(hosts.requireConnected(hostId), id);
+  public void remove(@PathVariable("hostId") DockerHostRef host, @PathVariable String id) {
+    docker.remove(host, id);
   }
 }

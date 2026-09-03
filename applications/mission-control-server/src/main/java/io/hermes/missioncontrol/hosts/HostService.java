@@ -81,6 +81,11 @@ public class HostService {
    * container resolves through here rather than {@link #ref}, so that a dead daemon is
    * reported as a 503 instead of surfacing later as an obscure Docker error.
    *
+   * <p>Most callers do not call it: {@code web/WebConfig.addFormatters} registers this method
+   * as the converter for a {@code hostId} in a path or a query parameter, so a handler taking a
+   * {@link DockerHostRef} has already been through it. A host id inside a request body has not
+   * — no converter reaches those — and those handlers still call it themselves.
+   *
    * <p>Reads the {@link #PROBE_TTL_MS} probe cache rather than forcing a ping, which
    * {@link #check} still does. Forcing here would put a daemon round trip in front of
    * every request on the polling path — {@code /stats} refreshes every 3s and

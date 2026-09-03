@@ -1,12 +1,12 @@
 package io.hermes.missioncontrol.agents.web;
 
 import io.hermes.missioncontrol.agents.HermesWebhooks;
-import io.hermes.missioncontrol.hosts.HostService;
 import jakarta.validation.Valid;
 import io.hermes.missioncontrol.agents.api.EnableWebhookPlatformRequest;
 import io.hermes.missioncontrol.agents.api.OutboundWebhookRequest;
 import io.hermes.missioncontrol.agents.api.SubscribeWebhookRequest;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
+import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.util.Map;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,38 +27,36 @@ import org.springframework.web.bind.annotation.RestController;
 class AgentWebhooksController {
 
   private final HermesWebhooks webhooks;
-  private final HostService hosts;
 
-  AgentWebhooksController(HermesWebhooks webhooks, HostService hosts) {
+  AgentWebhooksController(HermesWebhooks webhooks) {
     this.webhooks = webhooks;
-    this.hosts = hosts;
   }
 
   @GetMapping
   public WebhooksDto list(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return webhooks.list(hosts.requireConnected(hostId), containerId, name);
+    return webhooks.list(host, containerId, name);
   }
 
   /** Turns the profile's webhook listener on or off. */
   @PutMapping("/platform")
   public WebhooksDto setPlatform(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody EnableWebhookPlatformRequest request) {
-    return webhooks.setPlatformEnabled(hosts.requireConnected(hostId), containerId, name, request);
+    return webhooks.setPlatformEnabled(host, containerId, name, request);
   }
 
   @PostMapping
   public WebhooksDto subscribe(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody SubscribeWebhookRequest request) {
-    return webhooks.subscribe(hosts.requireConnected(hostId), containerId, name, request);
+    return webhooks.subscribe(host, containerId, name, request);
   }
 
   /**
@@ -75,60 +73,60 @@ class AgentWebhooksController {
    */
   @PostMapping("/outbound")
   public WebhooksDto addOutbound(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody OutboundWebhookRequest request) {
-    return webhooks.addOutbound(hosts.requireConnected(hostId), containerId, name, request);
+    return webhooks.addOutbound(host, containerId, name, request);
   }
 
   @PutMapping("/outbound/{index}")
   public WebhooksDto updateOutbound(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable int index,
       @Valid @RequestBody OutboundWebhookRequest request) {
     return webhooks.updateOutbound(
-        hosts.requireConnected(hostId), containerId, name, index, request);
+        host, containerId, name, index, request);
   }
 
   @DeleteMapping("/outbound/{index}")
   public WebhooksDto removeOutbound(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable int index) {
-    return webhooks.removeOutbound(hosts.requireConnected(hostId), containerId, name, index);
+    return webhooks.removeOutbound(host, containerId, name, index);
   }
 
   @GetMapping("/{route}/secret")
   public Map<String, String> secret(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
     return Map.of(
-        "secret", webhooks.secret(hosts.requireConnected(hostId), containerId, name, route));
+        "secret", webhooks.secret(host, containerId, name, route));
   }
 
   /** Fires hermes' own test POST at the route. */
   @PostMapping("/{route}/test")
   public Map<String, String> test(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
     return Map.of(
-        "output", webhooks.test(hosts.requireConnected(hostId), containerId, name, route));
+        "output", webhooks.test(host, containerId, name, route));
   }
 
   @DeleteMapping("/{route}")
   public WebhooksDto remove(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @PathVariable String route) {
-    return webhooks.remove(hosts.requireConnected(hostId), containerId, name, route);
+    return webhooks.remove(host, containerId, name, route);
   }
 }

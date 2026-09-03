@@ -1,10 +1,13 @@
 package io.hermes.missioncontrol.web;
 
+import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.hosts.HostService;
 import java.io.IOException;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
+import org.springframework.format.FormatterRegistry;
 import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
@@ -20,9 +23,35 @@ import org.springframework.web.servlet.resource.PathResourceResolver;
 public class WebConfig implements WebMvcConfigurer {
 
   private final List<String> corsOrigins;
+  private final HostService hosts;
 
-  public WebConfig(@Value("${mc.cors-origins}") List<String> corsOrigins) {
+  public WebConfig(@Value("${mc.cors-origins}") List<String> corsOrigins, HostService hosts) {
     this.corsOrigins = corsOrigins;
+    this.hosts = hosts;
+  }
+
+  /**
+   * A {@code hostId} in a path or a query parameter binds straight to the resolved, probed
+   * {@link DockerHostRef}.
+   *
+   * <p>Fifty-three handlers opened with the same line — {@code DockerHostRef host =
+   * hosts.requireConnected(hostId)} — and eleven controllers held a {@link HostService} to
+   * write it. Declaring the parameter as what the handler actually wants says the same thing
+   * once.
+   *
+   * <p>{@link HostService#requireConnected} rather than {@code ref}: everything reached through
+   * a URL is answering a request, and so has a caller to report an unreachable daemon to as a
+   * 503. Background work resolves through {@code ref} and does not come through here.
+   *
+   * <p>Two consequences worth knowing. The refusal now happens during argument binding, so it
+   * precedes {@code @Valid} on a request body: a malformed body sent to a route whose host is
+   * down answers 503 rather than 400. And it arrives at the advice wrapped in Spring's
+   * conversion failure, which {@code ApiExceptionHandler.unreadableRequest} unwraps — without
+   * that, every one of these would answer 400.
+   */
+  @Override
+  public void addFormatters(FormatterRegistry registry) {
+    registry.addConverter(String.class, DockerHostRef.class, hosts::requireConnected);
   }
 
   @Override

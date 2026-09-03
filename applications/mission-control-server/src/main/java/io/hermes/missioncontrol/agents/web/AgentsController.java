@@ -32,9 +32,11 @@ import jakarta.validation.constraints.Size;
  *
  * <p>The sub-resources each have their own controller on the same base path —
  * {@link AgentSkillsController}, {@link AgentMcpController}, {@link AgentSessionsController}
- * and {@link AgentSetupController} — and all of them resolve the host through
- * {@link HostService#requireConnected}, which refuses one that is not connected before any
- * container is touched.
+ * and {@link AgentSetupController}. None of them resolves a host: a {@code hostId} in the path
+ * binds to an already-probed {@link io.hermes.missioncontrol.docker.DockerHostRef} through
+ * {@code web/WebConfig.addFormatters}, so a daemon that is not connected is refused before any
+ * handler runs. The one exception is {@link #create} below, whose host id arrives inside the
+ * request body where no converter reaches it.
  */
 @RestController
 @RequestMapping("/api/agents")
@@ -60,8 +62,8 @@ public class AgentsController {
   }
 
   @GetMapping
-  public List<AgentProfileDto> list(@RequestParam String hostId, @RequestParam String containerId) {
-    return profiles.list(hosts.requireConnected(hostId), containerId);
+  public List<AgentProfileDto> list(@RequestParam("hostId") DockerHostRef host, @RequestParam String containerId) {
+    return profiles.list(host, containerId);
   }
 
   @PostMapping
@@ -100,43 +102,43 @@ public class AgentsController {
 
   @DeleteMapping("/{hostId}/{containerId}/{name}")
   public void delete(
-      @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    lifecycle.delete(hosts.requireConnected(hostId), containerId, name);
+      @PathVariable("hostId") DockerHostRef host, @PathVariable String containerId, @PathVariable String name) {
+    lifecycle.delete(host, containerId, name);
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/soul")
   public void updateSoul(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateSoulRequest request) {
-    profiles.updateSoul(hosts.requireConnected(hostId), containerId, name, request.soul());
+    profiles.updateSoul(host, containerId, name, request.soul());
   }
 
   @PutMapping("/{hostId}/{containerId}/{name}/config")
   public AgentProfileDto updateConfig(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestBody UpdateConfigRequest request) {
     return profiles.updateConfig(
-        hosts.requireConnected(hostId), containerId, name, request.configYaml());
+        host, containerId, name, request.configYaml());
   }
 
   /** What a stop, restart or replace of this container would interrupt. Read by the
    *  Containers page on the click, not by its poll — see {@link HermesProfiles#activity}. */
   @GetMapping("/{hostId}/{containerId}/activity")
   public ContainerActivityDto activity(
-      @PathVariable String hostId, @PathVariable String containerId) {
-    return profiles.activity(hosts.requireConnected(hostId), containerId);
+      @PathVariable("hostId") DockerHostRef host, @PathVariable String containerId) {
+    return profiles.activity(host, containerId);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/integrations")
   public List<IntegrationDto> integrations(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name) {
-    return profiles.integrations(hosts.requireConnected(hostId), containerId, name);
+    return profiles.integrations(host, containerId, name);
   }
 
   /**
@@ -146,27 +148,27 @@ public class AgentsController {
    */
   @PostMapping("/{hostId}/{containerId}/{name}/pause")
   public AgentProfileDto pause(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @Valid @RequestBody(required = false) PauseAgentRequest request) {
-    return profiles.pause(hosts.requireConnected(hostId), containerId, name,
+    return profiles.pause(host, containerId, name,
         request == null ? null : request.reason());
   }
 
   @PostMapping("/{hostId}/{containerId}/{name}/resume")
   public AgentProfileDto resume(
-      @PathVariable String hostId, @PathVariable String containerId, @PathVariable String name) {
-    return profiles.resume(hosts.requireConnected(hostId), containerId, name);
+      @PathVariable("hostId") DockerHostRef host, @PathVariable String containerId, @PathVariable String name) {
+    return profiles.resume(host, containerId, name);
   }
 
   @GetMapping("/{hostId}/{containerId}/{name}/logs")
   public List<LogLineDto> logs(
-      @PathVariable String hostId,
+      @PathVariable("hostId") DockerHostRef host,
       @PathVariable String containerId,
       @PathVariable String name,
       @RequestParam(defaultValue = "100") int tail) {
-    return profiles.logs(hosts.requireConnected(hostId), containerId, name, tail);
+    return profiles.logs(host, containerId, name, tail);
   }
 
   public record UpdateConfigRequest(String configYaml) {
