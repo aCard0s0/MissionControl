@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: main @ 976a9c9 · 2026-08-28
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/api-contract.txt
 ---
 
@@ -33,7 +33,7 @@ annotation mapping directly makes an unmapped path fail instead of quietly succe
 
 ## Shape
 
-- Written by `core/api/api-routes.spec.ts:389` via `toMatchFileSnapshot`, deduped and sorted
+- Written by `core/api/api-routes.spec.ts:502` via `toMatchFileSnapshot`, deduped and sorted
 - Read by `RouteContractTest` and `ApiDocCoverageTest`, which find it by walking up from the
   working directory — Maven runs from the module, a developer often from the repo root
   (`contract/RepoDocs.java:19`)

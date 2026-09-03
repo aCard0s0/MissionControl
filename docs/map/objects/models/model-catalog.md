@@ -3,7 +3,7 @@ type: object
 cluster: models
 universe: live
 status: verified
-verified: main @ 976a9c9 · 2026-08-28
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/models/ModelCatalogService.java
 ---
 
@@ -24,9 +24,8 @@ looking at (`models/ModelCatalogService.java:61`).
 
 `ModelCatalogDto(provider, models, source)` — `models/ModelCatalogDto.java:6`.
 
-**`source` has three values in the code, not the two its comment names.** The record's comment
-says `config | live` (`models/ModelCatalogDto.java:10`) but the service emits `catalog`,
-`config` and `live`:
+**`source` has three values**, and where each is emitted is the thing to know — the card used
+to record that only two of them were named in the declarations, which is no longer true:
 
 | Value | Emitted at | Means |
 |---|---|---|
@@ -34,10 +33,10 @@ says `config | live` (`models/ModelCatalogDto.java:10`) but the service emits `c
 | `config` | `:71`, `:125` | the curated compiled-in list |
 | `live` | `:121` | fetched from the provider just now, with a key |
 
-The frontend union is `'config' \| 'live' \| string` (`core/api/api-types.ts:468`) — the
-trailing `\| string` is what lets `catalog` type-check without being named.
-[docs/api.md:148](../../../api.md) **has it right** (`source: catalog` / `source: config`), so the
-record comment and the FE union are the two that are incomplete, not the doc.
+All three are now named on both sides: the record comment lists them
+(`models/ModelCatalogDto.java:9`) and the frontend union is `'catalog' \| 'config' \| 'live'`
+(`core/api/api-types.ts:476`), with no trailing `\| string` left to let an unnamed value
+type-check. [docs/api.md:148](../../../api.md) had it right throughout.
 
 The frontend carries it through as `ModelCatalog` (`core/models.ts`) and shows it as a hint on
 the model field — `ModelPicker.sourceLabel` (`shared/model-picker.ts:28`). Worth showing rather

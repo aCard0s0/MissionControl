@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: claude/skill-library @ 8d85b3d · 2026-09-01
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/prompts/PromptGroupController.java
 ---
 
@@ -31,9 +31,13 @@ disagree about their category. All three survive because they answer different q
 [Skill group](skill-group.md) is the same shape over a different table. They are two records
 and two controllers rather than one polymorphic `groups` table with a `kind` column: the ids
 point at different tables, so every read would have to be told which, and this package is
-already the duplicated shape `skills/SkillRepository` copied on purpose. The one thing they do
-share is the CSS — `.group-head` and `.picker` live in `styles.scss`, because a second copy of
-a header is what drifts.
+already the duplicated shape `skills/SkillRepository` copied on purpose.
+
+That is the **backend**. The frontend went the other way once there were enough of them: the
+slices are one `LibraryStore` (`core/store/library-store.ts`, `694cab2`), the editors one
+`GroupDraft` and the filing one `fileIntoSections` (`core/filing.ts`, `49d622d`), and the CSS
+one `.group-head` / `.picker` in `styles.scss`. Each collapse waited for the count that paid
+for it — three was declined at `8562693`, eight was not.
 
 The difference worth knowing: a skill group can point at a guide. A prompt group cannot,
 because there is no prose object over prompts to point at.

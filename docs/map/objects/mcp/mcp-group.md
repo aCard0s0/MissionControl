@@ -3,7 +3,7 @@ type: object
 cluster: mcp
 universe: live
 status: verified
-verified: claude/library-groups @ c35fbbb · 2026-09-01
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/mcp/McpGroupController.java
 ---
 

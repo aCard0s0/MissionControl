@@ -3,7 +3,7 @@ type: object
 cluster: dashboard
 universe: live
 status: verified
-verified: claude/library-groups @ 8562693 · 2026-09-02
+verified: main @ 7d99214 · 2026-09-03
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/credentials/CredentialService.java
 ---
 
@@ -100,13 +100,14 @@ Citations: `applications/mission-control-server/src/main/resources/schema.sql:31
 | `pages/agent-setup-panel.ts` | picker per row on API KEYS and MESSAGING PLATFORMS (writes) |
 | `pages/agent-create-dialog.ts` | picker beside the API-key field, filtered by the provider's `envVar` (writes) |
 | `pages/profile-editor-panel.ts` | picker on the keys tab, flattened to `credential · KEY` (writes) |
-| `core/store/credential-store.ts` | boot fetch only, **never polled** — same call as MCP groups |
+| `core/store/credential-store.ts` | boot fetch only, **never polled**. One of the four libraries `LiveSync` still loads at boot, because three of its four readers are pickers on other pages that never load it |
 | SQLite `credentials.entries_json` | ciphertext at rest |
 
 **No credential groups.** The three group families
 ([skill](skill-group.md), [prompt](prompt-group.md), [MCP](../mcp/mcp-group.md)) file libraries
-with hundreds of rows; a handful of credentials does not need a fourth, and `8562693` already
-decided those stores stay uncollapsed.
+with hundreds of rows; a handful of credentials does not need a fourth. The four slices are one
+class now (`core/store/library-store.ts`, `694cab2`) — a fifth would be four lines, and that is
+not the reason to add one.
 
 ## See
 
