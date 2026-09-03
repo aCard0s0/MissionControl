@@ -57,7 +57,7 @@ class McpCatalogSeeder {
   void seedDefaults() {
     createSeed("playwright", "Playwright", "playwright", new McpServerRequest(
         "Playwright", "Browser automation through Playwright MCP",
-        "https://github.com/microsoft/playwright-mcp", "managed", HostService.LOCAL_HOST_ID,
+        "https://github.com/microsoft/playwright-mcp", McpServerKind.MANAGED.wire(), HostService.LOCAL_HOST_ID,
         "http", null, "mcp/playwright:latest", null, List.of(),
         List.of("--port", "1100", "--host", "0.0.0.0", "--allowed-hosts", "*"),
         null, List.of(), 1100, null, "/mcp", null,
@@ -66,7 +66,7 @@ class McpCatalogSeeder {
 
     createSeed("context7", "Context7", "context7", new McpServerRequest(
         "Context7", "Up-to-date library documentation through Context7",
-        "https://github.com/upstash/context7", "managed", HostService.LOCAL_HOST_ID,
+        "https://github.com/upstash/context7", McpServerKind.MANAGED.wire(), HostService.LOCAL_HOST_ID,
         "http", null, "mcp/context7:latest", null, List.of(), List.of(), null, List.of(),
         1101, null, "/mcp", null,
         List.of(new ConfigValueInput("MCP_TRANSPORT", "http", false, false),
@@ -76,7 +76,7 @@ class McpCatalogSeeder {
 
     createSeed("sequential-thinking", "Sequential Thinking", "sequentialthinking", new McpServerRequest(
         "Sequential Thinking", "Structured reasoning MCP server",
-        "https://github.com/modelcontextprotocol/servers", "managed", HostService.LOCAL_HOST_ID,
+        "https://github.com/modelcontextprotocol/servers", McpServerKind.MANAGED.wire(), HostService.LOCAL_HOST_ID,
         "http", null, "mcp/sequentialthinking:latest", null,
         List.of("npx", "-y", "supergateway"),
         List.of("--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
@@ -97,7 +97,7 @@ class McpCatalogSeeder {
         "Postgres MCP", "Read-only PostgreSQL MCP server with a private database",
         // left blank on purpose: the image is openmcpserver/mcp-postgres and its upstream
         // repository is not one this code can name with certainty. An operator can fill it in.
-        null, "managed",
+        null, McpServerKind.MANAGED.wire(),
         HostService.LOCAL_HOST_ID, "sse", null, POSTGRES_IMAGE, null,
         List.of("python", "-c"), List.of(POSTGRES_BOOT), null, List.of(), 1103, null, "/sse", null,
         List.of(new ConfigValueInput("PORT", "1103", false, false),
@@ -152,7 +152,7 @@ class McpCatalogSeeder {
     String id = "mcp-seed-" + seedKey;
     long now = System.currentTimeMillis();
     repository.insert(new ServerRow(id, validated.name(), validated.description(),
-        validated.repoUrl(), "managed",
+        validated.repoUrl(), McpServerKind.MANAGED.wire(),
         HostService.LOCAL_HOST_ID, serviceKey, configs.write(configs.store(validated, null)),
         "stopped", McpRuntimeState.MISSING.wire(), McpOperationState.PROVISIONING.wire(),
         null, 1, 0, seedKey, null, null, null, null, now, now));

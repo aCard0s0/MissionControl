@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.templates;
 
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.mcp.McpServerDto;
+import io.hermes.missioncontrol.mcp.McpServerKind;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -72,7 +73,7 @@ class TemplateMcpSnapshots {
         ? source.name() : requested.name().trim();
     boolean enabled = requested.enabled() == null || requested.enabled();
 
-    if ("stdio".equalsIgnoreCase(source.kind())) {
+    if (McpServerKind.STDIO.is(source.kind())) {
       if (source.stdioCommand() == null || source.stdioCommand().isBlank()) {
         throw new IllegalArgumentException("catalog stdio server has no command: " + source.name());
       }

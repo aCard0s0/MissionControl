@@ -66,8 +66,8 @@ class McpLogReaderTest {
   @Test
   void theSupportServicesLogsAreMergedInTimeOrderAndLabelledByService() {
     when(configs.read(any())).thenReturn(config("db"));
-    when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
-    when(compose.serviceContainerId("dh-local", SUPPORT)).thenReturn("cid-db");
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid-server");
+    when(compose.serviceContainerId(HOST_REF, SUPPORT)).thenReturn("cid-db");
     when(docker.logs(HOST_REF, "cid-server", 100, null)).thenReturn(List.of(
         new LogLineDto(30, "INFO", "cid-server", "listening on 1100"),
         new LogLineDto(10, "INFO", "cid-server", "starting")));
@@ -87,8 +87,8 @@ class McpLogReaderTest {
   void aServiceWithNoContainerYetIsSkippedRatherThanFailingTheWholeTail() {
     // one support service can be down or not yet created while the server itself is running
     when(configs.read(any())).thenReturn(config("db"));
-    when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
-    when(compose.serviceContainerId("dh-local", SUPPORT)).thenReturn(null);
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid-server");
+    when(compose.serviceContainerId(HOST_REF, SUPPORT)).thenReturn(null);
     when(docker.logs(HOST_REF, "cid-server", 100, null))
         .thenReturn(List.of(new LogLineDto(10, "INFO", "cid-server", "starting")));
 
@@ -101,7 +101,7 @@ class McpLogReaderTest {
   @Test
   void theRequestedTailIsClampedToAUsableRange() {
     when(configs.read(any())).thenReturn(config());
-    when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid-server");
     when(docker.logs(any(), anyString(), anyInt(), any())).thenReturn(List.of());
 
     reader.logs(row("managed"), 0);
@@ -119,15 +119,15 @@ class McpLogReaderTest {
   @Test
   void aServerWithNoSupportServicesReadsOnlyItsOwnContainer() {
     when(configs.read(any())).thenReturn(config());
-    when(compose.serviceContainerId("dh-local", SERVICE)).thenReturn("cid-server");
+    when(compose.serviceContainerId(HOST_REF, SERVICE)).thenReturn("cid-server");
     when(docker.logs(HOST_REF, "cid-server", 100, null))
         .thenReturn(List.of(new LogLineDto(10, "INFO", "cid-server", "starting")));
 
     List<LogLineDto> lines = reader.logs(row("managed"), 100);
 
     assertTrue(lines.stream().allMatch(line -> SERVICE.equals(line.source())));
-    verify(compose).serviceContainerId("dh-local", SERVICE);
-    verify(compose, never()).serviceContainerId("dh-local", SUPPORT);
+    verify(compose).serviceContainerId(HOST_REF, SERVICE);
+    verify(compose, never()).serviceContainerId(HOST_REF, SUPPORT);
   }
 
   private static ServerRow row(String kind) {

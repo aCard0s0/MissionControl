@@ -94,7 +94,7 @@ class McpStartupReconciler {
     int queued = 0;
     int resumedDeletes = 0;
     for (ServerRow row : repository.findAll()) {
-      if (!"managed".equals(row.kind())) continue;
+      if (!McpServerKind.MANAGED.is(row.kind())) continue;
       if (McpOperationState.of(row.operationState()) == McpOperationState.DELETING) {
         resumedDeletes++;
         lifecycle.submit(row.id(), () -> lifecycle.runDelete(row.id()));

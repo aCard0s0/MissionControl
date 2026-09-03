@@ -37,16 +37,18 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class ComposeStackManagerTest {
 
+  /** The daemon under test, carried in rather than resolved: see {@link ComposeStackManager}. */
+  private static final DockerHostRef HOST = new DockerHostRef("dh-local", "unix:///sock");
+
   @TempDir
   Path stackDirectory;
 
-  private HostService hosts;
   private final List<List<String>> commands = new ArrayList<>();
   private final List<Map<String, String>> environments = new ArrayList<>();
 
   /** Answers CLI invocations from a canned function instead of spawning docker. */
   private ComposeStackManager managerReturning(Function<List<String>, String> responder) {
-    return new ComposeStackManager(hosts, stackDirectory.toString()) {
+    return new ComposeStackManager(stackDirectory.toString()) {
       @Override
       String run(List<String> command, Map<String, String> environment, Duration timeout) {
         commands.add(command);
@@ -60,12 +62,6 @@ class ComposeStackManagerTest {
     return command.contains("inspect");
   }
 
-  @BeforeEach
-  void setUp() {
-    hosts = mock(HostService.class);
-    when(hosts.ref(anyString())).thenReturn(new DockerHostRef("dh-local", "unix:///sock"));
-  }
-
   // ── volume purging ──────────────────────────────────────────────────────
 
   @Test
@@ -73,7 +69,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager = managerReturning(command -> "");
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.purgeVolume("dh-local", "postgres_production_data"));
+        () -> manager.purgeVolume(HOST, "postgres_production_data"));
 
     assertTrue(failure.getMessage().contains("not owned by Mission Control MCP"));
     // the name check runs before anything is executed, so docker is never called
@@ -84,7 +80,7 @@ class ComposeStackManagerTest {
   void purgingRefusesANullVolumeName() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    assertThrows(IllegalArgumentException.class, () -> manager.purgeVolume("dh-local", null));
+    assertThrows(IllegalArgumentException.class, () -> manager.purgeVolume(HOST, null));
   }
 
   @Test
@@ -93,7 +89,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager = managerReturning(command -> isInspect(command) ? "someone-else" : "");
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.purgeVolume("dh-local", ManagedMcpStack.PROJECT + "-postgres-data"));
+        () -> manager.purgeVolume(HOST, ManagedMcpStack.PROJECT + "-postgres-data"));
 
     assertTrue(failure.getMessage().contains("not labeled"));
     assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
@@ -111,7 +107,7 @@ class ComposeStackManagerTest {
       return "";
     });
 
-    assertFalse(manager.purgeVolume("dh-local", ManagedMcpStack.PROJECT + "-postgres-data"));
+    assertFalse(manager.purgeVolume(HOST, ManagedMcpStack.PROJECT + "-postgres-data"));
     assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
         "there is nothing left to remove");
   }
@@ -125,7 +121,7 @@ class ComposeStackManagerTest {
     });
 
     assertThrows(IllegalArgumentException.class,
-        () -> manager.purgeVolume("dh-local", "postgres_production_data"));
+        () -> manager.purgeVolume(HOST, "postgres_production_data"));
     assertTrue(commands.isEmpty());
   }
 
@@ -135,7 +131,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager =
         managerReturning(command -> isInspect(command) ? ManagedMcpStack.PROJECT : "");
 
-    manager.purgeVolume("dh-local", volume);
+    manager.purgeVolume(HOST, volume);
 
     assertTrue(commands.stream().anyMatch(
         command -> command.contains("volume") && command.contains("rm") && command.contains(volume)));
@@ -147,18 +143,20 @@ class ComposeStackManagerTest {
   void aHostIdCannotEscapeTheStackDirectory() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    assertThrows(IllegalArgumentException.class, () -> manager.stackPath("../../etc"));
-    assertThrows(IllegalArgumentException.class, () -> manager.stackPath("dh/../../escape"));
-    assertThrows(IllegalArgumentException.class, () -> manager.stackPath("/absolute"));
-    assertThrows(IllegalArgumentException.class, () -> manager.stackPath(""));
-    assertThrows(IllegalArgumentException.class, () -> manager.stackPath(null));
+    // a blank or null id never reaches this method any more: DockerHostRef's own constructor
+    // refuses one, which is what DockerHostRefTest pins. What is left for this guard is an id
+    // that is a perfectly good string and a very bad path segment.
+    for (String hostile : List.of("../../etc", "dh/../../escape", "/absolute")) {
+      assertThrows(IllegalArgumentException.class,
+          () -> manager.stackPath(new DockerHostRef(hostile, "unix:///sock")));
+    }
   }
 
   @Test
   void anOrdinaryHostIdResolvesUnderTheStackDirectory() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    Path path = manager.stackPath("dh-local");
+    Path path = manager.stackPath(HOST);
 
     assertTrue(path.startsWith(stackDirectory));
     assertEquals("compose.yaml", path.getFileName().toString());
@@ -170,7 +168,7 @@ class ComposeStackManagerTest {
   void aServiceLookupWithNoComposeFileReportsNoContainer() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    assertNull(manager.serviceContainerId("dh-local", "mcp-files"));
+    assertNull(manager.serviceContainerId(HOST, "mcp-files"));
     // nothing to ask docker about until a stack has been written
     assertTrue(commands.isEmpty());
   }
@@ -187,7 +185,7 @@ class ComposeStackManagerTest {
         isNetworkInspect(command) ? "someone-else" : "");
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+        () -> manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
 
     assertEquals("a network named '" + ManagedMcpStack.NETWORK
         + "' already exists but is not owned by Mission Control MCP", failure.getMessage());
@@ -204,7 +202,7 @@ class ComposeStackManagerTest {
     });
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+        () -> manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
 
     assertEquals("a volume named '" + VOLUME + "' already exists but is not owned by Mission Control MCP",
         failure.getMessage());
@@ -222,7 +220,7 @@ class ComposeStackManagerTest {
     });
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+        () -> manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
 
     assertEquals("a Compose container for service '" + SERVICE
         + "' exists but is not owned by Mission Control MCP", failure.getMessage());
@@ -236,7 +234,7 @@ class ComposeStackManagerTest {
       return isCompose(command) ? "container created" : "";
     });
 
-    String output = manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1));
+    String output = manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1));
 
     assertEquals("container created", output);
     assertEquals(YAML, readComposeFile());
@@ -253,7 +251,7 @@ class ComposeStackManagerTest {
       return isCompose(command) ? "ok" : "";
     });
 
-    assertEquals("ok", manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+    assertEquals("ok", manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
   }
 
   @Test
@@ -264,7 +262,7 @@ class ComposeStackManagerTest {
       return isCompose(command) ? "ok" : "";
     });
 
-    assertEquals("ok", manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+    assertEquals("ok", manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
     // both listed containers were checked, not just the first
     assertEquals(2, commands.stream().filter(ComposeStackManagerTest::isContainerInspect).count());
   }
@@ -281,7 +279,7 @@ class ComposeStackManagerTest {
     });
 
     assertThrows(UpstreamUnavailableException.class,
-        () -> manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+        () -> manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
     assertTrue(commands.stream().noneMatch(ComposeStackManagerTest::isCompose));
   }
 
@@ -292,7 +290,7 @@ class ComposeStackManagerTest {
       return isDockerPs(command) ? "abc123\n" : "";
     });
 
-    manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1));
+    manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1));
 
     assertTrue(formatOf(commands.stream().filter(ComposeStackManagerTest::isNetworkInspect).findFirst()
         .orElseThrow()).contains("index .Labels"));
@@ -307,7 +305,7 @@ class ComposeStackManagerTest {
       return "";
     });
 
-    manager.execute("dh-local", rendered(), List.of("up", "-d", "--wait"), Duration.ofMinutes(1));
+    manager.execute(HOST, rendered(), List.of("up", "-d", "--wait"), Duration.ofMinutes(1));
 
     List<String> compose = commands.stream().filter(ComposeStackManagerTest::isCompose).findFirst().orElseThrow();
     assertEquals(List.of("docker", "--host", "unix:///sock", "compose",
@@ -324,7 +322,7 @@ class ComposeStackManagerTest {
   void writeOnlyWritesTheFileAndTouchesNoDaemon() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    manager.writeOnly("dh-local", rendered());
+    manager.writeOnly(HOST, rendered());
 
     assertEquals(YAML, readComposeFile());
     assertTrue(commands.isEmpty());
@@ -334,8 +332,8 @@ class ComposeStackManagerTest {
   void rewritingReplacesTheFileAndLeavesNoTemporaryBehind() throws Exception {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    manager.writeOnly("dh-local", rendered());
-    manager.writeOnly("dh-local", new ComposeStackRenderer.Rendered(
+    manager.writeOnly(HOST, rendered());
+    manager.writeOnly(HOST, new ComposeStackRenderer.Rendered(
         "services: {second}\n", Map.of(), Map.of(), Map.of()));
 
     assertEquals("services: {second}\n", readComposeFile());
@@ -348,10 +346,10 @@ class ComposeStackManagerTest {
   void aStackDirectoryThatCannotBeCreatedIsReportedAsAnUpstreamFailure() throws Exception {
     // 503, not 500: the request was fine, the host's disk is not
     Path blocked = Files.createFile(stackDirectory.resolve("blocked"));
-    ComposeStackManager manager = new ComposeStackManager(hosts, blocked.toString());
+    ComposeStackManager manager = new ComposeStackManager(blocked.toString());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> manager.writeOnly("dh-local", rendered()));
+        () -> manager.writeOnly(HOST, rendered()));
 
     assertTrue(failure.getMessage().startsWith("could not write managed MCP Compose file:"),
         failure.getMessage());
@@ -362,9 +360,9 @@ class ComposeStackManagerTest {
   @Test
   void aServiceLookupReturnsTheFirstIdOnceAStackExists() {
     ComposeStackManager manager = managerReturning(command -> "abc123\ndef456\n");
-    manager.writeOnly("dh-local", rendered());
+    manager.writeOnly(HOST, rendered());
 
-    assertEquals("abc123", manager.serviceContainerId("dh-local", SERVICE));
+    assertEquals("abc123", manager.serviceContainerId(HOST, SERVICE));
     assertEquals(List.of("docker", "--host", "unix:///sock", "compose",
         "--project-name", ManagedMcpStack.PROJECT,
         "--file", composeFile().toString(), "ps", "--all", "-q", SERVICE),
@@ -374,9 +372,9 @@ class ComposeStackManagerTest {
   @Test
   void aServiceLookupTreatsBlankOutputAsNoContainer() {
     ComposeStackManager manager = managerReturning(command -> "  \n");
-    manager.writeOnly("dh-local", rendered());
+    manager.writeOnly(HOST, rendered());
 
-    assertNull(manager.serviceContainerId("dh-local", SERVICE));
+    assertNull(manager.serviceContainerId(HOST, SERVICE));
   }
 
   // ── reclaiming departed services ────────────────────────────────────────
@@ -387,7 +385,7 @@ class ComposeStackManagerTest {
         managerReturning(command -> isInspect(command) ? "someone-else" : "cid-1\n");
 
     IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-        () -> manager.removeServices("dh-local", "mcp-files", List.of("mcp-files-database"),
+        () -> manager.removeServices(HOST, "mcp-files", List.of("mcp-files-database"),
             Duration.ofMinutes(2)));
 
     assertTrue(failure.getMessage().contains("not owned by Mission Control MCP"));
@@ -400,7 +398,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager =
         managerReturning(command -> isInspect(command) ? ManagedMcpStack.PROJECT : "cid-1\n");
 
-    manager.removeServices("dh-local", "mcp-files", List.of("mcp-files-database"),
+    manager.removeServices(HOST, "mcp-files", List.of("mcp-files-database"),
         Duration.ofMinutes(2));
 
     List<String> lookup = commands.getFirst();
@@ -416,7 +414,7 @@ class ComposeStackManagerTest {
   void removingNoDepartedServicesTouchesTheDaemonNotAtAll() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    manager.removeServices("dh-local", "mcp-files", List.of(), Duration.ofMinutes(2));
+    manager.removeServices(HOST, "mcp-files", List.of(), Duration.ofMinutes(2));
 
     assertTrue(commands.isEmpty());
   }
@@ -426,11 +424,11 @@ class ComposeStackManagerTest {
     ComposeStackManager manager = managerReturning(command -> "mcp-files\n\n mcp-files-database \n");
 
     assertEquals(List.of("mcp-files", "mcp-files-database"),
-        manager.servicesOf("dh-local", "mcp-files"));
+        manager.servicesOf(HOST, "mcp-files"));
     assertTrue(commands.getFirst().contains("label=" + ManagedMcpStack.SERVER_ID_LABEL + "=mcp-files"));
 
     assertEquals(List.of("mcp-files", "mcp-files-database"),
-        manager.volumesOf("dh-local", "mcp-files"));
+        manager.volumesOf(HOST, "mcp-files"));
     assertTrue(commands.getLast().contains("volume"));
   }
 
@@ -442,7 +440,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager = managerReturning(command ->
         "mcp-files\tcid-files\nmcp-files-database\tcid-database\nmcp-docs\tcid-docs\n");
 
-    Map<String, String> byService = manager.containerIdsByService("dh-local");
+    Map<String, String> byService = manager.containerIdsByService(HOST);
 
     assertEquals(Map.of(
         "mcp-files", "cid-files",
@@ -460,7 +458,7 @@ class ComposeStackManagerTest {
     ComposeStackManager manager = managerReturning(command ->
         "\tcid-orphan\nmcp-files\tcid-files\nno-tab-at-all\n");
 
-    assertEquals(Map.of("mcp-files", "cid-files"), manager.containerIdsByService("dh-local"));
+    assertEquals(Map.of("mcp-files", "cid-files"), manager.containerIdsByService(HOST));
   }
 
   @Test
@@ -474,7 +472,7 @@ class ComposeStackManagerTest {
       return command.contains("ps") ? "cid-vanished\n" : "";
     });
 
-    manager.removeServices("dh-local", "mcp-files", List.of("mcp-files-database"),
+    manager.removeServices(HOST, "mcp-files", List.of("mcp-files-database"),
         Duration.ofMinutes(1));
 
     assertTrue(commands.stream().noneMatch(command -> command.contains("rm")),
@@ -489,7 +487,7 @@ class ComposeStackManagerTest {
     });
 
     // the ownership guard has nothing to refuse, so the run goes ahead
-    manager.execute("dh-local", rendered(), List.of("up", "--no-start"), Duration.ofMinutes(1));
+    manager.execute(HOST, rendered(), List.of("up", "--no-start"), Duration.ofMinutes(1));
 
     assertTrue(commands.getLast().contains("up"));
   }
@@ -503,7 +501,7 @@ class ComposeStackManagerTest {
   @Test
   @EnabledOnOs({OS.LINUX, OS.MAC})
   void theRunnerCapturesOutputAndPassesTheEnvironmentToTheProcess() {
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString());
 
     String output = manager.run(List.of("/bin/sh", "-c", "printf %s \"$MC_TEST_SECRET\""),
         Map.of("MC_TEST_SECRET", "from-environment"), Duration.ofSeconds(10));
@@ -514,7 +512,7 @@ class ComposeStackManagerTest {
   @Test
   @EnabledOnOs({OS.LINUX, OS.MAC})
   void aNonZeroExitBecomesAnUpstreamFailureCarryingTheOutput() {
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
         () -> manager.run(List.of("/bin/sh", "-c", "printf 'service unhealthy'; exit 3"),
@@ -526,7 +524,7 @@ class ComposeStackManagerTest {
   @Test
   @EnabledOnOs({OS.LINUX, OS.MAC})
   void aSilentNonZeroExitStillProducesAUsableMessage() {
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
         () -> manager.run(List.of("/bin/sh", "-c", "exit 1"), Map.of(), Duration.ofSeconds(10)));
@@ -537,7 +535,7 @@ class ComposeStackManagerTest {
   @Test
   @EnabledOnOs({OS.LINUX, OS.MAC})
   void aCommandThatOverrunsItsTimeoutIsKilled() {
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
         () -> manager.run(List.of("/bin/sh", "-c", "sleep 30"), Map.of(), Duration.ofMillis(200)));
@@ -547,7 +545,7 @@ class ComposeStackManagerTest {
 
   @Test
   void aCommandThatCannotBeStartedIsReportedAsAnUpstreamFailure() {
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString());
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
         () -> manager.run(List.of(stackDirectory.resolve("no-such-binary").toString()),
@@ -561,7 +559,7 @@ class ComposeStackManagerTest {
   void aFloodOfOutputIsCappedSoOneBadRunCannotExhaustTheHeap() {
     // Compose can emit megabytes on a failing pull; the whole string ends up in an exception
     // message and then in an HTTP error body
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString());
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString());
 
     String output = manager.run(
         List.of("/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' x"),
@@ -576,7 +574,7 @@ class ComposeStackManagerTest {
     // is how a half-written file gets handed to Compose
     AtomicInteger inFlight = new AtomicInteger();
     AtomicInteger overlaps = new AtomicInteger();
-    ComposeStackManager manager = new ComposeStackManager(hosts, stackDirectory.toString()) {
+    ComposeStackManager manager = new ComposeStackManager(stackDirectory.toString()) {
       @Override
       String run(List<String> command, Map<String, String> environment, Duration timeout) {
         if (inFlight.incrementAndGet() > 1) overlaps.incrementAndGet();
@@ -594,7 +592,7 @@ class ComposeStackManagerTest {
     List<Thread> writers = new ArrayList<>();
     for (int i = 0; i < 4; i++) {
       writers.add(Thread.ofPlatform().start(() ->
-          manager.execute("dh-local", rendered(), List.of("up", "-d"), Duration.ofMinutes(1))));
+          manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1))));
     }
     for (Thread writer : writers) writer.join(Duration.ofSeconds(30));
 
@@ -606,8 +604,8 @@ class ComposeStackManagerTest {
   void aDifferentHostGetsItsOwnLockAndItsOwnStackFile() {
     ComposeStackManager manager = managerReturning(command -> "");
 
-    manager.writeOnly("dh-local", rendered());
-    manager.writeOnly("dh-remote", new ComposeStackRenderer.Rendered(
+    manager.writeOnly(HOST, rendered());
+    manager.writeOnly(new DockerHostRef("dh-remote", "unix:///sock"), new ComposeStackRenderer.Rendered(
         "services: {remote}\n", Map.of(), Map.of(), Map.of()));
 
     assertEquals(YAML, readComposeFile());

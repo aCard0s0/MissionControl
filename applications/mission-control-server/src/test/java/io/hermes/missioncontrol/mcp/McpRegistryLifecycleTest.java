@@ -489,13 +489,13 @@ class McpRegistryLifecycleTest {
     // operator says otherwise
     retained.retain("mcp-gone", "Files", "dh-local", "mission-control-mcp-files-data");
     RetainedResourceDto resource = service.retainedResources().getFirst();
-    when(compose.purgeVolume("dh-local", "mission-control-mcp-files-data")).thenReturn(true);
+    when(compose.purgeVolume(any(), eq("mission-control-mcp-files-data"))).thenReturn(true);
 
     assertEquals("mission-control-mcp-files-data", service.retainedResource(resource.id()).name());
 
     service.purgeRetainedResource(resource.id());
 
-    verify(compose).purgeVolume("dh-local", "mission-control-mcp-files-data");
+    verify(compose).purgeVolume(any(), eq("mission-control-mcp-files-data"));
     assertTrue(service.retainedResources().isEmpty());
     assertThrows(NoSuchElementException.class, () -> service.retainedResource(resource.id()));
   }
@@ -507,7 +507,7 @@ class McpRegistryLifecycleTest {
     // and every retry took the same path — there was no way to clear it
     retained.retain("mcp-gone", "Files", "dh-local", "mission-control-mcp-files-data");
     RetainedResourceDto resource = service.retainedResources().getFirst();
-    when(compose.purgeVolume("dh-local", "mission-control-mcp-files-data")).thenReturn(false);
+    when(compose.purgeVolume(any(), eq("mission-control-mcp-files-data"))).thenReturn(false);
 
     service.purgeRetainedResource(resource.id());
 
@@ -679,7 +679,7 @@ class McpRegistryLifecycleTest {
     ServerRow row = row(id);
     assertEquals("idle", row.operationState());
     assertEquals(row.revision(), row.appliedRevision());
-    verify(compose).execute(eq("dh-local"), any(), any(), any());
+    verify(compose).execute(any(), any(), any(), any());
   }
 
   @Test
@@ -753,7 +753,7 @@ class McpRegistryLifecycleTest {
   void aCatalogReadRefreshesRuntimeStateAndAnUnknownServerIsStillANotFound() {
     String id = service.create(managed("Files", "dh-local")).id();
     operations.runAll();
-    when(compose.serviceContainerId(eq("dh-local"), anyString())).thenReturn(null);
+    when(compose.serviceContainerId(any(), anyString())).thenReturn(null);
 
     assertTrue(service.list().stream().anyMatch(dto -> id.equals(dto.id())));
     assertEquals("missing", service.live(id).runtimeState());

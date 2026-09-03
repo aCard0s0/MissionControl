@@ -37,10 +37,9 @@ final class McpRequestValidator {
     String name = required(request.name(), "name", 100);
     String description = optional(request.description(), "description", 2_000);
     String repoUrl = repoUrl(request.repoUrl());
-    String kind = lower(required(request.kind(), "kind", 20));
-    if (!Set.of("managed", "external", "stdio").contains(kind)) {
-      throw new IllegalArgumentException("kind must be managed, external, or stdio");
-    }
+    // the vocabulary and the refusal that lists it both live on the enum, so a fourth kind
+    // cannot be added to the code and left out of this check
+    McpServerKind kind = McpServerKind.require(lower(required(request.kind(), "kind", 20)));
 
     String transport = lower(optional(request.transport(), "transport", 20));
     String hostId = optional(request.hostId(), "hostId", 100);
@@ -60,7 +59,7 @@ final class McpRequestValidator {
     List<SupportServiceRequest> supports = supports(request.supportServices());
 
     switch (kind) {
-      case "managed" -> {
+      case MANAGED -> {
         if (hostId == null) throw new IllegalArgumentException("hostId is required for managed servers");
         if (image == null || !IMAGE.matcher(image).matches()) {
           throw new IllegalArgumentException("image is required and must be a valid image reference");
@@ -77,7 +76,7 @@ final class McpRequestValidator {
           throw new IllegalArgumentException("url and stdio fields do not apply to managed servers");
         }
       }
-      case "external" -> {
+      case EXTERNAL -> {
         transport = requireTransport(transport);
         if (url == null) throw new IllegalArgumentException("url is required for external servers");
         validateHttpUrl(url, "url");
@@ -87,7 +86,7 @@ final class McpRequestValidator {
           throw new IllegalArgumentException("environment does not apply to external servers");
         }
       }
-      case "stdio" -> {
+      case STDIO -> {
         transport = "stdio";
         if (stdioCommand == null) throw new IllegalArgumentException("stdioCommand is required for stdio servers");
         rejectManagedFields(hostId, image, platform, entrypoint, command, null, List.of(),
@@ -95,10 +94,14 @@ final class McpRequestValidator {
         if (url != null) throw new IllegalArgumentException("url does not apply to stdio servers");
         if (!headers.isEmpty()) throw new IllegalArgumentException("headers do not apply to stdio servers");
       }
-      default -> throw new IllegalStateException("unreachable");
+      // Not unreachable, and not removable: an arrow switch over an enum is not checked for
+      // exhaustiveness when it is a statement, so a kind added to McpServerKind and not given an
+      // arm here would fall straight through with none of its per-kind fields validated. This
+      // makes that a loud failure instead.
+      default -> throw new IllegalStateException("no validation rules for MCP kind " + kind);
     }
 
-    return new McpServerRequest(name, description, repoUrl, kind, hostId, transport, url, image, platform,
+    return new McpServerRequest(name, description, repoUrl, kind.wire(), hostId, transport, url, image, platform,
         entrypoint, command, stdioCommand, args, request.internalPort(), request.publishedPort(),
         path, crossHostUrl, environment, headers, volumes, healthcheck, supports);
   }

@@ -102,7 +102,7 @@ class McpComposeLifecycle {
       configs.assertRecoverable(configs.read(row));
       ComposeStackRenderer.Rendered stack = renderHost(row.hostId());
       List<String> targets = stack.serviceNames().get(row.id());
-      compose.execute(row.hostId(), stack, arguments(
+      compose.execute(hosts.ref(row.hostId()), stack, arguments(
           "up", "--no-start", "--pull", "always", "--force-recreate", targets), COMPOSE_TIMEOUT);
       reclaimDeparted(row, stack);
       ServerRow fresh = requireRow(id);
@@ -122,7 +122,7 @@ class McpComposeLifecycle {
       List<String> args = new ArrayList<>(List.of("up", "--detach", "--pull", "always"));
       if (forceRecreate) args.add("--force-recreate");
       args.addAll(stack.serviceNames().get(row.id()));
-      compose.execute(row.hostId(), stack, args, COMPOSE_TIMEOUT);
+      compose.execute(hosts.ref(row.hostId()), stack, args, COMPOSE_TIMEOUT);
       reclaimDeparted(row, stack);
       ServerRow fresh = requireRow(id);
       repository.finishOperation(id, "running", fresh.revision());
@@ -136,7 +136,7 @@ class McpComposeLifecycle {
     ServerRow row = requireRow(id);
     try {
       ComposeStackRenderer.Rendered stack = renderHost(row.hostId());
-      compose.execute(row.hostId(), stack,
+      compose.execute(hosts.ref(row.hostId()), stack,
           arguments("stop", "--timeout", "10", stack.serviceNames().get(row.id())),
           Duration.ofMinutes(2));
       ServerRow fresh = requireRow(id);
@@ -152,12 +152,12 @@ class McpComposeLifecycle {
     try {
       ComposeStackRenderer.Rendered stack = renderHost(row.hostId());
       List<String> volumes = stack.volumeNames().getOrDefault(row.id(), List.of());
-      compose.execute(row.hostId(), stack,
+      compose.execute(hosts.ref(row.hostId()), stack,
           arguments("rm", "--stop", "--force", stack.serviceNames().get(row.id())),
           Duration.ofMinutes(3));
       for (String volume : volumes) retained.retain(row.id(), row.name(), row.hostId(), volume);
       repository.delete(id);
-      compose.writeOnly(row.hostId(), renderHost(row.hostId()));
+      compose.writeOnly(hosts.ref(row.hostId()), renderHost(row.hostId()));
       // the volumes outlive the record on purpose — say so, or the data looks lost
       log.warn("deleted MCP {} ({}) on {}{}", row.name(), id, row.hostId(),
           volumes.isEmpty() ? "" : "; retaining volume(s) " + volumes + " until purged");
@@ -185,15 +185,15 @@ class McpComposeLifecycle {
   private void reclaimDeparted(ServerRow row, ComposeStackRenderer.Rendered stack) {
     try {
       List<String> services = stack.serviceNames().getOrDefault(row.id(), List.of());
-      List<String> departed = compose.servicesOf(row.hostId(), row.id()).stream()
+      List<String> departed = compose.servicesOf(hosts.ref(row.hostId()), row.id()).stream()
           .filter(service -> !services.contains(service)).toList();
-      compose.removeServices(row.hostId(), row.id(), departed, Duration.ofMinutes(2));
+      compose.removeServices(hosts.ref(row.hostId()), row.id(), departed, Duration.ofMinutes(2));
 
       // a volume stays stranded until it is purged, so every later start finds it again: only
       // the first sighting is news, and repeating the warning forever teaches people to skip it
       List<String> declared = stack.volumeNames().getOrDefault(row.id(), List.of());
       List<String> kept = new ArrayList<>();
-      for (String volume : compose.volumesOf(row.hostId(), row.id())) {
+      for (String volume : compose.volumesOf(hosts.ref(row.hostId()), row.id())) {
         if (declared.contains(volume)) continue;
         if (retained.retain(row.id(), row.name(), row.hostId(), volume)) kept.add(volume);
       }
@@ -217,7 +217,7 @@ class McpComposeLifecycle {
    *  @return false when the daemon no longer has it, which is not a failure — the volume the
    *      caller wanted gone is gone */
   boolean purgeVolume(String hostId, String volumeName) {
-    return compose.purgeVolume(hostId, volumeName);
+    return compose.purgeVolume(hosts.ref(hostId), volumeName);
   }
 
   /** Re-renders every managed record on a host: Compose owns whole files, so one record's
@@ -225,7 +225,7 @@ class McpComposeLifecycle {
   ComposeStackRenderer.Rendered renderHost(String hostId) {
     List<Deployment> deployments = new ArrayList<>();
     for (ServerRow row : repository.findByHost(hostId)) {
-      if (!"managed".equals(row.kind())) continue;
+      if (!McpServerKind.MANAGED.is(row.kind())) continue;
       StoredConfig config = configs.read(row);
       Map<String, Map<String, String>> supportEnvironment = new LinkedHashMap<>();
       for (StoredSupportService support : config.supportServices()) {
@@ -259,7 +259,7 @@ class McpComposeLifecycle {
     Map<String, ServerRow> refreshed = new LinkedHashMap<>();
     for (Map.Entry<String, List<ServerRow>> host : byHost.entrySet()) {
       try {
-        Map<String, String> containerIds = compose.containerIdsByService(host.getKey());
+        Map<String, String> containerIds = compose.containerIdsByService(hosts.ref(host.getKey()));
         Map<String, String> statuses = new LinkedHashMap<>();
         for (ContainerDto container : docker.listContainers(hosts.ref(host.getKey()), true)) {
           statuses.put(container.id(), container.status());
@@ -292,7 +292,7 @@ class McpComposeLifecycle {
   ServerRow refreshRuntime(ServerRow row) {
     if (!refreshable(row)) return row;
     try {
-      String containerId = compose.serviceContainerId(row.hostId(), row.serviceKey());
+      String containerId = compose.serviceContainerId(hosts.ref(row.hostId()), row.serviceKey());
       McpRuntimeState runtime = McpRuntimeState.MISSING;
       if (containerId != null) {
         runtime = McpRuntimeState.fromContainerStatus(
@@ -316,7 +316,7 @@ class McpComposeLifecycle {
   /** Whether the daemon has anything to say about this row: only a managed one, and only while
    *  no Compose run of its own is writing its state. */
   private static boolean refreshable(ServerRow row) {
-    return "managed".equals(row.kind()) && McpOperationState.settled(row.operationState());
+    return McpServerKind.MANAGED.is(row.kind()) && McpOperationState.settled(row.operationState());
   }
 
   private void fail(String id, Exception error) {

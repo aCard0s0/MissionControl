@@ -41,7 +41,7 @@ class McpServerDtoMapper {
   /** How an Agent on the same host reaches this server: a managed one by its Compose
    *  service name, an external one by the URL it was registered with, a stdio one not at all. */
   static String connectionUrl(ServerRow row, StoredConfig config) {
-    if (!"managed".equals(row.kind())) return "external".equals(row.kind()) ? config.url() : null;
+    if (!McpServerKind.MANAGED.is(row.kind())) return McpServerKind.EXTERNAL.is(row.kind()) ? config.url() : null;
     return "http://" + row.serviceKey() + ":" + config.internalPort() + config.path();
   }
 }

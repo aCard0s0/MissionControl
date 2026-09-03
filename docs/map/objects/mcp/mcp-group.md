@@ -28,7 +28,7 @@ Deploying a group connects each of its servers to one agent — and every one of
 connections is already an [MCP agent link](agent-mcp-link.md), the dashboard's existing record
 of "this profile is connected to this catalog entry, under this alias". So which agents a group
 reaches is **derived** from those links on every read
-(`mcp/McpGroupController.java:184`), never stored.
+(`mcp/McpGroupController.java:118`), never stored.
 
 A stored group-to-agent association would be a second source of truth. Disconnect one server on
 the agent's own MCP tab and the association would still claim the group was connected; the
@@ -57,7 +57,7 @@ Several independent writes to an agent someone else owns. Same rule as
 `DeployedPart` per part. Undoing half of it would mean disconnecting servers that may have been
 on that agent **before the group ever ran**.
 
-**An alias the agent already has is `skipped`, not `failed`** (`mcp/McpGroupController.java:149`).
+**An alias the agent already has is `skipped`, not `failed`** (`mcp/McpGroupDeploy.java:57`).
 Topping up an agent that holds part of the group is the *ordinary* use of this button — calling
 that a failure would paint the normal case red. The operator's question is "is this server on the
 agent?", and the answer is yes either way. The reason reads `already connected`.
@@ -97,6 +97,7 @@ roster, which is what it is about.
 - `McpGroupRepository` — `mcp/McpGroupRepository.java:40` reads by name, like the other two
   group tables
 - `McpGroupController` — `/api/mcp-groups`, five routes: four for the set, one deploy
+- `McpGroupDeploy` — `mcp/McpGroupDeploy.java:30`, the deploy itself
 - `AgentMcpLinkRepository.findByServer` — where the coverage comes from
 - `pages/mcp-servers.ts:94` resolves the ids for display and marks what the catalog has lost
 
@@ -123,7 +124,8 @@ roster, which is what it is about.
 
 ## If you change this
 
-- **Hits:** `McpGroupRepository`, `McpGroupController`, `core/store/mcp-group-store.ts`,
+- **Hits:** `McpGroupRepository`, `McpGroupController`, `McpGroupDeploy`,
+  `core/store/mcp-group-store.ts`,
   `pages/mcp-servers.ts` and its template.
 - **The coverage is a read of `mcp_agent_links`**, so anything changing that table's shape or
   keys changes what a group can report. A deploy is followed by a store refresh for the same
