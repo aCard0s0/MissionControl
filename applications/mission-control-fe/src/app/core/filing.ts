@@ -1,5 +1,7 @@
+import { signal } from '@angular/core';
+
 /**
- * Filing a library list under the groups that claim it.
+ * Filing a library list under the groups that claim it, and the editor that does the filing.
  *
  * Three pages do this the same way — Skills, Prompts and, for its picker, MCP Servers — over
  * three unrelated group types whose id lists are named differently. The accessor is what makes
@@ -78,4 +80,85 @@ export function groupHolding<G extends { id: string; name: string }>(
   exceptId: string | null,
 ): string {
   return groups.find(g => g.id !== exceptId && idsOf(g).includes(itemId))?.name ?? '';
+}
+
+/** What every group editor opens on: the three fields all three group types share. */
+export interface GroupHeader {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+}
+
+/**
+ * The group editor's state, which the three pages each kept a copy of: open, editing which,
+ * saving, a name, a description and the ids picked.
+ *
+ * Not a component. The three editors look nothing alike — one picks a guide as well, one sits
+ * in a tab, the chips carry different warnings — so what they share is the state behind the
+ * markup, not the markup. A page holds one of these and binds to it.
+ *
+ * The id list is the reason `save` takes a builder: the three name it after what it holds
+ * (`skillIds`, `promptIds`, `serverIds`), and a skill group carries a guide beside it.
+ */
+export class GroupDraft {
+  /** Whether the editor is showing. */
+  readonly open = signal(false);
+
+  /** The group being edited, or null while composing a new one. */
+  readonly editId = signal<string | null>(null);
+
+  readonly saving = signal(false);
+
+  // Plain fields, not signals: the editor's template writes them through `ngModel`, and that
+  // event is what re-evaluates `canSave()`.
+  name = '';
+  description = '';
+
+  /** A signal, unlike the two fields above: chips write it, not `ngModel`. */
+  readonly ids = signal<string[]>([]);
+
+  /** Opens the editor — on an existing group with the ids it claims, or blank for a new one. */
+  begin(group: GroupHeader | null = null, ids: readonly string[] = []): void {
+    this.editId.set(group?.id ?? null);
+    this.name = group?.name ?? '';
+    this.description = group?.description ?? '';
+    this.ids.set([...ids]);
+    this.open.set(true);
+  }
+
+  close(): void {
+    this.open.set(false);
+    this.editId.set(null);
+  }
+
+  /** Closes the editor only if it is open on `id` — what a delete of that group needs. */
+  closeIf(id: string): void {
+    if (this.editId() === id) this.close();
+  }
+
+  toggle(id: string): void {
+    this.ids.update(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  }
+
+  canSave(): boolean {
+    return !this.saving() && !!this.name.trim();
+  }
+
+  /**
+   * Saves through the slice that owns this group type, and closes only if it landed: a failed
+   * save keeps the editor open with the picks still in it.
+   */
+  async save<I>(
+    store: { save(input: I, id?: string): Promise<string> },
+    input: (fields: { name: string; description: string; ids: string[] }) => I,
+  ): Promise<void> {
+    if (!this.canSave()) return;
+    this.saving.set(true);
+    const saved = await store.save(
+      input({ name: this.name.trim(), description: this.description.trim(), ids: this.ids() }),
+      this.editId() ?? undefined,
+    );
+    this.saving.set(false);
+    if (saved) this.close();
+  }
 }

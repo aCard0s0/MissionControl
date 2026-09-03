@@ -166,16 +166,16 @@
 } @else {
 
 <div class="mcp-groups" data-reveal>
-    @if (groupEditorOpen()) {
+    @if (groupDraft.open()) {
       <div class="panel group-editor">
         <div class="row">
           <div class="field">
             <label for="mcp-group-name">name</label>
-            <input id="mcp-group-name" class="input" [(ngModel)]="gName" placeholder="research" />
+            <input id="mcp-group-name" class="input" [(ngModel)]="groupDraft.name" placeholder="research" />
           </div>
           <div class="field">
             <label for="mcp-group-description">description</label>
-            <input id="mcp-group-description" class="input" [(ngModel)]="gDescription"
+            <input id="mcp-group-description" class="input" [(ngModel)]="groupDraft.description"
                    placeholder="what an agent needs this set for" />
           </div>
         </div>
@@ -183,17 +183,17 @@
         <div class="picker">
           <div class="picker-h mono">
             <span class="lbl">servers</span>
-            <span class="faint">{{ gServerIds().length }} picked</span>
+            <span class="faint">{{ groupDraft.ids().length }} picked</span>
           </div>
           @if (catalog.servers().length) {
             <div class="picks">
               @for (server of catalog.servers(); track server.id) {
-                <button class="chip" [class.on]="gServerIds().includes(server.id)"
-                        [class.info]="!gServerIds().includes(server.id) && filedElsewhere(server.id)"
+                <button class="chip" [class.on]="groupDraft.ids().includes(server.id)"
+                        [class.info]="!groupDraft.ids().includes(server.id) && filedElsewhere(server.id)"
                         [title]="filedElsewhere(server.id)
                                    ? 'also in the group ' + filedElsewhere(server.id)
                                    : server.kind + ' entry'"
-                        (click)="toggleGroupServer(server.id)">{{ server.name }}</button>
+                        (click)="groupDraft.toggle(server.id)">{{ server.name }}</button>
               }
             </div>
             <p class="lock-hint">a server may be in several groups — an agent often needs the
@@ -206,9 +206,9 @@
 
         <div class="editor-actions">
           <span class="spacer"></span>
-          <button class="btn" (click)="cancelGroup()">cancel</button>
-          <button class="btn primary" [disabled]="!canSaveGroup()" (click)="saveGroup()">
-            {{ groupSaving() ? 'saving…' : 'save group' }}
+          <button class="btn" (click)="groupDraft.close()">cancel</button>
+          <button class="btn primary" [disabled]="!groupDraft.canSave()" (click)="saveGroup()">
+            {{ groupDraft.saving() ? 'saving…' : 'save group' }}
           </button>
         </div>
       </div>
@@ -259,7 +259,7 @@
         </div>
       </div>
     } @empty {
-      @if (!groupEditorOpen()) {
+      @if (!groupDraft.open()) {
         <div class="panel empty">
           <p class="mono dim">No groups yet.</p>
           <p class="lock-hint">A group connects several catalog entries to an agent in one

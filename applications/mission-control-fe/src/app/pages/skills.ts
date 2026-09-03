@@ -13,7 +13,7 @@ import {
 import { Reveal } from '../shared/reveal';
 import { DeployDialog } from './deploy-dialog';
 import { SkillGuidesPanel } from './skill-guides-panel';
-import { fileIntoSections, groupHolding } from '../core/filing';
+import { fileIntoSections, GroupDraft, groupHolding } from '../core/filing';
 import { ago } from '../core/format';
 
 export type SkillsTab = 'skills' | 'guides';
@@ -111,15 +111,12 @@ export class SkillsPage {
   protected readonly fFiles = signal<SkillFile[]>([]);
 
   // ── the group editor ──────────────────────────────────────────────────────
-  protected readonly groupEditorOpen = signal(false);
-  /** The group being edited, or null while composing a new one. */
-  protected readonly groupEditId = signal<string | null>(null);
-  protected readonly groupSaving = signal(false);
+  /** The group editor's state — open, editing which, and which skills are picked. */
+  protected readonly groupDraft = new GroupDraft();
 
-  protected gName = '';
-  protected gDescription = '';
-  /** Signals, for the same reason `fFiles` is one: chips write them, not `ngModel`. */
-  protected readonly gSkillIds = signal<string[]>([]);
+  /** The guide this group points at, or ''. Here rather than on the draft: the other two
+   *  group types have nothing like it. A signal for the same reason `fFiles` is one —
+   *  chips write it, not `ngModel`. */
   protected readonly gGuideId = signal('');
 
   protected readonly visible = computed(() => {
@@ -152,7 +149,7 @@ export class SkillsPage {
   }
 
   protected filedElsewhere(skillId: string): string {
-    return groupHolding(this.groups.groups(), g => g.skillIds, skillId, this.groupEditId());
+    return groupHolding(this.groups.groups(), g => g.skillIds, skillId, this.groupDraft.editId());
   }
 
   constructor() {
@@ -335,30 +332,13 @@ export class SkillsPage {
   // ── groups ───────────────────────────────────────────────────────────────
 
   protected newGroup(): void {
-    this.groupEditId.set(null);
-    this.gName = '';
-    this.gDescription = '';
-    this.gSkillIds.set([]);
+    this.groupDraft.begin();
     this.gGuideId.set('');
-    this.groupEditorOpen.set(true);
   }
 
   protected editGroup(group: SkillGroup): void {
-    this.groupEditId.set(group.id);
-    this.gName = group.name;
-    this.gDescription = group.description;
-    this.gSkillIds.set([...group.skillIds]);
+    this.groupDraft.begin(group, group.skillIds);
     this.gGuideId.set(group.guideId);
-    this.groupEditorOpen.set(true);
-  }
-
-  protected cancelGroup(): void {
-    this.groupEditorOpen.set(false);
-    this.groupEditId.set(null);
-  }
-
-  protected toggleGroupSkill(id: string): void {
-    this.gSkillIds.update(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
   }
 
   /** Pressing the guide already picked clears it — the association is the optional half, and
@@ -367,28 +347,16 @@ export class SkillsPage {
     this.gGuideId.update(current => current === id ? '' : id);
   }
 
-  protected canSaveGroup(): boolean {
-    return !this.groupSaving() && !!this.gName.trim();
-  }
-
-  protected async saveGroup(): Promise<void> {
-    if (!this.canSaveGroup()) return;
-    this.groupSaving.set(true);
-    const id = await this.groups.save({
-      name: this.gName.trim(),
-      description: this.gDescription.trim(),
-      skillIds: this.gSkillIds(),
-      guideId: this.gGuideId(),
-    }, this.groupEditId() ?? undefined);
-    this.groupSaving.set(false);
-    if (id) this.cancelGroup();
+  protected saveGroup(): Promise<void> {
+    return this.groupDraft.save(this.groups, f => ({
+      name: f.name, description: f.description, skillIds: f.ids, guideId: this.gGuideId(),
+    }));
   }
 
   protected async removeGroup(group: SkillGroup): Promise<void> {
     if (!confirm(
       `Delete the group "${group.name}"? Its skills stay in the library — only the filing goes.`
     )) return;
-    if (!await this.groups.remove(group.id)) return;
-    if (this.groupEditId() === group.id) this.cancelGroup();
+    if (await this.groups.remove(group.id)) this.groupDraft.closeIf(group.id);
   }
 }

@@ -41,9 +41,9 @@ because there is no prose object over prompts to point at.
 ## A prompt can be in two groups, and shows in both
 
 `prompt_ids` lives on the group, so nothing stops two groups claiming one prompt. The page
-lists it under **both** (`pages/prompts.ts:109`) rather than picking a winner silently. The
+lists it under **both** (`pages/prompts.ts:90`) rather than picking a winner silently. The
 cost is paid where the filing is done instead: the group editor ambers a prompt another group
-already holds (`pages/prompts.ts:268`).
+already holds (`pages/prompts.ts:213`).
 
 No constraint enforces one group per prompt. Adding one would mean an edit to group A silently
 removing a prompt from group B.
