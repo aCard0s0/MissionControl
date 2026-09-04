@@ -28,7 +28,7 @@
 
   @switch (activeTab()) {
     @case ('overview') {
-      <div class="grid cols-2">
+      <div class="grid cols-3">
         <div class="panel" data-reveal>
           <div class="panel-h">ACTIVE CONFIG <span class="spacer"></span><span class="chip off">read-only</span></div>
           <div class="panel-b kv mono">
@@ -39,6 +39,16 @@
             <div><span class="k">skills enabled</span><span>{{ enabledSkills() }}</span></div>
             <div><span class="k">mcp servers</span><span>{{ a.mcp.length }}</span></div>
             <p class="lock-hint">full edits via <code>hermes -p {{ a.name }} setup</code></p>
+          </div>
+        </div>
+
+        <div class="panel" data-reveal>
+          <div class="panel-h">TODAY</div>
+          <div class="panel-b kv mono">
+            <div><span class="k">messages</span><span>{{ a.msgsToday }}</span></div>
+            <div><span class="k">tokens</span><span>{{ a.tokensToday }}k</span></div>
+            <div><span class="k">error rate</span><span [class.bad]="a.errorRate > 2">{{ a.errorRate.toFixed(1) }}%</span></div>
+            <div><span class="k">last active</span><span>{{ ago(a.lastActive) }}</span></div>
           </div>
         </div>
 
@@ -77,6 +87,9 @@
           }
         </div>
 
+      </div>
+
+      <div class="grid cols-2">
         <div class="panel" data-reveal>
           <div class="panel-h">
             INTEGRATIONS
@@ -91,16 +104,6 @@
               </div>
             }
             @if (!a.integrations.length) { <p class="dim">No integrations configured.</p> }
-          </div>
-        </div>
-
-        <div class="panel" data-reveal>
-          <div class="panel-h">TODAY</div>
-          <div class="panel-b kv mono">
-            <div><span class="k">messages</span><span>{{ a.msgsToday }}</span></div>
-            <div><span class="k">tokens</span><span>{{ a.tokensToday }}k</span></div>
-            <div><span class="k">error rate</span><span [class.bad]="a.errorRate > 2">{{ a.errorRate.toFixed(1) }}%</span></div>
-            <div><span class="k">last active</span><span>{{ ago(a.lastActive) }}</span></div>
           </div>
         </div>
 
