@@ -177,6 +177,28 @@ class McpServerRepositoryTest {
   }
 
   @Test
+  void theSettledDefinitionWriteIsRefusedWhileAnOperationIsInFlight() {
+    // a claim moves no revision, so the revision guard alone cannot see it — this write-level
+    // guard is what refuses an edit that read the row just before a start claimed it
+    repository.insert(row("mcp-1", "files"));
+    assertTrue(repository.claimOperation("mcp-1", "running", "starting"));
+
+    assertFalse(repository.updateDefinitionIfSettled(
+        "mcp-1", "documents", "d", null, "{\"a\":1}", 2L, 1L, "idle", 1L));
+    ServerRow held = repository.findById("mcp-1").orElseThrow();
+    assertEquals("starting", held.operationState(), "the claim must survive the refused edit");
+    assertEquals("files", held.name());
+
+    repository.releaseOperation("mcp-1");
+    assertTrue(repository.updateDefinitionIfSettled(
+        "mcp-1", "documents", "d", null, "{\"a\":1}", 2L, 1L, "idle", 1L));
+    // `error` is settled too: an edit is how an operator fixes the definition a failure named
+    repository.failOperation("mcp-1", "boom");
+    assertTrue(repository.updateDefinitionIfSettled(
+        "mcp-1", "invoices", "d", null, "{\"b\":1}", 3L, 1L, "idle", 2L));
+  }
+
+  @Test
   void failOperationKeepsOnlyTheFirstLineAndTruncatesAtFiveHundredCharacters() {
     repository.insert(row("mcp-1", "files"));
 

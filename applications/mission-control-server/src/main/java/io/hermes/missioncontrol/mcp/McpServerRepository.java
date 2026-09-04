@@ -5,6 +5,7 @@ import static io.hermes.missioncontrol.errors.ApiErrors.brief;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -92,6 +93,10 @@ class McpServerRepository {
    * read revision 3, both compute 4, and without the guard the second silently overwrites the
    * first — the losing operator's edit is gone and their request reported success.
    *
+   * <p>Deliberately does not check {@code operation_state}: the boot-time seed repair writes
+   * over a record that is legitimately still {@code provisioning}. An operator edit goes through
+   * {@link #updateDefinitionIfSettled}, which does.
+   *
    * @return false when the record has moved on, or is no longer there
    */
   boolean updateDefinition(
@@ -104,6 +109,33 @@ class McpServerRepository {
          WHERE id = ? AND revision = ?
         """, name, description, repoUrl, configJson, revision, appliedRevision, operationState,
         System.currentTimeMillis(), id, expectedRevision) == 1;
+  }
+
+  /**
+   * {@link #updateDefinition}, refused while an operation is in flight — from the write itself,
+   * for the reason {@link #claimOperation} gives. A claim does not bump {@code revision}, so the
+   * revision guard alone admits an edit that read the row just before a start or stop claimed
+   * it: the edit then overwrites the claim's {@code operation_state} mid-Compose-run, and the
+   * run's {@code finishOperation} stamps the new revision applied though the stack it brought up
+   * was rendered from the old one.
+   *
+   * @return false when the record has moved on, is mid-operation, or is no longer there
+   */
+  boolean updateDefinitionIfSettled(
+      String id, String name, String description, String repoUrl, String configJson,
+      long revision, long appliedRevision, String operationState, long expectedRevision) {
+    List<String> settled = McpOperationState.settledWire();
+    String placeholders = String.join(",", Collections.nCopies(settled.size(), "?"));
+    List<Object> arguments = new ArrayList<>(Arrays.asList(
+        name, description, repoUrl, configJson, revision, appliedRevision, operationState,
+        System.currentTimeMillis(), id, expectedRevision));
+    arguments.addAll(settled);
+    return jdbc.update("""
+        UPDATE mcp_servers
+           SET name = ?, description = ?, repo_url = ?, config_json = ?, revision = ?,
+               applied_revision = ?, operation_state = ?, operation_error = NULL, updated_at = ?
+         WHERE id = ? AND revision = ? AND operation_state IN (%s)
+        """.formatted(placeholders), arguments.toArray()) == 1;
   }
 
   /**

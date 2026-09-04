@@ -63,17 +63,17 @@ host and are rendered into a real Compose project named
 `mcp` is unrelated and is never adopted or modified.
 
 Each host's generated Compose file lives below `/data/mcp-stacks`; SQLite is
-the source of truth and the file can be regenerated. Compose operations are
-serialized per host and run without a shell. Managed services use the shared
+the source of truth and the file can be regenerated. Compose mutations are
+serialized per host and run without a shell; reads skip the lock. Managed services use the shared
 `mission-control-mcp-net` network and stable service aliases. Same-host Hermes
 containers are attached to that network when a catalog entry is connected;
 cross-host connections require an explicit agent-reachable URL.
 
-Reading a catalog record comes in two forms, and which one a call site uses matters
-because Compose operations are serialized per host. `definition` answers from the
-SQLite row alone; `live` first re-reads the managed service's runtime state, which
-costs a `docker compose ps` **under that host's compose lock** plus a container
-listing, and persists what it finds. Only a call about to act on whether the server
+Reading a catalog record comes in two forms, and which one a call site uses matters.
+`definition` answers from the SQLite row alone; `live` first re-reads the managed
+service's runtime state, which costs a `docker compose ps` fork plus a container
+listing, and persists what it finds. Only Compose mutations take the per-host
+lock — reads do not, so a listing never waits out an image pull. Only a call about to act on whether the server
 is up — connecting an Agent to it, an explicit check — takes `live`. The Agents page
 enriches every profile with its catalog links on a 12-second poll and needs one
 column, so that path takes `definition`.

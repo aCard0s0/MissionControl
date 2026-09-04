@@ -310,16 +310,16 @@ class McpRegistryLifecycleTest {
       private boolean raced;
 
       @Override
-      boolean updateDefinition(String id, String name, String description, String repoUrl,
+      boolean updateDefinitionIfSettled(String id, String name, String description, String repoUrl,
           String configJson,
           long revision, long appliedRevision, String operationState, long expectedRevision) {
         if (!raced) {
           raced = true;
           // the other editor's save lands first, taking revision 1 to 2
-          super.updateDefinition(id, "Saved by someone else", description, null, configJson,
-              expectedRevision + 1, appliedRevision, operationState, expectedRevision);
+          super.updateDefinitionIfSettled(id, "Saved by someone else", description, null,
+              configJson, expectedRevision + 1, appliedRevision, operationState, expectedRevision);
         }
-        return super.updateDefinition(id, name, description, null, configJson, revision,
+        return super.updateDefinitionIfSettled(id, name, description, null, configJson, revision,
             appliedRevision, operationState, expectedRevision);
       }
     };
@@ -334,6 +334,43 @@ class McpRegistryLifecycleTest {
               () -> raced.service().update(id, external("My version"))).getMessage());
       // the winner's save is intact, and the loser was told rather than silently discarded
       assertEquals("Saved by someone else", raced.service().definition(id).name());
+    } finally {
+      raced.close();
+    }
+  }
+
+  @Test
+  void aSaveThatRacesAClaimIsRefusedRatherThanUnclaimingTheRecord() throws Exception {
+    // ensureIdle read the row before the claim landed, and a claim does not bump the revision —
+    // so only the write-level operation_state guard can refuse this. Without it the edit
+    // overwrote the claim's `starting` mid-Compose-run and marked its own revision applied.
+    McpServerRepository racing = new McpServerRepository(database.jdbc()) {
+      private boolean raced;
+
+      @Override
+      boolean updateDefinitionIfSettled(String id, String name, String description, String repoUrl,
+          String configJson,
+          long revision, long appliedRevision, String operationState, long expectedRevision) {
+        if (!raced) {
+          raced = true;
+          // a start claims the record between this update's read and its write
+          super.claimOperation(id, "running", "starting");
+        }
+        return super.updateDefinitionIfSettled(id, name, description, null, configJson, revision,
+            appliedRevision, operationState, expectedRevision);
+      }
+    };
+    McpWiring.Graph raced = McpWiring.graph(racing, retained, links, hosts,
+        mock(DockerGateway.class), compose, LIVE_MODE, new QueuedOperations());
+    try {
+      String id = raced.service().create(external("Remote docs")).id();
+
+      assertEquals("an MCP server operation is already in progress",
+          assertThrows(ResourceConflictException.class,
+              () -> raced.service().update(id, external("My version"))).getMessage());
+      ServerRow row = racing.findById(id).orElseThrow();
+      assertEquals("starting", row.operationState(), "the claim must survive the refused edit");
+      assertEquals(1, row.revision(), "the refused edit must not move the revision");
     } finally {
       raced.close();
     }

@@ -3,7 +3,7 @@ type: object
 cluster: mcp
 universe: live
 status: verified
-verified: main @ 976a9c9 · 2026-08-28
+verified: claude/mission-control-defect-review-7b1c8c @ ff1564e · 2026-09-04
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/mcp/McpRegistryService.java
 ---
 
@@ -20,15 +20,16 @@ The page is **global**, not scoped to the active container.
 
 **Two read modes, and picking the wrong one is a real cost.** `definition(id)` answers from the
 SQLite row alone; `live(id)` first re-reads the managed service's runtime state, which forks
-`docker compose ps` **under that host's compose lock** plus a container listing, and persists
-what it finds. The split exists because there used to be one method and it was the refreshing
+`docker compose ps` plus a container listing, and persists what it finds. (Reads do not take
+the host's compose lock — only mutations do — so the cost is the forks, not a wait behind an
+image pull.) The split exists because there used to be one method and it was the refreshing
 one: the Agent read path calls it per linked entry per profile on a 12-second poll, and every one
-of those was forking Compose under the lock to reach a `revision` column
+of those was forking Compose to reach a `revision` column
 (`mcp/McpRegistryService.java:97`). Only a caller about to act on whether the server is *up*
 takes `live` (`:113`).
 
 `list()` is a third mode: rows refreshed **together**, because per row it costs one `compose ps`
-under the lock plus a full container listing, and per host only one of each (`:79`).
+plus a full container listing, and per host only one of each (`:79`).
 
 **Desired vs applied is two columns, not a boolean.** `revision` is bumped by an edit,
 `applied_revision` by a successful Compose apply, and `pendingChanges` is just

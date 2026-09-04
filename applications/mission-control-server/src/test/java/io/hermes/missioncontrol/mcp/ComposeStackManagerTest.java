@@ -448,7 +448,44 @@ class ComposeStackManagerTest {
         "mcp-docs", "cid-docs"), byService);
     assertTrue(commands.getFirst().contains(
         "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT));
+    // full ids: the caller joins these against the Engine API's 64-character ids, and the
+    // CLI's default 12-character truncation matches nothing there
+    assertTrue(commands.getFirst().contains("--no-trunc"), commands.getFirst().toString());
     assertEquals(1, commands.size(), "one read for the whole host: " + commands);
+  }
+
+  @Test
+  void aCatalogReadDoesNotWaitOutAMutationHoldingTheHostLock() throws Exception {
+    // the batch listing exists so the page stops waiting on an image pull; a read that takes
+    // the mutation lock re-creates exactly that wait, up to the compose timeout
+    java.util.concurrent.CountDownLatch mutationRunning = new java.util.concurrent.CountDownLatch(1);
+    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    ComposeStackManager manager = managerReturning(command -> {
+      if (isInspect(command)) return ManagedMcpStack.PROJECT;
+      if (command.contains("up")) {   // the mutation, holding the host lock mid-"pull"
+        mutationRunning.countDown();
+        try {
+          release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+        }
+        return "ok";
+      }
+      if (isCompose(command)) return "cid-files\n";   // compose ps -q for one service
+      return "mcp-files\tcid-files\n";                // the label-filtered docker ps
+    });
+    Thread mutation = new Thread(() ->
+        manager.execute(HOST, rendered(), List.of("up", "-d"), Duration.ofMinutes(1)));
+    mutation.start();
+    try {
+      assertTrue(mutationRunning.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+      assertEquals(Map.of("mcp-files", "cid-files"), manager.containerIdsByService(HOST));
+      assertEquals("cid-files", manager.serviceContainerId(HOST, "mcp-files"));
+    } finally {
+      release.countDown();
+      mutation.join(5_000);
+    }
   }
 
   @Test

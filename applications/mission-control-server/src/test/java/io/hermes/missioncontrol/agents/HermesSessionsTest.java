@@ -144,10 +144,11 @@ class HermesSessionsTest {
   }
 
   @Test
-  void theHistoryReadIsCheckedWhileTheListingIsNot() {
-    // the listing's script prints '[]' on its own errors, so its exit code carries no
-    // information. The history script deliberately re-raises locked/corrupt failures, and
-    // only the checked exec turns that non-zero exit into an error the operator sees.
+  void bothReadsAreCheckedSoALockedOrCorruptStoreSurfaces() {
+    // both scripts re-raise locked/corrupt failures and degrade only a schema mismatch to
+    // '[]', so only the checked exec turns that non-zero exit into an error the operator
+    // sees. The listing used to swallow everything: a corrupt store read as "no sessions"
+    // while opening any one of them still failed — two answers about one file.
     FakeContainer container = new FakeContainer().file(DB, "")
         .onCommand("FROM sessions", "[]")
         .onCommand("FROM messages", "[]");
@@ -155,7 +156,7 @@ class HermesSessionsTest {
     sessions(container).list(HOST, CONTAINER, "ops");
     verify(container.dockerExec()).runAsUser(any(), anyString(), anyString(),
         argThat(argv -> argv.size() > 2 && argv.get(2).contains("FROM sessions")),
-        anyString(), eq(false), anyBoolean(), any(Duration.class));
+        anyString(), eq(true), anyBoolean(), any(Duration.class));
 
     sessions(container).readMessages(HOST, CONTAINER, "ops", "s1");
     verify(container.dockerExec()).runAsUser(any(), anyString(), anyString(),
