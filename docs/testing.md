@@ -333,3 +333,21 @@ Two things trip up every one of them:
 A required `input()` is not bound until after construction, so a component that reads one to load
 something reads it in an `effect`, not its constructor. A spec that renders it through a host is
 what catches the difference — the template compiler cannot.
+
+## Route smoke — frontend against a real backend
+
+```bash
+BASE=http://localhost:8080 npm run e2e:smoke   # in applications/mission-control-fe
+```
+
+`e2e/smoke.mjs` drives a headless Chromium through every route at a desktop and a phone width
+and fails on what a person would see and the unit suites cannot: a console error, a request
+answered 4xx/5xx, horizontal overflow, a button with no accessible name, or a page header whose
+crumb is outside the vocabulary in `docs/mission_control_guidelines.md`. It is read-only, so it
+is safe to point at a live deployment.
+
+It exists because the component tests stub every store and exclude templates from coverage,
+which is how `NaN%`, native `confirm()` dialogs and fifteen drifting page headers all shipped
+with a green suite. CI runs it as the `route-smoke` job: the production build bundled into the
+jar the way the Dockerfile does it, started against the runner's own Docker daemon, so every
+page is exercised in its empty state.

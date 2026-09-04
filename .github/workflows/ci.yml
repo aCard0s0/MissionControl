@@ -88,3 +88,58 @@ jobs:
       - name: Managed MCP lifecycle against a real daemon
         working-directory: applications/mission-control-server
         run: mvn -B test -Dgroups=docker -Dsurefire.excludedGroups= -Djacoco.skip=true
+
+  # The unit suites stub every store and exclude templates from coverage, so a page that
+  # renders NaN, opens the browser's confirm() or drifts from the header convention passes
+  # them all. This job serves the production build from the real jar against the runner's
+  # own daemon — the same shape the Dockerfile ships — and walks every route the way an
+  # operator would: no console error, no failed request, no overflow, and the crumb
+  # vocabulary from docs/mission_control_guidelines.md. The daemon holds no Hermes
+  # container, so every page is exercised in its empty state. Nothing is deployed.
+  route-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '24'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: applications/mission-control-fe/package-lock.json
+      - name: Frontend build
+        working-directory: applications/mission-control-fe
+        run: npm ci && npm run build
+      - name: Bundle the frontend into the jar, as the Dockerfile does
+        run: |
+          cp -r applications/mission-control-fe/dist/mission-control/browser applications/mission-control-server/src/main/resources/static
+          rm -f applications/mission-control-server/src/main/resources/static/config.js
+      - name: Package
+        working-directory: applications/mission-control-server
+        run: mvn -q -B package -DskipTests -Djacoco.skip=true
+      - name: Start
+        working-directory: applications/mission-control-server
+        env:
+          MC_ALLOW_DEV_KEY: 'true'
+          MC_STARTUP_RECONCILE: 'false'
+          MC_REGISTRY_TAGS: 'false'
+          MC_DB_PATH: /tmp/smoke.db
+          MC_MCP_STACK_DIR: /tmp/mcp-stacks
+        run: |
+          java -jar target/mission-control-server-*.jar > /tmp/mc.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS localhost:8080/health && break; sleep 2; done
+          curl -fsS localhost:8080/health
+      - name: Browser
+        working-directory: applications/mission-control-fe
+        run: npx playwright install --with-deps chromium
+      - name: Route smoke
+        working-directory: applications/mission-control-fe
+        env:
+          BASE: http://localhost:8080
+        run: npm run e2e:smoke
+      - name: Server log
+        if: failure()
+        run: tail -100 /tmp/mc.log
