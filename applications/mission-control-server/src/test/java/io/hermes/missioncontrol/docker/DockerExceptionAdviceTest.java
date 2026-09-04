@@ -58,6 +58,15 @@ class DockerExceptionAdviceTest {
   }
 
   @Test
+  void theDaemonsSentenceIsAnsweredWithoutItsJsonEnvelope() throws Exception {
+    // docker-java's message is the raw answer; the client used to see
+    // {"error":"Status 404: {\"message\":\"No such container: nope\"}\n"}
+    mvc.perform(get("/boom/docker-not-found-json"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error").value("No such container: nope"));
+  }
+
+  @Test
   void aDockerConflictIsAConflictNotABadGateway() throws Exception {
     // a duplicate container name is the caller's problem and is actionable; 502 tells them
     // the daemon is broken, which it is not
@@ -156,6 +165,11 @@ class DockerExceptionAdviceTest {
     @RequestMapping("/docker-not-found")
     void dockerNotFound() {
       throw new NotFoundException("no such container");
+    }
+
+    @RequestMapping("/docker-not-found-json")
+    void dockerNotFoundJson() {
+      throw new NotFoundException("Status 404: {\"message\":\"No such container: nope\"}\n");
     }
 
     @RequestMapping("/docker-conflict")

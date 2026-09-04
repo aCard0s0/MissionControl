@@ -8,9 +8,11 @@ import io.hermes.missioncontrol.agents.api.CronJobsDto;
 import io.hermes.missioncontrol.agents.api.UpdateCronJobRequest;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.errors.ApiErrors;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,14 +63,19 @@ public class HermesCron {
   public CronJobsDto create(
       DockerHostRef host, String containerId, String profileName, CreateCronJobRequest request) {
     String schedule = required(request.schedule(), "schedule");
-    List<String> command = new ArrayList<>(List.of("cron", "create", schedule));
-    if (HermesCli.notBlank(request.prompt())) command.add(request.prompt());
+    List<String> command = new ArrayList<>(List.of("cron", "create"));
     HermesCli.addOption(command, "--name", request.name());
     HermesCli.addOption(command, "--deliver", request.deliver());
     if (request.repeat() != null) HermesCli.addOption(command, "--repeat", String.valueOf(request.repeat()));
     for (String skill : skills(request.skills())) HermesCli.addOption(command, "--skill", skill);
+    // `--` ends option parsing, so a schedule or prompt that reads like a flag is a positional.
+    // Without it `--help` was one: hermes printed its usage, exited 0, and the dashboard
+    // reported a job created that does not exist. Checked against v0.20.5 (2026.8.19).
+    command.add("--");
+    command.add(schedule);
+    if (HermesCli.notBlank(request.prompt())) command.add(request.prompt());
 
-    cli.run(host, containerId, profileName, command);
+    mutate(host, containerId, profileName, command);
     return list(host, containerId, profileName);
   }
 
@@ -85,27 +92,45 @@ public class HermesCron {
     for (String skill : skills(request.skills())) HermesCli.addOption(command, "--skill", skill);
     if (command.size() == 3) return list(host, containerId, profileName);   // nothing to change
 
-    cli.run(host, containerId, profileName, command);
+    mutate(host, containerId, profileName, command);
     return list(host, containerId, profileName);
   }
 
   /** Pauses or resumes one job. Hermes keeps a paused job in the file, disabled. */
   public CronJobsDto setEnabled(
       DockerHostRef host, String containerId, String profileName, String jobId, boolean enabled) {
-    cli.run(host, containerId, profileName,
+    mutate(host, containerId, profileName,
         List.of("cron", enabled ? "resume" : "pause", requireJobId(jobId)));
     return list(host, containerId, profileName);
   }
 
   public CronJobsDto remove(DockerHostRef host, String containerId, String profileName, String jobId) {
-    cli.run(host, containerId, profileName, List.of("cron", "remove", requireJobId(jobId)));
+    mutate(host, containerId, profileName, List.of("cron", "remove", requireJobId(jobId)));
     return list(host, containerId, profileName);
   }
 
   /** Asks for the job to fire on the next scheduler tick rather than at its schedule. */
   public CronJobsDto runNow(DockerHostRef host, String containerId, String profileName, String jobId) {
-    cli.run(host, containerId, profileName, List.of("cron", "run", requireJobId(jobId)));
+    mutate(host, containerId, profileName, List.of("cron", "run", requireJobId(jobId)));
     return list(host, containerId, profileName);
+  }
+
+  /**
+   * Runs one {@code hermes cron} mutation and reads its verdict off stdout, because the exit
+   * code carries none: hermes v0.20.5 (2026.8.19) exits 0 for an invalid schedule
+   * ({@code Failed to create job: Invalid schedule '…'}) and for an unknown id
+   * ({@code Job not found: …}, {@code Failed to pause job: … not found}) exactly as it does for
+   * {@code Created job: …}. Without this every one of those answered 200 and the page showed
+   * the unchanged schedule as though the change had landed.
+   *
+   * <p>Keyed on the failure wording, not the success wording, so a rewording upstream fails
+   * open to today's behaviour rather than turning every success into a 400.
+   */
+  private void mutate(
+      DockerHostRef host, String containerId, String profileName, List<String> command) {
+    String verdict = ApiErrors.brief(cli.run(host, containerId, profileName, command).stdout(), 300, "");
+    if (verdict.contains("not found")) throw new NoSuchElementException(verdict);
+    if (verdict.startsWith("Failed")) throw new IllegalArgumentException(verdict);
   }
 
   // ── reading ────────────────────────────────────────────────────────────────

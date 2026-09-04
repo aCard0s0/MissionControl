@@ -11,6 +11,7 @@ import io.hermes.missioncontrol.agents.api.SkillContentDto;
 import io.hermes.missioncontrol.agents.api.SkillDto;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
@@ -208,11 +209,12 @@ class HermesSkillsTest {
     FakeContainer container = new FakeContainer().onCommand("-name SKILL.md", "");
     HermesSkills skills = skills(container);
 
-    assertThrows(IllegalArgumentException.class,
+    // a 404, not a 400: the name is well-formed, there is just no such skill on this profile
+    assertThrows(NoSuchElementException.class,
         () -> skills.readContent(HOST, CONTAINER, "ops", "absent"));
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(NoSuchElementException.class,
         () -> skills.uninstall(HOST, CONTAINER, "ops", "absent"));
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(NoSuchElementException.class,
         () -> skills.updateContent(HOST, CONTAINER, "ops", "absent", "body"));
   }
 

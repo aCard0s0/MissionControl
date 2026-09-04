@@ -165,10 +165,14 @@ class HermesSkillFilesTest {
 
   @Test
   void readingASkillLargerThanTheByteBudgetIsRefused() {
-    FakeContainer container = new FakeContainer()
-        .dir(OPS_SKILLS + "/pdf")
-        .file(OPS_SKILLS + "/pdf/SKILL.md", "x".repeat(600 * 1024))
-        .onCommand("cd \"$d\"", "SKILL.md\n");
+    // six files that each fit one exec argument, and together pass the 512KB skill budget
+    FakeContainer container = new FakeContainer().dir(OPS_SKILLS + "/pdf");
+    StringBuilder listing = new StringBuilder();
+    for (int i = 0; i < 6; i++) {
+      container.file(OPS_SKILLS + "/pdf/part" + i + ".md", "x".repeat(100 * 1024));
+      listing.append("part").append(i).append(".md\n");
+    }
+    container.onCommand("cd \"$d\"", listing.toString());
 
     assertThrows(IllegalArgumentException.class,
         () -> skills(container).readSkillFiles(HOST, CONTAINER, "ops", "pdf"));
@@ -242,10 +246,27 @@ class HermesSkillFilesTest {
   }
 
   @Test
+  void aFileLargerThanOneExecArgumentIsReportedSkippedRatherThanStored() {
+    // the row would save and then fail every deploy: the write hands the body to the
+    // container as one argument, and the daemon refuses one past MAX_WRITE_BYTES
+    FakeContainer container = new FakeContainer()
+        .dir(OPS_SKILLS + "/pdf")
+        .file(OPS_SKILLS + "/pdf/SKILL.md", "# pdf")
+        .file(OPS_SKILLS + "/pdf/corpus.txt", "a".repeat(HermesContainerFiles.MAX_WRITE_BYTES + 1))
+        .onCommand("cd \"$d\"", "SKILL.md\ncorpus.txt\n");
+
+    SkillFilesDto read = skills(container).readSkillFiles(HOST, CONTAINER, "ops", "pdf");
+
+    assertEquals(Map.of("SKILL.md", "# pdf"), read.files());
+    assertEquals(List.of("corpus.txt"), read.skipped());
+  }
+
+  @Test
   void readingASkillThatDoesNotResolveIsRejected() {
     FakeContainer container = new FakeContainer().dir("/opt/data/profiles/ops");
 
-    assertThrows(IllegalArgumentException.class,
+    // a 404, not a 400: the name is well-formed, there is just no such skill on this profile
+    assertThrows(NoSuchElementException.class,
         () -> skills(container).readSkillFiles(HOST, CONTAINER, "ops", "nope"));
   }
 }

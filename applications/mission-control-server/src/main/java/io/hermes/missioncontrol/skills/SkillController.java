@@ -74,7 +74,9 @@ public class SkillController {
 
   public record SkillFileRequest(
       @NotBlank @Size(max = 200) @Pattern(regexp = FILE_PATH_PATTERN) String path,
-      @Size(max = 200_000) String body) {
+      // one docker exec argument — HermesContainerFiles.MAX_WRITE_BYTES. Characters here,
+      // bytes there, so a multibyte body this long is still refused at deploy with a reason
+      @Size(max = 131_071) String body) {
   }
 
   public record ImportSkillRequest(

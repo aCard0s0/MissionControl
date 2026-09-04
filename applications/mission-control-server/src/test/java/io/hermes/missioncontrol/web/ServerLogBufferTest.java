@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,6 +76,13 @@ class ServerLogBufferTest {
     // absent and 'all' both mean everything retained
     assertEquals(3, buffer.tail(10, "all").size());
     assertEquals(3, buffer.tail(10, "  ").size());
+  }
+
+  @Test
+  void anUnknownLevelIsRefusedRatherThanAnsweredWithAnEmptyPage() {
+    logger.error("an error");
+    // an empty page for a typo reads as "nothing logged", the opposite of the truth
+    assertThrows(IllegalArgumentException.class, () -> buffer.tail(10, "bogus"));
   }
 
   @Test

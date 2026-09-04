@@ -70,10 +70,16 @@ public class ServerLogBuffer extends AppenderBase<ILoggingEvent> {
    * them for display itself, because the readers sharing that panel disagree on the order they
    * hand their lines over in.
    */
+  private static final List<String> LEVELS = List.of("error", "warn", "info", "debug");
+
   public List<LogLineDto> tail(int tail, String level) {
     int limit = Math.min(Math.max(tail, 1), CAPACITY);
     String wanted = level == null || level.isBlank() || "all".equalsIgnoreCase(level)
         ? null : level.toLowerCase(Locale.ROOT);
+    if (wanted != null && !LEVELS.contains(wanted)) {
+      // an empty page for a typo reads as "nothing logged", which is the opposite of the truth
+      throw new IllegalArgumentException("level must be one of " + String.join(", ", LEVELS));
+    }
     List<LogLineDto> out = new ArrayList<>(Math.min(limit, CAPACITY));
     synchronized (ring) {
       // descendingIterator walks newest to oldest, so the cap keeps the newest lines

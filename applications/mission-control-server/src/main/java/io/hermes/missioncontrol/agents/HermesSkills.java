@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
@@ -213,11 +214,14 @@ class HermesSkills {
     for (int i = 0; i < names.size(); i++) {
       String name = names.get(i);
       String body = read.getOrDefault(paths.get(i), "");
-      if (body.indexOf('\0') >= 0) {
+      int size = body.getBytes(StandardCharsets.UTF_8).length;
+      // a file a deploy could never write back — binary, or larger than one exec argument —
+      // is reported rather than stored, so the library never holds a row that cannot land
+      if (body.indexOf('\0') >= 0 || size > HermesContainerFiles.MAX_WRITE_BYTES) {
         skipped.add(name);
         continue;
       }
-      bytes += body.getBytes(StandardCharsets.UTF_8).length;
+      bytes += size;
       if (bytes > MAX_SKILL_BYTES) {
         throw new IllegalArgumentException("skill exceeds " + MAX_SKILL_BYTES + " bytes");
       }
@@ -247,7 +251,7 @@ class HermesSkills {
   private String requireSkillDir(
       DockerHostRef host, String containerId, String profileName, String skillName) {
     String skillDir = findSkillDir(host, containerId, profileName, skillName);
-    if (skillDir == null) throw new IllegalArgumentException("skill not found: " + skillName);
+    if (skillDir == null) throw new NoSuchElementException("skill not found: " + skillName);
     return skillDir;
   }
 
