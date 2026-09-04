@@ -29,6 +29,13 @@ export class BoardPage {
   protected readonly columns = COLUMNS;
   protected readonly ago = ago;
 
+  constructor() {
+    // the board is loaded once at boot and nothing polls it, so without this the page
+    // shows that boot-time snapshot — moves made since (another tab, another operator)
+    // would be invisible until a full reload
+    void this.board.refresh();
+  }
+
   protected readonly byColumn = computed(() => {
     const m: Record<BoardColumn, BoardTask[]> = { queued: [], running: [], review: [], done: [] };
     for (const t of this.board.forSelectedContainer()) m[t.column].push(t);

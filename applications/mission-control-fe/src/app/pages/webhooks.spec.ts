@@ -80,6 +80,19 @@ describe('WebhooksPage', () => {
     expect(store.webhooks.refresh).toHaveBeenCalled();
   });
 
+  it('re-reads the routes on its own clock while open, and stops when it closes', async () => {
+    const { fixture, store } = render(storeStub([], []));
+    const onOpen = store.webhooks.refresh.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(store.webhooks.refresh.mock.calls.length).toBeGreaterThan(onOpen);
+
+    fixture.destroy();
+    const afterClose = store.webhooks.refresh.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(store.webhooks.refresh.mock.calls.length).toBe(afterClose);
+  });
+
   it('shows each route with the endpoint a provider would post to', () => {
     const { fixture } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
 
@@ -239,6 +252,33 @@ describe('WebhooksPage route details', () => {
 
     expect(store.webhooks.secretOf).toHaveBeenCalledWith('a-1', 'grafana');
     expect(el(fixture).querySelector('code.secret')?.textContent).toBe('the-real-secret');
+  });
+
+  it('reveals one profile\'s secret only under that profile\'s row, not under a same-named route', async () => {
+    // route names are per-profile namespaces, so two profiles can both hold `github`
+    const { fixture, store } = render(storeStub(
+      [route('github', 'a-1'), route('github', 'a-2')],
+      [listener('a-1'), listener('a-2')]));
+
+    press(fixture, 'reveal', '.hook');   // the first row — atlas's github
+    await settle(fixture);
+
+    expect(store.webhooks.secretOf).toHaveBeenCalledTimes(1);
+    expect(store.webhooks.secretOf).toHaveBeenCalledWith('a-1', 'github');
+    // scribe's same-named route keeps its mask — showing atlas's secret there hands the
+    // operator the wrong signing key
+    expect(el(fixture).querySelectorAll('code.secret')).toHaveLength(1);
+  });
+
+  it('shows a test result only on the route that was tested, not on a same-named one', async () => {
+    const { fixture } = render(storeStub(
+      [route('github', 'a-1'), route('github', 'a-2')],
+      [listener('a-1'), listener('a-2')]));
+
+    press(fixture, 'test', '.hook');
+    await settle(fixture);
+
+    expect(el(fixture).querySelectorAll('.test-output')).toHaveLength(1);
   });
 
   it('keeps the mask when the secret could not be read', async () => {

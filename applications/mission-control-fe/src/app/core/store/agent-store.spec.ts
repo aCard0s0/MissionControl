@@ -89,6 +89,24 @@ describe('AgentStore refresh', () => {
     expect(agents.byId('a-atlas')?.mcp[0].status).toBe('checking');
   });
 
+  it('does not let a fan-out that predates a write overwrite it', async () => {
+    let land!: (value: ApiAgentProfile[]) => void;
+    const list = vi.fn()
+      .mockResolvedValueOnce([apiProfile('atlas')])
+      .mockReturnValue(new Promise<ApiAgentProfile[]>(resolve => { land = resolve; }));
+    const { agents } = await built({ list });
+    await agents.refresh();
+
+    const refreshing = agents.refresh();          // the fan-out reads the pre-write profile
+    agents.patch('a-atlas', { role: 'SRE' });     // a confirmed write lands mid-flight
+    land([apiProfile('atlas')]);                  // the stale listing arrives afterwards
+    await refreshing;
+
+    // applying the stale listing would flip a just-confirmed pause back to running, or a
+    // saved SOUL.md back to unsaved, until the next tick corrected it
+    expect(agents.byId('a-atlas')?.role).toBe('SRE');
+  });
+
   it('takes a real probe result over the one that was in flight', async () => {
     const list = vi.fn()
       .mockResolvedValueOnce([apiProfile('atlas', { mcp: [mcp('github', 'unknown')] })])

@@ -6,7 +6,6 @@ import { HostStore } from './host-store';
 import { ImageCatalogStore } from './image-catalog-store';
 import { InferenceEndpointStore } from './inference-endpoint-store';
 import { JobStore } from './job-store';
-import { WebhookStore } from './webhook-store';
 import { LogStore } from './log-store';
 import { McpCatalogStore } from './mcp-catalog-store';
 import { CredentialStore } from './credential-store';
@@ -73,7 +72,6 @@ export class LiveSync {
   private readonly endpoints = inject(InferenceEndpointStore);
   private readonly images = inject(ImageCatalogStore);
   private readonly jobs = inject(JobStore);
-  private readonly webhooks = inject(WebhookStore);
 
   async probeBackend(): Promise<void> {
     try {
@@ -90,23 +88,31 @@ export class LiveSync {
     if (this.started) return;
     this.started = true;
     // What is loaded here is what something other than its own page reads: a dialog, a
-    // panel, a picker. The libraries whose only reader is their own page — prompts, guides
-    // and the three group families — are not, because that page loads them when it opens and
-    // loading them here as well meant a deep link to it fetched each one twice at once.
-    await Promise.all([
-      this.hosts.refresh(), this.endpoints.refresh(), this.providers.refreshRegistry(),
-      this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
-      this.skills.refresh(), this.credentials.refresh(),
-      this.mcp.refresh(), this.mcp.refreshRetainedResources(),
-    ]);
-    await this.agents.refresh();   // needs the container list
+    // panel, a picker. The libraries whose only reader is their own page — prompts, guides,
+    // webhooks and the three group families — are not, because that page loads them when it
+    // opens and loading them here as well meant a deep link to it fetched each one twice at
+    // once. Webhooks in particular were also *polled* here: one exec-backed request per
+    // profile every 30s, feeding a page that is almost never open.
+    try {
+      await Promise.all([
+        this.hosts.refresh(), this.endpoints.refresh(), this.providers.refreshRegistry(),
+        this.containers.refresh(), this.board.refresh(), this.templates.refresh(),
+        this.skills.refresh(), this.credentials.refresh(),
+        this.mcp.refresh(), this.mcp.refreshRetainedResources(),
+      ]);
+      await this.agents.refresh();   // needs the container list
+    } catch (e) {
+      // a first load that rejects must hand probeBackend's retry a start() that will run
+      // again — a flag left set made that retry a silent no-op: no pollers, a frozen
+      // dashboard, and a banner saying connected
+      this.started = false;
+      throw e;
+    }
     void this.images.refreshAll();
     void this.jobs.refresh();      // needs the profile list
-    void this.webhooks.refresh();
     this.schedule(() => this.containers.refresh(), POLL.containers);
     this.schedule(() => this.agents.refresh(), POLL.agents);
     this.schedule(() => this.jobs.refresh(), POLL.jobs);
-    this.schedule(() => this.webhooks.refresh(), POLL.jobs);
     this.schedule(() => this.images.refreshAll(), POLL.imageCatalogs);
     this.schedule(() => this.containers.pollStats(), POLL.stats);
     this.schedule(() => this.logs.poll(), POLL.logs);

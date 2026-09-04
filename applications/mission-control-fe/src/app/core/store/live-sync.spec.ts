@@ -307,6 +307,35 @@ describe('LiveSync bootstrap', () => {
     expect(store.containers.containers().map(c => c.id)).toEqual(inventory);
   });
 
+  it('retries the whole first load when part of it fails, instead of freezing behind a connected banner', async () => {
+    const calls = backend();
+    const store = storeSlices();
+    // every refresh swallows its own transport errors, so a start() failure has to be
+    // injected above them — the case this guards is any future load that can reject
+    vi.spyOn(store.hosts, 'refresh').mockRejectedValueOnce(new Error('boom'));
+    void store.liveSync.probeBackend();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.ctx.backendStatus()).toBe('unreachable');
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(store.ctx.backendStatus()).toBe('connected');
+
+    // the retry must run start() again — a started flag left set made it a no-op:
+    // no pollers, a frozen dashboard, and a banner saying connected
+    const afterRetry = calls.filter(u => u === '/api/containers').length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls.filter(u => u === '/api/containers').length).toBeGreaterThan(afterRetry);
+  });
+
+  it('never polls webhooks — that read fans out one exec per profile, and only its page shows it', async () => {
+    const calls = backend();
+    booted();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(calls.some(url => url.includes('/webhooks'))).toBe(false);
+  });
+
   it('survives a backend that answers health and then falls over', async () => {
     const routes = backend();
     const store = booted();
