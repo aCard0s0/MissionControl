@@ -84,11 +84,14 @@ describe('InferenceEndpointStore', () => {
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it('answers an empty list and says why a model listing failed', async () => {
+  it('lets a failed model listing reach the caller, which owns how it shows', async () => {
+    // the Models page renders the reason inline where the list would be, and the create
+    // dialog's picker holds its own fallback. A toast raised here preempted both, and once
+    // it faded the panel claimed "0 listed" for an endpoint that was merely unreachable.
     const built = store({ models: vi.fn().mockRejectedValue(new Error('no such provider')) });
 
-    expect(await built.store.models('mp-1')).toEqual([]);
-    expect(liveError(built.ctx)).toBe('model list failed: no such provider');
+    await expect(built.store.models('mp-1')).rejects.toThrow('no such provider');
+    expect(liveError(built.ctx)).toBeNull();
   });
 
   it('reports a failed pull and a failed delete by name', async () => {

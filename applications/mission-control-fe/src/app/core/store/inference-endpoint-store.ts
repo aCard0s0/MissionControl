@@ -47,13 +47,12 @@ export class InferenceEndpointStore {
       });
   }
 
+  /** The models an endpoint lists. Rejects on failure rather than degrading to an empty
+   *  list: the Models page renders the reason inline where the list would be, and the create
+   *  dialog's picker holds its own fallback — a toast from here preempted both, and once it
+   *  faded the panel claimed "0 listed" for an endpoint that was merely unreachable. */
   models(id: string): Promise<EndpointModel[]> {
-    return this.ctx.api.endpoints.models(id)
-      .then(list => list.map(toEndpointModel))
-      .catch(e => {
-        this.ctx.toastFailure('model list', e);
-        return [];
-      });
+    return this.ctx.api.endpoints.models(id).then(list => list.map(toEndpointModel));
   }
 
   /** What the endpoint is holding in memory. Empty on failure — the panel polls this, so a

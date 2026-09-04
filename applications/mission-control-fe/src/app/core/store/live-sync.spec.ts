@@ -633,7 +633,7 @@ describe('live registries', () => {
     expect(fromKey).toEqual(fromConfig);
   });
 
-  it('answers an empty model list rather than throwing at a page', async () => {
+  it('hands a failed model list to the page, and keeps a failed pull poll quiet', async () => {
     const store = await loaded();
     stubBackend(store.ctx, {
       endpoints: {
@@ -642,9 +642,11 @@ describe('live registries', () => {
       },
     });
 
-    expect(await store.endpoints.models('mp-local')).toEqual([]);
+    // the page renders the reason inline; the picker in the create dialog has its own fallback
+    await expect(store.endpoints.models('mp-local')).rejects.toThrow('ollama down');
+    // pull progress is polled, so that read still degrades to empty without a toast per tick
     expect(await store.endpoints.pullStatus('mp-local')).toEqual([]);
-    expect(liveError(store.ctx)).toBe('model list failed: ollama down');
+    expect(liveError(store.ctx)).toBeNull();
   });
 
   it('creates a template, then updates that same one', async () => {
