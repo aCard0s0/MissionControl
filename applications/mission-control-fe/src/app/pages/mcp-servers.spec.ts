@@ -110,13 +110,27 @@ describe('McpServersPage roster', () => {
     expect(el(fixture).textContent).not.toContain('No MCP servers registered.');
   });
 
-  it('refreshes the registry from the group header', () => {
+  it('refreshes the registry from the filter bar, and says which project a managed stack is', () => {
     const { fixture, store } = render(storeStub([server('browser')]));
     store.catalog.refresh.mockClear();
 
-    el(fixture).querySelector<HTMLButtonElement>('.server-group .panel-h button.refresh')!.click();
+    el(fixture).querySelector<HTMLButtonElement>('.filter button.refresh')!.click();
 
     expect(store.catalog.refresh).toHaveBeenCalledTimes(1);
+    expect(el(fixture).querySelector('.server-group .panel-h .chip.project')?.textContent)
+      .toContain('mission-control-mcp');
+  });
+
+  it('counts what the search left visible against the whole registry', () => {
+    const { fixture } = render(storeStub([server('browser'), server('gateway')]));
+    expect(el(fixture).querySelector('.head-stats')!.textContent).toContain('2 registered');
+
+    const input = el(fixture).querySelector<HTMLInputElement>('input.find')!;
+    input.value = 'brow';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(el(fixture).querySelector('.head-stats')!.textContent).toContain('1 of 2 registered');
   });
 
   it('says the registry is empty rather than showing bare sections, and still offers a refresh', () => {
@@ -126,7 +140,7 @@ describe('McpServersPage roster', () => {
     expect(el(fixture).querySelectorAll('.server-group').length).toBe(0);
 
     store.catalog.refresh.mockClear();
-    el(fixture).querySelector<HTMLButtonElement>('.panel.empty button.refresh')!.click();
+    el(fixture).querySelector<HTMLButtonElement>('.filter button.refresh')!.click();
     expect(store.catalog.refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -387,6 +401,32 @@ describe('McpServersPage groups', () => {
     press(rendered.fixture, 'groups');
     return rendered;
   };
+
+  it('narrows groups by name, and refreshes the groups rather than the registry', () => {
+    const { fixture, store } = onGroupsTab(withGroups([server('files')], [
+      mcpGroup('mg-1', { name: 'research' }), mcpGroup('mg-2', { name: 'ops' })]));
+    expect(el(fixture).querySelectorAll('.group-row').length).toBe(2);
+    expect(el(fixture).querySelector('.head-stats')!.textContent).toContain('2 groups');
+
+    const input = el(fixture).querySelector<HTMLInputElement>('input.find')!;
+    input.value = 'RESEARCH';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(el(fixture).querySelectorAll('.group-row').length).toBe(1);
+    expect(el(fixture).querySelector('.head-stats')!.textContent).toContain('1 of 2 groups');
+
+    input.value = 'nope';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(el(fixture).textContent).toContain('No group named like “nope”');
+    expect(el(fixture).textContent).not.toContain('No groups yet.');
+
+    store.catalog.refresh.mockClear();
+    store.mcpGroups.refresh.mockClear();
+    el(fixture).querySelector<HTMLButtonElement>('.filter button.refresh')!.click();
+    expect(store.mcpGroups.refresh).toHaveBeenCalledTimes(1);
+    expect(store.catalog.refresh).not.toHaveBeenCalled();
+  });
 
   it('opens on the roster, and swaps it for the groups when the tab is pressed', async () => {
     const { fixture } = render(withGroups(

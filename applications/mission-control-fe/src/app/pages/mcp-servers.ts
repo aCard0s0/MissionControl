@@ -70,18 +70,39 @@ export class McpServersPage {
   protected purgeConfirm = '';
   protected readonly purgeBusy = signal(false);
 
+  /** One search box for the page; it narrows whichever tab is open, by name. */
   protected readonly query = signal('');
+  private readonly needle = computed(() => this.query().trim().toLowerCase());
 
-  protected readonly serverSections = computed(() => {
-    const needle = this.query().trim().toLowerCase();
-    const servers = needle
+  protected readonly visibleServers = computed(() => {
+    const needle = this.needle();
+    return needle
       ? this.catalog.servers().filter(server => server.name.toLowerCase().includes(needle))
       : this.catalog.servers();
-    return mcpServerSections(servers, this.hosts.hosts());
+  });
+
+  protected readonly serverSections = computed(() =>
+    mcpServerSections(this.visibleServers(), this.hosts.hosts()));
+
+  protected readonly visibleGroups = computed(() => {
+    const needle = this.needle();
+    return needle
+      ? this.groups.groups().filter(group => group.name.toLowerCase().includes(needle))
+      : this.groups.groups();
   });
 
   protected onSearch(value: string): void {
     this.query.set(value);
+  }
+
+  /** `3 registered`, or `1 of 3 registered` while a search narrows the list. */
+  protected count(shown: number, total: number, noun: string): string {
+    const all = `${total} ${noun}`;
+    return this.needle() ? `${shown} of ${all}` : all;
+  }
+
+  protected refreshActive(): void {
+    void (this.activeTab() === 'servers' ? this.catalog.refresh() : this.groups.refresh());
   }
 
   // ── groups ──────────────────────────────────────────────────────────────
