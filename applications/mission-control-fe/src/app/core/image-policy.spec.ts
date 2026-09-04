@@ -72,6 +72,19 @@ describe('resolvedVersion', () => {
       { tag: 'v1.0.0', digest: 'sha256:aaa' },
     ]))).toBe('v1.0.0');
   });
+
+  it("shows the release hermes itself reports before anything the registry can infer", () => {
+    // a `latest` built from main shares its digest with no release tag, so only hermes knows
+    expect(displayVersion({ ...onFloating('latest', 'sha256:zzz'), release: '2026.8.19' },
+      cat([{ tag: 'latest', digest: 'sha256:zzz' }, { tag: 'v2026.8.31', digest: 'sha256:bbb' }])))
+      .toBe('v2026.8.19');
+    // no catalog at all is fine — the answer did not come from one
+    expect(displayVersion({ ...onFloating('latest', null), release: 'v2026.8.19' }, undefined))
+      .toBe('v2026.8.19');
+    // a pinned tag already is the version; the release does not second-guess it
+    expect(displayVersion({ ...on('v2026.8.19'), release: '2026.8.20' }, undefined)).toBe('v2026.8.19');
+    expect(displayVersion({ ...onFloating('latest', null), release: '  ' }, undefined)).toBe('latest');
+  });
 });
 
 describe('targetVersion', () => {

@@ -98,7 +98,8 @@ export class OverviewPage {
   protected updateHint(c: HermesContainer, target: ImageTag): string {
     const from = this.version(c);
     const to = targetVersion(target, this.images.catalog()[c.hostId]);
-    return from === to ? `a newer image was published on ${c.version}` : `${from} → ${to}`;
+    return from === to || isFloatingTag(to)
+      ? `a newer image was published on ${target.tag}` : `${from} → ${to}`;
   }
 
   protected readonly agentCounts = computed(() => {

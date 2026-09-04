@@ -5,7 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -22,6 +27,7 @@ import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import io.hermes.missioncontrol.config.AppProperties;
+import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,7 +50,7 @@ class ContainerInventoryTest {
   private final DockerClient client = mock(DockerClient.class);
   private final DockerClient streamingClient = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final ContainerInventory subject = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true));
+  private final ContainerInventory subject = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "hermes/image", "hermes", "test", true), dockerExec);
 
   private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
@@ -124,7 +130,7 @@ class ContainerInventoryTest {
 
   @Test
   void theSubstringFilterMatchesImageOrNameWhenNoHermesImageIsConfigured() {
-    ContainerInventory substringInventory = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "", "hermes", "test", true));
+    ContainerInventory substringInventory = DockerWiring.inventory(clients, new AppProperties("", "unix:///sock", "", "hermes", "test", true), dockerExec);
     stubListing(
         container("aaaaaaa1111", "/alpha", "Acme/HERMES-agent:v1"),
         container("bbbbbbb2222", "/hermes-beta", "acme/other:v1"),
@@ -280,6 +286,30 @@ class ContainerInventoryTest {
     // it cannot move while the container keeps running, so paying an inspect per poll for it
     // buys nothing
     verify(client, times(1)).inspectContainerCmd("aaaaaaa1111");
+  }
+
+  @Test
+  void theHermesReleaseIsReadOncePerImageAndOnlyFromARunningContainer() {
+    Container running = containerInState("aaaaaaa1111", "/live", "running", "Up 3 minutes");
+    when(running.getImageId()).thenReturn("sha256:img1");
+    Container stopped = container("bbbbbbb2222", "/parked", "hermes/image:latest");
+    when(stopped.getImageId()).thenReturn("sha256:img1");
+    stubListings(List.of(running, stopped), List.of(running, stopped));
+    stubStartedAt("aaaaaaa1111", "2026-08-24T07:00:00.000000000Z");
+    when(dockerExec.run(eq(HOST), eq("aaaaaaa1111"), any(), anyString(), anyBoolean(), anyBoolean(), any()))
+        .thenReturn(new ExecResult(0, "2026.8.19\n", ""));
+
+    Map<String, ContainerDto> first = byName(subject.listContainers(HOST, false));
+    Map<String, ContainerDto> second = byName(subject.listContainers(HOST, false));
+
+    // a container on `latest` reports a pointer, so the release is what the card shows instead
+    assertEquals("2026.8.19", first.get("live").release());
+    assertEquals("2026.8.19", second.get("live").release());
+    // a property of the image, so one exec answers for every poll that follows
+    verify(dockerExec, times(1)).run(any(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(), any());
+    // an exec needs a running container; a stopped one shows its tag rather than a guess
+    assertNull(first.get("parked").release());
+    verify(dockerExec, never()).run(any(), eq("bbbbbbb2222"), any(), anyString(), anyBoolean(), anyBoolean(), any());
   }
 
   @Test

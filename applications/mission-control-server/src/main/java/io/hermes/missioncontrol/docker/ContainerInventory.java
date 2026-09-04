@@ -87,14 +87,36 @@ public class ContainerInventory {
 
   private record StartedAt(String status, long epochMs) { }
 
+  /**
+   * The Hermes release baked into an image, keyed by image id.
+   *
+   * <p>A container on {@code latest} reports a pointer, not a version, and the registry can only
+   * resolve that pointer when some release tag shares its digest — a build published straight
+   * from {@code main} has none, so the card read "latest" beside an "update available" badge.
+   * Hermes itself knows: {@code hermes_cli/__init__.py} carries {@code __release_date__}, the
+   * same calendar version the image tags use. Reading it costs one exec, and the answer is a
+   * property of the image, so it is read once per image id for the life of the process.
+   *
+   * <p>Only a completed read is cached, an empty one included — an image without the file
+   * genuinely has no release to report. A transport failure is retried on the next poll.
+   */
+  private final Map<String, String> releaseByImage = new ConcurrentHashMap<>();
+
+  private static final Duration RELEASE_TIMEOUT = Duration.ofSeconds(10);
+  private static final List<String> READ_RELEASE = List.of("sh", "-c",
+      "sed -n 's/^__release_date__ = \"\\(.*\\)\"/\\1/p' /opt/hermes/hermes_cli/__init__.py 2>/dev/null || true");
+
   private final DockerClients clients;
   private final AppProperties props;
   private final ImageStore images;
+  private final DockerExecService dockerExec;
 
-  public ContainerInventory(DockerClients clients, AppProperties props, ImageStore images) {
+  public ContainerInventory(
+      DockerClients clients, AppProperties props, ImageStore images, DockerExecService dockerExec) {
     this.clients = clients;
     this.props = props;
     this.images = images;
+    this.dockerExec = dockerExec;
   }
 
   public DaemonInfo ping(String url) {
@@ -125,7 +147,7 @@ public class ContainerInventory {
       present.add(exclusionKey(host.id(), primaryName(c)));
       live.add(startedAtKey(host.id(), c.getId()));
       if (!includeAll && !isFleetMember(host.id(), c)) continue;
-      result.add(toDto(client, c, host.id(), digests, sizes));
+      result.add(toDto(client, c, host, digests, sizes));
     }
     // every call lists the whole daemon (withShowAll), so anything this host reported before
     // and does not report now is gone; other hosts' entries are left alone
@@ -261,8 +283,9 @@ public class ContainerInventory {
   }
 
   private ContainerDto toDto(
-      DockerClient client, Container c, String hostId, Map<String, String> digestCache,
+      DockerClient client, Container c, DockerHostRef host, Map<String, String> digestCache,
       Map<String, Double> sizes) {
+    String hostId = host.id();
     String name = primaryName(c);
     String[] imageParts = ImageRef.splitImage(c.getImage());
     if (isImageIdReference(c.getImage())) {
@@ -274,8 +297,10 @@ public class ContainerInventory {
     String status = mapStatus(c.getState(), c.getStatus());
 
     Long startedAt = null;
+    String release = null;
     if ("running".equals(status) || "unhealthy".equals(status)) {
       startedAt = startedAt(client, hostId, c);
+      release = release(host, c);
     }
 
     Double sizeGb = sizes.get(c.getId());
@@ -284,8 +309,27 @@ public class ContainerInventory {
 
     return new ContainerDto(
         c.getId(), c.getId().substring(0, Math.min(7, c.getId().length())), name, hostId,
-        status, imageParts[0], imageParts[1], imageDigest(client, c, digestCache),
+        status, imageParts[0], imageParts[1], imageDigest(client, c, digestCache), release,
         startedAt, sizeGb, profiles);
+  }
+
+  /** The Hermes release this container's image carries, or null when it cannot say. */
+  private String release(DockerHostRef host, Container c) {
+    String imageId = c.getImageId();
+    if (imageId == null || imageId.isBlank()) return null;
+    String cached = releaseByImage.get(imageId);
+    if (cached == null) {
+      try {
+        var result = dockerExec.run(
+            host, c.getId(), READ_RELEASE, "read hermes release", false, false, RELEASE_TIMEOUT);
+        if (result.exitCode() != 0) return null;
+        cached = result.stdout().trim();
+      } catch (RuntimeException unavailable) {
+        return null;
+      }
+      releaseByImage.put(imageId, cached);
+    }
+    return cached.isBlank() ? null : cached;
   }
 
   /**

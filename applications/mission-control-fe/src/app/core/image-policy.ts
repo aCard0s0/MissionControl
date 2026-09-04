@@ -57,6 +57,7 @@ function sameRepository(a: string, b: string): boolean {
  *  tag-only rules below never look at it. */
 export type UpdateCandidate = Pick<HermesContainer, 'image' | 'version'> & {
   readonly imageDigest?: string | null;
+  readonly release?: string | null;
 };
 
 /**
@@ -156,12 +157,24 @@ export function resolvedVersion(
   return releaseAt(container.imageDigest, catalog);
 }
 
-/** What to show as a container's version: the release it runs, else the tag it was given. */
+/**
+ * What to show as a container's version: the release it runs, else the tag it was given.
+ *
+ * <p>Hermes's own answer comes first — `__release_date__` inside the image, read by the
+ * backend — because the registry can only resolve a floating tag when some release tag shares
+ * its digest, and a build published straight from `main` has none. That is the case that showed
+ * `latest` beside an "update available" badge. Written in the tag vocabulary (`v2026.8.19`) so
+ * it reads like the pinned tags around it.
+ */
 export function displayVersion(
   container: UpdateCandidate,
   catalog: ImageCatalog | undefined,
 ): string {
-  return resolvedVersion(container, catalog) ?? container.version;
+  if (!isFloatingTag(container.version)) return container.version;
+  const release = container.release?.trim();
+  return (release ? `v${release.replace(/^v/i, '')}` : null)
+    ?? resolvedVersion(container, catalog)
+    ?? container.version;
 }
 
 /**

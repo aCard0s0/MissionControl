@@ -17,8 +17,9 @@ final class DockerWiring {
     return new ImageStore(clients, props);
   }
 
-  static ContainerInventory inventory(DockerClients clients, AppProperties props) {
-    return new ContainerInventory(clients, props, images(clients, props));
+  static ContainerInventory inventory(
+      DockerClients clients, AppProperties props, DockerExecService dockerExec) {
+    return new ContainerInventory(clients, props, images(clients, props), dockerExec);
   }
 
   static HermesDeployer deployer(
@@ -33,7 +34,7 @@ final class DockerWiring {
     DeploymentReadiness readiness = new DeploymentReadiness(dockerExec);
     DockerNetworks networks = new DockerNetworks(clients);
     return new DockerGateway(
-        new ContainerInventory(clients, props, images),
+        new ContainerInventory(clients, props, images, dockerExec),
         new ContainerStatsReader(clients),
         new ContainerStatsStreams(clients),
         new ContainerLogReader(clients),

@@ -77,6 +77,9 @@ export interface ApiContainer {
   image: string;
   version: string;
   imageDigest: string | null;
+  /** The Hermes release the image carries, as hermes reports it (`2026.8.19`); null when the
+   *  container is not running or the image does not say. What a floating tag really means. */
+  release: string | null;
   startedAt: number | null;
   sizeRootFsGb: number | null;
   profiles: string[];

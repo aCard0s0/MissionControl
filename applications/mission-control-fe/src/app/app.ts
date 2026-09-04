@@ -5,6 +5,8 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AgentStore } from './core/store/agent-store';
 import { ContainerStore } from './core/store/container-store';
 import { HostStore } from './core/store/host-store';
+import { ImageCatalogStore } from './core/store/image-catalog-store';
+import { displayVersion } from './core/image-policy';
 import { LiveSync } from './core/store/live-sync';
 import { StoreContext } from './core/store/store-context';
 import { NavIconView } from './shared/nav-icon';
@@ -45,6 +47,7 @@ export class App {
   protected readonly containers = inject(ContainerStore);
   protected readonly ctx = inject(StoreContext);
   protected readonly hosts = inject(HostStore);
+  protected readonly images = inject(ImageCatalogStore);
   protected readonly liveSync = inject(LiveSync);
   protected readonly nav = NAV;
   protected readonly uptime = uptime;
@@ -74,9 +77,11 @@ export class App {
   protected readonly dateLine = computed(() =>
     this.now().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase());
 
-  /** What the fleet actually runs — never a literal, which goes stale on the first deploy. */
+  /** What the fleet actually runs — never a literal, which goes stale on the first deploy,
+   *  and the release rather than a pointer, the same way the container card names it. */
   protected readonly imageLine = computed(() => {
-    const versions = new Set(this.containers.containers().map(c => c.version));
+    const catalog = this.images.catalog();
+    const versions = new Set(this.containers.containers().map(c => displayVersion(c, catalog[c.hostId])));
     if (!versions.size) return 'hermes-agent · no containers';
     return versions.size === 1
       ? `hermes-agent ${[...versions][0]}`

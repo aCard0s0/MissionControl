@@ -11,7 +11,7 @@ import { provideStores } from './testing/store';
 
 const container = (id: string, patch: Partial<HermesContainer> = {}): HermesContainer => ({
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
-  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', imageDigest: null, startedAt: 1,
+  image: 'nousresearch/hermes-agent', version: 'v2026.8.3', imageDigest: null, release: null, startedAt: 1,
   cpu: 12, ram: 512, ramTotal: 4096, disk: 1, diskTotal: 0, netIn: 0, netOut: 0,
   cpuHist: [], ramHist: [], netHist: [], ...patch,
 });
@@ -118,6 +118,11 @@ describe('App shell', () => {
 
     const none = render(storeStub([]));
     expect(text(none.fixture)).toContain('hermes-agent · no containers');
+
+    // a pointer is not a version: the release hermes reports is what the fleet runs
+    const floating = render(storeStub([container('hermes-prod', { version: 'latest', release: '2026.8.19' })]));
+    expect(text(floating.fixture)).toContain('hermes-agent v2026.8.19');
+    expect(text(floating.fixture)).not.toContain('latest');
   });
 
   it('names the active container, and says so when there is none', () => {
