@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { CredentialsPage } from './credentials';
 import { Credential, CredentialInput } from '../core/models';
-import { buttonWith, el, fill, press, settle, text, type } from '../testing/dom';
+import { buttonWith, el, fill, press, settle, text, type, stubConfirm } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
 const entry = (key: string, patch: object = {}) =>
@@ -279,26 +279,24 @@ describe('CredentialsPage', () => {
 
   it('warns that a delete leaves every key it already filled where it was written', async () => {
     const store = storeStub([credential('cr-1', 'anthropic prod')]);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fixture = render(store);
+    const confirm = stubConfirm(true);
 
     press(fixture, 'delete');
     await settle(fixture);
 
-    expect(confirm.mock.calls[0][0]).toContain('stays where it was written');
+    expect(confirm.mock.calls[0][0].message).toContain('stays where it was written');
     expect(store.credentials.remove).toHaveBeenCalledWith('cr-1');
-    confirm.mockRestore();
   });
 
   it('does not delete when the confirm is declined', async () => {
     const store = storeStub([credential('cr-1', 'anthropic prod')]);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const fixture = render(store);
+    stubConfirm(false);
 
     press(fixture, 'delete');
     await settle(fixture);
 
     expect(store.credentials.remove).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 });

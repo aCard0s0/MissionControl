@@ -51,7 +51,8 @@
     gap: 8px;
     white-space: nowrap;
 
-    .ts  { width: 96px; flex: none; }
+    // `04 Sept 20:04:43` — sized to the stamp, or the level column starts inside it
+    .ts  { width: 118px; flex: none; }
     .lvl { width: 44px; flex: none; }
     // wide enough for the class names the server logs under (ContainerInventory,
     // McpStartupReconciler) rather than the 64px a container's short source needed

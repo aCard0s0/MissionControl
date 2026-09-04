@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal,
 } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { PromptGroupStore } from '../core/store/prompt-group-store';
 import { PromptStore } from '../core/store/prompt-store';
@@ -44,6 +45,7 @@ const VIEW_KEY = 'mc-prompt-view';
 })
 export class PromptsPage {
   protected readonly prompts = inject(PromptStore);
+  private readonly confirm = inject(Confirm);
   protected readonly groups = inject(PromptGroupStore);
   protected readonly ago = ago;
 
@@ -203,7 +205,10 @@ export class PromptsPage {
   }
 
   protected async remove(prompt: Prompt): Promise<void> {
-    if (!confirm(`Delete prompt "${prompt.title}"? This cannot be undone.`)) return;
+    if (!await this.confirm.ask({
+      title: 'delete prompt',
+      message: `Delete "${prompt.title}"? This cannot be undone.`,
+    })) return;
     if (!await this.prompts.remove(prompt.id)) return;
     if (this.editId() === prompt.id) this.cancel();
   }
@@ -229,9 +234,10 @@ export class PromptsPage {
   }
 
   protected async removeGroup(group: PromptGroup): Promise<void> {
-    if (!confirm(
-      `Delete the group "${group.name}"? Its prompts stay in the library — only the filing goes.`
-    )) return;
+    if (!await this.confirm.ask({
+      title: 'delete group',
+      message: `Delete the group "${group.name}"? Its prompts stay in the library — only the filing goes.`,
+    })) return;
     if (await this.groups.remove(group.id)) this.groupDraft.closeIf(group.id);
   }
 }

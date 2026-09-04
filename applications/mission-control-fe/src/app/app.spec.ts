@@ -95,7 +95,7 @@ describe('App shell', () => {
   it('shows the fleet counts and the clock in UTC', () => {
     const { fixture } = render(storeStub([container('hermes-prod')]));
 
-    expect(text(fixture)).toContain('1 containers · 1 profiles');
+    expect(text(fixture)).toContain('1 container · 1 profile');
     expect(text(fixture)).toContain('09:41:07 UTC');
     expect(text(fixture)).toContain('WED, 19 AUG 2026');
   });

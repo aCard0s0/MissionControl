@@ -93,8 +93,10 @@ export class AgentCreateDialog {
     void this.main.load(this.catalogFor(this.provider));
     // the container arrives with the input, which is bound after construction
     effect(() => {
-      const containerId = this.container().id;
-      untracked(() => void this.loadAuthProviders(containerId));
+      const container = this.container();
+      // a stopped container cannot be asked — the call is a 409 and a console error for nothing
+      if (container.status === 'stopped') { this.authProviders.set([]); return; }
+      untracked(() => void this.loadAuthProviders(container.id));
     });
   }
 

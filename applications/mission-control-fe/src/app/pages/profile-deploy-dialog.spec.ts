@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HermesContainer, LlmProvider, ProfileTemplate } from '../core/models';
 import { ProfileDeployDialog } from './profile-deploy-dialog';
-import { TestFixture, el, settle, text } from '../testing/dom';
+import { TestFixture, el, settle, text, stubConfirm } from '../testing/dom';
 import { container as buildContainer, template as buildTemplate } from '../testing/models';
 import { provideStores } from '../testing/store';
 
@@ -83,7 +83,7 @@ describe('ProfileDeployDialog', () => {
     const { fixture } = render(store);
     await settle(fixture);
 
-    expect(el(fixture).textContent).toContain('no containers available');
+    expect(el(fixture).textContent).toContain('no running containers available');
     expect(submit(fixture).disabled).toBe(true);
   });
 
@@ -159,23 +159,24 @@ describe('ProfileDeployDialog', () => {
   });
 
   it('warns before deploying a blueprint that carries no usable key', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, store } = render(storeStub('c-1'), template({
       provider: 'anthropic', secrets: [{ key: 'ANTHROPIC_API_KEY', set: false, recoverable: false }],
     }));
     await settle(fixture);
+    const confirmed = stubConfirm(false);
 
     submit(fixture).click();
     await settle(fixture);
 
-    expect(confirmed.mock.calls[0][0]).toContain('ANTHROPIC_API_KEY');
+    expect(confirmed.mock.calls[0][0].message).toContain('ANTHROPIC_API_KEY');
+    expect(confirmed.mock.calls[0][0].warn).toBe(true);
     expect(store.templates.deploy).not.toHaveBeenCalled();
   });
 
   it('deploys anyway once the operator accepts the missing key', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, store } = render(storeStub('c-1'), template({ provider: 'anthropic' }));
     await settle(fixture);
+    stubConfirm(true);
 
     submit(fixture).click();
     await settle(fixture);
@@ -184,11 +185,11 @@ describe('ProfileDeployDialog', () => {
   });
 
   it('asks nothing when the blueprint already carries the key', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, store } = render(storeStub('c-1'), template({
       provider: 'anthropic', secrets: [{ key: 'ANTHROPIC_API_KEY', set: true, recoverable: true }],
     }));
     await settle(fixture);
+    const confirmed = stubConfirm(true);
 
     submit(fixture).click();
     await settle(fixture);
@@ -198,9 +199,9 @@ describe('ProfileDeployDialog', () => {
   });
 
   it('asks nothing for a provider that needs no key at all', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture } = render(storeStub('c-1'));
     await settle(fixture);
+    const confirmed = stubConfirm(true);
 
     submit(fixture).click();
     await settle(fixture);
@@ -216,5 +217,30 @@ describe('ProfileDeployDialog', () => {
 
     expect(host.closes).toBe(1);
     expect(store.templates.deploy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileDeployDialog targets', () => {
+  it('offers only running containers — a profile is created by exec-ing into one', async () => {
+    const store = storeStub('c-2');
+    store.containers.containers.set([
+      container('c-1', 'hermes-prod'),
+      { ...container('c-2', 'hermes-lab'), status: 'stopped' },
+    ]);
+    const { fixture } = render(store);
+    await settle(fixture);
+
+    const select = el(fixture).querySelector<HTMLSelectElement>('#deploy-target-container')!;
+    expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual(['hermes-prod']);
+    expect(select.value).toBe('c-1');
+  });
+
+  it('says when nothing is running to deploy onto', async () => {
+    const store = storeStub('c-1');
+    store.containers.containers.set([{ ...container('c-1', 'hermes-prod'), status: 'stopped' }]);
+    const { fixture } = render(store);
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('no running containers available');
   });
 });

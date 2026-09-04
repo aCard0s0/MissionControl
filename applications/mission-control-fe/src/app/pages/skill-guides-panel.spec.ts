@@ -9,7 +9,7 @@ import { SkillGuideStore } from '../core/store/skill-guide-store';
 import { SkillStore } from '../core/store/skill-store';
 import { Skill, SkillGuide } from '../core/models';
 import { SkillGuidesPanel } from './skill-guides-panel';
-import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text, stubConfirm } from '../testing/dom';
 
 const guide = (id: string, patch: Partial<SkillGuide> = {}): SkillGuide => ({
   id, name: `guide-${id}`, description: 'triage a broken export', body: 'Read the log first.',
@@ -200,15 +200,14 @@ describe('SkillGuidesPanel', () => {
   });
 
   it('says a delete leaves what it already deployed alone', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, store } = render();
+    const confirmed = stubConfirm(false);
 
     press(fixture, 'delete');
     await settle(fixture);
 
-    expect(confirmed.mock.calls[0][0]).toContain('stays on its agents');
+    expect(confirmed.mock.calls[0][0].message).toContain('stays on its agents');
     expect(store.remove).not.toHaveBeenCalled();
-    confirmed.mockRestore();
   });
 
   it('opens the deploy dialog for the guide whose button was pressed', async () => {

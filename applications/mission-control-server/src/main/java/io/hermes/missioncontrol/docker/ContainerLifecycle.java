@@ -4,10 +4,13 @@ import static io.hermes.missioncontrol.docker.ContainerIds.shortId;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.exception.NotFoundException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 /**
@@ -24,9 +27,16 @@ public class ContainerLifecycle {
   private static final Logger log = LoggerFactory.getLogger(ContainerLifecycle.class);
 
   private final DockerClients clients;
+  private final List<ContainerWork> work;
 
-  public ContainerLifecycle(DockerClients clients) {
+  /**
+   * {@code work} is lazy, and is not copied: the implementation is {@code HermesProfiles},
+   * which reaches this class again through the MCP catalog and the host registry. Resolving
+   * it at construction closes that cycle; resolving it on the first stop does not.
+   */
+  public ContainerLifecycle(DockerClients clients, @Lazy List<ContainerWork> work) {
     this.clients = clients;
+    this.work = work;
   }
 
   public void start(DockerHostRef host, String containerId) {
@@ -35,8 +45,28 @@ public class ContainerLifecycle {
   }
 
   public void stop(DockerHostRef host, String containerId) {
+    assertNothingInFlight(containerId);
     clients.forUrl(host.url()).stopContainerCmd(containerId).withTimeout(10).exec();
     log.info("stopped container {} on {}", shortId(containerId), host.id());
+  }
+
+  /**
+   * Refuses, as a 409, while something Mission Control started inside the container has not
+   * finished — a profile create between its first exec and its last write. The daemon would
+   * stop the container happily; the create would then fail its next exec and roll the
+   * half-made profile back, which from the operator's side is a profile that vanished.
+   * The stop dialog names the same profiles from the activity route, so the UI path warns
+   * first and this is the guard behind it, for the API and the upgrade path.
+   */
+  public void assertNothingInFlight(String containerId) {
+    for (ContainerWork w : work) {
+      List<String> creating = w.creating(containerId);
+      if (!creating.isEmpty()) {
+        throw new ResourceConflictException("profile " + String.join(", ", creating)
+            + " is still being created in " + shortId(containerId)
+            + " — stopping now would fail that and delete it; wait for the create to finish");
+      }
+    }
   }
 
   /**

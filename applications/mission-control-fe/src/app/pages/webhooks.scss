@@ -1,13 +1,5 @@
 :host { display: block; }
 
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 14px;
-  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
-  h2 { font-size: 22px; }
-}
 
 .form-panel { margin-bottom: 14px; }
 .form { display: flex; flex-direction: column; gap: 12px; }
@@ -48,14 +40,11 @@
   }
 }
 
-.empty { align-items: center; gap: 8px; padding: 48px; text-align: center; }
-
 @media (max-width: 1024px) {
   .list { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
 }
 
 @media (max-width: 760px) {
-  .page-head { flex-wrap: wrap; gap: 10px; }
   .row { grid-template-columns: 1fr; }
   .list { grid-template-columns: 1fr; }
 
@@ -67,7 +56,6 @@
     }
   }
 
-  .empty { padding: 28px 14px; }
 }
 
 .listener-off {

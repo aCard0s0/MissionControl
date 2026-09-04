@@ -1,21 +1,6 @@
 :host { display: block; }
 
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  gap: 20px;
-  margin-bottom: 16px;
-  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
-  h2 { font-size: 22px; }
-  .head-stats {
-    display: flex;
-    gap: 16px;
-    margin-left: auto;
-    font-size: 11px;
-    color: var(--dim);
-    mc-num { color: var(--acc); font-weight: 700; }
-  }
-}
+.page-head .head-stats mc-num { color: var(--acc); font-weight: 700; }
 
 .grid {
   display: grid;
@@ -85,17 +70,10 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; padding-right: 76px; min-height: 22px; }
 }
 
-.empty { align-items: center; gap: 8px; padding: 48px; text-align: center; margin-bottom: 14px; }
-
 @media (max-width: 1024px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 760px) {
   .grid { grid-template-columns: 1fr; }
-  .page-head {
-    flex-wrap: wrap;
-    .head-stats { width: 100%; order: 3; margin-left: 0; flex-wrap: wrap; }
-  }
-  .empty { padding: 24px 16px; }
 }

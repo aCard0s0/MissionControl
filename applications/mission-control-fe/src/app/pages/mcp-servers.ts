@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { HostStore } from '../core/store/host-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
@@ -52,6 +53,7 @@ export class McpServersPage {
   protected readonly activeTab = signal<McpTab>('servers');
 
   protected readonly catalog = inject(McpCatalogStore);
+  private readonly confirm = inject(Confirm);
   protected readonly groups = inject(McpGroupStore);
   protected readonly hosts = inject(HostStore);
   protected readonly operationActive = mcpOperationActive;
@@ -63,9 +65,6 @@ export class McpServersPage {
   /** The server the log viewer is open on. */
   protected readonly logServer = signal<McpCatalogServer | null>(null);
 
-  protected readonly removing = signal<McpCatalogServer | null>(null);
-  protected removeConfirm = '';
-  protected readonly removeBusy = signal(false);
 
   protected readonly purging = signal<McpRetainedResource | null>(null);
   protected purgeConfirm = '';
@@ -123,10 +122,11 @@ export class McpServersPage {
   }
 
   protected async removeGroup(group: McpGroup): Promise<void> {
-    if (!confirm(
-      `Delete the group "${group.name}"? Every agent it connected stays connected — only the `
-      + `set goes. Disconnecting is each agent's own MCP tab.`
-    )) return;
+    if (!await this.confirm.ask({
+      title: 'delete group',
+      message: `Delete the group "${group.name}"? Every agent it connected stays connected — only the `
+        + `set goes. Disconnecting is each agent's own MCP tab.`,
+    })) return;
     if (await this.groups.remove(group.id)) this.groupDraft.closeIf(group.id);
   }
 
@@ -157,23 +157,17 @@ export class McpServersPage {
   }
 
   // ── remove a server ─────────────────────────────────────────────────────
-  protected beginRemove(server: McpCatalogServer): void {
-    this.removing.set(server);
-    this.removeConfirm = '';
-  }
-
-  protected async confirmRemove(): Promise<void> {
-    const server = this.removing();
-    if (!server || this.removeConfirm !== server.name || this.removeBusy()) return;
-    this.removeBusy.set(true);
+  protected async remove(server: McpCatalogServer): Promise<void> {
+    if (!await this.confirm.ask({
+      title: 'delete mcp server',
+      message: 'Linked Agent entries will be disabled and unlinked first. Managed containers will be '
+        + 'removed, while named volumes remain in Retained Data.',
+      typed: server.name,
+      action: 'delete permanently',
+    })) return;
     const removed = await this.catalog.remove(server.id);
-    this.removeBusy.set(false);
-    if (removed) {
-      this.removing.set(null);
-      this.removeConfirm = '';
-      // nothing left to tail once the entry is gone
-      if (this.logServer()?.id === server.id) this.logServer.set(null);
-    }
+    // nothing left to tail once the entry is gone
+    if (removed && this.logServer()?.id === server.id) this.logServer.set(null);
   }
 
   // ── purge what a delete left behind ─────────────────────────────────────

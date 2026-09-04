@@ -1,4 +1,6 @@
+import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
+import { Confirm } from '../shared/confirm';
 
 /**
  * The handful of DOM helpers every component spec needs. They existed once per
@@ -117,3 +119,11 @@ export const type = async (fixture: TestFixture, selector: string, value: string
   if (!input) throw new Error(`no input matching "${selector}"`);
   await set(input, value, fixture, 'input');
 };
+
+/**
+ * Answers the app's confirmation dialog without rendering it. Spy on the root service
+ * *after* the page is rendered — `render()` resets the TestBed, and with it the instance.
+ * The spy's first call argument is the {@link ConfirmRequest}, so assert on `.message`.
+ */
+export const stubConfirm = (answer: boolean) =>
+  vi.spyOn(TestBed.inject(Confirm), 'ask').mockResolvedValue(answer);

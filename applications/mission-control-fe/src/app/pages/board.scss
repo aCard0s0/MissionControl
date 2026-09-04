@@ -1,14 +1,5 @@
 :host { display: block; height: 100%; }
 
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
-  h2 { font-size: 22px; }
-  .hint { font-size: 10px; letter-spacing: .06em; }
-}
 
 .board {
   display: grid;
@@ -22,12 +13,7 @@
 @media (max-width: 760px) { .board { grid-template-columns: 1fr; min-height: 0; } }
 
 @media (max-width: 760px) {
-  .page-head {
-    flex-wrap: wrap;
-    gap: 6px;
-    h2 { font-size: 18px; }
-    .hint { flex-basis: 100%; }
-  }
+  .page-head .hint { flex-basis: 100%; }
 }
 
 .col {

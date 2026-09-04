@@ -140,9 +140,21 @@ Deliberately **not** the Hermes website aesthetic. Mission Control has its own i
 ### Component conventions
 
 - Status is always shown as dot + word, never color alone (accessibility).
-- Destructive actions (remove container, delete profile) require typed confirmation.
+- Destructive actions go through the one confirmation dialog (`shared/confirm.ts`), never the
+  browser's `confirm()`. Deleting a container, a profile or an MCP server requires typing its
+  name; a dashboard-owned record (prompt, credential, blueprint, skill, guide, group) asks
+  without the typed phrase. The row action is always labelled **delete**; **remove** is only
+  for taking a row out of a form (a variable, a header, a file).
 - Read-only fields visibly locked, with a hint pointing to the native Hermes CLI command.
-- Empty states teach: show the `hermes profile create` command that would populate the view.
+- Empty states teach: a `.panel.empty` with the `hermes …` command that would populate the
+  view as a `.lock-hint` line. Never bare text.
+- Every page opens with the global `.page-head` (`src/styles.scss`): a scope crumb over the
+  page name, `.head-stats` right-aligned, then the page's one primary action. The crumb
+  vocabulary is fixed — `FLEET` (daemon-wide: Containers, Models), `GLOBAL LIBRARY` (what the
+  dashboard owns: Blueprints, Credentials, MCP Servers, Prompts, Skills), the container's name
+  (container-scoped: Overview, Agents, Ops Board, Calendar, Webhooks), `DASHBOARD` (CLI
+  Reference, Server Logs). On a library page the `+ new` sits at the right of the filter bar;
+  a page with no filter bar puts it in the header.
 
 ---
 

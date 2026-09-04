@@ -20,7 +20,7 @@
   <div class="side-foot">
     <mc-status [status]="containers.fleetHealth()" [label]="'fleet ' + containers.fleetHealth()" [live]="true" />
     <mc-status [status]="hosts.overall()" [label]="'docker ' + hosts.overall()" />
-    <span>{{ containers.containers().length }} containers · {{ agents.agents().length }} profiles</span>
+    <span>{{ containers.containers().length }} container{{ containers.containers().length === 1 ? '' : 's' }} · {{ agents.agents().length }} profile{{ agents.agents().length === 1 ? '' : 's' }}</span>
     <span>{{ imageLine() }}</span>
   </div>
 </aside>
@@ -57,7 +57,7 @@
             <span class="hash faint">{{ c.shortId }}</span>
             <span class="meta">
               {{ c.version }} · up {{ uptime(c.startedAt) }}<br>
-              cpu {{ c.cpu.toFixed(0) }}% · ram {{ (c.ram / c.ramTotal * 100).toFixed(0) }}%
+              cpu {{ c.cpu.toFixed(0) }}% · ram {{ pct(c.ram, c.ramTotal) }}
             </span>
           </button>
         }
@@ -88,5 +88,6 @@
 </main>
 
 <mc-notifications />
+<mc-confirm />
 
 <mc-terminal-panel />

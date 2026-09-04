@@ -190,7 +190,7 @@ describe('ModelsPage model list', () => {
     openRow(fixture);
     await settle(fixture);
 
-    press(fixture, 'remove', '.model-row:not(.head)');
+    press(fixture, 'delete', '.model-row:not(.head)');
     expect(store.endpoints.deleteModel).not.toHaveBeenCalled();
 
     press(fixture, 'confirm', '.model-row:not(.head)');
@@ -206,7 +206,7 @@ describe('ModelsPage model list', () => {
     expect(el(fixture).querySelector('.models-panel')).not.toBeNull();
 
     // one click un-registers it and silently breaks the base_url of every agent using it
-    press(fixture, 'remove', '.provider-row');
+    press(fixture, 'delete', '.provider-row');
     expect(store.endpoints.remove).not.toHaveBeenCalled();
 
     press(fixture, 'confirm', '.provider-row');
@@ -412,7 +412,7 @@ describe('ModelsPage openai-compatible endpoints', () => {
 
     const labels = [...el(fixture).querySelectorAll('.model-row button')]
       .map(b => b.textContent?.trim());
-    expect(labels).not.toContain('remove');
+    expect(labels).not.toContain('delete');
   });
 
   it('drops the columns /v1/models cannot fill rather than showing them empty', async () => {

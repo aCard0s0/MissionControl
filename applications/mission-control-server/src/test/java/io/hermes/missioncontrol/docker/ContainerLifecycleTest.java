@@ -16,9 +16,12 @@ import com.github.dockerjava.api.command.InspectContainerCmd;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.RemoveVolumeCmd;
+import com.github.dockerjava.api.command.StopContainerCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ContainerConfig;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,11 +40,38 @@ class ContainerLifecycleTest {
   private final DockerClients clients = mock(DockerClients.class);
   private final DockerClient client = mock(DockerClient.class);
   private final DockerExecService dockerExec = mock(DockerExecService.class);
-  private final ContainerLifecycle subject = new ContainerLifecycle(clients);
+  private final ContainerLifecycle subject = new ContainerLifecycle(clients, List.of());
 
   @BeforeEach
   void setUp() {
     when(clients.forUrl("unix:///sock")).thenReturn(client);
+  }
+
+  // ── stop ─────────────────────────────────────────────────────────────────
+
+  @Test
+  void stopIsRefusedWhileAProfileIsStillBeingCreatedInside() {
+    // the daemon would stop it happily; the create's next exec then fails and rolls the
+    // half-made profile back, which the operator sees as a profile that vanished
+    ContainerWork creating = containerId -> containerId.equals("cid") ? List.of("ops") : List.of();
+    ContainerLifecycle guarded = new ContainerLifecycle(clients, List.of(creating));
+
+    var refused = assertThrows(ResourceConflictException.class, () -> guarded.stop(HOST, "cid"));
+
+    assertTrue(refused.getMessage().contains("ops"));
+    verify(client, never()).stopContainerCmd(anyString());
+  }
+
+  @Test
+  void stopGoesAheadWithTheGracefulTimeoutWhenNothingIsInFlight() {
+    StopContainerCmd stop = mock(StopContainerCmd.class, Answers.RETURNS_SELF);
+    when(client.stopContainerCmd("cid")).thenReturn(stop);
+    ContainerWork idle = containerId -> List.of();
+
+    new ContainerLifecycle(clients, List.of(idle)).stop(HOST, "cid");
+
+    verify(stop).withTimeout(10);
+    verify(stop).exec();
   }
 
   @Test

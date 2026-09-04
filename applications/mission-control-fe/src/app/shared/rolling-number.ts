@@ -21,6 +21,9 @@ export class RollingNumber {
   constructor() {
     effect(() => {
       const target = this.value();
+      // a ratio with no denominator yet — RAM before the first stats sample — is not a
+      // number to roll to, and "NaN%" is not a reading
+      if (!Number.isFinite(target)) { this.shown.set('—'); return; }
       const from = untracked(() => this.current);
       rollNumber(from, target, v => {
         this.current = v;

@@ -42,8 +42,10 @@ export function until(ts: number): string {
   return `in ${Math.floor(d / DAY)}d`;
 }
 
+/** `13:05:09`, in UTC — the header clock is UTC, and so are the container's own log lines,
+ *  so a local clock beside either read as a different moment. */
 export function clock(ts: number): string {
-  return new Date(ts).toLocaleTimeString('en-GB', { hour12: false });
+  return new Date(ts).toLocaleTimeString('en-GB', { hour12: false, timeZone: 'UTC' });
 }
 
 export function shortDate(ts: number): string {
@@ -66,7 +68,17 @@ export function dayStamp(date: Date): string {
  * tail is often days old — so a bare clock reads as "today" for entries that are not.
  */
 export function logStamp(ts: number): string {
-  return `${shortDate(ts)} ${clock(ts)}`;
+  const day = new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  return `${day} ${clock(ts)}`;
+}
+
+/**
+ * A share as a whole percentage, or `—` while there is nothing to divide by. RAM before the
+ * first stats sample has a total of zero, and `NaN%` is not a reading anyone can act on.
+ */
+export function pct(part: number, total: number): string {
+  const share = part / total * 100;
+  return total > 0 && Number.isFinite(share) ? `${Math.round(share)}%` : '—';
 }
 
 export function mb(v: number): string {

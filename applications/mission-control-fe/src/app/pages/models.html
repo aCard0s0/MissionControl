@@ -35,7 +35,7 @@
                   (click)="$event.stopPropagation(); removingProvider.set(null)">cancel</button>
         } @else {
           <button class="btn sm danger ghost"
-                  (click)="$event.stopPropagation(); removingProvider.set(p.id)">remove</button>
+                  (click)="$event.stopPropagation(); removingProvider.set(p.id)">delete</button>
         }
       </div>
     } @empty {
@@ -127,7 +127,7 @@
                   <button class="btn sm danger" (click)="removeModel(m.name)">confirm</button>
                   <button class="btn sm ghost" (click)="removingModel.set(null)">cancel</button>
                 } @else {
-                  <button class="btn sm danger ghost" (click)="removingModel.set(m.name)">remove</button>
+                  <button class="btn sm danger ghost" (click)="removingModel.set(m.name)">delete</button>
                 }
               </span>
             }

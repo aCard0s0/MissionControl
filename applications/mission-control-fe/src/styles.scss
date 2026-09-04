@@ -168,6 +168,52 @@ a:hover { text-decoration: underline; }
 .dim { color: var(--dim); }
 .faint { color: var(--faint); }
 
+// ── page header ─────────────────────────────────────────────────────────────
+// Every page opens the same way: a scope crumb over the page name on the left, and on
+// the right whatever the page counts (`.head-stats`) followed by its one primary action.
+// It was copied into fifteen page stylesheets, which is how the stats ended up left of the
+// title on three pages and right of it on two. Defined once; a page only adds what is its
+// own (the calendar's month nav, the overview's status line).
+//
+// The crumb vocabulary is fixed: `FLEET` for daemon-wide pages, `GLOBAL LIBRARY` for what
+// the dashboard owns, the container's name for container-scoped pages, `DASHBOARD` for
+// the dashboard's own pages. Uppercased here so a container name reads like the others.
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+
+  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; text-transform: uppercase; }
+  h2 { font-size: 22px; }
+  .head-stats { display: flex; flex-wrap: wrap; gap: 16px; margin-left: auto; font-size: 11px; color: var(--dim); }
+  .hint { font-size: 10px; letter-spacing: .06em; }
+
+  @media (max-width: 760px) {
+    flex-wrap: wrap;
+    gap: 8px;
+    .head-stats { width: 100%; order: 3; margin-left: 0; }
+  }
+}
+
+// A panel that stands in for a list with nothing in it. It teaches: what fills it, and the
+// CLI that would (a `.lock-hint` line). Centered because it is a statement, not a row.
+.panel.empty {
+  align-items: center;
+  gap: 8px;
+  padding: 40px;
+  text-align: center;
+  margin-bottom: 14px;
+  p { margin: 0; }
+  .lock-hint { justify-content: center; }
+
+  @media (max-width: 760px) { padding: 24px 16px; }
+}
+
+// The heading of a dialog that destroys something.
+.crit-h { color: var(--red); }
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -266,7 +312,9 @@ a:hover { text-decoration: underline; }
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--faint);
-  code { color: var(--cyan); background: var(--cyan-soft); padding: 1px 5px; border-radius: 3px; }
+  flex-wrap: wrap;
+  // a command is one token: it wraps as a unit between words, never inside itself
+  code { color: var(--cyan); background: var(--cyan-soft); padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
   &.ok   { color: var(--acc); }
   &.warn { color: var(--amber); }
   &.crit { color: var(--red); }

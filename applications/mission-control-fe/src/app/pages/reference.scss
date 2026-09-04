@@ -1,14 +1,5 @@
 :host { display: block; }
 
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 14px;
-  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
-  h2 { font-size: 22px; }
-}
-
 .intro {
   margin-bottom: 14px;
   p { margin: 0; color: var(--dim); font-size: 12.5px; line-height: 1.65; max-width: 78ch; }

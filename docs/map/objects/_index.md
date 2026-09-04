@@ -81,6 +81,7 @@ is most of the value.
 | ✓ | [Credential](dashboard/credential.md) | `credentials/CredentialService.java` | a key saved once, offered as a dropdown wherever one is typed. A bundle of variables; autofill only, so it has no dependents. |
 | ✓ | [Terminal session](dashboard/terminal-session.md) | `shared/terminal-session.ts` | one xterm ↔ one `docker exec`. The column floor. |
 | ✓ | [Scrim](dashboard/scrim.md) | `shared/scrim.ts` | the backdrop: click-outside and Escape. The only way any dialog is dismissed. |
+| ✓ | [Confirm](dashboard/confirm.md) | `shared/confirm.ts` | the one question before a delete. `typed` for the irreversible; never the browser's `confirm()`. |
 | · | Field caption | `styles.scss` (`.field-cap`) | a caption over what a `<label>` cannot name; the group carries `aria-labelledby`. |
 | ✓ | [Board task](dashboard/board-task.md) | `board/` | kanban card keyed by container id. Repointed on upgrade. |
 | ✓ | [Prompt](dashboard/prompt.md) | `prompts/` | operator's text library. Nothing in a container reads it. |

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ago, clock, mb, shortDate, until, uptime } from './format';
+import { ago, clock, logStamp, mb, pct, shortDate, until, uptime } from './format';
 
 const MIN = 60_000;
 const HOUR = 3_600_000;
@@ -63,9 +63,14 @@ describe('relative time formatting', () => {
 });
 
 describe('absolute time formatting', () => {
-  it('renders a 24-hour clock, so 13:00 is never shown as 1:00', () => {
-    expect(clock(new Date(2026, 7, 18, 13, 5, 9).getTime())).toBe('13:05:09');
-    expect(clock(new Date(2026, 7, 18, 0, 0, 0).getTime())).toBe('00:00:00');
+  it('renders a 24-hour UTC clock, so 13:00 is never shown as 1:00 and matches the header', () => {
+    expect(clock(Date.UTC(2026, 7, 18, 13, 5, 9))).toBe('13:05:09');
+    expect(clock(Date.UTC(2026, 7, 18, 0, 0, 0))).toBe('00:00:00');
+  });
+
+  it('stamps a log line with its UTC date and time, the zone the container writes in', () => {
+    expect(logStamp(Date.UTC(2026, 7, 18, 23, 30, 0))).toBe('18 Aug 23:30:00');
+    expect(logStamp(Date.UTC(2026, 0, 1, 0, 0, 5))).toBe('01 Jan 00:00:05');
   });
 
   it('renders a short day-month date in local time', () => {
@@ -86,5 +91,17 @@ describe('mb', () => {
     expect(mb(0.4)).toBe('0 MB');
     expect(mb(0)).toBe('0 MB');
     expect(mb(2600)).toBe('2.5 GB');
+  });
+});
+
+describe('pct', () => {
+  it('is a whole percentage of the total', () => {
+    expect(pct(202, 2048)).toBe('10%');
+    expect(pct(1024, 2048)).toBe('50%');
+  });
+
+  it('is a dash, not NaN%, while there is no total to divide by', () => {
+    expect(pct(0, 0)).toBe('—');
+    expect(pct(202, 0)).toBe('—');
   });
 });

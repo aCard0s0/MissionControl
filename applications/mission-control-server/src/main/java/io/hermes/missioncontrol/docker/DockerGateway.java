@@ -130,6 +130,7 @@ public class DockerGateway {
   }
 
   public UpgradeResult upgrade(DockerHostRef host, String containerId, String version) {
+    lifecycle.assertNothingInFlight(containerId);   // an upgrade stops the container too
     return upgrader.upgrade(host, containerId, version);
   }
 

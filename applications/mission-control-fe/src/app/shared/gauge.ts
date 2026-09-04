@@ -28,11 +28,17 @@ export class Gauge {
 
   readonly arcLen = Math.PI * 42;
 
-  readonly dashOffset = computed(() =>
-    this.arcLen * (1 - Math.min(Math.max(this.value(), 0), 100) / 100));
+  /** The input held to the arc: a first sample with no total is NaN, a two-core container
+   *  reports 200% — neither should draw past the track or paint the arc red. */
+  private readonly clamped = computed(() => {
+    const v = this.value();
+    return Number.isFinite(v) ? Math.min(Math.max(v, 0), 100) : 0;
+  });
+
+  readonly dashOffset = computed(() => this.arcLen * (1 - this.clamped() / 100));
 
   readonly color = computed(() => {
-    const v = this.value();
+    const v = this.clamped();
     if (v >= this.critAt()) return 'var(--red)';
     if (v >= this.warnAt()) return 'var(--amber)';
     return 'var(--acc)';

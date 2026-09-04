@@ -7,7 +7,7 @@ import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/mod
 import { HERMES_BASELINE } from '../core/container-resources';
 import { ContainersPage, normalizeSeedProfiles } from './containers';
 import {
-  TestFixture, button, buttonWith, choose, el, field, fill, press, settle, text, type,
+  TestFixture, button, buttonWith, choose, el, field, fill, press, settle, stubConfirm, text, type,
 } from '../testing/dom';
 import { container, dockerHost } from '../testing/models';
 import { ApiContainerActivity } from '../core/hermes-api';
@@ -240,8 +240,8 @@ describe('ContainersPage docker hosts', () => {
     expect(store.hosts.check).toHaveBeenCalledWith('dh-local');
 
     const rows = el(fixture).querySelectorAll('.host-row');
-    expect(rows[0].textContent).not.toContain('remove');   // the local socket is not removable
-    press(fixture, 'remove', rows[1]);
+    expect(rows[0].textContent).not.toContain('delete');   // the local socket is not removable
+    press(fixture, 'delete', rows[1]);
     expect(store.hosts.remove).toHaveBeenCalledWith('dh-edge');
   });
 
@@ -416,6 +416,20 @@ describe('ContainersPage deploy', () => {
     expect(button(fixture, 'deploy').disabled).toBe(true);
     await fill(fixture, 'container name', '   ');
     expect(button(fixture, 'deploy').disabled).toBe(true);
+    expect(store.lifecycle.deploy).not.toHaveBeenCalled();
+  });
+
+  it('will not deploy a name Docker would refuse, and says the rule instead of a 400 later', async () => {
+    const { fixture, store } = render(storeStub([]));
+    await openDeploy(fixture);
+
+    await fill(fixture, 'container name', 'Bad Name!');
+    expect(button(fixture, 'deploy').disabled).toBe(true);
+    expect(text(fixture)).toContain('starts with a letter or digit');
+
+    await fill(fixture, 'container name', 'hermes-2.stage_b');
+    expect(button(fixture, 'deploy').disabled).toBe(false);
+    expect(text(fixture)).not.toContain('starts with a letter or digit');
     expect(store.lifecycle.deploy).not.toHaveBeenCalled();
   });
 
@@ -676,7 +690,7 @@ describe('ContainersPage stop', () => {
     containers = [container('hermes-prod')],
   ) => {
     const store = storeStub(containers);
-    const idle = { activeAgents: 0, busyProfiles: [], pausedProfiles: [], unreadable: [] };
+    const idle = { activeAgents: 0, busyProfiles: [], creatingProfiles: [], pausedProfiles: [], unreadable: [] };
     const agents = {
       activity: activity instanceof Error
         ? vi.fn().mockRejectedValue(activity)
@@ -768,44 +782,26 @@ describe('ContainersPage removal', () => {
     vi.useRealTimers();
   });
 
-  it('names what the delete takes with it, and holds until the name is typed', async () => {
+  it('names what the delete takes with it, and asks for the name typed back', async () => {
     const { fixture, store } = render(storeStub([container('hermes-prod')]));
+    const confirmed = stubConfirm(true);
 
-    press(fixture, 'remove', '.card');
-    expect(text(fixture)).toContain('1 profile(s) inside it');
-    expect(button(fixture, 'remove permanently').disabled).toBe(true);
-
-    await fill(fixture, 'type', 'hermes-pro');
-    expect(button(fixture, 'remove permanently').disabled).toBe(true);
-
-    await fill(fixture, 'type', 'hermes-prod');
-    press(fixture, 'remove permanently');
+    press(fixture, 'delete', '.card');
     await settle(fixture);
 
+    expect(confirmed).toHaveBeenCalledWith(expect.objectContaining({
+      typed: 'hermes-prod', action: 'delete permanently' }));
+    expect(confirmed.mock.calls[0][0].message).toContain('1 profile(s) inside it');
     expect(store.lifecycle.remove).toHaveBeenCalledWith('hermes-prod');
-    expect(el(fixture).querySelector('.modal')).toBeNull();
   });
 
-  it('keeps the modal open when the delete failed', async () => {
-    const store = storeStub([container('hermes-prod')]);
-    store.lifecycle.remove.mockResolvedValue(false);
-    const { fixture } = render(store);
-    press(fixture, 'remove', '.card');
-    await fill(fixture, 'type', 'hermes-prod');
+  it('deletes nothing when the operator backs out', async () => {
+    const { fixture, store } = render(storeStub([container('hermes-prod')]));
+    stubConfirm(false);
 
-    press(fixture, 'remove permanently');
+    press(fixture, 'delete', '.card');
     await settle(fixture);
 
-    expect(el(fixture).querySelector('.modal')).not.toBeNull();
-  });
-
-  it('cancels back out without deleting anything', () => {
-    const { fixture, store } = render(storeStub([container('hermes-prod')]));
-    press(fixture, 'remove', '.card');
-
-    press(fixture, 'cancel');
-
-    expect(el(fixture).querySelector('.modal')).toBeNull();
     expect(store.lifecycle.remove).not.toHaveBeenCalled();
   });
 });

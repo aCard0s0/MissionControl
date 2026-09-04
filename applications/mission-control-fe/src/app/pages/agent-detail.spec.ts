@@ -5,7 +5,7 @@ import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentProfile, ChatMessage, SessionInfo } from '../core/models';
 import { AgentDetailPage } from './agent-detail';
-import { TestFixture, button, el, fill, press, settle, text } from '../testing/dom';
+import { TestFixture, button, el, fill, press, settle, text, stubConfirm } from '../testing/dom';
 import { agent as buildAgent, skill } from '../testing/models';
 import { provideStores } from '../testing/store';
 
@@ -400,8 +400,8 @@ describe('AgentDetailPage sessions', () => {
   });
 
   it('drops a deleted session from the list, and closes it if it was open', async () => {
-    vi.stubGlobal('confirm', () => true);
     const { fixture, store } = render(storeStub(agent()));
+    stubConfirm(true);
     openTab(fixture, 'sessions');
     await settle(fixture);
     press(fixture, 'view', '.sess-row');
@@ -417,8 +417,8 @@ describe('AgentDetailPage sessions', () => {
   });
 
   it('keeps the session when the operator backs out of the confirmation', async () => {
-    vi.stubGlobal('confirm', () => false);
     const { fixture, store } = render(storeStub(agent()));
+    stubConfirm(false);
     openTab(fixture, 'sessions');
     await settle(fixture);
 
@@ -431,10 +431,10 @@ describe('AgentDetailPage sessions', () => {
   });
 
   it('says why a session could not be deleted, and keeps it', async () => {
-    vi.stubGlobal('confirm', () => true);
     const store = storeStub(agent());
     store.setup.deleteSession.mockRejectedValue(new Error('file locked'));
     const { fixture } = render(store);
+    stubConfirm(true);
     openTab(fixture, 'sessions');
     await settle(fixture);
 
@@ -522,30 +522,29 @@ describe('AgentDetailPage profile actions', () => {
     expect(text(fixture)).toContain('check connectivity');
   });
 
-  it('holds the delete until the profile name is typed exactly', async () => {
+  it('asks for the profile name typed back, then deletes and returns to the roster', async () => {
     const { fixture, store, navigate } = render(storeStub(agent()));
+    const confirmed = stubConfirm(true);
 
     press(fixture, 'delete profile');
-    expect(button(fixture, 'delete permanently').disabled).toBe(true);
+    await settle(fixture);
 
-    await fill(fixture, 'type', 'atla');
-    expect(button(fixture, 'delete permanently').disabled).toBe(true);
-
-    await fill(fixture, 'type', 'atlas');
-    press(fixture, 'delete permanently');
-
+    expect(confirmed).toHaveBeenCalledWith(expect.objectContaining({
+      typed: 'atlas', action: 'delete permanently' }));
+    expect(confirmed.mock.calls[0][0].message).toContain('sessions, skills, jobs, and webhooks');
     expect(store.removal.remove).toHaveBeenCalledWith('a-atlas');
     expect(navigate).toHaveBeenCalledWith(['/agents']);
   });
 
-  it('cancels the delete without touching the profile', () => {
-    const { fixture, store } = render(storeStub(agent()));
+  it('cancels the delete without touching the profile', async () => {
+    const { fixture, store, navigate } = render(storeStub(agent()));
+    stubConfirm(false);
+
     press(fixture, 'delete profile');
+    await settle(fixture);
 
-    press(fixture, 'cancel');
-
-    expect(el(fixture).querySelector('.modal')).toBeNull();
     expect(store.removal.remove).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('proposes a template name derived from the profile', async () => {

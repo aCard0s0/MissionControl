@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -228,6 +229,19 @@ class HermesProfilesDelegationTest {
     verify(mcp).remove(HOST, CONTAINER, PROFILE, "files");
   }
 
+  // ── delete ──────────────────────────────────────────────────────────────
+
+  @Test
+  void deletingAProfileAlsoDropsTheGatewayLogDirHermesLeavesBehind() {
+    when(files.dirExists(HOST, CONTAINER, DIR)).thenReturn(true);
+
+    profiles.delete(HOST, CONTAINER, PROFILE);
+
+    verify(files).exec(HOST, CONTAINER, List.of("hermes", "profile", "delete", PROFILE, "--yes"));
+    verify(files).removeTree(HOST, CONTAINER, "/opt/data/logs/gateways/" + PROFILE);
+    verify(mcp).evictProfile(HOST, CONTAINER, PROFILE);
+  }
+
   // ── what a stop would interrupt ─────────────────────────────────────────
 
   @Test
@@ -256,6 +270,31 @@ class HermesProfilesDelegationTest {
     assertEquals(0, activity.activeAgents());
     assertEquals(List.of(), activity.busyProfiles());
     assertEquals(List.of("ops"), activity.pausedProfiles());
+  }
+
+  @Test
+  void aProfileStillBeingCreatedIsNamedAsSuchAndLeftOutOfTheInventory() {
+    // the create's second step is the window: the directory is there, the gateway is not,
+    // and a stop here fails the step and rolls the profile back
+    when(files.exec(any(), anyString(), any()))
+        .thenReturn(new ExecResult(0, PROFILE + "\nops\n", ""));
+    when(gatewayState.read(HOST, CONTAINER, PROFILE)).thenReturn(reading(0, false, "running"));
+    ContainerActivityDto[] during = new ContainerActivityDto[1];
+    List<AgentProfileDto>[] listed = new List[1];
+    doAnswer(call -> {
+      during[0] = profiles.activity(HOST, CONTAINER);
+      listed[0] = profiles.list(HOST, CONTAINER);
+      return null;
+    }).when(modelConfig).write(any(), anyString(), anyString(), any(), any(), any(), any());
+
+    profiles.createProfileBare(HOST, new ProfileSpec(
+        CONTAINER, "ops", "anthropic", "model", null, null, null, null));
+
+    assertEquals(List.of("ops"), during[0].creatingProfiles());
+    assertEquals(List.of(), during[0].busyProfiles());
+    assertEquals(List.of(), during[0].unreadable());
+    assertEquals(List.of(PROFILE), listed[0].stream().map(AgentProfileDto::name).toList());
+    assertEquals(List.of(), profiles.activity(HOST, CONTAINER).creatingProfiles());
   }
 
   @Test

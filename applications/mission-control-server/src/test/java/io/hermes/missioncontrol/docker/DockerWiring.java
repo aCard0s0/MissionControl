@@ -41,6 +41,6 @@ final class DockerWiring {
         images,
         new HermesDeployer(clients, images, readiness),
         new ContainerUpgrader(clients, props, images, readiness, networks),
-        new ContainerLifecycle(clients));
+        new ContainerLifecycle(clients, java.util.List.of()));
   }
 }

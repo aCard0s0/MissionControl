@@ -1,5 +1,6 @@
 package io.hermes.missioncontrol.agents;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -11,6 +12,7 @@ import static org.mockito.Mockito.when;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +37,30 @@ class HermesProfilesRollbackTest {
     verify(dockerExec).runAsUser(
         HOST, "cid", "hermes", List.of("hermes", "profile", "delete", "ops", "--yes"),
         "Hermes command", true, false, Duration.ofSeconds(30));
+  }
+
+  @Test
+  void aProfileCountsAsCreatingFromTheFirstExecUntilTheCreateIsOver() {
+    // the directory exists after the first exec, so this is the window the inventory must
+    // not report the profile in, and a stop would roll it back
+    DockerExecService dockerExec = mock(DockerExecService.class);
+    HermesProfiles profiles = AgentsWiring.profiles(dockerExec);
+    ProfileSpec spec = new ProfileSpec(
+        "cid", "ops", "anthropic", "model", null, null, null, null);
+    List<List<String>> seenDuring = new ArrayList<>();
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(),
+        any(Duration.class)))
+        .thenAnswer(call -> {
+          seenDuring.add(profiles.creating("cid"));
+          return new DockerExecService.ExecResult(0, "", "");
+        });
+
+    assertThrows(IllegalStateException.class, () -> profiles.createProfileBare(HOST, spec));
+
+    assertEquals(false, seenDuring.isEmpty());
+    seenDuring.forEach(seen -> assertEquals(List.of("ops"), seen));
+    assertEquals(List.of(), profiles.creating("cid"));
+    assertEquals(List.of(), profiles.creating("other"));
   }
 
   @Test

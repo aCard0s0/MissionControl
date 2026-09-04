@@ -1,13 +1,7 @@
 :host { display: block; }
 
 .page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 16px;
-
-  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
-  h2 { font-size: 22px; letter-spacing: .02em; }
+  h2 { letter-spacing: .02em; }
   .hash { font-size: 11px; color: var(--faint); font-weight: 400; }
   .head-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
   .sep { color: var(--faint); }
@@ -25,13 +19,12 @@
 }
 
 @media (max-width: 760px) {
-  .page-head { flex-direction: column; align-items: flex-start; gap: 8px; .head-meta { flex-wrap: wrap; } }
+  .page-head .head-meta { flex-wrap: wrap; }
   .res { grid-template-columns: 1fr; }
   .res-card .panel-b .big.net { flex-wrap: wrap; }
   .count-row { flex-wrap: wrap; row-gap: 4px; }
   .next-job { flex-wrap: wrap; }
   .agent-row, .job-row { flex-wrap: wrap; .right { flex-basis: 100%; margin-left: 0; } }
-  .empty { padding: 24px 16px; }
 }
 
 .res-card .panel-b {
@@ -216,13 +209,6 @@
 }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.empty {
-  align-items: center;
-  gap: 8px;
-  padding: 48px;
-  text-align: center;
-}
 
 // a summary card that is itself a link to its page
 .panel.nav {

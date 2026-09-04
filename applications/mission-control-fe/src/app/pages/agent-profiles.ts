@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { Router } from '@angular/router';
 import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
@@ -35,6 +36,7 @@ import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-edito
 })
 export class AgentProfilesPage {
   protected readonly providers = inject(ProviderStore);
+  private readonly confirm = inject(Confirm);
   protected readonly endpoints = inject(InferenceEndpointStore);
   protected readonly templates = inject(TemplateStore);
   private readonly router = inject(Router);
@@ -146,7 +148,10 @@ export class AgentProfilesPage {
   }
 
   protected async remove(t: ProfileTemplate): Promise<void> {
-    if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+    if (!await this.confirm.ask({
+      title: 'delete blueprint',
+      message: `Delete "${t.name}"? This cannot be undone.`,
+    })) return;
     await this.templates.remove(t.id);
     if (this.draft().id === t.id) this.closeEditor();
   }

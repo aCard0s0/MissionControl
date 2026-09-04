@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OutboundWebhook, WebhookListener, WebhookRoute } from '../core/models';
 import { WebhooksPage } from './webhooks';
-import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text, stubConfirm } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
 const agents = [{ id: 'a-1', name: 'atlas' }, { id: 'a-2', name: 'scribe' }];
@@ -204,20 +204,19 @@ describe('WebhooksPage', () => {
   });
 
   it('asks before removing a route, because senders break silently', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, store } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
+    const confirmed = stubConfirm(false);
 
-    press(fixture, 'remove', '.hook');
+    press(fixture, 'delete', '.hook');
     await settle(fixture);
 
     expect(confirmed).toHaveBeenCalled();
     expect(store.webhooks.remove).not.toHaveBeenCalled();
 
-    confirmed.mockReturnValue(true);
-    press(fixture, 'remove', '.hook');
+    confirmed.mockResolvedValue(true);
+    press(fixture, 'delete', '.hook');
     await settle(fixture);
     expect(store.webhooks.remove).toHaveBeenCalledWith('a-1', 'grafana');
-    confirmed.mockRestore();
   });
 
   it('says so when there are no routes at all', () => {
