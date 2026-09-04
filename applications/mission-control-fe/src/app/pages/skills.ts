@@ -39,6 +39,11 @@ version: 1.0
 ## How to use it
 `;
 
+/** The backend's per-file cap (`SkillController.SkillFileRequest.body`). */
+const MAX_FILE_CHARS = 200_000;
+/** The backend's per-skill budget for a deploy (`HermesSkills.MAX_SKILL_BYTES`). */
+const MAX_SKILL_BYTES = 512 * 1024;
+
 /**
  * The skill library — skills the dashboard holds, deployable onto any agent.
  *
@@ -276,9 +281,27 @@ export class SkillsPage {
     return this.fFiles().some(f => f.path.trim() === SKILL_MD);
   }
 
+  /**
+   * The first file over the backend's limits, named — or null. Mirrors the server: a file body
+   * is at most {@link MAX_FILE_CHARS} (`SkillController.SkillFileRequest`) and a skill's files
+   * together at most {@link MAX_SKILL_BYTES} (`HermesSkills.MAX_SKILL_BYTES`), so a paste that
+   * would be refused is refused here with the reason on screen instead of in a 400.
+   */
+  protected tooLarge(): string | null {
+    if (this.fKind !== 'local') return null;
+    let total = 0;
+    for (const f of this.fFiles()) {
+      if (f.body.length > MAX_FILE_CHARS) {
+        return `${f.path.trim() || 'a file'} is over ${MAX_FILE_CHARS.toLocaleString()} characters`;
+      }
+      total += new TextEncoder().encode(f.body).length;
+    }
+    return total > MAX_SKILL_BYTES ? `files total over ${MAX_SKILL_BYTES / 1024} KB` : null;
+  }
+
   protected canSave(): boolean {
     if (this.saving() || !this.fName.trim()) return false;
-    return this.fKind === 'hub' || this.hasSkillMd();
+    return this.fKind === 'hub' || (this.hasSkillMd() && !this.tooLarge());
   }
 
   protected async save(): Promise<void> {

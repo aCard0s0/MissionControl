@@ -33,12 +33,17 @@ final class FakeContainer {
   private final List<String> dirs = new ArrayList<>();
   private final Map<String, ExecResult> commands = new LinkedHashMap<>();
   private final List<List<String>> executed = new ArrayList<>();
+  /** What each exec was fed on stdin, by position in {@link #executed}; null when nothing. */
+  private final List<byte[]> stdin = new ArrayList<>();
   private final DockerExecService dockerExec = mock(DockerExecService.class);
 
   FakeContainer() {
     when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(),
         anyBoolean(), anyBoolean(), any(Duration.class)))
-        .thenAnswer(invocation -> answer(invocation.getArgument(3)));
+        .thenAnswer(invocation -> answer(invocation.getArgument(3), null));
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(),
+        anyBoolean(), anyBoolean(), any(Duration.class), any()))
+        .thenAnswer(invocation -> answer(invocation.getArgument(3), invocation.getArgument(8)));
   }
 
   /** A file present with this content. Its parent directories exist implicitly. */
@@ -80,8 +85,14 @@ final class FakeContainer {
     return List.copyOf(executed);
   }
 
-  private ExecResult answer(List<String> command) {
+  /** The stdin the exec at {@code index} of {@link #executed} was fed, or null. */
+  byte[] stdinOf(int index) {
+    return stdin.get(index);
+  }
+
+  private ExecResult answer(List<String> command, byte[] input) {
     executed.add(List.copyOf(command));
+    stdin.add(input);
     String script = command.size() > 2 ? command.get(2) : "";
     String path = command.getLast();
 
