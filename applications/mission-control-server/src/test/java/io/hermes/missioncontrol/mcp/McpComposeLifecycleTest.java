@@ -396,6 +396,35 @@ class McpComposeLifecycleTest {
   // ── the listing's refresh ───────────────────────────────────────────────
 
   @Test
+  void theLastStartIsRememberedAsWhenTheImageWasLastPulledAndForgottenWithTheContainer() {
+    // every start and apply pulls, so a running container's start is the last time its image
+    // was checked against the registry — the one staleness fact this has without a registry
+    String files = insertIdleManaged("Files");
+    String docs = insertIdleManaged("Docs");
+    when(compose.containerIdsByService(HOST_REF))
+        .thenReturn(Map.of("mcp-files", "cid-files", "mcp-docs", "cid-docs"));
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true)).thenReturn(
+        List.of(container("cid-files", "running", 1_700_000_000_000L), container("cid-docs", "stopped", null)));
+
+    lifecycle.refreshRuntime(repository.findAll());
+
+    assertEquals(1_700_000_000_000L, lifecycle.imageAsOf(files));
+    assertNull(lifecycle.imageAsOf(docs), "a stopped container has no start to report");
+    assertNull(lifecycle.imageAsOf("never-listed"));
+
+    // the per-row refresh keeps the same fact, and a container that goes away takes it along
+    when(compose.serviceContainerId(HOST_REF, "mcp-files")).thenReturn("cid-files");
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
+        .thenReturn(List.of(container("cid-files", "running", 1_700_000_005_000L)));
+    lifecycle.refreshRuntime(row(files));
+    assertEquals(1_700_000_005_000L, lifecycle.imageAsOf(files));
+
+    when(compose.serviceContainerId(HOST_REF, "mcp-files")).thenReturn(null);
+    lifecycle.refreshRuntime(row(files));
+    assertNull(lifecycle.imageAsOf(files));
+  }
+
+  @Test
   void aListingCostsTwoDaemonReadsPerHostRatherThanTwoPerRow() {
     // per row this is a `docker compose ps` fork taken under the host's compose lock plus a
     // full container listing — the same lock a start or a stop holds for the length of its
@@ -529,8 +558,12 @@ class McpComposeLifecycleTest {
   }
 
   private static ContainerDto container(String id, String status) {
+    return container(id, status, null);
+  }
+
+  private static ContainerDto container(String id, String status, Long startedAt) {
     return new ContainerDto(id, id.substring(0, Math.min(6, id.length())), "mc-mcp-files", HOST,
-        status, "example/files:1", null, null, null, null, List.of());
+        status, "example/files:1", null, null, null, startedAt, null, List.of());
   }
 
   private String insertManaged(String name) {

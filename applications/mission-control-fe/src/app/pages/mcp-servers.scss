@@ -1,13 +1,10 @@
 :host { display: block; }
 
 
-.stack-note {
-  margin-bottom: 12px;
-  .panel-b { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
-  .spacer { flex: 1; }
-}
-
 .server-group { margin-bottom: 12px; }
+
+/* a glyph, not a word: sized up so it reads as a button beside the chips around it */
+.refresh { font-size: 16px; line-height: 1; padding: 2px 9px; }
 
 .group-detail {
   overflow: hidden;
@@ -75,6 +72,12 @@
 .error { margin: 3px 0 0; color: var(--red); font-size: 10px; }
 .server-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; max-width: 370px; }
 
+.retained.compact .panel-b {
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  .lbl { color: var(--faint); letter-spacing: .08em; font-size: 11px; }
+  .spacer { flex: 1; }
+}
+
 .retained {
   margin: 16px 0 14px;
   .panel-b { padding-top: 8px; padding-bottom: 8px; }
@@ -98,7 +101,6 @@
 }
 
 @media (max-width: 760px) {
-  .stack-note .panel-b { align-items: flex-start; flex-wrap: wrap; .spacer { flex-basis: 100%; } }
   .group-detail { display: none; }
   .server-row { grid-template-columns: 1fr; gap: 7px; }
   .server-actions { grid-column: 1; justify-content: flex-start; }

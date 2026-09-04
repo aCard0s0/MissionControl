@@ -74,7 +74,7 @@ final class McpWiring {
             links,
             hosts,
             configs,
-            new McpServerDtoMapper(configs),
+            new McpServerDtoMapper(configs, links, lifecycle),
             lifecycle,
             new McpHealthProbe(repository, configs, hosts, docker),
             new McpLogReader(hosts, docker, compose, configs)),

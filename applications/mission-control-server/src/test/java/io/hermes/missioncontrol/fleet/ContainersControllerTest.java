@@ -71,7 +71,7 @@ class ContainersControllerTest {
 
   private static ContainerDto container(String id, String hostId) {
     return new ContainerDto(id, id.substring(0, 3), "hermes-" + id, hostId, "running",
-        "hermes/agent:v1", "v1", null, 1L, null, List.of());
+        "hermes/agent:v1", "v1", null, null, 1L, null, List.of());
   }
 
   @Test

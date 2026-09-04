@@ -77,6 +77,9 @@ export interface ApiContainer {
   image: string;
   version: string;
   imageDigest: string | null;
+  /** The Hermes release the image carries, as hermes reports it (`2026.8.19`); null when the
+   *  container is not running or the image does not say. What a floating tag really means. */
+  release: string | null;
   startedAt: number | null;
   sizeRootFsGb: number | null;
   profiles: string[];
@@ -389,6 +392,11 @@ export interface ApiMcpCatalogServer {
   checkError?: string | null;
   checkedAt?: number | null;
   latencyMs?: number | null;
+  /** Agent profiles carrying this entry — what a delete disables first. */
+  linkedAgents?: number;
+  /** When a managed service last started; every start pulls, so also when its image was last
+   *  checked against the registry. Null unless running. */
+  imageAsOf?: number | null;
   revision?: number;
   appliedRevision?: number;
   pendingChanges?: boolean;

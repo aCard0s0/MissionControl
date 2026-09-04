@@ -140,8 +140,8 @@ export class ContainersPage {
     const from = this.version(c);
     const to = this.targetLabel(c, target);
     // both ends resolved, so a move along a floating tag reads as the version change it is
-    const move = from === to
-      ? `${from} · the registry published a new image on ${c.version}`
+    const move = from === to || isFloatingTag(to)
+      ? `${from} · the registry published a new image on ${target.tag}`
       : `${from} → ${to}`;
     const via = isFloatingTag(target.tag) && to !== target.tag ? ` · on ${target.tag}` : '';
     return `${move}${via}${target.pulled ? '' : ' · not pulled on this host yet'}`;

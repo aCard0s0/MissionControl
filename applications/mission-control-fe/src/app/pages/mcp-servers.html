@@ -5,22 +5,31 @@
   </div>
   <div class="head-stats mono">
     @if (activeTab() === 'servers') {
-      <span>{{ catalog.servers().length }} registered</span>
+      <span>{{ count(visibleServers().length, catalog.servers().length, 'registered') }}</span>
     } @else {
-      <span>{{ groups.groups().length }} group{{ groups.groups().length === 1 ? '' : 's' }}</span>
+      <span>{{ count(visibleGroups().length, groups.groups().length, groups.groups().length === 1 ? 'group' : 'groups') }}</span>
     }
   </div>
 </div>
 
-<!-- one bar, the shape every library page uses: the tab switch and this tab's `+ new` on the
-     right. Nothing narrows this list, so the left of the spacer is empty. -->
+<!-- one bar, the shape every library page uses: a search on the left, the tab switch, one
+     refresh for whichever tab is open, and this tab's `+ new` on the right. -->
 <div class="filter mono" data-reveal>
+  <input class="input find" type="search"
+         [placeholder]="activeTab() === 'servers' ? 'search server names' : 'search group names'"
+         aria-label="search by name"
+         [value]="query()" (input)="onSearch($any($event.target).value)" />
   <span class="spacer"></span>
   <div class="view-toggle" role="group" aria-label="mcp view">
     @for (t of tabs; track t) {
       <button class="chip" [class.on]="activeTab() === t" (click)="activeTab.set(t)">{{ t }}</button>
     }
   </div>
+  <button class="btn sm ghost refresh" [disabled]="activeTab() === 'servers' && catalog.loading()"
+          (click)="refreshActive()" aria-label="refresh"
+          [title]="activeTab() === 'servers'
+                     ? (catalog.loading() ? 'refreshing…' : 'refresh the registry')
+                     : 'refresh the groups'">↻</button>
   @if (activeTab() === 'servers') {
     <button class="btn" (click)="openCreate('stdio')">+ stdio</button>
     <button class="btn" (click)="openCreate('external')">+ external</button>
@@ -32,17 +41,6 @@
 
 @if (activeTab() === 'servers') {
 
-<div class="stack-note panel" data-reveal>
-  <div class="panel-b">
-    <span class="chip on">mission-control-mcp</span>
-    <span class="mono dim">Managed services are isolated in a dedicated Compose project on each Docker host.</span>
-    <span class="spacer"></span>
-    <button class="btn sm ghost" [disabled]="catalog.loading()" (click)="catalog.refresh()">
-      {{ catalog.loading() ? 'refreshing…' : 'refresh' }}
-    </button>
-  </div>
-</div>
-
 @if (catalog.loading() && !catalog.servers().length) {
   <div class="panel empty" data-reveal><p class="mono dim">Loading MCP server registry…</p></div>
 } @else {
@@ -52,7 +50,17 @@
         {{ group.label }}
         <span class="group-detail">{{ group.detail }}</span>
         <span class="spacer"></span>
+        @if (group.project) {
+          <span class="chip off project" title="the Docker Compose project these services run in — what `docker compose ls` shows">{{ group.project }}</span>
+        }
         <span class="chip off">{{ group.servers.length }} server{{ group.servers.length === 1 ? '' : 's' }}</span>
+        @if (group.project) {
+          <!-- the stack is what an operator thinks in; each service still answers its own 202 -->
+          <button class="btn sm stack-verb" [disabled]="!stackTargets(group.servers, 'start').length"
+                  (click)="runStack(group.servers, 'start')" title="start every stopped service in this stack">start all</button>
+          <button class="btn sm ghost stack-verb" [disabled]="!stackTargets(group.servers, 'stop').length"
+                  (click)="runStack(group.servers, 'stop')" title="stop every running service in this stack">stop all</button>
+        }
       </div>
       <div class="panel-b server-list">
         @for (server of group.servers; track server.id) {
@@ -86,15 +94,28 @@
                 <span class="meta faint">
                   @if (server.kind === 'managed') {
                     <span>{{ server.image }}</span>
-                    <span>rev {{ server.appliedRevision }}/{{ server.revision }}</span>
+                    <span title="applied revision / catalog revision — they differ while an edit waits for apply">rev {{ server.appliedRevision }}/{{ server.revision }}</span>
                     @if (server.publishedPort) { <span>published :{{ server.publishedPort }}</span> }
                     @else { <span>internal only</span> }
+                    @if (server.runtimeState === 'running' && server.imageAsOf) {
+                      <!-- every start pulls, so the last start is the last time the image was
+                           checked against the registry — pull & restart moves it on -->
+                      <span title="the image was pulled or verified against the registry when this service last started">image as of {{ ago(server.imageAsOf) }}</span>
+                    }
                   } @else if (server.kind === 'stdio') {
                     <span>{{ server.args.length }} argument{{ server.args.length === 1 ? '' : 's' }}</span>
                   }
-                  <!-- a managed server is checked too; hiding its result made the button look dead -->
-                  @if (server.kind !== 'stdio' && server.checkedAt) {
-                    <span>checked {{ clock(server.checkedAt) }}</span>
+                  <span class="used-by" [title]="server.linkedAgents
+                          ? 'agent profiles whose config carries this entry — a delete disables those first'
+                          : 'no agent profile carries this entry yet'">
+                    {{ server.linkedAgents ? 'used by ' + server.linkedAgents + (server.linkedAgents === 1 ? ' agent' : ' agents') : 'unused' }}
+                  </span>
+                  <!-- a managed server is checked too; hiding its result made the button look dead.
+                       A stopped one shows none: the result predates the stop and read as a live
+                       contradiction beside STOPPED -->
+                  @if (server.kind !== 'stdio' && server.checkedAt
+                       && (server.kind !== 'managed' || server.runtimeState === 'running')) {
+                    <span>checked {{ ago(server.checkedAt) }}</span>
                     @if (server.latencyMs !== null) { <span>{{ server.latencyMs }}ms</span> }
                   }
                 </span>
@@ -112,6 +133,10 @@
                 }
                 @if (server.pendingChanges && server.runtimeState === 'running') {
                   <button class="btn sm" [disabled]="isBusy(server)" (click)="run(server, 'apply')">apply & restart</button>
+                } @else if (server.runtimeState === 'running') {
+                  <!-- the same apply: it always pulls, so with nothing pending it is a re-pull -->
+                  <button class="btn sm ghost" [disabled]="isBusy(server)" (click)="run(server, 'apply')"
+                          title="pull the image again and recreate the service on it">pull & restart</button>
                 }
                 @if (server.runtimeState === 'running') {
                   <button class="btn sm" [disabled]="server.checkStatus === 'checking'" (click)="run(server, 'check')">
@@ -138,16 +163,33 @@
     </section>
   } @empty {
     <div class="panel empty" data-reveal>
-      <p class="mono dim">No MCP servers registered.</p>
-      <p class="lock-hint">Add a managed service, external endpoint, or reusable stdio definition.</p>
+      @if (query().trim()) {
+        <p class="mono dim">No MCP server named like “{{ query().trim() }}”.</p>
+      } @else {
+        <p class="mono dim">No MCP servers registered.</p>
+        <p class="lock-hint">Add a managed service, external endpoint, or reusable stdio definition.</p>
+      }
     </div>
   }
 
+@if (!catalog.retainedResources().length) {
+  <!-- nothing to list earns one line, not a panel with an empty body -->
+  <div class="panel retained compact" data-reveal>
+    <div class="panel-b mono">
+      <span class="lbl">RETAINED DATA</span>
+      <span class="faint">none — removing a managed server never purges its data automatically</span>
+      <span class="spacer"></span>
+      <button class="btn sm ghost refresh" (click)="catalog.refreshRetainedResources()"
+              title="refresh retained data" aria-label="refresh">↻</button>
+    </div>
+  </div>
+} @else {
 <section class="panel retained" data-reveal>
   <div class="panel-h">
     RETAINED DATA
     <span class="spacer"></span>
-    <button class="btn sm ghost" (click)="catalog.refreshRetainedResources()">refresh</button>
+    <button class="btn sm ghost refresh" (click)="catalog.refreshRetainedResources()"
+            title="refresh retained data" aria-label="refresh">↻</button>
   </div>
   <div class="panel-b">
     @for (resource of catalog.retainedResources(); track resource.id) {
@@ -158,11 +200,10 @@
         <span class="spacer"></span>
         <button class="btn sm danger ghost" (click)="beginPurge(resource)">purge</button>
       </div>
-    } @empty {
-      <p class="mono faint">No retained named volumes. Removing a managed server never purges its data automatically.</p>
     }
   </div>
 </section>
+}
 }
 
 } @else {
@@ -216,7 +257,7 @@
       </div>
     }
 
-    @for (group of groups.groups(); track group.id) {
+    @for (group of visibleGroups(); track group.id) {
       <div class="group-row">
         <div class="group-head-row">
           <strong>{{ group.name }}</strong>
@@ -261,7 +302,9 @@
         </div>
       </div>
     } @empty {
-      @if (!groupDraft.open()) {
+      @if (query().trim()) {
+        <div class="panel empty"><p class="mono dim">No group named like “{{ query().trim() }}”.</p></div>
+      } @else if (!groupDraft.open()) {
         <div class="panel empty">
           <p class="mono dim">No groups yet.</p>
           <p class="lock-hint">A group connects several catalog entries to an agent in one

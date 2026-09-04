@@ -5,7 +5,7 @@ import { HostStore } from '../core/store/host-store';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { McpGroupStore } from '../core/store/mcp-group-store';
 import { GroupDraft, groupHolding } from '../core/filing';
-import { clock } from '../core/format';
+import { ago, clock } from '../core/format';
 import { mcpDisplayEndpoint, mcpEntryBusy, mcpOperationActive } from '../core/mcp/catalog-rules';
 import {
   DeployedPart, McpCatalogKind, McpCatalogServer, McpGroup, McpRetainedResource,
@@ -59,6 +59,7 @@ export class McpServersPage {
   protected readonly operationActive = mcpOperationActive;
   protected readonly displayEndpoint = mcpDisplayEndpoint;
   protected readonly clock = clock;
+  protected readonly ago = ago;
 
   /** The entry the editor is open on; null keeps it closed. */
   protected draft: McpEditorDraft | null = null;
@@ -70,8 +71,40 @@ export class McpServersPage {
   protected purgeConfirm = '';
   protected readonly purgeBusy = signal(false);
 
+  /** One search box for the page; it narrows whichever tab is open, by name. */
+  protected readonly query = signal('');
+  private readonly needle = computed(() => this.query().trim().toLowerCase());
+
+  protected readonly visibleServers = computed(() => {
+    const needle = this.needle();
+    return needle
+      ? this.catalog.servers().filter(server => server.name.toLowerCase().includes(needle))
+      : this.catalog.servers();
+  });
+
   protected readonly serverSections = computed(() =>
-    mcpServerSections(this.catalog.servers(), this.hosts.hosts()));
+    mcpServerSections(this.visibleServers(), this.hosts.hosts()));
+
+  protected readonly visibleGroups = computed(() => {
+    const needle = this.needle();
+    return needle
+      ? this.groups.groups().filter(group => group.name.toLowerCase().includes(needle))
+      : this.groups.groups();
+  });
+
+  protected onSearch(value: string): void {
+    this.query.set(value);
+  }
+
+  /** `3 registered`, or `1 of 3 registered` while a search narrows the list. */
+  protected count(shown: number, total: number, noun: string): string {
+    const all = `${total} ${noun}`;
+    return this.needle() ? `${shown} of ${all}` : all;
+  }
+
+  protected refreshActive(): void {
+    void (this.activeTab() === 'servers' ? this.catalog.refresh() : this.groups.refresh());
+  }
 
   // ── groups ──────────────────────────────────────────────────────────────
   /** The group editor's state — open, editing which, and what is picked. */
@@ -156,12 +189,29 @@ export class McpServersPage {
     else await this.catalog.check(server.id);
   }
 
+  /** The managed servers of a section a stack-wide verb would touch — not already there, not busy. */
+  protected stackTargets(servers: McpCatalogServer[], verb: 'start' | 'stop'): McpCatalogServer[] {
+    return servers.filter(server => server.kind === 'managed' && !mcpEntryBusy(server)
+      && (verb === 'start' ? server.runtimeState !== 'running' : server.runtimeState === 'running'));
+  }
+
+  /** Every service of one managed stack at once; each is its own 202 on the backend, so they run
+   *  side by side rather than one after another. */
+  protected async runStack(servers: McpCatalogServer[], verb: 'start' | 'stop'): Promise<void> {
+    await Promise.all(this.stackTargets(servers, verb).map(server =>
+      verb === 'start' ? this.catalog.start(server.id) : this.catalog.stop(server.id)));
+  }
+
   // ── remove a server ─────────────────────────────────────────────────────
   protected async remove(server: McpCatalogServer): Promise<void> {
+    const linked = server.linkedAgents;
+    const agents = linked
+      ? `${linked} Agent ${linked === 1 ? 'profile carries' : 'profiles carry'} this entry — `
+        + `${linked === 1 ? 'its copy' : 'their copies'} will be disabled and unlinked first.`
+      : 'No Agent profile carries this entry.';
     if (!await this.confirm.ask({
       title: 'delete mcp server',
-      message: 'Linked Agent entries will be disabled and unlinked first. Managed containers will be '
-        + 'removed, while named volumes remain in Retained Data.',
+      message: `${agents} Managed containers will be removed, while named volumes remain in Retained Data.`,
       typed: server.name,
       action: 'delete permanently',
     })) return;

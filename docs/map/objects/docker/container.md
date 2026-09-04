@@ -46,6 +46,10 @@ Wire record — `docker/ContainerDto.java:6`. Two fields are easy to misread:
 - `imageDigest` — the registry manifest digest, null if never pulled from a registry. **The only
   evidence a container on a floating tag such as `latest` is behind**; the tag string always
   looks current (`docker/ContainerDto.java:15`).
+- `release` — the Hermes release the image carries, read from `hermes_cli/__init__.py` over one
+  exec per image id and cached for the life of the process. A `latest` built from `main` shares
+  its digest with no release tag, so this is the only thing that can name it; the UI shows it in
+  place of a floating tag (`core/image-policy.ts`, `displayVersion`). Null when stopped.
 - `profiles` — read live, not from the `mc.profiles` label.
 
 ## Connected to

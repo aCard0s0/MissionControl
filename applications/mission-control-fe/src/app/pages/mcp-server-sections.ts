@@ -8,8 +8,13 @@ export interface McpServerSection {
   key: string;
   label: string;
   detail: string;
+  /** The Docker Compose project a managed stack runs in; absent for the other sections. */
+  project?: string;
   servers: McpCatalogServer[];
 }
+
+/** Mirrors `ManagedMcpStack.PROJECT` on the backend — the project `docker compose ls` shows. */
+export const MANAGED_PROJECT = 'mission-control-mcp';
 
 /** The bucket a managed server with no host lands in. */
 const UNASSIGNED = 'unassigned';
@@ -40,6 +45,7 @@ export function mcpServerSections(
         key: `managed-${hostId}`,
         label: `Managed stack — ${host?.name ?? (hostId === UNASSIGNED ? 'Unassigned' : hostId)}`,
         detail: host?.url || 'Docker host unavailable',
+        project: MANAGED_PROJECT,
         servers: managed.filter(server => (server.hostId ?? UNASSIGNED) === hostId),
       };
     }),

@@ -114,7 +114,7 @@ const storedServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer =
   headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
   desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle',
   operationError: null, checkStatus: 'unknown', checkError: null, checkedAt: null,
-  latencyMs: null, revision: 3, appliedRevision: 3, pendingChanges: false,
+  latencyMs: null, linkedAgents: 0, imageAsOf: null, revision: 3, appliedRevision: 3, pendingChanges: false,
   serviceKey: 'example', createdAt: 1, updatedAt: 2,
   ...patch,
 });

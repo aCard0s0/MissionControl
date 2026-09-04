@@ -28,7 +28,7 @@ const CATALOG_SERVER = {
   publishedPort: null, path: '/mcp', crossHostUrl: null, connectionUrl: 'http://browser:1100/mcp',
   headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
   desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle', operationError: null,
-  checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null,
+  checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null, linkedAgents: 0, imageAsOf: null,
   revision: 1, appliedRevision: 1, pendingChanges: false, serviceKey: 'browser',
   createdAt: 1, updatedAt: 1,
 };

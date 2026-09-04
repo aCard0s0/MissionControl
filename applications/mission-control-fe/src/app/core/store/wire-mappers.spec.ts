@@ -94,7 +94,7 @@ describe('toMcpCatalogServer', () => {
       internalPort: null, publishedPort: null, path: null, crossHostUrl: null,
       connectionUrl: null, headers: [], environment: [], volumes: [], healthcheck: null,
       supportServices: [], operationState: 'idle', operationError: null, checkError: null,
-      checkedAt: null, latencyMs: null, revision: 1, appliedRevision: 0,
+      checkedAt: null, latencyMs: null, linkedAgents: 0, imageAsOf: null, revision: 1, appliedRevision: 0,
       pendingChanges: false, serviceKey: null,
     });
   });

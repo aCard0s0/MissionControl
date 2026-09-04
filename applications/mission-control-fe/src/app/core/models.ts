@@ -142,6 +142,7 @@ export interface HermesContainer {
   image: string;
   version: string;
   imageDigest: string | null;     // registry digest of the image it runs, null if never pulled
+  release: string | null;         // the Hermes release hermes itself reports, null when unknown
   startedAt: number | null;       // epoch ms, null when stopped
   cpu: number;                    // percent 0–100
   ram: number;                    // MB used
@@ -513,6 +514,8 @@ export interface McpCatalogServer {
   checkError: string | null;
   checkedAt: number | null;
   latencyMs: number | null;
+  linkedAgents: number;           // agent profiles carrying this entry
+  imageAsOf: number | null;       // last start of a managed service = last image pull/verify
   revision: number;
   appliedRevision: number;
   pendingChanges: boolean;

@@ -27,7 +27,7 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts. `imageDigest` is the registry manifest digest of the image the container runs, or null when it was never pulled from a registry — the only evidence that a container on a floating tag such as `latest` is behind |
+| `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts. `imageDigest` is the registry manifest digest of the image the container runs, or null when it was never pulled from a registry — the only evidence that a container on a floating tag such as `latest` is behind. `release` is the Hermes release the image carries (`2026.8.19`, from `hermes_cli/__init__.py`, read once per image over exec), or null when the container is not running or the image does not say — what the UI shows in place of a floating tag |
 | `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates. `ramMb` excludes the reclaimable page cache, matching what `docker stats` reports rather than raw `memory_stats.usage`. 503 if the daemon returns no sample; a stopped container is a sample of zeros, not an error. |
 | `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | container-scoped `{ ts, level, source, msg }`; multiline frames are split, empty records dropped, and explicit severity preserved |
 | `POST /api/containers` | `{ hostId, name, version?, profiles?, memoryMb?, cpus? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. `version` is validated as an image tag (same rule as the update endpoint) — blank or absent means `latest`. `memoryMb`/`cpus` cap the container; absent means the [Hermes recommendation](https://hermes-agent.nousresearch.com/docs/user-guide/docker) of 2048 MB / 2 cores, never *no* limit. Both are refused below the vendor minimum (1024 MB, 1 core). The ceiling is create-time and is carried onto the replacement by an image update. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. A gateway that never reports ready is 503, not 500. |
@@ -36,7 +36,7 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 | `POST /api/containers/{hostId}/{id}/update` | `{ version }` | recreates the container on another tag, reusing its data volume, and returns the **new** `{ id }`. Pulls first, then stops, parks the old container aside, creates the replacement under the same name/labels/networks, and only removes the parked original once readiness passes — a failure restores it. Never re-seeds profiles and never touches the volume. 400 if the container is not Mission Control-managed or runs another image; 409 if it already runs that tag. Also 409 while a profile inside is still being created, for the same reason as `stop`. Held open through readiness, so it can take minutes on a cold pull. |
 | `DELETE /api/containers/{hostId}/{id}` | — | force removes the container and its recorded Mission Control-managed volume; unowned/external mounts are preserved |
 
-Container DTO: `{ id, shortId, name, hostId, status, image, version, startedAt, sizeRootFsGb, profiles }`
+Container DTO: `{ id, shortId, name, hostId, status, image, version, imageDigest, release, startedAt, sizeRootFsGb, profiles }`
 with `status ∈ running | stopped | unhealthy | unknown`.
 
 ## MCP server catalog — SQLite definitions + managed Compose lifecycle
@@ -47,7 +47,7 @@ entries are registry-only and therefore have no container lifecycle or logs.
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions |
+| `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions. `linkedAgents` counts the agent profiles carrying the entry — what a delete disables first. `imageAsOf` is when a managed service's container last started, which is the last time its image was pulled or verified, since every start and apply runs `--pull always`; null unless running |
 | `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201. `repoUrl` is optional and must be `http://` or `https://` — it is rendered as a link, so the scheme is checked here rather than trusted to the client |
 | `PUT /api/mcp-servers/{id}` | complete structured definition | Kind and managed `hostId` are immutable; running deployment changes remain pending until Apply |
 
