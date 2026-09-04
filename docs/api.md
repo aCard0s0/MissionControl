@@ -12,7 +12,7 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 | `GET /health` | `{ status, version, dockerConnected }` |
 | `GET /config.js` | frontend runtime config as JS (from `MC_*` env, `no-store`) |
 | `GET /api/server/info` | `{ version, retained, startedAt }` — what the Server Logs page header shows. Separate from `/health`, which the launcher polls and should not grow fields for one page |
-| `GET /api/server/logs` | the dashboard's **own** log tail — `?tail=200` (max 1000), `?level=error\|warn\|info\|debug`. Newest first, in the same `{ ts, level, source, msg }` shape a container tail returns. Served from an in-memory ring; what falls out of it is still in `docker logs` |
+| `GET /api/server/logs` | the dashboard's **own** log tail — `?tail=200` (max 1000), `?level=error\|warn\|info\|debug` (anything else is a 400, not an empty page). Newest first, in the same `{ ts, level, source, msg }` shape a container tail returns. Served from an in-memory ring; what falls out of it is still in `docker logs` |
 
 ## Docker hosts — registry in SQLite, status probed live (10s cache)
 
@@ -28,7 +28,7 @@ A request the daemon itself rejects (a malformed image reference, an unacceptabl
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/containers` | `?hostId=`, `?all=true` | filtered by `MC_CONTAINER_FILTER` unless `all`; skips unreachable hosts. `imageDigest` is the registry manifest digest of the image the container runs, or null when it was never pulled from a registry — the only evidence that a container on a floating tag such as `latest` is behind |
-| `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates. `ramMb` excludes the reclaimable page cache, matching what `docker stats` reports rather than raw `memory_stats.usage`. 503 if the daemon returns no sample. |
+| `GET /api/containers/{hostId}/{id}/stats` | — | one-shot sample; `rxBytes`/`txBytes` are cumulative — clients compute rates. `ramMb` excludes the reclaimable page cache, matching what `docker stats` reports rather than raw `memory_stats.usage`. 503 if the daemon returns no sample; a stopped container is a sample of zeros, not an error. |
 | `GET /api/containers/{hostId}/{id}/logs` | `?tail=100` (max 500) | container-scoped `{ ts, level, source, msg }`; multiline frames are split, empty records dropped, and explicit severity preserved |
 | `POST /api/containers` | `{ hostId, name, version?, profiles?, memoryMb?, cpus? }` | creates + starts `MC_HERMES_IMAGE:version`, waits for default-profile initialization, then creates each requested named profile. `version` is validated as an image tag (same rule as the update endpoint) — blank or absent means `latest`. `memoryMb`/`cpus` cap the container; absent means the [Hermes recommendation](https://hermes-agent.nousresearch.com/docs/user-guide/docker) of 2048 MB / 2 cores, never *no* limit. Both are refused below the vendor minimum (1024 MB, 1 core). The ceiling is create-time and is carried onto the replacement by an image update. Any failure rolls back the container and managed volume; an existing same-name volume returns 409. A gateway that never reports ready is 503, not 500. |
 | `POST /api/containers/{hostId}/{id}/start` | — | |
@@ -169,12 +169,15 @@ rules. The reasoning is in
 [architecture.md](architecture.md#scheduled-jobs-and-inbound-webhooks).
 
 Every cron mutation answers with the **whole schedule as hermes now holds it**, so the
-dashboard never guesses what a create or an edit produced.
+dashboard never guesses what a create or an edit produced. hermes exits 0 whether or not it
+did what was asked — `Failed to create job: Invalid schedule '…'` and `Job not found: …` are
+exit 0 too (v0.20.5) — so the verdict is read off its stdout: a `not found` is a 404, any other
+`Failed …` is a 400 carrying hermes' first line.
 
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET  …/{name}/cron` | — | read from `<profile>/cron/jobs.json`, not from the table `hermes cron list` prints. Reports when the gateway is down: hermes stores jobs either way, but nothing fires them |
-| `POST …/{name}/cron` | `{ schedule, prompt, name?, deliver?, repeat?, skills? }` | `schedule` and `prompt` are what hermes needs; blank optionals are left off the command line |
+| `POST …/{name}/cron` | `{ schedule, prompt, name?, deliver?, repeat?, skills? }` | `schedule` and `prompt` are what hermes needs; blank optionals are left off the command line. The positionals follow a `--`, so a schedule that reads like a flag is not parsed as one — hermes answered `--help` with its usage and exit 0, which read here as a job created |
 | `PATCH …/{name}/cron/{jobId}` | same fields, all optional | a null is left alone |
 | `POST …/{name}/cron/{jobId}/pause` | — | holds this **job**; not the profile-wide `…/{name}/pause` above |
 | `POST …/{name}/cron/{jobId}/resume` | — | the counterpart to the row above |
@@ -193,10 +196,10 @@ says a route is unreachable until an operator maps the port themselves.
 |---|---|---|
 | `GET  …/{name}/webhooks` | — | routes plus the listener's state. Secrets appear only as a masked tail |
 | `PUT  …/{name}/webhooks/platform` | `{ enabled, host?, port? }` | turns the listener on or off and says where it binds. **One listener port per container, not per profile**: profiles share a network namespace, so this refuses a port another profile already holds and walks a defaulted one up from 8644 |
-| `POST …/{name}/webhooks` | `{ name, prompt?, description?, events?, skills?, deliver?, deliverChatId?, deliverOnly? }` | only `name` is required — hermes generates the HMAC secret, so no secret ever travels through the dashboard to reach it |
+| `POST …/{name}/webhooks` | `{ name, prompt?, description?, events?, skills?, deliver?, deliverChatId?, deliverOnly? }` | only `name` is required — hermes generates the HMAC secret, so no secret ever travels through the dashboard to reach it. 409 while the listener is off: hermes answers the command with a setup walkthrough and exit 0, so the dashboard would otherwise report a route it never created |
 | `GET  …/{name}/webhooks/{route}/secret` | — | the full HMAC secret the sending provider needs. **Its own endpoint on purpose**: a secret must not ride along in the listing the dashboard polls |
-| `POST …/{name}/webhooks/{route}/test` | — | fires hermes' own test POST at the route |
-| `DELETE …/{name}/webhooks/{route}` | — | |
+| `POST …/{name}/webhooks/{route}/test` | — | fires hermes' own test POST at the route; 409 while the listener is off, as above; 404 for a route hermes does not hold — it says `No subscription named` and exits 0 |
+| `DELETE …/{name}/webhooks/{route}` | — | 409 while the listener is off, 404 for a route hermes does not hold, as above |
 
 ## Profile templates — reusable agent blueprints, dashboard-owned
 
@@ -432,7 +435,7 @@ truth that goes stale the moment the Hub moves, which is why the split exists.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/skills` | `?category=` | newest edit first; a blank category is not a filter |
-| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400. `repoUrl` is optional and must be `http://` or `https://`, the same rule the MCP catalog applies — it is rendered as a link |
+| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400. Each file body is at most 131071 bytes: a deploy hands it to the container as one `docker exec` argument, and the daemon refuses anything longer. `repoUrl` is optional and must be `http://` or `https://`, the same rule the MCP catalog applies — it is rendered as a link |
 | `PUT /api/skills/{id}` | same body | replaces everything an editor owns and keeps `createdAt`; 404 rather than an insert when the skill is gone |
 | `DELETE /api/skills/{id}` | — | idempotent. Removes the library row only — a copy already deployed onto an agent stays exactly where it is |
 | `POST /api/skills/{id}/deploy` | `{ hostId, containerId, profile }` | puts the skill on one agent and answers with the refreshed profile. A `hub` row runs `hermes skills install <name> --force`; a `local` row has its files written into `<profileDir>/skills/<name>/` |
@@ -441,9 +444,10 @@ truth that goes stale the moment the Hub moves, which is why the split exists.
 
 Skill DTO: `{ id, kind, name, description, category, repoUrl, version, files, createdAt,
 updatedAt }`, where `files` is `[{ path, body }]` and is null for a hub row. Import answers
-`{ skill, skipped }` — `skipped` names files left behind because they hold a NUL byte: the
-exec pipe is UTF-8, so a binary asset cannot round-trip through it, and the importer says so
-rather than storing the corruption.
+`{ skill, skipped }` — `skipped` names files left behind because they hold a NUL byte or exceed 131071 bytes: the
+exec pipe is UTF-8, so a binary asset cannot round-trip through it, and a deploy hands each
+file to the container as one `docker exec` argument, which the daemon caps there — so the
+importer says so rather than storing a row that cannot land.
 
 The upstream check answers `{ status, latest, detail, checkedAt }` with `status` one of
 `current | update | unknown | unsupported | unavailable`. It is a call of its own rather

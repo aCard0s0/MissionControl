@@ -10,6 +10,7 @@ import io.hermes.missioncontrol.agents.api.WebhookSubscriptionDto;
 import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import io.hermes.missioncontrol.secrets.Secrets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,6 +18,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -221,6 +223,7 @@ public class HermesWebhooks {
       DockerHostRef host, String containerId, String profileName, SubscribeWebhookRequest request) {
     List<String> command = new ArrayList<>(
         List.of("webhook", "subscribe", requireRoute(request.name())));
+    requirePlatformEnabled(host, containerId, profileName);
     HermesCli.addOption(command, "--prompt", request.prompt());
     HermesCli.addOption(command, "--description", request.description());
     HermesCli.addOption(command, "--events", joined(request.events()));
@@ -234,13 +237,43 @@ public class HermesWebhooks {
   }
 
   public WebhooksDto remove(DockerHostRef host, String containerId, String profileName, String route) {
-    cli.stdout(host, containerId, profileName, List.of("webhook", "remove", requireRoute(route)));
+    requireRoute(route);
+    requirePlatformEnabled(host, containerId, profileName);
+    requireKnownRoute(cli.stdout(host, containerId, profileName, List.of("webhook", "remove", route)), route);
     return list(host, containerId, profileName);
   }
 
   /** Fires hermes' own test POST at the route, so an operator can prove it is wired. */
   public String test(DockerHostRef host, String containerId, String profileName, String route) {
-    return cli.stdout(host, containerId, profileName, List.of("webhook", "test", requireRoute(route)));
+    requireRoute(route);
+    requirePlatformEnabled(host, containerId, profileName);
+    return requireKnownRoute(
+        cli.stdout(host, containerId, profileName, List.of("webhook", "test", route)), route);
+  }
+
+  /**
+   * {@code hermes webhook remove} and {@code test} exit 0 for a route hermes does not hold and
+   * say so only on stdout — {@code No subscription named 'x'.} (v0.20.5) — so without this a
+   * stale row on the page was "removed" with a 200 and stayed exactly where it was.
+   */
+  private static String requireKnownRoute(String stdout, String route) {
+    if (stdout != null && stdout.contains("No subscription named")) {
+      throw new NoSuchElementException("no webhook route named '" + route + "'");
+    }
+    return stdout;
+  }
+
+  /**
+   * Hermes (v0.20.5, 2026.8.19) answers {@code webhook subscribe}, {@code remove} and
+   * {@code test} on a profile whose listener is off with a setup walkthrough and <em>exit 0</em>,
+   * so without this the dashboard reported a route created that does not exist, and a route
+   * removed that is still there.
+   */
+  private void requirePlatformEnabled(DockerHostRef host, String containerId, String profileName) {
+    if (!platform(host, containerId, profileName).enabled()) {
+      throw new ResourceConflictException("the webhook listener is off for profile '"
+          + profileName + "' — turn it on before adding, removing or testing routes");
+    }
   }
 
   /**

@@ -21,7 +21,7 @@ server linked to it, and **the prose itself written into the agent's skills dire
 umbrella `SKILL.md`**.
 
 That third part is what makes a guide more than a note. Hermes' own curator authors umbrella
-skills exactly like this (`agents/HermesSkills.java:306`), so writing one is the native move
+skills exactly like this (`agents/HermesSkills.java:310`), so writing one is the native move
 rather than an invention — and it is the difference between the operator having context and
 the *agent* having it. A guide the agent cannot read would leave it choosing between the
 parts with no idea they belong together.

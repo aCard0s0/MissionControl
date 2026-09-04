@@ -9,6 +9,8 @@ import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.exception.UnauthorizedException;
 import io.hermes.missioncontrol.errors.ApiErrors;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -47,20 +49,27 @@ public class DockerExceptionAdvice {
 
   private static final Logger log = LoggerFactory.getLogger(DockerExceptionAdvice.class);
 
+  /**
+   * docker-java reports the daemon's answer as {@code Status 404: {"message":"No such
+   * container: x"}} — the envelope the client saw, not the sentence the operator needs.
+   */
+  private static final Pattern DAEMON_MESSAGE =
+      Pattern.compile("\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+
   @ExceptionHandler(NotFoundException.class)
   public ResponseEntity<Map<String, String>> notFound(NotFoundException e) {
-    return ApiErrors.error(HttpStatus.NOT_FOUND, e.getMessage());
+    return ApiErrors.error(HttpStatus.NOT_FOUND, detail(e));
   }
 
   @ExceptionHandler(DockerException.class)
   public ResponseEntity<Map<String, String>> dockerFailure(DockerException e) {
     log.warn("docker call failed: {}", e.getMessage());
-    return ApiErrors.error(HttpStatus.BAD_GATEWAY, "docker daemon error: " + ApiErrors.brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.BAD_GATEWAY, "docker daemon error: " + detail(e));
   }
 
   @ExceptionHandler({ConflictException.class, NotModifiedException.class})
   public ResponseEntity<Map<String, String>> dockerConflict(DockerException e) {
-    return ApiErrors.error(HttpStatus.CONFLICT, ApiErrors.brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.CONFLICT, detail(e));
   }
 
   /** The exec seam's translation of the daemon's 409 for a stopped container. */
@@ -89,7 +98,17 @@ public class DockerExceptionAdvice {
    */
   @ExceptionHandler({BadRequestException.class, NotAcceptableException.class})
   public ResponseEntity<Map<String, String>> dockerRejectedRequest(DockerException e) {
-    return ApiErrors.error(HttpStatus.BAD_REQUEST, ApiErrors.brief(e.getMessage()));
+    return ApiErrors.error(HttpStatus.BAD_REQUEST, detail(e));
+  }
+
+  /** The daemon's own sentence when the message carries its JSON envelope; the first line otherwise. */
+  static String detail(DockerException e) {
+    String message = e.getMessage();
+    if (message != null) {
+      Matcher m = DAEMON_MESSAGE.matcher(message);
+      if (m.find()) return ApiErrors.brief(m.group(1).replace("\\\"", "\""));
+    }
+    return ApiErrors.brief(message);
   }
 
   /** A registry refusing our credentials — a configuration problem, not a bad request. */

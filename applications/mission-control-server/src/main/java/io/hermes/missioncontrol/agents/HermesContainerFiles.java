@@ -3,6 +3,7 @@ package io.hermes.missioncontrol.agents;
 import io.hermes.missioncontrol.docker.DockerExecService;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,6 +29,19 @@ import org.springframework.stereotype.Component;
 class HermesContainerFiles {
 
   private static final Duration EXEC_TIMEOUT = Duration.ofSeconds(30);
+
+  /**
+   * The most bytes one write may carry. Every write here hands the whole file to the shell as
+   * a single argument, and Linux caps one argument at {@code MAX_ARG_STRLEN} — 32 pages, so
+   * 131072 bytes including the NUL. Past it the daemon refuses the exec before the script
+   * runs: measured on Docker 29, 131000 bytes wrote and 131100 answered
+   * {@code exec /usr/bin/sh: argument list too long}, which a caller saw as a 400 naming the
+   * shell — or, on a sensitive write, as a bare {@code exit code 126}.
+   *
+   * <p>ponytail: refuse with a reason. Streaming the content over the exec's stdin lifts the
+   * limit for every writer at once, and is the upgrade the day a file that size is wanted.
+   */
+  static final int MAX_WRITE_BYTES = 131_071;
 
   private final DockerExecService dockerExec;
 
@@ -162,6 +176,7 @@ class HermesContainerFiles {
   }
 
   void writeFile(DockerHostRef host, String containerId, String path, String content) {
+    requireFitsInOneArgument(path, content);
     String script = String.join(" ",
         "path=\"$1\"; content=\"$2\";",
         "mkdir -p \"$(dirname \"$path\")\";",
@@ -175,6 +190,7 @@ class HermesContainerFiles {
    * delete half of a rename or a partially-written YAML document.
    */
   void writeFileAtomically(DockerHostRef host, String containerId, String path, String content) {
+    requireFitsInOneArgument(path, content);
     String script = String.join(" ",
         "path=\"$1\"; content=\"$2\";",
         "mkdir -p \"$(dirname \"$path\")\";",
@@ -188,6 +204,16 @@ class HermesContainerFiles {
     execSensitive(
         host, containerId, List.of("sh", "-lc", script, "_", path, content),
         "write MCP configuration");
+  }
+
+  /** Bytes, not characters: a multibyte body is refused where a same-length ASCII one is not. */
+  private static void requireFitsInOneArgument(String path, String content) {
+    int bytes = content == null ? 0 : content.getBytes(StandardCharsets.UTF_8).length;
+    if (bytes > MAX_WRITE_BYTES) {
+      throw new IllegalArgumentException(
+          path.substring(path.lastIndexOf('/') + 1) + " is " + bytes
+              + " bytes; a single write into the container is limited to " + MAX_WRITE_BYTES);
+    }
   }
 
   void removeTree(DockerHostRef host, String containerId, String path) {
