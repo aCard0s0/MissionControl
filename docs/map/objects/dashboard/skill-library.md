@@ -79,6 +79,25 @@ The cache key is operator-supplied, so unlike `docker/RegistryTagService` — wh
 says its map only holds because its key is a single configured value — expired entries are
 swept on write, the shape `agents/HermesProfileMcp` uses.
 
+## The repository link, and two rules that are not one rule
+
+Saving a row admits `http://` and `https://` and nothing else — the rule is
+`common/Text.java:38`, applied at `skills/SkillController.java:243` and shared with an
+[MCP catalog entry](../mcp/mcp-server-entry.md), which stores the same field and renders it
+the same `href`. The two disagreed until that helper existed: only the catalog checked it.
+
+The save rule stops there on purpose. `skills/UpstreamCheck.java:240` accepts far less —
+https, `github.com`, exactly two path segments — but that is the rule for *reaching the
+network*, and folding it into the save would refuse a skill kept anywhere but GitHub. A link
+that saves and reports `unsupported` is a valid state.
+
+**A row stored before the guard fails its next save.** The editor round-trips `repoUrl`, so
+editing an unrelated field on such a row answers 400 naming it, and clearing the field is the
+way out. The alternative — checking only a *changed* value — would let a stored `javascript:`
+outlive every future save, and a guard on an `href` that grandfathers its own failures is not
+one. The value was already inert: Angular refuses to bind it, and the check above reads
+nothing from it.
+
 ## Checked against a real agent
 
 Verified end to end against `nousresearch/hermes-agent:latest` (v2026.8.19) in a throwaway
@@ -111,7 +130,8 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 
 ## If you change this
 
-- **Hits:** `SkillRepository`, `SkillController`, `HermesProfiles.installSkillFiles`
+- **Hits:** `SkillRepository`, `SkillController`, `common/Text.java:38` (the `repoUrl` rule, shared
+  with the MCP catalog — a change there hits both stores), `HermesProfiles.installSkillFiles`
   (`agents/HermesProfiles.java:273`), `HermesSkills.writeSkillFiles`/`readSkillFiles`,
   `ProfilePaths.skillFile`, `pages/skills.ts`, `pages/skill-deploy-dialog.ts`,
   `core/store/skill-store.ts`, and the `save to library` button on

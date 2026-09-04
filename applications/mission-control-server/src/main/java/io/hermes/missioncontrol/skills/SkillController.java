@@ -236,7 +236,7 @@ public class SkillController {
     }
     return new Skill(
         id, kind, request.name().trim(), Text.blankToNull(request.description()),
-        category(request.category()), Text.blankToNull(request.repoUrl()),
+        category(request.category()), Text.httpLinkOrNull(request.repoUrl(), "repoUrl"),
         Text.blankToNull(request.version()), files, createdAt, now);
   }
 
