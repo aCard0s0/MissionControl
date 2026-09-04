@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked,
 } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SkillGroupStore } from '../core/store/skill-group-store';
@@ -70,6 +71,7 @@ export class SkillsPage {
   protected readonly activeTab = signal<SkillsTab>('skills');
 
   protected readonly skills = inject(SkillStore);
+  private readonly confirm = inject(Confirm);
   protected readonly groups = inject(SkillGroupStore);
   protected readonly guides = inject(SkillGuideStore);
   protected readonly ago = ago;
@@ -322,9 +324,10 @@ export class SkillsPage {
   }
 
   protected async remove(skill: Skill): Promise<void> {
-    if (!confirm(
-      `Delete "${skill.name}" from the library? Any copy already on an agent stays there.`
-    )) return;
+    if (!await this.confirm.ask({
+      title: 'delete skill',
+      message: `Delete "${skill.name}" from the library? Any copy already on an agent stays there.`,
+    })) return;
     if (!await this.skills.remove(skill.id)) return;
     if (this.editId() === skill.id) this.cancel();
   }
@@ -354,9 +357,10 @@ export class SkillsPage {
   }
 
   protected async removeGroup(group: SkillGroup): Promise<void> {
-    if (!confirm(
-      `Delete the group "${group.name}"? Its skills stay in the library — only the filing goes.`
-    )) return;
+    if (!await this.confirm.ask({
+      title: 'delete group',
+      message: `Delete the group "${group.name}"? Its skills stay in the library — only the filing goes.`,
+    })) return;
     if (await this.groups.remove(group.id)) this.groupDraft.closeIf(group.id);
   }
 }

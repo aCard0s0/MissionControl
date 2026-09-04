@@ -9,7 +9,7 @@ import { SkillGuideStore } from '../core/store/skill-guide-store';
 import { SkillStore } from '../core/store/skill-store';
 import { Skill, SkillGroup, SkillGuide } from '../core/models';
 import { SkillsPage } from './skills';
-import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text, stubConfirm } from '../testing/dom';
 
 const skill = (id: string, patch: Partial<Skill> = {}): Skill => ({
   id, kind: 'local', name: `skill-${id}`, description: `what ${id} does`, category: 'docs',
@@ -305,17 +305,16 @@ describe('SkillsPage', () => {
   });
 
   it('says a group delete leaves its skills alone, and confirms first', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, groups } = render(
       storeStub([skill('s-1')]), groupStub([group('sg-1', { skillIds: ['s-1'] })]));
     await settle(fixture);
+    const confirmed = stubConfirm(false);
 
     press(fixture, 'delete', '.group-head');
     await settle(fixture);
 
-    expect(confirmed.mock.calls[0][0]).toContain('only the filing goes');
+    expect(confirmed.mock.calls[0][0].message).toContain('only the filing goes');
     expect(groups.remove).not.toHaveBeenCalled();
-    confirmed.mockRestore();
   });
 
   it('loads a group into the editor with its skills and its guide', async () => {
@@ -449,26 +448,24 @@ describe('SkillsPage', () => {
   // ── delete ───────────────────────────────────────────────────────────────
 
   it('confirms a delete, and says the deployed copies are not touched', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, store } = render(storeStub([skill('s-1', { name: 'pdf' })]));
+    const confirmed = stubConfirm(false);
 
     press(fixture, 'delete');
     await settle(fixture);
 
-    expect(confirmed.mock.calls[0][0]).toContain('stays there');
+    expect(confirmed.mock.calls[0][0].message).toContain('stays there');
     expect(store.remove).not.toHaveBeenCalled();
-    confirmed.mockRestore();
   });
 
   it('removes the row once the delete is confirmed', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, store } = render(storeStub([skill('s-1', { name: 'pdf' })]));
+    stubConfirm(true);
 
     press(fixture, 'delete');
     await settle(fixture);
 
     expect(store.remove).toHaveBeenCalledWith('s-1');
-    confirmed.mockRestore();
   });
 
   // ── deploy ───────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LlmProvider, ProfileTemplate } from '../core/models';
 import { AgentProfilesPage } from './agent-profiles';
-import { TestFixture, el, field, press, settle, type } from '../testing/dom';
+import { TestFixture, el, field, press, settle, type, stubConfirm } from '../testing/dom';
 import { template as buildTemplate } from '../testing/models';
 import { provideStores } from '../testing/store';
 
@@ -303,8 +303,8 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
   });
 
   it('asks before deleting a blueprint, and does not on a refusal', async () => {
-    vi.stubGlobal('confirm', () => false);
     const fixture = render();
+    stubConfirm(false);
     openTemplate(fixture, 'ops-sre');
     await settle(fixture);
 
@@ -316,8 +316,8 @@ describe('AgentProfilesPage blueprint lifecycle', () => {
   });
 
   it('deletes the blueprint and closes the editor it was open in', async () => {
-    vi.stubGlobal('confirm', () => true);
     const fixture = render();
+    stubConfirm(true);
     openTemplate(fixture, 'ops-sre');
     await settle(fixture);
 

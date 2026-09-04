@@ -1,8 +1,8 @@
 @if (c(); as ctr) {
   <div class="page-head" data-reveal>
     <div>
-      <div class="crumb mono">CONTAINER OVERVIEW</div>
-      <h2>{{ ctr.name }} <span class="hash mono">{{ ctr.shortId }}</span></h2>
+      <div class="crumb mono">{{ ctr.name }}</div>
+      <h2>Overview <span class="hash mono">{{ ctr.shortId }}</span></h2>
     </div>
     <div class="head-meta mono">
       <mc-status [status]="ctr.status" [live]="ctr.status !== 'stopped'" />
@@ -20,8 +20,10 @@
           <span class="faint">{{ updateHint(ctr, target) }}</span>
         </a>
       }
-      <span class="sep">·</span>
-      <span>up {{ uptime(ctr.startedAt) }}</span>
+      @if (ctr.status !== 'stopped') {
+        <span class="sep">·</span>
+        <span>up {{ uptime(ctr.startedAt) }}</span>
+      }
     </div>
   </div>
 

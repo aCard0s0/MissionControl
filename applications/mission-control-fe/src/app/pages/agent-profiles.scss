@@ -1,19 +1,11 @@
 :host { display: block; }
 
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  gap: 20px;
-  margin-bottom: 16px;
-  .crumb { font-size: 9.5px; letter-spacing: .22em; color: var(--faint); margin-bottom: 4px; }
-  h2 { font-size: 22px; }
-  .head-stats { margin-left: auto; font-size: 11px; color: var(--dim); }
-  .btn.primary { margin-left: 12px; }
-}
 
+// two fifths to the list: capped at 340px it wrapped every two-word name onto three lines
+// and pushed the deploy button under them
 .layout {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) 1fr;
+  grid-template-columns: minmax(320px, 2fr) 3fr;
   gap: 12px;
   align-items: start;
 }
@@ -33,7 +25,12 @@
   &.active { border-color: var(--acc-line); box-shadow: 0 0 0 1px var(--acc-line); }
 
   .panel-h { gap: 8px; }
-  .panel-h .nm { font-size: 12px; letter-spacing: .04em; color: var(--text); text-transform: none; }
+  // the name takes what the chips and button leave, and ellipsizes rather than wraps
+  .panel-h .nm {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12px; letter-spacing: .04em; color: var(--text); text-transform: none;
+  }
+  .panel-h .faint, .panel-h .btn { flex: none; white-space: nowrap; }
 
   // the glyph reads as part of the name, so it takes the name's colour and the
   // accent only when the card is the one being edited
@@ -51,7 +48,6 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 }
 
-.empty { align-items: center; gap: 8px; padding: 32px 20px; text-align: center; }
 
 // ── editor ────────────────────────────────────────────────────────────────────
 mc-profile-editor, .placeholder { position: sticky; top: 0; }
@@ -61,8 +57,4 @@ mc-profile-editor, .placeholder { position: sticky; top: 0; }
   .layout { grid-template-columns: 1fr; }
   mc-profile-editor, .placeholder { position: static; }
   .placeholder { display: none; }
-}
-
-@media (max-width: 760px) {
-  .page-head { flex-wrap: wrap; .head-stats { order: 3; width: 100%; margin-left: 0; } }
 }

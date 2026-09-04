@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy, Component, computed, inject, signal,
 } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { SkillGuideStore } from '../core/store/skill-guide-store';
@@ -38,6 +39,7 @@ const STARTER_BODY = `## When to use this
 })
 export class SkillGuidesPanel {
   protected readonly guides = inject(SkillGuideStore);
+  private readonly confirm = inject(Confirm);
   protected readonly skills = inject(SkillStore);
   protected readonly catalog = inject(McpCatalogStore);
   protected readonly ago = ago;
@@ -162,9 +164,10 @@ export class SkillGuidesPanel {
   }
 
   protected async remove(guide: SkillGuide): Promise<void> {
-    if (!confirm(
-      `Delete guide "${guide.name}"? Anything it already deployed stays on its agents.`
-    )) return;
+    if (!await this.confirm.ask({
+      title: 'delete guide',
+      message: `Delete guide "${guide.name}"? Anything it already deployed stays on its agents.`,
+    })) return;
     if (!await this.guides.remove(guide.id)) return;
     if (this.editId() === guide.id) this.cancel();
   }

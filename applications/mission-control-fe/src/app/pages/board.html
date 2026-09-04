@@ -6,6 +6,13 @@
   <span class="mono faint hint">drag cards between columns — state syncs to the agents' task queue</span>
 </div>
 
+@if (!board.forSelectedContainer().length) {
+  <div class="panel empty" data-reveal>
+    <p class="mono dim">No tasks on this board.</p>
+    <p class="lock-hint">equivalent CLI: <code>hermes kanban create "&lt;title&gt;"</code></p>
+  </div>
+}
+
 <div class="board" data-reveal>
   @for (col of columns; track col.key) {
     <div class="col panel">

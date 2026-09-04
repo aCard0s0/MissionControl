@@ -41,9 +41,9 @@ reading the same is the one way the filed list stops being readable.
 ## A skill can be in two groups, and shows in both
 
 `skill_ids` lives on the group, so nothing stops two groups claiming one skill. The page lists
-it under **both** (`pages/skills.ts:142`) rather than picking a winner silently. The cost is
+it under **both** (`pages/skills.ts:144`) rather than picking a winner silently. The cost is
 paid where the filing is done instead: the group editor ambers a skill another group already
-holds (`pages/skills.ts:151`), so double-filing is visible at the moment of it.
+holds (`pages/skills.ts:153`), so double-filing is visible at the moment of it.
 
 No constraint enforces one group per skill. Adding one would mean an edit to group A silently
 removing a skill from group B, which is the same class of surprise the deploy rules in this

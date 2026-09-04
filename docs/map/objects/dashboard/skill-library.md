@@ -29,7 +29,7 @@ whole design: the library splits by origin rather than picking one mechanism.
 Both halves are load-bearing. Storing a copy of a hub skill would be a second source of
 truth that goes stale the moment the Hub moves. Refusing to store local content would make
 dashboard-authored and curator-authored skills undeployable. The CHECK constraint at
-`schema.sql:207` and the branch at `skills/SkillController.java:149` are the two places that stay
+`schema.sql:207` and the branch at `skills/SkillController.java:225` are the two places that stay
 in step.
 
 A local deploy is an **overlay, not a sync**: it writes what the row holds and removes
@@ -82,7 +82,7 @@ swept on write, the shape `agents/HermesProfileMcp` uses.
 ## The repository link, and two rules that are not one rule
 
 Saving a row admits `http://` and `https://` and nothing else — the rule is
-`common/Text.java:38`, applied at `skills/SkillController.java:243` and shared with an
+`common/Text.java:38`, applied at `skills/SkillController.java:241` and shared with an
 [MCP catalog entry](../mcp/mcp-server-entry.md), which stores the same field and renders it
 the same `href`. The two disagreed until that helper existed: only the catalog checked it.
 
@@ -132,7 +132,7 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
 
 - **Hits:** `SkillRepository`, `SkillController`, `common/Text.java:38` (the `repoUrl` rule, shared
   with the MCP catalog — a change there hits both stores), `HermesProfiles.installSkillFiles`
-  (`agents/HermesProfiles.java:273`), `HermesSkills.writeSkillFiles`/`readSkillFiles`,
+  (`agents/HermesProfiles.java:313`), `HermesSkills.writeSkillFiles`/`readSkillFiles`,
   `ProfilePaths.skillFile`, `pages/skills.ts`, `pages/skill-deploy-dialog.ts`,
   `core/store/skill-store.ts`, and the `save to library` button on
   `pages/agent-skills-panel.html`.

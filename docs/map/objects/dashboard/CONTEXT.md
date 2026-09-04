@@ -9,6 +9,7 @@ the secret envelope, and the generated route contract.
 | [secret](secret.md) | the four rules every stored credential obeys. Shared by two packages for a reason. |
 | [terminal-session](terminal-session.md) | one xterm ↔ one `docker exec`. Read the architecture doc first. |
 | [scrim](scrim.md) | the backdrop behind every dialog. Click-outside and Escape, in one directive. |
+| [confirm](confirm.md) | the one question before a delete. A service any page asks; the dialog lives in the shell. |
 | [board-task](board-task.md) | kanban card, scoped to a container id. |
 | [prompt](prompt.md) | operator's text library. Nothing in a container reads it. |
 | [skill-library](skill-library.md) | skills the dashboard holds and deploys. `hub` is a pointer, `local` owns the files. |

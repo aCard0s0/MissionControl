@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +48,8 @@ class HermesCronTest {
     private final List<List<String>> commands = new ArrayList<>();
     private String jobsJson = "";
     private String cronStatus = "✓ Cron scheduler is running";
+    /** What a mutation prints — hermes' only verdict, since it exits 0 either way. */
+    private String verdict = "Created job: abc123";
 
     Exec() {
       super(null);
@@ -62,7 +65,7 @@ class HermesCronTest {
     ExecResult exec(DockerHostRef host, String containerId, List<String> command, boolean check) {
       commands.add(command);
       if (command.contains("status")) return new ExecResult(0, cronStatus, "");
-      return new ExecResult(0, "", "");
+      return new ExecResult(0, verdict, "");
     }
 
     /**
@@ -201,9 +204,39 @@ class HermesCronTest {
     cron.create(HOST, CONTAINER, "default", new CreateCronJobRequest(
         "0 9 * * *", "Summarize alerts", "digest", "telegram", 5, List.of("web-research")));
 
-    assertEquals(List.of("hermes", "cron", "create", "0 9 * * *", "Summarize alerts",
-        "--name", "digest", "--deliver", "telegram", "--repeat", "5",
-        "--skill", "web-research"), exec.mutationCommand());
+    assertEquals(List.of("hermes", "cron", "create",
+        "--name=digest", "--deliver=telegram", "--repeat=5",
+        "--skill=web-research", "--", "0 9 * * *", "Summarize alerts"), exec.mutationCommand());
+  }
+
+  @Test
+  void hermesRefusingTheCommandOnStdoutIsAFailure_becauseItsExitCodeIsZeroEitherWay() {
+    // captured from v0.20.5: exit 0, and this on stdout, for a schedule hermes cannot parse
+    exec.verdict = """
+        Failed to create job: Invalid schedule 'yesterday'. Use:
+          - Duration: '30m', '2h', '1d' (one-shot)
+        """;
+    IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+        () -> cron.create(HOST, CONTAINER, "default",
+            new CreateCronJobRequest("yesterday", "x", null, null, null, null)));
+    assertEquals("Failed to create job: Invalid schedule 'yesterday'. Use:", refused.getMessage());
+
+    // and an id nobody holds is a 404, not a schedule that quietly did not change
+    exec.verdict = "Failed to remove job: Job with ID or name 'abc123' not found. Use cronjob(action='list') to inspect jobs.";
+    assertThrows(NoSuchElementException.class, () -> cron.remove(HOST, CONTAINER, "default", "abc123"));
+    exec.verdict = "Job not found: abc123";
+    assertThrows(NoSuchElementException.class, () -> cron.update(HOST, CONTAINER, "default", "abc123",
+        new UpdateCronJobRequest(null, "p", null, null, null, null)));
+  }
+
+  @Test
+  void aScheduleOrPromptThatReadsLikeAFlagIsStillAPositional() {
+    // hermes answers `cron create --help` with its usage text and exit 0, so without the
+    // separator the dashboard reported a job created and hermes had created nothing
+    cron.create(HOST, CONTAINER, "default", new CreateCronJobRequest(
+        "--help", "-h", null, null, null, null));
+
+    assertEquals(List.of("hermes", "cron", "create", "--", "--help", "-h"), exec.mutationCommand());
   }
 
   @Test
@@ -211,7 +244,7 @@ class HermesCronTest {
     cron.create(HOST, CONTAINER, "ops", new CreateCronJobRequest(
         "30m", "Check disk", null, null, null, null));
 
-    assertEquals(List.of("hermes", "-p", "ops", "cron", "create", "30m", "Check disk"),
+    assertEquals(List.of("hermes", "-p", "ops", "cron", "create", "--", "30m", "Check disk"),
         exec.mutationCommand());
   }
 
@@ -220,7 +253,7 @@ class HermesCronTest {
     cron.create(HOST, CONTAINER, "default", new CreateCronJobRequest(
         "30m", null, "  ", "", null, List.of("", "  ")));
 
-    assertEquals(List.of("hermes", "cron", "create", "30m"), exec.mutationCommand());
+    assertEquals(List.of("hermes", "cron", "create", "--", "30m"), exec.mutationCommand());
   }
 
   @Test
@@ -236,7 +269,7 @@ class HermesCronTest {
     cron.update(HOST, CONTAINER, "default", "abc123",
         new UpdateCronJobRequest(null, "new prompt", null, null, null, null));
 
-    assertEquals(List.of("hermes", "cron", "edit", "abc123", "--prompt", "new prompt"),
+    assertEquals(List.of("hermes", "cron", "edit", "abc123", "--prompt=new prompt"),
         exec.mutationCommand());
   }
 

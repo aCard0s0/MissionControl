@@ -15,6 +15,7 @@ import io.hermes.missioncontrol.agents.api.WebhooksDto;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
+import io.hermes.missioncontrol.errors.ResourceConflictException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -57,6 +59,8 @@ class HermesWebhooksTest {
     private List<String> namedProfiles = List.of();
     private String subscriptions = "";
     private String config = "";
+    /** What a hermes webhook command prints — its only verdict, since it exits 0 either way. */
+    private String verdict = "delivered";
 
     Exec() {
       super(null);
@@ -79,7 +83,7 @@ class HermesWebhooksTest {
       if (command.size() > 2 && command.get(2).startsWith("ls -1")) {
         return new ExecResult(0, String.join("\n", namedProfiles), "");
       }
-      return new ExecResult(0, "delivered", "");
+      return new ExecResult(0, verdict, "");
     }
 
     /** The last config.yaml written back, so an edit can be read rather than inferred. */
@@ -365,20 +369,22 @@ class HermesWebhooksTest {
 
   @Test
   void subscribingPassesEveryFieldTheFormCollected() {
+    exec.config = ENABLED_CONFIG;
     webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
         "grafana", "Alert {alert.name}", "Grafana alerting",
         List.of("alert.firing", "alert.resolved"), List.of("web-research"),
         "telegram", "12345", true));
 
     assertEquals(List.of("hermes", "webhook", "subscribe", "grafana",
-        "--prompt", "Alert {alert.name}", "--description", "Grafana alerting",
-        "--events", "alert.firing,alert.resolved", "--skills", "web-research",
-        "--deliver", "telegram", "--deliver-chat-id", "12345", "--deliver-only"),
+        "--prompt=Alert {alert.name}", "--description=Grafana alerting",
+        "--events=alert.firing,alert.resolved", "--skills=web-research",
+        "--deliver=telegram", "--deliver-chat-id=12345", "--deliver-only"),
         exec.hermesCommands().getFirst());
   }
 
   @Test
   void neverSendsASecretOfItsOwn() {
+    exec.config = ENABLED_CONFIG;
     webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
         "grafana", null, null, null, null, null, null, false));
 
@@ -390,6 +396,7 @@ class HermesWebhooksTest {
 
   @Test
   void blankAndEmptyListFieldsAreLeftOffTheCommandLine() {
+    exec.config = ENABLED_CONFIG;
     webhooks.subscribe(HOST, CONTAINER, "default", new SubscribeWebhookRequest(
         "grafana", "  ", "", List.of("", " "), List.of(), " ", null, false));
 
@@ -398,12 +405,42 @@ class HermesWebhooksTest {
   }
 
   @Test
+  void aRouteCannotBeAddedRemovedOrTestedWhileTheListenerIsOff() {
+    // hermes v0.20.5 answers all three with a setup walkthrough and exit 0, so without the
+    // guard the dashboard reported a route created that does not exist
+    exec.config = "platforms: {}\n";
+    SubscribeWebhookRequest request =
+        new SubscribeWebhookRequest("grafana", null, null, null, null, null, null, false);
+
+    assertThrows(ResourceConflictException.class,
+        () -> webhooks.subscribe(HOST, CONTAINER, "default", request));
+    assertThrows(ResourceConflictException.class,
+        () -> webhooks.remove(HOST, CONTAINER, "default", "grafana"));
+    assertThrows(ResourceConflictException.class,
+        () -> webhooks.test(HOST, CONTAINER, "default", "grafana"));
+    assertTrue(exec.hermesCommands().isEmpty(), "nothing may reach hermes while the listener is off");
+  }
+
+  @Test
+  void aRouteHermesDoesNotHoldIsA404_becauseHermesSaysSoOnStdoutAndExitsZero() {
+    // captured from v0.20.5: `webhook remove nope` and `webhook test nope` both print this
+    // and exit 0, so without the check a stale row was "removed" with a 200 and stayed
+    exec.config = ENABLED_CONFIG;
+    exec.verdict = "  No subscription named 'grafana'.\n  Note: Static routes from config.yaml cannot be removed here.\n";
+
+    assertThrows(NoSuchElementException.class, () -> webhooks.remove(HOST, CONTAINER, "default", "grafana"));
+    assertThrows(NoSuchElementException.class, () -> webhooks.test(HOST, CONTAINER, "default", "grafana"));
+  }
+
+  @Test
   void removingAndTestingAddressTheRouteByName() {
+    exec.config = ENABLED_CONFIG;
     webhooks.remove(HOST, CONTAINER, "default", "grafana");
     assertEquals(List.of("hermes", "webhook", "remove", "grafana"),
         exec.hermesCommands().getFirst());
 
     Exec other = new Exec();
+    other.config = ENABLED_CONFIG;
     HermesWebhooks fresh = new HermesWebhooks(other, new HermesCli(other), new ObjectMapper(), new ProfileInventory(other), new HermesConfigEditor());
     assertEquals("delivered", fresh.test(HOST, CONTAINER, "default", "grafana"));
     assertEquals(List.of("hermes", "webhook", "test", "grafana"),

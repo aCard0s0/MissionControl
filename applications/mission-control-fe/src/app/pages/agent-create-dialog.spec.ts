@@ -65,15 +65,16 @@ const storeStub = (opts: {
                                      (closed)="closes = closes + 1" />`,
 })
 class Host {
-  readonly container = container;
+  container = container;
   createdId: string | null = null;
   closes = 0;
 }
 
-const render = async (store: ReturnType<typeof storeStub>) => {
+const render = async (store: ReturnType<typeof storeStub>, ctr: HermesContainer = container) => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [...provideStores(store)] });
   const fixture = TestBed.createComponent(Host);
+  fixture.componentInstance.container = ctr;
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
@@ -99,6 +100,12 @@ const sent = (store: ReturnType<typeof storeStub>): NewAgent =>
   store.agents.create.mock.calls[0][0] as NewAgent;
 
 describe('AgentCreateDialog opening', () => {
+  it('does not ask a stopped container for its auth status — it cannot answer', async () => {
+    const { store } = await render(storeStub(), { ...container, status: 'stopped' });
+
+    expect(store.setup.authProviders).not.toHaveBeenCalled();
+  });
+
   it('loads the default provider\'s catalog and this container\'s auth status', async () => {
     const { fixture, store } = await render(storeStub());
 

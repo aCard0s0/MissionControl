@@ -16,7 +16,7 @@
       }
       <span class="chip info mono">{{ a.provider }} / {{ a.model }}</span>
       <button class="btn sm" (click)="openCapture()">save as template</button>
-      <button class="btn sm danger ghost" (click)="removing.set(true)">delete profile</button>
+      <button class="btn sm danger ghost" (click)="remove()">delete profile</button>
     </div>
   </div>
 
@@ -231,25 +231,6 @@
     <mc-session-viewer [session]="v.session" [messages]="v.messages" [loading]="v.loading"
                        (closed)="viewingSession.set(null)"
                        (downloadRequested)="downloadSession(v.session)" />
-  }
-
-  @if (removing()) {
-    <div class="scrim" mcScrim (dismiss)="removing.set(false)">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div class="panel-h crit-h">DELETE PROFILE</div>
-        <div class="modal-b">
-          <p class="dim">Deletes <span class="mono">{{ a.name }}</span> — its config, memory, sessions, skills, jobs, and webhooks. Cannot be undone.</p>
-          <div class="field">
-            <label for="agent-type-confirm">type <span class="mono">{{ a.name }}</span> to confirm</label>
-            <input id="agent-type-confirm" class="input" [(ngModel)]="confirmText" [placeholder]="a.name" />
-          </div>
-          <div class="modal-actions">
-            <button class="btn ghost" (click)="removing.set(false)">cancel</button>
-            <button class="btn danger" [disabled]="confirmText !== a.name" (click)="confirmRemove()">delete permanently</button>
-          </div>
-        </div>
-      </div>
-    </div>
   }
 
   @if (capturing()) {

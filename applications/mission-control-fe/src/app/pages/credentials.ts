@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { CredentialStore } from '../core/store/credential-store';
 import { Credential } from '../core/models';
@@ -49,6 +50,7 @@ const blankRow = (): EntryRow =>
 })
 export class CredentialsPage {
   protected readonly store = inject(CredentialStore);
+  private readonly confirm = inject(Confirm);
   protected readonly ago = ago;
 
   protected readonly query = signal('');
@@ -174,8 +176,10 @@ export class CredentialsPage {
   }
 
   protected async remove(credential: Credential): Promise<void> {
-    if (!confirm(`Delete credential "${credential.name}"? `
-      + 'Every key it already filled stays where it was written.')) return;
+    if (!await this.confirm.ask({
+      title: 'delete credential',
+      message: `Delete "${credential.name}"? Every key it already filled stays where it was written.`,
+    })) return;
     if (!await this.store.remove(credential.id)) return;
     if (this.editId() === credential.id) this.cancel();
   }

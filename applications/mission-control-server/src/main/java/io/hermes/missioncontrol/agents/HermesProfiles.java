@@ -1,6 +1,7 @@
 package io.hermes.missioncontrol.agents;
 
 import io.hermes.missioncontrol.docker.ContainerNotRunningException;
+import io.hermes.missioncontrol.docker.ContainerWork;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ConfigInfo;
 import io.hermes.missioncontrol.agents.HermesModelConfig.ModelTarget;
 import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
@@ -18,6 +19,10 @@ import io.hermes.missioncontrol.docker.LogLineDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -47,7 +52,17 @@ import org.springframework.stereotype.Service;
  * than the controller wiring the collaborators up itself.
  */
 @Service
-public class HermesProfiles {
+public class HermesProfiles implements ContainerWork {
+
+  private static final Logger log = LoggerFactory.getLogger(HermesProfiles.class);
+
+  /**
+   * {@code containerId/name} of every profile whose create is between {@code hermes profile
+   * create} and the last configuration write. The directory exists for that whole window, so
+   * without this the inventory lists a profile the dashboard is about to either finish or
+   * delete — and a stop in that window is what makes it the second one.
+   */
+  private final Set<String> creating = ConcurrentHashMap.newKeySet();
 
   private final HermesContainerFiles files;
   private final HermesEnvFile env;
@@ -89,6 +104,7 @@ public class HermesProfiles {
     try {
       List<AgentProfileDto> profiles = new ArrayList<>();
       for (String name : inventory.names(host, containerId)) {
+        if (creating.contains(creatingKey(containerId, name))) continue;   // not yet an agent
         profiles.add(readProfile(host, containerId, name));
       }
       return profiles;
@@ -167,6 +183,8 @@ public class HermesProfiles {
     if (cloneFrom != null) {
       command.addAll(List.of("--clone", "--clone-from", cloneFrom));
     }
+    String key = creatingKey(containerId, profileName);
+    creating.add(key);
     boolean created = false;
     try {
       files.exec(host, containerId, command);
@@ -182,6 +200,8 @@ public class HermesProfiles {
       return profileName;
     } catch (RuntimeException failure) {
       if (created) {
+        // said out loud: the profile was on disk and the dashboard may have shown it
+        log.warn("rolling back profile {} in {}: {}", profileName, containerId, failure.getMessage());
         try {
           delete(host, containerId, profileName);
         } catch (RuntimeException cleanup) {
@@ -189,7 +209,24 @@ public class HermesProfiles {
         }
       }
       throw failure;
+    } finally {
+      creating.remove(key);
     }
+  }
+
+  private static String creatingKey(String containerId, String name) {
+    return containerId + '/' + name;
+  }
+
+  /** Names still inside {@link #createProfileBare}, for this container. */
+  @Override
+  public List<String> creating(String containerId) {
+    String prefix = containerId + '/';
+    return creating.stream()
+        .filter(k -> k.startsWith(prefix))
+        .map(k -> k.substring(prefix.length()))
+        .sorted()
+        .toList();
   }
 
   /**
@@ -204,6 +241,9 @@ public class HermesProfiles {
   public void delete(DockerHostRef host, String containerId, String name) {
     if (files.dirExists(host, containerId, ProfilePaths.profileDir(name))) {
       files.exec(host, containerId, List.of("hermes", "profile", "delete", name, "--yes"));
+      // hermes leaves the supervised gateway's log directory behind, so without this every
+      // profile ever deleted stays on the volume as three empty files under logs/gateways
+      files.removeTree(host, containerId, ProfilePaths.gatewayLogDir(name));
     }
     mcp.evictProfile(host, containerId, name);
   }
@@ -347,7 +387,10 @@ public class HermesProfiles {
       List<String> busy = new ArrayList<>();
       List<String> paused = new ArrayList<>();
       List<String> unreadable = new ArrayList<>();
+      List<String> creatingNow = creating(containerId);
       for (String name : inventory.names(host, containerId)) {
+        // it has no gateway yet; what a stop interrupts is the create itself
+        if (creatingNow.contains(name)) continue;
         GatewayDto gateway = gatewayState.read(host, containerId, name).gateway();
         if (gateway.paused()) paused.add(name);
         if (gateway.activeAgents() > 0) {
@@ -360,9 +403,9 @@ public class HermesProfiles {
         }
       }
       return new ContainerActivityDto(active, List.copyOf(busy), List.copyOf(paused),
-          List.copyOf(unreadable));
+          List.copyOf(unreadable), creatingNow);
     } catch (ContainerNotRunningException stopped) {
-      return new ContainerActivityDto(0, List.of(), List.of(), List.of());
+      return new ContainerActivityDto(0, List.of(), List.of(), List.of(), List.of());
     }
   }
 

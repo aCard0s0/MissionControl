@@ -174,9 +174,6 @@ pre.file {
 .modal.wide { width: min(820px, calc(100vw - 48px)); }
 .modal-b pre.file { max-height: 60vh; }
 
-.crit-h { color: var(--red); }
-.empty { align-items: center; gap: 8px; padding: 48px; text-align: center; }
-
 @media (max-width: 760px) {
   .page-head { flex-wrap: wrap; .head-right { flex-wrap: wrap; } }
   .tabbar { flex-wrap: nowrap; overflow-x: auto; .tab { flex: none; white-space: nowrap; } }

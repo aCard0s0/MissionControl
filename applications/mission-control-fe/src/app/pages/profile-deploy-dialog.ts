@@ -1,6 +1,7 @@
 import {
-  ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, output, signal, untracked,
+  ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { ActivityStore } from '../core/store/activity-store';
 import { ContainerStore } from '../core/store/container-store';
@@ -32,6 +33,7 @@ export class ProfileDeployDialog {
   readonly closed = output<void>();
 
   protected readonly containers = inject(ContainerStore);
+  private readonly confirm = inject(Confirm);
   protected readonly providers = inject(ProviderStore);
   protected readonly templates = inject(TemplateStore);
   private readonly activity = inject(ActivityStore);
@@ -46,6 +48,10 @@ export class ProfileDeployDialog {
   protected containerId = '';
   protected name = '';
 
+  /** A profile is created by exec-ing into the container, so a stopped one is not a target. */
+  protected readonly targets = computed(() =>
+    this.containers.containers().filter(c => c.status !== 'stopped'));
+
   constructor() {
     inject(DestroyRef).onDestroy(() => { this.gone = true; });
     // the template arrives with the input, which is bound after construction
@@ -53,8 +59,9 @@ export class ProfileDeployDialog {
       const template = this.template();
       untracked(() => {
         this.name = template.name;
-        this.containerId =
-          this.containers.selectedContainerId() || this.containers.containers()[0]?.id || '';
+        const targets = this.targets();
+        const selected = targets.find(c => c.id === this.containers.selectedContainerId());
+        this.containerId = (selected ?? targets[0])?.id ?? '';
       });
     });
   }
@@ -63,7 +70,16 @@ export class ProfileDeployDialog {
     const template = this.template();
     const name = this.name.trim();
     if (!this.containerId || !name || this.busy()) return;
-    if (!this.confirmMissingKey(template)) return;
+    // only await when there is something to ask: a blueprint with its key in place must go
+    // busy on the click itself, or a second click lands before the first is marked in flight
+    const missing = this.missingKey(template);
+    if (missing && !await this.confirm.ask({
+      title: `no ${missing.envVar}`,
+      message: `This template has no usable ${missing.envVar} for ${missing.label}. The deployed agent `
+        + `may fail to authenticate until you add the key on its Setup tab.`,
+      action: 'deploy anyway',
+      warn: true,
+    })) return;
 
     this.busy.set(true);
     this.failed.set(false);
@@ -79,12 +95,10 @@ export class ProfileDeployDialog {
     else this.failed.set(true);
   }
 
-  /** True to go ahead: either the key is there, or the operator accepted the risk. */
-  private confirmMissingKey(template: ProfileTemplate): boolean {
+  /** The provider whose key this blueprint needs and does not carry, or null when it may go. */
+  private missingKey(template: ProfileTemplate): { envVar: string; label: string } | null {
     const info = this.providers.llmProviders().find(p => p.key === template.provider);
-    if (!info?.needsKey || !info.envVar || templateProvidesKey(template, info)) return true;
-    return confirm(
-      `This template has no usable ${info.envVar} for ${info.label}. The deployed agent `
-      + `may fail to authenticate until you add the key on its Setup tab. Deploy anyway?`);
+    if (!info?.needsKey || !info.envVar || templateProvidesKey(template, info)) return null;
+    return { envVar: info.envVar, label: info.label };
   }
 }

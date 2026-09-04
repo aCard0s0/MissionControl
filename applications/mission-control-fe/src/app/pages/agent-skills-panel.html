@@ -21,7 +21,7 @@
                   title="copy this skill into the global library, to deploy it to other agents">
             {{ importing() === s.id ? 'saving…' : 'save to library' }}
           </button>
-          <button class="btn sm danger ghost" (click)="skills.remove(agent().id, s.id)">remove</button>
+          <button class="btn sm danger ghost" (click)="skills.remove(agent().id, s.id)">delete</button>
         </div>
         @if (expandedSkill() === s.id) {
           <div class="skill-editor">

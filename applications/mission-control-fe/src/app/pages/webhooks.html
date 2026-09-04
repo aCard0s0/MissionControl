@@ -1,6 +1,6 @@
 <div class="page-head" data-reveal>
   <div>
-    <div class="crumb mono">{{ containers.selected()?.name ?? '—' }} · {{ direction() === 'inbound' ? 'INBOUND' : 'OUTBOUND' }}</div>
+    <div class="crumb mono">{{ containers.selected()?.name ?? '—' }}</div>
     <h2>Webhooks</h2>
   </div>
   @if (direction() === 'inbound') {
@@ -102,7 +102,7 @@
         @if (w.deliverOnly) { <span class="chip">deliver only</span> }
         <span class="spacer"></span>
         <button class="btn sm ghost" (click)="test(w)">test</button>
-        <button class="btn sm danger ghost" (click)="remove(w)">remove</button>
+        <button class="btn sm danger ghost" (click)="remove(w)">delete</button>
       </div>
       <div class="panel-b">
         @if (w.description) { <p class="description dim">{{ w.description }}</p> }
@@ -237,7 +237,7 @@
           <span class="chip info">@{{ agentName(t.agentId) }}</span>
           <span class="spacer"></span>
           <button class="btn sm ghost" (click)="startOutbound(t)">edit</button>
-          <button class="btn sm danger ghost" (click)="removeOutbound(t)">remove</button>
+          <button class="btn sm danger ghost" (click)="removeOutbound(t)">delete</button>
         </div>
         <div class="panel-b">
           <div class="kv mono">

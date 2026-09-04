@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AgentStore } from '../core/store/agent-store';
@@ -16,7 +17,7 @@ import {
   CPU_PRESETS, HERMES_BASELINE, MEMORY_PRESETS_MB, formatMemory, memoryNote,
 } from '../core/container-resources';
 import { errorMessage } from '../core/errors';
-import { uptime } from '../core/format';
+import { pct, uptime } from '../core/format';
 import {
   containerUpdate, displayVersion, isFloatingTag, targetVersion, updateTargets,
 } from '../core/image-policy';
@@ -39,6 +40,7 @@ export function normalizeSeedProfiles(value: string): string[] {
 })
 export class ContainersPage {
   protected readonly agents = inject(AgentStore);
+  private readonly confirm = inject(Confirm);
   protected readonly containers = inject(ContainerStore);
   protected readonly ctx = inject(StoreContext);
   protected readonly hosts = inject(HostStore);
@@ -48,6 +50,7 @@ export class ContainersPage {
   private readonly router = inject(Router);
 
   protected readonly uptime = uptime;
+  protected readonly pct = pct;
 
   protected readonly deployOpen = signal(false);
   protected deployName = '';
@@ -80,9 +83,6 @@ export class ContainersPage {
   protected readonly stopping = signal<{ container: HermesContainer; activity: ApiContainerActivity } | null>(null);
   protected readonly stopChecking = signal<string | null>(null);
 
-  protected readonly removing = signal<HermesContainer | null>(null);
-  protected readonly removingBusy = signal(false);
-  protected confirmText = '';
 
   protected readonly updating = signal<HermesContainer | null>(null);
   protected readonly updatingBusy = signal(false);
@@ -234,10 +234,16 @@ export class ContainersPage {
     this.router.navigate(['/overview']);
   }
 
+  /** Docker's own rule for a container name — `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — checked here so
+   *  the operator learns it from a hint, not from a 400 after the pull. */
+  protected nameValid(): boolean {
+    return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(this.deployName.trim());
+  }
+
   protected async deploy(): Promise<void> {
     const name = this.deployName.trim();
     const host = this.hosts.byId(this.deployHost);
-    if (!name || !host || host.status !== 'connected' || !this.deployVersion || this.deployBusy()) return;
+    if (!this.nameValid() || !host || host.status !== 'connected' || !this.deployVersion || this.deployBusy()) return;
     const profiles = normalizeSeedProfiles(this.deployProfiles);
     this.deployBusy.set(true);
     this.deployFailed.set(false);
@@ -315,16 +321,17 @@ export class ContainersPage {
     }
   }
 
-  protected async confirmRemove(): Promise<void> {
-    const c = this.removing();
-    if (!c || this.confirmText !== c.name || this.removingBusy()) return;
-    this.removingBusy.set(true);
-    const removed = await this.lifecycle.remove(c.id);
-    this.removingBusy.set(false);
-    if (removed) {
-      this.removing.set(null);
-      this.confirmText = '';
-    }
+  protected async remove(c: HermesContainer): Promise<void> {
+    if (!await this.confirm.ask({
+      title: 'delete container',
+      message: `This deletes ${c.name}, its Mission Control-managed data volume, and all `
+        + `${this.profileCount(c.id)} profile(s) inside it. External or unowned mounts are never `
+        + 'deleted. It cannot be undone.',
+      typed: c.name,
+      action: 'delete permanently',
+    })) return;
+    // a refusal is toasted by the store; the card stays until the fleet poll says otherwise
+    await this.lifecycle.remove(c.id);
   }
 
   protected addHost(): void {

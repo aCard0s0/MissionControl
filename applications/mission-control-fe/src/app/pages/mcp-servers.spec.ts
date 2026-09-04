@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DockerHost, McpCatalogServer, McpGroup, McpRetainedResource } from '../core/models';
 import { McpServersPage } from './mcp-servers';
-import { button, buttonWith, el, fill, press, settle, text, type } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text, type, stubConfirm } from '../testing/dom';
 import { catalogServer as server, dockerHost } from '../testing/models';
 import { provideStores } from '../testing/store';
 
@@ -189,35 +189,28 @@ describe('McpServersPage destructive confirmations', () => {
     vi.useRealTimers();
   });
 
-  it('refuses to remove a server until its name is typed exactly', async () => {
+  it('asks for the server name typed back before deleting it', async () => {
     const { fixture, store } = render(storeStub([server('browser')]));
+    const confirmed = stubConfirm(true);
 
-    press(fixture, 'remove', '.server-actions');
-    const confirm = () => el(fixture).querySelector<HTMLButtonElement>('.btn.danger:not(.ghost)')!;
-    expect(confirm().disabled).toBe(true);
-
-    await type(fixture, '.modal .input', 'brows');
-    expect(confirm().disabled).toBe(true);
-
-    await type(fixture, '.modal .input', 'browser');
-    expect(confirm().disabled).toBe(false);
-    confirm().click();
+    press(fixture, 'delete', '.server-actions');
     await settle(fixture);
 
+    expect(confirmed).toHaveBeenCalledWith(expect.objectContaining({
+      typed: 'browser', action: 'delete permanently' }));
+    expect(confirmed.mock.calls[0][0].message).toContain('Retained Data');
     expect(store.catalog.remove).toHaveBeenCalledWith('browser');
-    expect(el(fixture).querySelector('.crit-h')).toBeNull();
   });
 
   it('stops tailing a server that has just been removed', async () => {
     const { fixture } = render(storeStub([server('browser', { runtimeState: 'running' })]));
+    stubConfirm(true);
 
     press(fixture, 'logs', '.server-actions');
     await settle(fixture);
     expect(el(fixture).querySelector('mc-mcp-server-logs')).not.toBeNull();
 
-    press(fixture, 'remove', '.server-actions');
-    await type(fixture, '.modal .input', 'browser');
-    el(fixture).querySelector<HTMLButtonElement>('.btn.danger:not(.ghost)')!.click();
+    press(fixture, 'delete', '.server-actions');
     await settle(fixture);
 
     expect(el(fixture).querySelector('mc-mcp-server-logs')).toBeNull();
@@ -529,17 +522,16 @@ describe('McpServersPage groups', () => {
   });
 
   it('says a group delete leaves every agent connected, and confirms first', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, store } = onGroupsTab(withGroups(
       [server('files')], [mcpGroup('mg-1', { serverIds: ['files'] })]));
     await settle(fixture);
+    const confirmed = stubConfirm(false);
 
     press(fixture, 'delete', '.mcp-groups .group-head-row');
     await settle(fixture);
 
-    expect(confirmed.mock.calls[0][0]).toContain('stays connected');
+    expect(confirmed.mock.calls[0][0].message).toContain('stays connected');
     expect(store.mcpGroups.remove).not.toHaveBeenCalled();
-    confirmed.mockRestore();
   });
 
   it('opens the deploy dialog for the group whose button was pressed', async () => {

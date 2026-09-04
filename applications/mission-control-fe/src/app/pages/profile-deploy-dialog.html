@@ -7,15 +7,15 @@
       <div class="field">
         <label for="deploy-target-container">target container</label>
         <select id="deploy-target-container" class="select" [(ngModel)]="containerId">
-          @for (c of containers.containers(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+          @for (c of targets(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
         </select>
       </div>
       <div class="field">
         <label for="deploy-agent-name">agent name</label>
         <input id="deploy-agent-name" class="input" [(ngModel)]="name" placeholder="ops-bot" />
       </div>
-      @if (!containers.containers().length) {
-        <p class="lock-hint">no containers available — deploy one from the Containers page first.</p>
+      @if (!targets().length) {
+        <p class="lock-hint">no running containers available — start or deploy one from the Containers page first.</p>
       }
       @if (busy()) {
         <p class="lock-hint">the deploy runs on the container, not in this window — close it and

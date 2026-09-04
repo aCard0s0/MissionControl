@@ -5,7 +5,7 @@ import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { describe, expect, it, vi } from 'vitest';
 import { BoardColumn, BoardTask } from '../core/models';
 import { BoardPage } from './board';
-import { el } from '../testing/dom';
+import { el, text } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
 const task = (id: string, column: BoardColumn, patch: Partial<BoardTask> = {}): BoardTask => ({
@@ -96,5 +96,14 @@ describe('BoardPage', () => {
     drop(fixture, moved, 'queued');
 
     expect(store.board.move).not.toHaveBeenCalled();
+  });
+});
+
+describe('BoardPage empty', () => {
+  it('teaches the CLI that would fill an empty board', () => {
+    const { fixture } = render(storeStub([]));
+
+    expect(text(fixture)).toContain('No tasks on this board');
+    expect(text(fixture)).toContain('hermes kanban create');
   });
 });

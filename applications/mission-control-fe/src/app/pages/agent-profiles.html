@@ -6,7 +6,6 @@
   <div class="head-stats mono">
     <span>{{ visible().length }}/{{ templates.templates().length }} templates</span>
   </div>
-  <button class="btn primary" (click)="newTemplate()">+ new blueprint</button>
 </div>
 
 <div class="filter mono" data-reveal>
@@ -59,6 +58,9 @@
   @if (filtering()) {
     <button class="btn sm ghost" (click)="clearFilters()">clear filters</button>
   }
+  <!-- the shape every library page has: what narrows the list on the left, `+ new` on the right -->
+  <span class="spacer"></span>
+  <button class="btn primary" (click)="newTemplate()">+ new blueprint</button>
 </div>
 
 <div class="layout" data-reveal>
@@ -87,9 +89,8 @@
             {{ cardOpen(t.id) ? '▾' : '▸' }}
           </button>
           <span class="ic"><mc-agent-icon [icon]="t.icon" /></span>
-          <span class="nm mono">{{ t.name }}</span>
+          <span class="nm mono" [title]="t.name">{{ t.name }}</span>
           <span class="chip info">{{ t.category }}</span>
-          <span class="spacer"></span>
           <span class="faint">{{ ago(t.updatedAt) }}</span>
           <!-- stays in the head: it is what the list is for, and a collapsed card
                must not put it behind a disclosure -->

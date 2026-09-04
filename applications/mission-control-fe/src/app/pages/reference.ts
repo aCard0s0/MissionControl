@@ -33,6 +33,12 @@ export class ReferencePage {
   /** AgentProfile.id whose `-p` scopes every line, or null for a bare invocation. */
   protected readonly scopeId = signal<string | null>(null);
 
+  /** Insert needs a shell, and a shell needs a running container — the containers page
+   *  disables its terminal button on the same rule, so this page must not offer what that
+   *  one refuses. With no container selected the line still goes to the panel, which picks
+   *  its own target; only a container known to be stopped withdraws the action. */
+  protected readonly shellReady = computed(() => this.containers.selected()?.status !== 'stopped');
+
   protected readonly scoped = computed(() => {
     const id = this.scopeId();
     if (!id) return undefined;

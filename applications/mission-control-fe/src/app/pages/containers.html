@@ -29,7 +29,7 @@
           {{ h.status === 'connecting' ? 'checking…' : 'check' }}
         </button>
         @if (h.kind === 'remote') {
-          <button class="btn sm danger ghost" (click)="hosts.remove(h.id)">remove</button>
+          <button class="btn sm danger ghost" (click)="hosts.remove(h.id)">delete</button>
         }
       </div>
     }
@@ -71,7 +71,7 @@
           <div><span class="faint">uptime</span><span>{{ uptime(c.startedAt) }}</span></div>
           <div><span class="faint">profiles</span><span>{{ profileCount(c.id) }}</span></div>
           <div><span class="faint">cpu</span><span>{{ c.cpu.toFixed(0) }}%</span></div>
-          <div><span class="faint">ram</span><span>{{ (c.ram / c.ramTotal * 100).toFixed(0) }}%</span></div>
+          <div><span class="faint">ram</span><span>{{ pct(c.ram, c.ramTotal) }}</span></div>
           <div><span class="faint">disk</span><span>{{ c.diskTotal > 0 ? (c.disk / c.diskTotal * 100).toFixed(0) + '%' : c.disk.toFixed(2) + ' GB' }}</span></div>
         </div>
         @if (c.status !== 'stopped') {
@@ -106,7 +106,7 @@
           </button>
           <span class="spacer"></span>
           <button class="btn sm danger ghost" [disabled]="isUpdating(c.id)"
-                  (click)="removing.set(c); $event.stopPropagation()">remove</button>
+                  (click)="remove(c); $event.stopPropagation()">delete</button>
         </div>
       </div>
     </div>
@@ -141,6 +141,12 @@
             Stopping gives the gateway ten seconds and then kills it — that work is lost.
           </p>
         }
+        @if (pending.activity.creatingProfiles.length) {
+          <p class="dim">
+            <span class="mono">{{ pending.activity.creatingProfiles.join(', ') }}</span> is still being
+            created. Stopping now fails that, and the half-made profile is rolled back and deleted.
+          </p>
+        }
         @if (pending.activity.unreadable.length) {
           <p class="dim">
             No gateway state from
@@ -172,6 +178,9 @@
         <div class="field">
           <label for="ctr-container-name">container name</label>
           <input id="ctr-container-name" class="input" [(ngModel)]="deployName" placeholder="hermes-staging" autofocus />
+          @if (deployName.trim() && !nameValid()) {
+            <p class="lock-hint crit">a container name starts with a letter or digit and uses only letters, digits, dots, underscores and hyphens</p>
+          }
         </div>
         <div class="field">
           <label for="ctr-image-version">image version</label>
@@ -249,7 +258,7 @@
         <div class="modal-actions">
           <button class="btn ghost" (click)="deployOpen.set(false)">{{ deployBusy() ? 'close' : 'cancel' }}</button>
           <button class="btn primary"
-                  [disabled]="!deployName.trim() || !deployTags().length || tagsLoading() || deployBusy()"
+                  [disabled]="!nameValid() || !deployTags().length || tagsLoading() || deployBusy()"
                   (click)="deploy()">
             @if (deployBusy()) { <span class="spin" aria-hidden="true"></span> }
             {{ deployBusy() ? 'deploying…' : 'deploy' }}
@@ -306,26 +315,3 @@
   </div>
 }
 
-@if (removing(); as c) {
-  <div class="scrim" mcScrim (dismiss)="removingBusy() ? null : removing.set(null)">
-    <div class="modal" role="dialog" aria-modal="true">
-      <div class="panel-h crit-h">REMOVE CONTAINER</div>
-      <div class="modal-b">
-        <p class="dim">
-          This deletes <span class="mono">{{ c.name }}</span>, its Mission Control-managed data volume, and all
-          {{ profileCount(c.id) }} profile(s) inside it. External or unowned mounts are never deleted. It cannot be undone.
-        </p>
-        <div class="field">
-          <label for="ctr-type-confirm">type <span class="mono">{{ c.name }}</span> to confirm</label>
-          <input id="ctr-type-confirm" class="input" [(ngModel)]="confirmText" [placeholder]="c.name" />
-        </div>
-        <div class="modal-actions">
-          <button class="btn ghost" [disabled]="removingBusy()" (click)="removing.set(null)">cancel</button>
-          <button class="btn danger" [disabled]="confirmText !== c.name || removingBusy()" (click)="confirmRemove()">
-            {{ removingBusy() ? 'removing…' : 'remove permanently' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-}

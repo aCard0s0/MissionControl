@@ -6,7 +6,7 @@ import { PromptGroupStore } from '../core/store/prompt-group-store';
 import { PromptStore } from '../core/store/prompt-store';
 import { Prompt, PromptGroup } from '../core/models';
 import { PromptsPage, splitTags } from './prompts';
-import { button, buttonWith, el, fill, press, settle, text } from '../testing/dom';
+import { button, buttonWith, el, fill, press, settle, text, stubConfirm } from '../testing/dom';
 
 const prompt = (id: string, patch: Partial<Prompt> = {}): Prompt => ({
   id, title: `prompt ${id}`, body: `body of ${id}`, category: 'ops',
@@ -157,17 +157,16 @@ describe('PromptsPage', () => {
   });
 
   it('says a group delete leaves its prompts alone, and confirms first', async () => {
-    const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, groups } = render(
       storeStub([prompt('p-1')]), groupStub([group('pg-1', { promptIds: ['p-1'] })]));
     await settle(fixture);
+    const confirmed = stubConfirm(false);
 
     press(fixture, 'delete', '.group-head');
     await settle(fixture);
 
-    expect(confirmed.mock.calls[0][0]).toContain('only the filing goes');
+    expect(confirmed.mock.calls[0][0].message).toContain('only the filing goes');
     expect(groups.remove).not.toHaveBeenCalled();
-    confirmed.mockRestore();
   });
 
   it('loads a group into the editor with its prompts', async () => {
@@ -390,17 +389,18 @@ describe('PromptsPage', () => {
 
   it('asks before deleting, and does nothing when the answer is no', async () => {
     const { fixture, store } = render(storeStub([prompt('p-1', { title: 'Triage' })]));
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
 
     press(fixture, 'delete');
     await settle(fixture);
     expect(store.remove).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
+    confirm.mockResolvedValue(true);
     press(fixture, 'delete');
     await settle(fixture);
 
-    expect(confirm).toHaveBeenCalledWith('Delete prompt "Triage"? This cannot be undone.');
+    expect(confirm).toHaveBeenCalledWith(
+      { title: 'delete prompt', message: 'Delete "Triage"? This cannot be undone.' });
     expect(store.remove).toHaveBeenCalledWith('p-1');
     confirm.mockRestore();
   });

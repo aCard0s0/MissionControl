@@ -62,12 +62,16 @@ class HermesCli {
     run(host, containerId, profileName, List.of("config", "set", key, value));
   }
 
-  /** Appends {@code flag value} only when the value is worth sending. */
+  /**
+   * Appends {@code flag=value} only when the value is worth sending.
+   *
+   * <p>One argv word rather than two: argparse reads {@code --name -x} as the option missing
+   * its argument and exits with usage, so a name or prompt that starts with a hyphen could not
+   * be sent at all. {@code --name=-x} is the value it looks like — checked against hermes
+   * v0.20.5 (2026.8.19).
+   */
   static void addOption(List<String> command, String flag, String value) {
-    if (notBlank(value)) {
-      command.add(flag);
-      command.add(value.trim());
-    }
+    if (notBlank(value)) command.add(flag + "=" + value.trim());
   }
 
   static boolean notBlank(String value) {

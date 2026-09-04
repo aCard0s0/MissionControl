@@ -1,7 +1,7 @@
 <div class="page-head" data-reveal>
   <div>
-    <div class="crumb mono">HERMES AGENT · CLI</div>
-    <h2>Reference</h2>
+    <div class="crumb mono">DASHBOARD</div>
+    <h2>CLI Reference</h2>
   </div>
 </div>
 
@@ -27,10 +27,16 @@
   } @empty {
     <span class="faint">no profiles on {{ containers.selected()?.name ?? 'this container' }} — lines stay unscoped</span>
   }
+  @if (containers.selected(); as c) {
+    @if (c.status === 'stopped') {
+      <span class="spacer"></span>
+      <span class="faint">{{ c.name }} is stopped — start it to insert into a shell</span>
+    }
+  }
 </div>
 
 <div class="panel" data-reveal>
   <div class="panel-b">
-    <mc-hermes-commands [canInsert]="true" [profile]="scoped()" (insert)="send($event)" />
+    <mc-hermes-commands [canInsert]="shellReady()" [profile]="scoped()" (insert)="send($event)" />
   </div>
 </div>

@@ -433,6 +433,8 @@ export interface ApiGateway {
 export interface ApiContainerActivity {
   activeAgents: number;
   busyProfiles: string[];
+  /** Profiles whose create has not finished configuring — a stop now rolls them back. */
+  creatingProfiles: string[];
   pausedProfiles: string[];
   unreadable: string[];
 }

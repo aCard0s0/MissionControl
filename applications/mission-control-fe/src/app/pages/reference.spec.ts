@@ -3,7 +3,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { ReferencePage } from './reference';
-import { el, press } from '../testing/dom';
+import { el, press, text } from '../testing/dom';
 import { provideStores } from '../testing/store';
 
 const agents = [
@@ -108,5 +108,16 @@ describe('ReferencePage', () => {
     insert(fixture, 'hermes status');
 
     expect(store.terminal.open).toHaveBeenCalledWith({ insert: 'hermes status' });
+  });
+});
+
+describe('ReferencePage without a shell', () => {
+  it('offers no insert while the selected container is stopped, and says why', () => {
+    const { fixture } = render(storeStub(agents, { ...containers[0], status: 'stopped' }));
+
+    const inserts = Array.from(el(fixture).querySelectorAll('button'))
+      .filter(b => (b.textContent ?? '').trim() === 'insert');
+    expect(inserts.length).toBe(0);
+    expect(text(fixture)).toContain('hermes-prod is stopped');
   });
 });

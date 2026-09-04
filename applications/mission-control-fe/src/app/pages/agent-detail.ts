@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked,
 } from '@angular/core';
+import { Confirm } from '../shared/confirm';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AgentRemoval } from '../core/store/agent-removal';
@@ -40,6 +41,7 @@ interface SessionView {
 })
 export class AgentDetailPage {
   protected readonly agents = inject(AgentStore);
+  private readonly confirm = inject(Confirm);
   protected readonly ctx = inject(StoreContext);
   protected readonly jobs = inject(JobStore);
   protected readonly removal = inject(AgentRemoval);
@@ -89,8 +91,6 @@ export class AgentDetailPage {
   protected readonly pauseOpen = signal(false);
   protected readonly pausing = signal(false);
   protected pauseReason = '';
-  protected readonly removing = signal(false);
-  protected confirmText = '';
 
   // capture this agent into a reusable profile template
   protected readonly capturing = signal(false);
@@ -230,11 +230,14 @@ export class AgentDetailPage {
     URL.revokeObjectURL(url);
   }
 
-  protected deleteSession(s: SessionInfo): void {
+  protected async deleteSession(s: SessionInfo): Promise<void> {
     const a = this.agent();
     if (!a) return;
-    if (!confirm(`Delete session “${s.title}”? This cannot be undone.`)) return;
-    this.setup.deleteSession(a.id, s.id)
+    if (!await this.confirm.ask({
+      title: 'delete session',
+      message: `Delete session “${s.title}”? This cannot be undone.`,
+    })) return;
+    await this.setup.deleteSession(a.id, s.id)
       .then(() => {
         this.sessions.update(list => (list ?? []).filter(x => x.id !== s.id));
         if (this.viewingSession()?.session.id === s.id) this.viewingSession.set(null);
@@ -294,9 +297,15 @@ export class AgentDetailPage {
     this.pausing.set(false);
   }
 
-  protected confirmRemove(): void {
+  protected async remove(): Promise<void> {
     const a = this.agent();
-    if (!a || this.confirmText !== a.name) return;
+    if (!a) return;
+    if (!await this.confirm.ask({
+      title: 'delete profile',
+      message: `Deletes ${a.name} — its config, memory, sessions, skills, jobs, and webhooks. Cannot be undone.`,
+      typed: a.name,
+      action: 'delete permanently',
+    })) return;
     // the roster is where the operator belongs either way: a refusal toasts
     // there, and waiting here would leave them on a page about to be empty
     void this.removal.remove(a.id);
