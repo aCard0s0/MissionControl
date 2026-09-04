@@ -42,6 +42,11 @@ export class ContainerStore {
   private readonly selectionListeners: Array<(id: string) => void> = [];
   private readonly netMeta = new Map<string, { rx: number; tx: number; at: number }>();
   private statsInFlight = false;
+  /** Bumped per {@link refresh}; a response that is no longer the newest issued is dropped.
+   *  A sequence rather than the skip-a-tick guard the other slices use, because a lifecycle
+   *  action's refresh must actually run — skipping it while a slow poll is in flight would
+   *  hand that action's `select` an inventory the poll is about to overwrite. */
+  private refreshSeq = 0;
 
   private readonly ctx = inject(StoreContext);
 
@@ -73,8 +78,14 @@ export class ContainerStore {
   }
 
   async refresh(): Promise<void> {
+    const seq = ++this.refreshSeq;
     try {
       const list = await this.ctx.api.containers.list();
+      // Superseded while in flight: a deploy's refresh landed after this one was issued and
+      // already applied a fresher inventory. Applying this response would resurrect the older
+      // list — without the just-deployed container — and the auto-select below would then move
+      // the selection off it, resetting every container-keyed cache to the wrong container.
+      if (seq !== this.refreshSeq) return;
       this.containers.update(prev => {
         const prevById = new Map(prev.map(c => [c.id, c]));
         return list.map(c => {

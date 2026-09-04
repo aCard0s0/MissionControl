@@ -53,20 +53,28 @@ export class JobStore {
         this.jobs.set([]);
         return;
       }
+      const prev = this.jobs();
       let anyScheduler = false;
+      let anyAnswered = false;
       const lists = await mapPool(profiles, 6, async profile => {
         const resolved = this.agents.resolve(profile.id);
         if (!resolved) return [];
         try {
           const answer = await this.ctx.api.agents.cron.list(resolved.ref);
+          anyAnswered = true;
           anyScheduler = anyScheduler || answer.schedulerRunning;
           return answer.jobs.map(job => toCronJob(job, profile.containerId, profile.id));
         } catch {
-          return [];   // a stopped or unreachable profile keeps the rest of the schedule
+          // transient per-profile failure — keep its last known schedule, the same rule
+          // AgentStore applies. Dropping it showed an empty schedule for a gateway that was
+          // merely restarting, which reads as the jobs having been deleted.
+          return prev.filter(j => j.agentId === profile.id);
         }
       });
       this.jobs.set(lists.flat().sort((a, b) => a.nextRun - b.nextRun));
-      this.schedulerRunning.set(anyScheduler);
+      // only an answer may speak for the scheduler: a tick where every read failed says the
+      // reads failed, not that the gateway is down — flapping the warning on is a false alarm
+      if (anyAnswered) this.schedulerRunning.set(anyScheduler);
     } finally {
       this.refreshInFlight = false;
     }

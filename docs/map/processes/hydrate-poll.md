@@ -36,6 +36,7 @@ fastest, published image tags change on the order of days and each lookup probes
 | agents | 12 s | per profile; enriched with catalog links — the path that forced [`definition` vs `live`](../objects/mcp/mcp-server-entry.md) |
 | jobs | 30 s | a schedule changes when a job runs or an operator edits one, and reading it is **one exec per profile** |
 | imageCatalogs | 300 s | each lookup probes the daemon; tags change over days |
+| health | 10 s | the probe again — the domain polls keep their last state quietly on failure, so this is the only path that can raise the banner after the first connect (`core/store/live-sync.ts` `checkHealth`) |
 
 Log requests are **non-overlapping and container-scoped**, because Docker stdout/stderr has no
 reliable profile identity. Each agent's Activity tab polls its *own* supervised gateway log under

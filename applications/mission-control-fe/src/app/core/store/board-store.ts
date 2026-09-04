@@ -26,10 +26,14 @@ export class BoardStore {
   }
 
   move(id: string, column: BoardColumn): void {
-    const before = this.tasks();
+    const before = this.tasks().find(t => t.id === id)?.column;
+    if (before === undefined || before === column) return;
     this.tasks.update(ts => ts.map(t => t.id === id ? { ...t, column } : t));
     this.ctx.api.board.moveTask(id, column).catch(e => {
-      this.tasks.set(before);   // optimistic move failed — roll back
+      // roll back only this card. Restoring a whole-board snapshot also reverted any move
+      // that landed while this one was in flight — and the board is loaded once, not
+      // polled, so that divergence stood until a reload.
+      this.tasks.update(ts => ts.map(t => t.id === id ? { ...t, column: before } : t));
       this.ctx.toastFailure('move', e);
     });
   }

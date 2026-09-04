@@ -67,6 +67,39 @@ describe('JobStore listing', () => {
     expect(jobs.jobs().map(j => j.id)).toEqual(['j-2']);
   });
 
+  it('keeps a profile\'s last known schedule when its read fails this tick', async () => {
+    // a gateway restarting (a config save does that) failed the read, and the page then
+    // showed the profile's jobs as gone — which reads as deleted, and invites a re-create
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('atlas-1', { nextRunAt: 2_000 })]))
+      .mockResolvedValueOnce(answer([job('scribe-1', { nextRunAt: 5_000 })]))
+      .mockRejectedValueOnce(new Error('gateway restarting'))
+      .mockResolvedValueOnce(answer([job('scribe-1', { nextRunAt: 5_000 })]));
+    const { jobs } = await loaded({ list });
+    await jobs.refresh();
+
+    await jobs.refresh();
+
+    expect(jobs.jobs().map(j => j.id)).toEqual(['atlas-1', 'scribe-1']);
+  });
+
+  it('keeps the scheduler flag when nothing answered this tick', async () => {
+    // a tick where every read failed says the reads failed, not that the gateway is down —
+    // it used to flap the "scheduler not running" warning on for the whole poll period
+    const list = vi.fn()
+      .mockResolvedValueOnce(answer([job('j-1')]))
+      .mockResolvedValueOnce(answer([]))
+      .mockRejectedValue(new Error('gateway restarting'));
+    const { jobs } = await loaded({ list });
+    await jobs.refresh();
+    expect(jobs.schedulerRunning()).toBe(true);
+
+    await jobs.refresh();
+
+    expect(jobs.schedulerRunning()).toBe(true);
+    expect(jobs.jobs().map(j => j.id)).toEqual(['j-1']);
+  });
+
   it('reports the gateway being down, because stored jobs then never fire', async () => {
     const list = vi.fn().mockResolvedValue(answer([job('j-1')], false));
     const { jobs } = await loaded({ list });
