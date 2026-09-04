@@ -3,7 +3,7 @@ type: object
 cluster: mcp
 universe: live
 status: verified
-verified: main @ 976a9c9 · 2026-08-28
+verified: claude/mission-control-defect-review-7b1c8c @ ff1564e · 2026-09-04
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/mcp/ManagedMcpStack.java
 ---
 
