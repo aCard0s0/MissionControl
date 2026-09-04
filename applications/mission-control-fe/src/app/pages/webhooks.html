@@ -111,7 +111,7 @@
           <div>
             <span class="k">secret</span>
             <span class="v">
-              @if (revealed()[w.name]; as secret) {
+              @if (revealed()[routeKey(w)]; as secret) {
                 <code class="secret">{{ secret }}</code>
                 <button class="btn sm ghost" (click)="hide(w)">hide</button>
               } @else {
@@ -140,7 +140,7 @@
             when the container is next recreated, or run the sender inside the same network.
           </p>
         }
-        @if (tested()[w.name]; as output) {
+        @if (tested()[routeKey(w)]; as output) {
           <pre class="test-output mono">{{ output }}</pre>
         }
       </div>

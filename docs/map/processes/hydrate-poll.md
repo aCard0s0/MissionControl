@@ -21,7 +21,7 @@ pages render from.
 
 **There is one mode, and it is "talk to the real backend".** An unreachable backend shows an
 empty dashboard and a banner naming the address it could not reach, retrying every 10 s
-(`RETRY_MS`, `core/store/live-sync.ts:33`). That is deliberate and the architecture doc says why:
+(`RETRY_MS`, `core/store/live-sync.ts:35`). That is deliberate and the architecture doc says why:
 seeded demo inventory used to fill the same screens, and **an operator could not tell it from
 real state**.
 
@@ -52,11 +52,13 @@ output**.
 1. Read `window.__MC_CONFIG__` — served by the backend at `/config.js`, dev default in
    `public/config.js`. Carries `apiBaseUrl` and `dockerSocket`.
 2. `probeBackend()`; on failure set the banner and retry in `RETRY_MS`
-   (`core/store/live-sync.ts:82`).
+   (`core/store/live-sync.ts:83`).
 3. Load through its store every domain something other than one page reads
-   (`core/store/live-sync.ts:86`). A library whose only reader is its own page — prompts,
-   guides, and the three group families — is **not** loaded here: that page loads it on entry,
-   and doing both meant a deep link fetched it twice at once.
+   (`core/store/live-sync.ts:87`). A domain whose only reader is its own page — prompts,
+   guides, webhooks, and the three group families — is **not** loaded here: that page loads it
+   on entry, and doing both meant a deep link fetched it twice at once. Webhooks were also
+   *polled* here once, one exec-backed request per profile every 30 s with the page closed;
+   the page owns that poll now (`pages/webhooks.ts`), gated on visibility like everything here.
 4. Start one timer per domain from `POLL` (`core/store/live-sync.ts:21`).
 
 ## If you change this

@@ -27,6 +27,11 @@ export class AgentStore {
 
   private refreshInFlight = false;
 
+  /** Bumped by every local write. A refresh fan-out spans hundreds of milliseconds, and a
+   *  listing read before a write landed would, applied afterwards, revert what the backend
+   *  just confirmed — a pause flipping back to running, a saved SOUL.md reading as unsaved. */
+  private writes = 0;
+
   private readonly ctx = inject(StoreContext);
   private readonly containers = inject(ContainerStore);
 
@@ -47,11 +52,13 @@ export class AgentStore {
   }
 
   patch(id: string, patch: Partial<AgentProfile>): void {
+    this.writes++;
     this.agents.update(as => as.map(a => a.id === id ? { ...a, ...patch } : a));
   }
 
   /** Rewrites one profile's own fields; a no-op once it is gone. */
   update(id: string, change: (agent: AgentProfile) => AgentProfile): void {
+    this.writes++;
     this.agents.update(as => as.map(a => a.id === id ? change(a) : a));
   }
 
@@ -87,6 +94,7 @@ export class AgentStore {
         return;
       }
       const prev = this.agents();
+      const writesBefore = this.writes;
       const lists = await mapPool(containers, 6, c => {
         if (c.status === 'stopped') return Promise.resolve(prev.filter(a => a.containerId === c.id));
         return this.ctx.api.agents.list(c.hostId, c.id)
@@ -94,6 +102,9 @@ export class AgentStore {
           // transient per-container failure — keep its last known profiles
           .catch(() => prev.filter(a => a.containerId === c.id));
       });
+      // a write landed while the fan-out was in flight: part of this listing predates it,
+      // so applying it would revert confirmed state. Skip — the next tick re-reads.
+      if (this.writes !== writesBefore) return;
       this.agents.set(lists.flat());
     } finally {
       this.refreshInFlight = false;
@@ -141,6 +152,7 @@ export class AgentStore {
    *  concurrent poll already picked up. Returns its id. */
   adopt(api: ApiAgentProfile): string {
     const agent = toAgentProfile(api);
+    this.writes++;
     this.agents.update(as => [...as.filter(a => a.id !== agent.id), agent]);
     return agent.id;
   }
@@ -152,6 +164,7 @@ export class AgentStore {
     if (!resolved) return this.ctx.gone('profile');
     try {
       await this.ctx.api.agents.remove(resolved.ref);
+      this.writes++;
       this.agents.update(as => as.filter(a => a.id !== id));
       return true;
     } catch (e) {

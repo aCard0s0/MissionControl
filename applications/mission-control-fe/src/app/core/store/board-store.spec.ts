@@ -88,6 +88,15 @@ describe('BoardStore', () => {
     expect(store.tasks().map(t => t.column)).toEqual(['queued', 'review']);
   });
 
+  it('ignores a drop for a card that was removed between the render and the drop', async () => {
+    const moveTask = vi.fn();
+    const { store } = await loaded([task('t-1')], { moveTask });
+
+    store.move('t-ghost', 'done');
+
+    expect(moveTask).not.toHaveBeenCalled();
+  });
+
   it('drops the tasks of a container or a profile that is gone', async () => {
     const { store } = await loaded([
       task('t-1'), task('t-2', { agentId: 'a-scribe' }), task('t-3', { containerId: 'c-2' }),

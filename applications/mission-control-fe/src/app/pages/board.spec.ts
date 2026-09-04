@@ -20,6 +20,7 @@ const storeStub = (tasks: BoardTask[]) => ({
   board: {
     forSelectedContainer: signal(tasks),
     move: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined),
   },
   containers: {
     selected: signal({ id: 'c-1', name: 'hermes-prod' }),
@@ -45,6 +46,12 @@ const drop = (
 };
 
 describe('BoardPage', () => {
+  it('re-reads the board when it opens — nothing polls it, so entry is the refresh', () => {
+    const { store } = render(storeStub([]));
+
+    expect(store.board.refresh).toHaveBeenCalled();
+  });
+
   it('gives every column a lane, even the empty ones', () => {
     const { fixture } = render(storeStub([task('t-1', 'running')]));
 
