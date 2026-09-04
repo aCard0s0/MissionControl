@@ -161,11 +161,10 @@ public class McpRegistryService {
 
   public McpServerDto update(String id, McpServerRequest request) {
     ServerRow existing = requireRow(id);
+    // answers the common case early with its own message; the write below re-checks, because
+    // this read races a claim that does not bump the revision
     ensureIdle(existing);
     McpServerRequest validated = McpRequestValidator.validate(request);
-    // the definition write below is guarded on `existing.revision()`, so this check is only
-    // here to answer a mid-operation record with the message it expects rather than the
-    // stale-revision one
     if (!existing.kind().equals(validated.kind())) {
       throw new IllegalArgumentException("kind is immutable; create a new catalog record instead");
     }
@@ -183,12 +182,16 @@ public class McpRegistryService {
     boolean recreateStopped = McpServerKind.MANAGED.is(existing.kind())
         && "stopped".equals(existing.desiredState());
     long applied = McpServerKind.MANAGED.is(existing.kind()) ? existing.appliedRevision() : revision;
-    boolean written = repository.updateDefinition(
+    boolean written = repository.updateDefinitionIfSettled(
         id, validated.name(), validated.description(), validated.repoUrl(),
         configs.write(config), revision, applied,
         (recreateStopped ? McpOperationState.APPLYING : McpOperationState.IDLE).wire(),
         existing.revision());
     if (!written) {
+      // refused for one of two reasons; re-read to name the right one
+      if (!McpOperationState.settled(requireRow(id).operationState())) {
+        throw new ResourceConflictException("an MCP server operation is already in progress");
+      }
       throw new ResourceConflictException(
           "the MCP server changed while this edit was open; reload it and apply the change again");
     }

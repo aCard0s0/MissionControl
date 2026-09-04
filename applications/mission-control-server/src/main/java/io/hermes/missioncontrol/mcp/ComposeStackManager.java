@@ -72,19 +72,17 @@ class ComposeStackManager {
     }
   }
 
+  /** Lock-free on purpose, like every read here: {@code compose ps} reads the daemon, and the
+   *  compose file it loads is only ever replaced atomically by {@link #write}. Taking the
+   *  mutation lock made this read wait out whatever image pull {@link #execute} was holding
+   *  the lock for. */
   String serviceContainerId(DockerHostRef host, String serviceKey) {
-    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
-    lock.lock();
-    try {
-      Path composeFile = stackPath(host);
-      if (!Files.exists(composeFile)) return null;
-      List<String> command = composeBase(host, composeFile);
-      command.addAll(List.of("ps", "--all", "-q", serviceKey));
-      String output = run(command, Map.of(), Duration.ofSeconds(20)).trim();
-      return output.isBlank() ? null : output.lines().findFirst().orElse(null);
-    } finally {
-      lock.unlock();
-    }
+    Path composeFile = stackPath(host);
+    if (!Files.exists(composeFile)) return null;
+    List<String> command = composeBase(host, composeFile);
+    command.addAll(List.of("ps", "--all", "-q", serviceKey));
+    String output = run(command, Map.of(), Duration.ofSeconds(20)).trim();
+    return output.isBlank() ? null : output.lines().findFirst().orElse(null);
   }
 
   /**
@@ -94,7 +92,7 @@ class ComposeStackManager {
    * because the reason for asking is to find what the file no longer declares.
    */
   List<String> servicesOf(DockerHostRef host, String serverId) {
-    return labelled(host, List.of(
+    return labelled(List.of(
         "docker", "--host", host.url(), "ps", "--all",
         "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
         "--format", "{{.Label \"com.docker.compose.service\"}}"));
@@ -102,7 +100,7 @@ class ComposeStackManager {
 
   /** The managed volume names this catalog record currently has on the daemon. */
   List<String> volumesOf(DockerHostRef host, String serverId) {
-    return labelled(host, List.of(
+    return labelled(List.of(
         "docker", "--host", host.url(), "volume", "ls",
         "--filter", "label=" + ManagedMcpStack.SERVER_ID_LABEL + "=" + serverId,
         "--format", "{{.Name}}"));
@@ -111,11 +109,13 @@ class ComposeStackManager {
   /**
    * Every managed container on this host, keyed by its Compose service name.
    *
-   * <p>{@link #serviceContainerId} answers the same question for one service, by forking
-   * {@code docker compose ps} under this host's lock — the same lock {@link #execute} holds for
-   * the length of an image pull. The catalog listing asked it once per row, so a page load with
-   * eight managed servers forked Compose eight times and either blocked a start that was in
-   * flight or was blocked by it.
+   * <p>{@link #serviceContainerId} answers the same question for one service by forking
+   * {@code docker compose ps}. The catalog listing asked it once per row, so a page load with
+   * eight managed servers forked Compose eight times; this covers every record in one fork.
+   *
+   * <p>{@code --no-trunc} is load-bearing: the caller joins these ids against the Engine API's
+   * 64-character container ids, and the CLI's default 12-character truncation matches nothing
+   * there — every managed row then read as {@code unknown}.
    *
    * <p>Keyed by the Compose service and not by the server id, because a record's support
    * services carry the same {@code SERVER_ID_LABEL}: their state is not the record's, and the
@@ -125,8 +125,8 @@ class ComposeStackManager {
    * record — and is how {@link #servicesOf} and {@link #volumesOf} already work.
    */
   Map<String, String> containerIdsByService(DockerHostRef host) {
-    List<String> rows = labelled(host, List.of(
-        "docker", "--host", host.url(), "ps", "--all",
+    List<String> rows = labelled(List.of(
+        "docker", "--host", host.url(), "ps", "--all", "--no-trunc",
         "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
         "--format", "{{.Label \"com.docker.compose.service\"}}\t{{.ID}}"));
     Map<String, String> byService = new LinkedHashMap<>();
@@ -183,14 +183,11 @@ class ComposeStackManager {
         "--format", "{{.ID}}"), Map.of(), Duration.ofSeconds(20)));
   }
 
-  private List<String> labelled(DockerHostRef host, List<String> command) {
-    ReentrantLock lock = locks.computeIfAbsent(host.id(), ignored -> new ReentrantLock());
-    lock.lock();
-    try {
-      return lines(run(command, Map.of(), Duration.ofSeconds(20)));
-    } finally {
-      lock.unlock();
-    }
+  /** Lock-free on purpose: a label-filtered listing reads the daemon, not the compose file,
+   *  and taking the mutation lock made every catalog listing wait out whatever image pull
+   *  {@link #execute} was holding it for. */
+  private List<String> labelled(List<String> command) {
+    return lines(run(command, Map.of(), Duration.ofSeconds(20)));
   }
 
   private static List<String> lines(String output) {

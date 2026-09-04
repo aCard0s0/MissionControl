@@ -241,11 +241,9 @@ class McpComposeLifecycle {
    * {@link #refreshRuntime(ServerRow)} for a whole listing, at two daemon reads per host rather
    * than two per row.
    *
-   * <p>The per-row version forks {@code docker compose ps} under the host's compose lock and
-   * then lists every container on the daemon, to read one status string. Mapping a listing
-   * through it meant eight managed servers cost eight forks and eight full listings, taking a
-   * lock that a start or a stop holds for as long as its image pull — so the page waited on the
-   * operation, and the operation was slowed by the page.
+   * <p>The per-row version forks {@code docker compose ps} and then lists every container on
+   * the daemon, to read one status string. Mapping a listing through it meant eight managed
+   * servers cost eight forks and eight full listings per page load.
    *
    * <p>Rows this cannot speak for — not managed, or mid-operation — are passed through
    * untouched, exactly as the per-row version leaves them.

@@ -148,18 +148,20 @@ public class HermesWebhooks {
   public WebhooksDto setPlatformEnabled(
       DockerHostRef host, String containerId, String profileName, EnableWebhookPlatformRequest request) {
     ProfilePaths.profileDir(profileName);   // before a URL-sourced name reaches a read below
-    String bindHost = null;
-    Integer port = null;
-    if (request.enabled()) {
-      bindHost = HermesCli.notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
-      port = resolvePort(host, containerId, profileName, request.port());
-    }
-    cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".enabled",
-        String.valueOf(request.enabled()));
-    if (request.enabled()) {
-      cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.host", bindHost);
-      cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
-    }
+    String bindHost = HermesCli.notBlank(request.host()) ? request.host().trim() : DEFAULT_HOST;
+    Integer port = request.enabled()
+        ? resolvePort(host, containerId, profileName, request.port()) : null;
+    // Under the profile lock: `hermes config set` rewrites config.yaml, and a locked editor's
+    // read-modify-write landing around an unlocked set silently restores the state this just
+    // changed — the exact lost update the lock exists for. Same as HermesModelConfig.write.
+    files.serialized(containerId, profileName, () -> {
+      cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".enabled",
+          String.valueOf(request.enabled()));
+      if (request.enabled()) {
+        cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.host", bindHost);
+        cli.setConfig(host, containerId, profileName, PLATFORM_KEY + ".extra.port", String.valueOf(port));
+      }
+    });
     return list(host, containerId, profileName);
   }
 

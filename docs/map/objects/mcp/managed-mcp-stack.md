@@ -26,10 +26,11 @@ comment names the two escapes it closed (`mcp/ManagedMcpStack.java:5`):
 - **The owner label was written and read from two separate literals.** A rename turns every
   ownership guard into "exists but is not owned by Mission Control MCP".
 
-**Compose operations are serialized per host** by a `ReentrantLock` per `hostId`
-(`mcp/ComposeStackManager.java:42`) and run **without a shell**. That lock is why
-[`definition` vs `live`](mcp-server-entry.md) matters: a chatty read path contends with every
-real operation.
+**Compose mutations are serialized per host** by a `ReentrantLock` per `hostId`
+(`mcp/ComposeStackManager.java:42`) and run **without a shell**. Reads deliberately skip the
+lock, so a listing does not wait out an image pull; [`definition` vs
+`live`](mcp-server-entry.md) still matters because every refresh forks the CLI and lists the
+daemon.
 
 ## Shape
 

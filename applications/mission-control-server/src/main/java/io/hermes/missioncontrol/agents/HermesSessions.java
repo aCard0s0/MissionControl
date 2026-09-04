@@ -40,20 +40,27 @@ class HermesSessions {
   List<SessionDto> list(DockerHostRef host, String containerId, String profileName) {
     String db = ProfilePaths.stateDb(profileName);
     if (!files.fileExists(host, containerId, db)) return List.of();
+    // Same error rules as readMessages below, for the same store: a schema mismatch (an
+    // older/newer hermes) degrades to an empty listing, but a locked or corrupt database
+    // raises — a bare `except: print('[]')` here made a corrupt store read as "no sessions"
+    // while opening any one of them still failed, two answers about one file.
     String py = """
         import sqlite3, json, sys
         db = sys.argv[1]
+        con = sqlite3.connect('file:%s?mode=ro' % db, uri=True)
+        con.row_factory = sqlite3.Row
         try:
-            con = sqlite3.connect('file:%s?mode=ro' % db, uri=True)
-            con.row_factory = sqlite3.Row
             rows = con.execute(
                 "SELECT id, source, title, started_at, ended_at, message_count "
                 "FROM sessions WHERE archived=0 ORDER BY started_at DESC LIMIT 200").fetchall()
-            print(json.dumps([dict(r) for r in rows]))
-        except Exception:
-            print('[]')
+        except sqlite3.OperationalError as e:
+            msg = str(e).lower()
+            if 'locked' in msg or 'malformed' in msg or 'corrupt' in msg:
+                raise
+            print('[]'); sys.exit(0)
+        print(json.dumps([dict(r) for r in rows]))
         """;
-    ExecResult r = files.exec(host, containerId, List.of("python3", "-c", py, db), false);
+    ExecResult r = files.exec(host, containerId, List.of("python3", "-c", py, db));
     return parseSessionRows(r.stdout());
   }
 

@@ -28,12 +28,12 @@ file is therefore safe to keep on disk and to regenerate. Their runtime values r
 anyone with daemon access, as with all container environment variables — encryption at rest is
 not encryption in use.
 
-**One lock per host** (`mcp/ComposeStackManager.java:42`), and it is the scarce resource in this
-subsystem. Every managed operation takes it — and so does any *read* that refreshes runtime
-state, which is exactly why
+**One lock per host** (`mcp/ComposeStackManager.java:42`), held by mutations only. The reads
+that refresh runtime state deliberately skip it, so a catalog listing does not wait out an
+image pull. A refresh still costs a CLI fork plus a full container listing, which is why
 [`definition(id)` exists next to `live(id)`](../objects/mcp/mcp-server-entry.md): the Agent read
-path was forking `docker compose ps` under this lock, per linked entry, per profile, on a 12
-second poll, to reach one column.
+path was forking `docker compose ps` per linked entry, per profile, on a 12-second poll, to
+reach one column.
 
 **Ownership is by label and fails closed.** A project-label collision refuses rather than
 deleting unknown containers, and the user-owned project named `mcp` is never adopted or modified.

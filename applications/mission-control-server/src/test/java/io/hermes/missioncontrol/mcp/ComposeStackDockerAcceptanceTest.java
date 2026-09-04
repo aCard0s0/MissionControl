@@ -206,7 +206,10 @@ class ComposeStackDockerAcceptanceTest {
   }
 
   private String containerId() throws Exception {
-    String out = output("docker", "ps", "--all", "--quiet",
+    // --no-trunc: the batched lookup under test answers full 64-character ids, because its
+    // caller joins them against the Engine API's ids — short-vs-short here would have hidden
+    // a short-vs-full mismatch in production
+    String out = output("docker", "ps", "--all", "--quiet", "--no-trunc",
         "--filter", "label=com.docker.compose.project=" + ManagedMcpStack.PROJECT,
         "--filter", "label=com.docker.compose.service=" + serviceKey);
     return out.isBlank() ? null : out.lines().findFirst().orElse(null);
