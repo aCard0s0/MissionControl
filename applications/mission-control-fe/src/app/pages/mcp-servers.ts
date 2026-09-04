@@ -70,8 +70,19 @@ export class McpServersPage {
   protected purgeConfirm = '';
   protected readonly purgeBusy = signal(false);
 
-  protected readonly serverSections = computed(() =>
-    mcpServerSections(this.catalog.servers(), this.hosts.hosts()));
+  protected readonly query = signal('');
+
+  protected readonly serverSections = computed(() => {
+    const needle = this.query().trim().toLowerCase();
+    const servers = needle
+      ? this.catalog.servers().filter(server => server.name.toLowerCase().includes(needle))
+      : this.catalog.servers();
+    return mcpServerSections(servers, this.hosts.hosts());
+  });
+
+  protected onSearch(value: string): void {
+    this.query.set(value);
+  }
 
   // ── groups ──────────────────────────────────────────────────────────────
   /** The group editor's state — open, editing which, and what is picked. */

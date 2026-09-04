@@ -91,6 +91,34 @@ describe('McpServersPage roster', () => {
     expect(el(fixture).textContent).toContain('npx -y @acme/fs');
   });
 
+  it('narrows the roster by server name and says so when nothing matches', () => {
+    const { fixture } = render(storeStub([server('browser'), server('gateway'), server('files')]));
+    const input = el(fixture).querySelector<HTMLInputElement>('input.find')!;
+
+    input.value = 'GATE';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(el(fixture).querySelectorAll('.server-row').length).toBe(1);
+    expect(el(fixture).textContent).toContain('gateway');
+    expect(el(fixture).textContent).not.toContain('browser:1100');
+
+    input.value = 'nothing-here';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(el(fixture).querySelectorAll('.server-group').length).toBe(0);
+    expect(el(fixture).textContent).toContain('No MCP server named like “nothing-here”');
+    expect(el(fixture).textContent).not.toContain('No MCP servers registered.');
+  });
+
+  it('refreshes the registry from the group header', () => {
+    const { fixture, store } = render(storeStub([server('browser')]));
+    store.catalog.refresh.mockClear();
+
+    el(fixture).querySelector<HTMLButtonElement>('.server-group .panel-h button.refresh')!.click();
+
+    expect(store.catalog.refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('says the registry is empty rather than showing bare sections', () => {
     const { fixture } = render(storeStub([]));
 
