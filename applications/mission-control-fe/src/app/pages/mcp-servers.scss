@@ -4,7 +4,8 @@
 .server-group { margin-bottom: 12px; }
 
 /* a glyph, not a word: sized up so it reads as a button beside the count chip */
-.server-group .refresh { font-size: 16px; line-height: 1; padding: 2px 9px; }
+.refresh { font-size: 16px; line-height: 1; padding: 2px 9px; }
+.panel.empty { position: relative; .refresh { position: absolute; top: 10px; right: 12px; } }
 
 .group-detail {
   overflow: hidden;

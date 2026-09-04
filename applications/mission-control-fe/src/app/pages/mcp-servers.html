@@ -140,6 +140,8 @@
         <p class="mono dim">No MCP servers registered.</p>
         <p class="lock-hint">Add a managed service, external endpoint, or reusable stdio definition.</p>
       }
+      <button class="btn sm ghost refresh" [disabled]="catalog.loading()" (click)="catalog.refresh()"
+              [title]="catalog.loading() ? 'refreshing…' : 'refresh the registry'" aria-label="refresh">↻</button>
     </div>
   }
 

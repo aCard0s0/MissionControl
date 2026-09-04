@@ -119,11 +119,15 @@ describe('McpServersPage roster', () => {
     expect(store.catalog.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('says the registry is empty rather than showing bare sections', () => {
-    const { fixture } = render(storeStub([]));
+  it('says the registry is empty rather than showing bare sections, and still offers a refresh', () => {
+    const { fixture, store } = render(storeStub([]));
 
     expect(el(fixture).textContent).toContain('No MCP servers registered.');
     expect(el(fixture).querySelectorAll('.server-group').length).toBe(0);
+
+    store.catalog.refresh.mockClear();
+    el(fixture).querySelector<HTMLButtonElement>('.panel.empty button.refresh')!.click();
+    expect(store.catalog.refresh).toHaveBeenCalledTimes(1);
   });
 
   it('offers start for a stopped stack and stop for a running one', () => {
