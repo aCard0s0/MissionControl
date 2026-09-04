@@ -392,6 +392,11 @@ export interface ApiMcpCatalogServer {
   checkError?: string | null;
   checkedAt?: number | null;
   latencyMs?: number | null;
+  /** Agent profiles carrying this entry — what a delete disables first. */
+  linkedAgents?: number;
+  /** When a managed service last started; every start pulls, so also when its image was last
+   *  checked against the registry. Null unless running. */
+  imageAsOf?: number | null;
   revision?: number;
   appliedRevision?: number;
   pendingChanges?: boolean;

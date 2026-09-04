@@ -514,6 +514,8 @@ export interface McpCatalogServer {
   checkError: string | null;
   checkedAt: number | null;
   latencyMs: number | null;
+  linkedAgents: number;           // agent profiles carrying this entry
+  imageAsOf: number | null;       // last start of a managed service = last image pull/verify
   revision: number;
   appliedRevision: number;
   pendingChanges: boolean;

@@ -178,6 +178,8 @@ export function toMcpCatalogServer(api: ApiMcpCatalogServer): McpCatalogServer {
     checkError: api.checkError ?? null,
     checkedAt: api.checkedAt ?? null,
     latencyMs: api.latencyMs ?? null,
+    linkedAgents: api.linkedAgents ?? 0,
+    imageAsOf: api.imageAsOf ?? null,
     revision: api.revision ?? 1,
     appliedRevision: api.appliedRevision ?? 0,
     pendingChanges: !!api.pendingChanges,

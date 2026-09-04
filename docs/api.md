@@ -47,7 +47,7 @@ entries are registry-only and therefore have no container lifecycle or logs.
 
 | Method & path | Body / params | Notes |
 |---|---|---|
-| `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions |
+| `GET /api/mcp-servers` | — | Redacted catalog records plus desired/runtime/operation state and revisions. `linkedAgents` counts the agent profiles carrying the entry — what a delete disables first. `imageAsOf` is when a managed service's container last started, which is the last time its image was pulled or verified, since every start and apply runs `--pull always`; null unless running |
 | `POST /api/mcp-servers` | structured server definition | Managed creates return 202 and asynchronously pull/create a stopped service; external/stdio return 201. `repoUrl` is optional and must be `http://` or `https://` — it is rendered as a link, so the scheme is checked here rather than trusted to the client |
 | `PUT /api/mcp-servers/{id}` | complete structured definition | Kind and managed `hostId` are immutable; running deployment changes remain pending until Apply |
 

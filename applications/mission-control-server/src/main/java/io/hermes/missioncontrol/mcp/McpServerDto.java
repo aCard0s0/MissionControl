@@ -42,4 +42,9 @@ public record McpServerDto(
     Long checkedAt,
     Long latencyMs,
     long createdAt,
-    long updatedAt) {}
+    long updatedAt,
+    /** How many agent profiles carry this entry — the copies a delete disables first. */
+    int linkedAgents,
+    /** When a managed service last started, which — because every start and apply pulls — is the
+     *  last moment its image was checked against the registry. Null unless it is running. */
+    Long imageAsOf) {}

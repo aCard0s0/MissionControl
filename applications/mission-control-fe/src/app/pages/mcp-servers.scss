@@ -72,6 +72,12 @@
 .error { margin: 3px 0 0; color: var(--red); font-size: 10px; }
 .server-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; max-width: 370px; }
 
+.retained.compact .panel-b {
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  .lbl { color: var(--faint); letter-spacing: .08em; font-size: 11px; }
+  .spacer { flex: 1; }
+}
+
 .retained {
   margin: 16px 0 14px;
   .panel-b { padding-top: 8px; padding-bottom: 8px; }

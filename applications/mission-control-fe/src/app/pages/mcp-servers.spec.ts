@@ -133,6 +133,76 @@ describe('McpServersPage roster', () => {
     expect(el(fixture).querySelector('.head-stats')!.textContent).toContain('1 of 2 registered');
   });
 
+  it('shows a check result only while a managed service runs, and says who uses it', () => {
+    const { fixture } = render(storeStub([
+      server('browser', { runtimeState: 'running', checkedAt: Date.now() - 60_000, latencyMs: 32,
+        linkedAgents: 2, imageAsOf: Date.now() - 3 * 86_400_000 }),
+      server('files', { runtimeState: 'stopped', checkedAt: Date.now() - 60_000, latencyMs: 271 }),
+    ]));
+    const rows = el(fixture).querySelectorAll('.server-row');
+
+    // the running one: a live result, its image age, and its consumers
+    expect(rows[0].textContent).toContain('checked 1m ago');
+    expect(rows[0].textContent).toContain('32ms');
+    expect(rows[0].textContent).toContain('image as of 3d ago');
+    expect(rows[0].textContent).toContain('used by 2 agents');
+    // the stopped one: the result predates the stop, so it is not shown beside STOPPED
+    expect(rows[1].textContent).not.toContain('checked');
+    expect(rows[1].textContent).not.toContain('271ms');
+    expect(rows[1].textContent).not.toContain('image as of');
+    expect(rows[1].textContent).toContain('unused');
+  });
+
+  it('offers pull & restart on a running service with nothing pending — apply always pulls', () => {
+    const { fixture, store } = render(storeStub([
+      server('browser', { runtimeState: 'running' }),
+      server('files', { runtimeState: 'running', revision: 2, appliedRevision: 1, pendingChanges: true }),
+    ]));
+    const rows = el(fixture).querySelectorAll('.server-row');
+    const verb = (row: Element, text: string) =>
+      [...row.querySelectorAll<HTMLButtonElement>('.server-actions button')].find(b => b.textContent!.trim() === text);
+
+    expect(verb(rows[0], 'pull & restart')).toBeTruthy();
+    expect(verb(rows[0], 'apply & restart')).toBeUndefined();
+    expect(verb(rows[1], 'apply & restart')).toBeTruthy();
+    expect(verb(rows[1], 'pull & restart')).toBeUndefined();
+
+    verb(rows[0], 'pull & restart')!.click();
+    expect(store.catalog.apply).toHaveBeenCalledWith('browser');
+  });
+
+  it('starts or stops a whole managed stack from its header, skipping what is already there', async () => {
+    const { fixture, store } = render(storeStub([
+      server('browser', { runtimeState: 'running' }),
+      server('files', { runtimeState: 'stopped' }),
+      server('think', { runtimeState: 'stopped', operationState: 'starting' }),
+    ]));
+    const header = el(fixture).querySelector('.server-group .panel-h')!;
+    const verb = (text: string) =>
+      [...header.querySelectorAll<HTMLButtonElement>('button.stack-verb')].find(b => b.textContent!.trim() === text)!;
+
+    verb('start all').click();
+    await settle(fixture);
+    // the running one and the one mid-operation are left alone
+    expect(store.catalog.start).toHaveBeenCalledTimes(1);
+    expect(store.catalog.start).toHaveBeenCalledWith('files');
+
+    verb('stop all').click();
+    await settle(fixture);
+    expect(store.catalog.stop).toHaveBeenCalledTimes(1);
+    expect(store.catalog.stop).toHaveBeenCalledWith('browser');
+  });
+
+  it('collapses retained data to one line when there is nothing in it', () => {
+    const none = render(storeStub([server('browser')]));
+    expect(el(none.fixture).querySelector('.retained.compact')).toBeTruthy();
+    expect(el(none.fixture).querySelector('.retained .panel-h')).toBeNull();
+
+    const some = render(storeStub([server('browser')], [volume]));
+    expect(el(some.fixture).querySelector('.retained.compact')).toBeNull();
+    expect(el(some.fixture).textContent).toContain('browser-data');
+  });
+
   it('says the registry is empty rather than showing bare sections, and still offers a refresh', () => {
     const { fixture, store } = render(storeStub([]));
 
@@ -244,8 +314,20 @@ describe('McpServersPage destructive confirmations', () => {
 
     expect(confirmed).toHaveBeenCalledWith(expect.objectContaining({
       typed: 'browser', action: 'delete permanently' }));
+    expect(confirmed.mock.calls[0][0].message).toContain('No Agent profile carries this entry.');
     expect(confirmed.mock.calls[0][0].message).toContain('Retained Data');
     expect(store.catalog.remove).toHaveBeenCalledWith('browser');
+  });
+
+  it('counts the agent copies a delete will disable', async () => {
+    const { fixture } = render(storeStub([server('browser', { linkedAgents: 2 })]));
+    const confirmed = stubConfirm(false);
+
+    press(fixture, 'delete', '.server-actions');
+    await settle(fixture);
+
+    expect(confirmed.mock.calls[0][0].message)
+      .toContain('2 Agent profiles carry this entry — their copies will be disabled and unlinked first.');
   });
 
   it('stops tailing a server that has just been removed', async () => {

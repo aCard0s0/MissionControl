@@ -15,9 +15,13 @@ import org.springframework.stereotype.Component;
 class McpServerDtoMapper {
 
   private final McpConfigStore configs;
+  private final AgentMcpLinkRepository links;
+  private final McpComposeLifecycle lifecycle;
 
-  McpServerDtoMapper(McpConfigStore configs) {
+  McpServerDtoMapper(McpConfigStore configs, AgentMcpLinkRepository links, McpComposeLifecycle lifecycle) {
     this.configs = configs;
+    this.links = links;
+    this.lifecycle = lifecycle;
   }
 
   McpServerDto toDto(ServerRow row) {
@@ -35,7 +39,9 @@ class McpServerDtoMapper {
         configs.redact(config.headers()), config.volumes(), config.healthcheck(), supports,
         row.desiredState(), row.runtimeState(), row.operationState(), row.operationError(),
         row.revision(), row.appliedRevision(), row.revision() > row.appliedRevision(),
-        row.checkStatus(), row.checkError(), row.checkedAt(), row.latencyMs(), row.createdAt(), row.updatedAt());
+        row.checkStatus(), row.checkError(), row.checkedAt(), row.latencyMs(), row.createdAt(), row.updatedAt(),
+        // ponytail: one query per row; a GROUP BY over the listing if catalogs grow past dozens
+        links.findByServer(row.id()).size(), lifecycle.imageAsOf(row.id()));
   }
 
   /** How an Agent on the same host reaches this server: a managed one by its Compose

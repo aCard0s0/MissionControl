@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,18 @@ class McpComposeLifecycle {
   private final ComposeStackRenderer renderer;
   private final McpConfigStore configs;
   private final ExecutorService operations;
+
+  /**
+   * When each managed service's container started, by server id, from the last runtime refresh.
+   *
+   * <p>Start and apply both run {@code up --pull always}, so a running container's start is the
+   * last time its image was checked against the registry — the one honest staleness fact this
+   * has without asking a registry itself. Held in memory and not in SQLite: it is the daemon's,
+   * and a listing re-reads it anyway.
+   */
+  // ponytail: start time as the staleness proxy; compare image digests against the registry
+  // if operators need "a newer image exists" rather than "last pulled 12 days ago"
+  private final Map<String, Long> imageAsOf = new ConcurrentHashMap<>();
 
   McpComposeLifecycle(
       McpServerRepository repository,
@@ -258,15 +271,17 @@ class McpComposeLifecycle {
     for (Map.Entry<String, List<ServerRow>> host : byHost.entrySet()) {
       try {
         Map<String, String> containerIds = compose.containerIdsByService(hosts.ref(host.getKey()));
-        Map<String, String> statuses = new LinkedHashMap<>();
+        Map<String, ContainerDto> containers = new LinkedHashMap<>();
         for (ContainerDto container : docker.listContainers(hosts.ref(host.getKey()), true)) {
-          statuses.put(container.id(), container.status());
+          containers.put(container.id(), container);
         }
         for (ServerRow row : host.getValue()) {
           String containerId = containerIds.get(row.serviceKey());
+          ContainerDto container = containerId == null ? null : containers.get(containerId);
+          rememberImageAsOf(row.id(), container);
           McpRuntimeState runtime = containerId == null
               ? McpRuntimeState.MISSING
-              : McpRuntimeState.fromContainerStatus(statuses.get(containerId));
+              : McpRuntimeState.fromContainerStatus(container == null ? null : container.status());
           if (!runtime.wire().equals(row.runtimeState())) {
             repository.updateRuntime(row.id(), runtime.wire());
             refreshed.put(row.id(), requireRow(row.id()));
@@ -292,13 +307,14 @@ class McpComposeLifecycle {
     try {
       String containerId = compose.serviceContainerId(hosts.ref(row.hostId()), row.serviceKey());
       McpRuntimeState runtime = McpRuntimeState.MISSING;
+      ContainerDto container = null;
       if (containerId != null) {
-        runtime = McpRuntimeState.fromContainerStatus(
-            docker.listContainers(hosts.ref(row.hostId()), true).stream()
-                .filter(container -> container.id().equals(containerId))
-                .map(ContainerDto::status)
-                .findFirst().orElse(null));
+        container = docker.listContainers(hosts.ref(row.hostId()), true).stream()
+            .filter(candidate -> candidate.id().equals(containerId))
+            .findFirst().orElse(null);
+        runtime = McpRuntimeState.fromContainerStatus(container == null ? null : container.status());
       }
+      rememberImageAsOf(row.id(), container);
       if (!runtime.wire().equals(row.runtimeState())) {
         repository.updateRuntime(row.id(), runtime.wire());
         return requireRow(row.id());
@@ -309,6 +325,16 @@ class McpComposeLifecycle {
       log.debug("could not refresh managed MCP runtime state for {}: {}", row.id(), e.toString());
     }
     return row;
+  }
+
+  /** When this server's image was last pulled or verified — its container's start — or null. */
+  Long imageAsOf(String serverId) {
+    return imageAsOf.get(serverId);
+  }
+
+  private void rememberImageAsOf(String serverId, ContainerDto container) {
+    if (container == null || container.startedAt() == null) imageAsOf.remove(serverId);
+    else imageAsOf.put(serverId, container.startedAt());
   }
 
   /** Whether the daemon has anything to say about this row: only a managed one, and only while
