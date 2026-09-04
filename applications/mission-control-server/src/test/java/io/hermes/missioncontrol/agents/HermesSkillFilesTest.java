@@ -165,7 +165,7 @@ class HermesSkillFilesTest {
 
   @Test
   void readingASkillLargerThanTheByteBudgetIsRefused() {
-    // six files that each fit one exec argument, and together pass the 512KB skill budget
+    // six files that together pass the 512KB skill budget
     FakeContainer container = new FakeContainer().dir(OPS_SKILLS + "/pdf");
     StringBuilder listing = new StringBuilder();
     for (int i = 0; i < 6; i++) {
@@ -243,22 +243,6 @@ class HermesSkillFilesTest {
 
     assertEquals(Map.of("SKILL.md", "# pdf"), read.files());
     assertEquals(List.of("logo.png"), read.skipped());
-  }
-
-  @Test
-  void aFileLargerThanOneExecArgumentIsReportedSkippedRatherThanStored() {
-    // the row would save and then fail every deploy: the write hands the body to the
-    // container as one argument, and the daemon refuses one past MAX_WRITE_BYTES
-    FakeContainer container = new FakeContainer()
-        .dir(OPS_SKILLS + "/pdf")
-        .file(OPS_SKILLS + "/pdf/SKILL.md", "# pdf")
-        .file(OPS_SKILLS + "/pdf/corpus.txt", "a".repeat(HermesContainerFiles.MAX_WRITE_BYTES + 1))
-        .onCommand("cd \"$d\"", "SKILL.md\ncorpus.txt\n");
-
-    SkillFilesDto read = skills(container).readSkillFiles(HOST, CONTAINER, "ops", "pdf");
-
-    assertEquals(Map.of("SKILL.md", "# pdf"), read.files());
-    assertEquals(List.of("corpus.txt"), read.skipped());
   }
 
   @Test

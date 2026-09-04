@@ -214,14 +214,11 @@ class HermesSkills {
     for (int i = 0; i < names.size(); i++) {
       String name = names.get(i);
       String body = read.getOrDefault(paths.get(i), "");
-      int size = body.getBytes(StandardCharsets.UTF_8).length;
-      // a file a deploy could never write back — binary, or larger than one exec argument —
-      // is reported rather than stored, so the library never holds a row that cannot land
-      if (body.indexOf('\0') >= 0 || size > HermesContainerFiles.MAX_WRITE_BYTES) {
+      if (body.indexOf('\0') >= 0) {
         skipped.add(name);
         continue;
       }
-      bytes += size;
+      bytes += body.getBytes(StandardCharsets.UTF_8).length;
       if (bytes > MAX_SKILL_BYTES) {
         throw new IllegalArgumentException("skill exceeds " + MAX_SKILL_BYTES + " bytes");
       }

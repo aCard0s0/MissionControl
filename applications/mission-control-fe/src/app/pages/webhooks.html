@@ -77,10 +77,14 @@
         <label for="hook-description">description — optional</label>
         <input id="hook-description" class="input" [(ngModel)]="fDescription" placeholder="Grafana alerting" />
       </div>
-      <p class="lock-hint">hermes generates the signing secret; read it from the route once it exists.</p>
+      @if (fAgent && !listenerOf(fAgent)?.enabled) {
+        <p class="lock-hint">@{{ agentName(fAgent) }} has its listener off — hermes refuses a route until it is on. Use “enable listener” above first.</p>
+      } @else {
+        <p class="lock-hint">hermes generates the signing secret; read it from the route once it exists.</p>
+      }
       <div class="form-actions">
         <button class="btn ghost" [disabled]="busy()" (click)="adding.set(false)">cancel</button>
-        <button class="btn primary" [disabled]="!fName.trim() || busy()" (click)="add()">
+        <button class="btn primary" [disabled]="!fName.trim() || busy() || !listenerOf(fAgent)?.enabled" (click)="add()">
           {{ busy() ? 'adding…' : 'create' }}
         </button>
       </div>

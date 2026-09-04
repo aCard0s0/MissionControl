@@ -2,10 +2,13 @@ package io.hermes.missioncontrol.agents;
 
 import static io.hermes.missioncontrol.agents.FakeContainer.CONTAINER;
 import static io.hermes.missioncontrol.agents.FakeContainer.HOST;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -13,27 +16,38 @@ import org.junit.jupiter.api.Test;
 class HermesContainerFilesTest {
 
   @Test
-  void aWriteLargerThanOneArgumentIsRefusedBeforeAnythingRuns() {
-    // the daemon refuses the exec past 131071 bytes ("argument list too long", measured on
-    // Docker 29), which a caller saw as a 400 naming /usr/bin/sh — or, on a sensitive write,
-    // as a bare exit code 126. A skill that saved at 140KB deployed to exactly that.
+  void aBodyThatFitsOneArgumentTravelsAsOne_andALargerOneIsStreamed() {
+    // the daemon refuses an argv word past 131071 bytes ("argument list too long", measured on
+    // Docker 29); a 140KB skill used to save and then fail every deploy on exactly that
     FakeContainer container = new FakeContainer();
     HermesContainerFiles files = container.files();
-    String fits = "a".repeat(HermesContainerFiles.MAX_WRITE_BYTES);
+    String fits = "a".repeat(HermesContainerFiles.MAX_ARG_BYTES);
+    String streamed = fits + "a";
 
     files.writeFile(HOST, CONTAINER, "/opt/data/SOUL.md", fits);
-    files.writeFileAtomically(HOST, CONTAINER, "/opt/data/config.yaml", fits);
-    assertEquals(2, container.executed().size());
+    files.writeFileAtomically(HOST, CONTAINER, "/opt/data/config.yaml", streamed);
 
-    // bytes, not characters: two-byte letters cross the limit at half the length
-    String multibyte = "\u00e9".repeat(HermesContainerFiles.MAX_WRITE_BYTES / 2 + 1);
-    for (String oversize : List.of(fits + "a", multibyte)) {
-      IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
-          () -> files.writeFile(HOST, CONTAINER, "/opt/data/SOUL.md", oversize));
-      assertTrue(refused.getMessage().startsWith("SOUL.md is "), refused.getMessage());
-      assertThrows(IllegalArgumentException.class,
-          () -> files.writeFileAtomically(HOST, CONTAINER, "/opt/data/config.yaml", oversize));
-    }
-    assertEquals(2, container.executed().size(), "nothing may run for a write the daemon would refuse");
+    List<String> plain = container.executed().get(0);
+    assertEquals(fits, plain.getLast(), "the body is $2");
+    assertTrue(plain.get(2).contains("printf '%s' \"$2\""), plain.get(2));
+    assertNull(container.stdinOf(0));
+
+    List<String> big = container.executed().get(1);
+    assertEquals(String.valueOf(streamed.length()), big.getLast(), "$2 is the byte count");
+    assertFalse(big.contains(streamed), "the body is not an argument");
+    // exactly the byte count, because the stream is never closed and a `cat` would hang
+    assertTrue(big.get(2).contains("head -c \"$2\""), big.get(2));
+    assertArrayEquals(streamed.getBytes(StandardCharsets.UTF_8), container.stdinOf(1));
+  }
+
+  @Test
+  void theThresholdIsBytesNotCharacters() {
+    // two-byte letters cross the argv limit at half the length
+    FakeContainer container = new FakeContainer();
+    String multibyte = "\u00e9".repeat(HermesContainerFiles.MAX_ARG_BYTES / 2 + 1);
+
+    container.files().writeFile(HOST, CONTAINER, "/opt/data/SOUL.md", multibyte);
+
+    assertArrayEquals(multibyte.getBytes(StandardCharsets.UTF_8), container.stdinOf(0));
   }
 }

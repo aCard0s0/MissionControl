@@ -200,6 +200,7 @@
             <span class="lbl">files</span>
             <span class="spacer"></span>
             @if (!hasSkillMd()) { <span class="chip warn">SKILL.md required</span> }
+            @if (tooLarge(); as why) { <span class="chip warn">{{ why }}</span> }
             <button class="btn sm ghost" (click)="addFile()">+ add file</button>
           </div>
           @for (f of fFiles(); track $index) {

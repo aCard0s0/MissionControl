@@ -169,6 +169,21 @@ describe('WebhooksPage', () => {
     });
   });
 
+  it('will not create a route while the agent\'s listener is off, and says why', async () => {
+    // hermes answers the subscribe with a setup walkthrough and exit 0; the backend now turns
+    // that into a 409, and the page should not offer the click in the first place
+    const { fixture, store } = render(storeStub([], [listener('a-1', false)]));
+    press(fixture, '+ add webhook');
+    await fill(fixture, 'route name', 'grafana');
+    await settle(fixture);
+
+    expect(el(fixture).textContent).toContain('has its listener off');
+    const create = el(fixture).querySelector<HTMLButtonElement>('.form-actions .btn.primary')!;
+    expect(create.disabled).toBe(true);
+    create.click();
+    expect(store.webhooks.subscribe).not.toHaveBeenCalled();
+  });
+
   it('refuses a route with no name', async () => {
     const { fixture, store } = render(storeStub([], [listener('a-1')]));
     press(fixture, '+ add webhook');

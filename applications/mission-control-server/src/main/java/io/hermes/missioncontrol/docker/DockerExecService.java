@@ -7,6 +7,7 @@ import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.StreamType;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -56,6 +57,29 @@ public class DockerExecService {
       boolean check,
       boolean sensitive,
       Duration timeout) {
+    return runAsUser(host, containerId, user, command, operation, check, sensitive, timeout, null);
+  }
+
+  /**
+   * As {@link #runAsUser(DockerHostRef, String, String, List, String, boolean, boolean,
+   * Duration)}, with {@code stdin} fed to the command over the attached stream.
+   *
+   * <p>This is how a file body larger than one argument reaches the container: Linux caps a
+   * single argv word at 131071 bytes, and the daemon refuses the exec outright past it. The
+   * command has to read <em>exactly</em> the bytes it is given ({@code head -c "$n"}), because
+   * the transport never half-closes the hijacked connection — a reader that waits for EOF
+   * waits for the timeout instead.
+   */
+  public ExecResult runAsUser(
+      DockerHostRef host,
+      String containerId,
+      String user,
+      List<String> command,
+      String operation,
+      boolean check,
+      boolean sensitive,
+      Duration timeout,
+      byte[] stdin) {
     // streaming: an exec attach is silent for as long as the command runs, so a socket
     // timeout here would cap every caller's budget at the transport's ceiling
     DockerClient client = clients.streamingForUrl(host.url());
@@ -64,6 +88,7 @@ public class DockerExecService {
       var create = client.execCreateCmd(containerId)
           .withAttachStdout(true)
           .withAttachStderr(true)
+          .withAttachStdin(stdin != null)
           .withCmd(command.toArray(new String[0]));
       if (user != null && !user.isBlank()) create.withUser(user);
       exec = create.exec();
@@ -92,7 +117,9 @@ public class DockerExecService {
 
     boolean finished;
     try {
-      finished = client.execStartCmd(exec.getId()).exec(callback)
+      var start = client.execStartCmd(exec.getId());
+      if (stdin != null) start.withStdIn(new ByteArrayInputStream(stdin));
+      finished = start.exec(callback)
           .awaitCompletion(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

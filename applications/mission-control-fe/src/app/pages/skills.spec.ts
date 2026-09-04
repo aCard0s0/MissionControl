@@ -373,6 +373,21 @@ describe('SkillsPage', () => {
     expect(store.save).not.toHaveBeenCalled();
   });
 
+  it('will not save a file the backend would refuse as too large, and says why', async () => {
+    const { fixture, store } = render();
+    press(fixture, '+ new skill');
+    await settle(fixture);
+    await fill(fixture, 'name', 'pdf');
+    const body = el(fixture).querySelector<HTMLTextAreaElement>('.file textarea')!;
+    body.value = 'x'.repeat(200_001);
+    body.dispatchEvent(new Event('input'));
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('SKILL.md is over 200,000 characters');
+    expect(buttonWith(fixture, 'save skill').disabled).toBe(true);
+    expect(store.save).not.toHaveBeenCalled();
+  });
+
   it('sends the file set, trimming the paths an operator typed', async () => {
     const { fixture, store } = render();
     press(fixture, '+ new skill');

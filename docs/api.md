@@ -435,7 +435,7 @@ truth that goes stale the moment the Hub moves, which is why the split exists.
 | Method & path | Body / params | Notes |
 |---|---|---|
 | `GET /api/skills` | `?category=` | newest edit first; a blank category is not a filter |
-| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400. Each file body is at most 131071 bytes: a deploy hands it to the container as one `docker exec` argument, and the daemon refuses anything longer. `repoUrl` is optional and must be `http://` or `https://`, the same rule the MCP catalog applies — it is rendered as a link |
+| `POST /api/skills` | `{ kind, name, description?, category?, repoUrl?, version?, files? }` | `kind` is `hub` or `local`; `name` must match `[a-zA-Z0-9][a-zA-Z0-9_.-]*` — it becomes both an argv word and a directory name. A blank category becomes `general` and is lower-cased. A `local` row needs a root `SKILL.md`, and a `hub` row carrying files is a 400. `repoUrl` is optional and must be `http://` or `https://`, the same rule the MCP catalog applies — it is rendered as a link |
 | `PUT /api/skills/{id}` | same body | replaces everything an editor owns and keeps `createdAt`; 404 rather than an insert when the skill is gone |
 | `DELETE /api/skills/{id}` | — | idempotent. Removes the library row only — a copy already deployed onto an agent stays exactly where it is |
 | `POST /api/skills/{id}/deploy` | `{ hostId, containerId, profile }` | puts the skill on one agent and answers with the refreshed profile. A `hub` row runs `hermes skills install <name> --force`; a `local` row has its files written into `<profileDir>/skills/<name>/` |
@@ -444,10 +444,9 @@ truth that goes stale the moment the Hub moves, which is why the split exists.
 
 Skill DTO: `{ id, kind, name, description, category, repoUrl, version, files, createdAt,
 updatedAt }`, where `files` is `[{ path, body }]` and is null for a hub row. Import answers
-`{ skill, skipped }` — `skipped` names files left behind because they hold a NUL byte or exceed 131071 bytes: the
-exec pipe is UTF-8, so a binary asset cannot round-trip through it, and a deploy hands each
-file to the container as one `docker exec` argument, which the daemon caps there — so the
-importer says so rather than storing a row that cannot land.
+`{ skill, skipped }` — `skipped` names files left behind because they hold a NUL byte: the
+exec pipe is UTF-8, so a binary asset cannot round-trip through it, and the importer says so
+rather than storing the corruption.
 
 The upstream check answers `{ status, latest, detail, checkedAt }` with `status` one of
 `current | update | unknown | unsupported | unavailable`. It is a call of its own rather

@@ -31,17 +31,18 @@ class HermesContainerFiles {
   private static final Duration EXEC_TIMEOUT = Duration.ofSeconds(30);
 
   /**
-   * The most bytes one write may carry. Every write here hands the whole file to the shell as
-   * a single argument, and Linux caps one argument at {@code MAX_ARG_STRLEN} — 32 pages, so
-   * 131072 bytes including the NUL. Past it the daemon refuses the exec before the script
-   * runs: measured on Docker 29, 131000 bytes wrote and 131100 answered
-   * {@code exec /usr/bin/sh: argument list too long}, which a caller saw as a 400 naming the
-   * shell — or, on a sensitive write, as a bare {@code exit code 126}.
+   * The most bytes a file body may travel as an argument. Linux caps one argv word at
+   * {@code MAX_ARG_STRLEN} — 32 pages, so 131072 bytes including the NUL — and the daemon
+   * refuses the exec before the script runs: measured on Docker 29, 131000 bytes wrote and
+   * 131100 answered {@code exec /usr/bin/sh: argument list too long}.
    *
-   * <p>ponytail: refuse with a reason. Streaming the content over the exec's stdin lifts the
-   * limit for every writer at once, and is the upgrade the day a file that size is wanted.
+   * <p>A body up to this size is written the plain way, as {@code $2} through {@link #exec};
+   * a larger one is fed to the same script over the exec's stdin and read back with
+   * {@code head -c}. Two spellings of one write on purpose: the argument form is the one every
+   * small config edit takes and the seam every test substitutes, and the hijacked-stdin form
+   * is kept for the rare file that needs it rather than put on the path of every write.
    */
-  static final int MAX_WRITE_BYTES = 131_071;
+  static final int MAX_ARG_BYTES = 131_071;
 
   private final DockerExecService dockerExec;
 
@@ -176,12 +177,17 @@ class HermesContainerFiles {
   }
 
   void writeFile(DockerHostRef host, String containerId, String path, String content) {
-    requireFitsInOneArgument(path, content);
+    Body body = Body.of(content);
     String script = String.join(" ",
-        "path=\"$1\"; content=\"$2\";",
+        "path=\"$1\";",
         "mkdir -p \"$(dirname \"$path\")\";",
-        "printf '%s' \"$content\" > \"$path\";");
-    exec(host, containerId, List.of("sh", "-lc", script, "_", path, content));
+        body.write("\"$path\""));
+    if (body.streamed()) {
+      dockerExec.runAsUser(host, containerId, "hermes", body.argv(script, path), "Hermes command",
+          true, false, EXEC_TIMEOUT, body.stdin());
+    } else {
+      exec(host, containerId, body.argv(script, path));
+    }
   }
 
   /**
@@ -190,29 +196,54 @@ class HermesContainerFiles {
    * delete half of a rename or a partially-written YAML document.
    */
   void writeFileAtomically(DockerHostRef host, String containerId, String path, String content) {
-    requireFitsInOneArgument(path, content);
+    Body body = Body.of(content);
     String script = String.join(" ",
-        "path=\"$1\"; content=\"$2\";",
+        "path=\"$1\";",
         "mkdir -p \"$(dirname \"$path\")\";",
         "tmp=\"${path}.mission-control.$$\";",
         "trap 'rm -f \"$tmp\"' 0 1 2 15;",
-        "printf '%s' \"$content\" > \"$tmp\";",
+        body.write("\"$tmp\""),
         "mv -f \"$tmp\" \"$path\";",
         "trap - 0 1 2 15;");
     // The complete YAML may carry authentication headers, so do not include
     // argv in Docker execution errors/logs.
-    execSensitive(
-        host, containerId, List.of("sh", "-lc", script, "_", path, content),
-        "write MCP configuration");
+    if (body.streamed()) {
+      dockerExec.runAsUser(host, containerId, "hermes", body.argv(script, path),
+          "write MCP configuration", true, true, EXEC_TIMEOUT, body.stdin());
+    } else {
+      execSensitive(host, containerId, body.argv(script, path), "write MCP configuration");
+    }
   }
 
-  /** Bytes, not characters: a multibyte body is refused where a same-length ASCII one is not. */
-  private static void requireFitsInOneArgument(String path, String content) {
-    int bytes = content == null ? 0 : content.getBytes(StandardCharsets.UTF_8).length;
-    if (bytes > MAX_WRITE_BYTES) {
-      throw new IllegalArgumentException(
-          path.substring(path.lastIndexOf('/') + 1) + " is " + bytes
-              + " bytes; a single write into the container is limited to " + MAX_WRITE_BYTES);
+  /**
+   * How a file body travels: as {@code $2} when it fits one argument, over stdin otherwise.
+   * {@code $2} is then the byte count, so {@code head -c} reads exactly the body and stops —
+   * the transport never closes the stream, and a {@code cat} would wait for the timeout.
+   */
+  private record Body(String content, byte[] bytes) {
+    static Body of(String content) {
+      String text = content == null ? "" : content;
+      return new Body(text, text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    boolean streamed() {
+      return bytes.length > MAX_ARG_BYTES;
+    }
+
+    /** The write into {@code target}, a quoted shell word. */
+    String write(String target) {
+      return streamed()
+          ? "head -c \"$2\" > " + target + ";"
+          : "printf '%s' \"$2\" > " + target + ";";
+    }
+
+    List<String> argv(String script, String path) {
+      return List.of("sh", "-lc", script, "_", path,
+          streamed() ? String.valueOf(bytes.length) : content);
+    }
+
+    byte[] stdin() {
+      return streamed() ? bytes : null;
     }
   }
 
