@@ -313,6 +313,38 @@ class ContainerInventoryTest {
   }
 
   @Test
+  void aReleaseReadThatFailsOrFindsNothingIsNullAndAFailedOneIsRetriedNextPoll() {
+    Container noImage = containerInState("aaaaaaa1111", "/no-image", "running", "Up 1 minute");
+    when(noImage.getImageId()).thenReturn(null);
+    Container failing = containerInState("bbbbbbb2222", "/failing", "running", "Up 1 minute");
+    when(failing.getImageId()).thenReturn("sha256:img-fail");
+    Container silent = containerInState("ccccccc3333", "/silent", "running", "Up 1 minute");
+    when(silent.getImageId()).thenReturn("sha256:img-silent");
+    stubListings(List.of(noImage, failing, silent), List.of(noImage, failing, silent));
+    stubStartedAt("aaaaaaa1111", "2026-08-24T07:00:00.000000000Z");
+    stubStartedAt("bbbbbbb2222", "2026-08-24T07:00:00.000000000Z");
+    stubStartedAt("ccccccc3333", "2026-08-24T07:00:00.000000000Z");
+    when(dockerExec.run(eq(HOST), eq("bbbbbbb2222"), any(), anyString(), anyBoolean(), anyBoolean(), any()))
+        .thenReturn(new ExecResult(1, "", "sh: not found"));
+    when(dockerExec.run(eq(HOST), eq("ccccccc3333"), any(), anyString(), anyBoolean(), anyBoolean(), any()))
+        .thenReturn(new ExecResult(0, "\n", ""));
+
+    Map<String, ContainerDto> first = byName(subject.listContainers(HOST, false));
+    Map<String, ContainerDto> second = byName(subject.listContainers(HOST, false));
+
+    assertNull(first.get("no-image").release());
+    assertNull(first.get("failing").release());
+    assertNull(first.get("silent").release());
+    assertNull(second.get("silent").release());
+    // no image id: nothing to key a read by, so none is attempted
+    verify(dockerExec, never()).run(any(), eq("aaaaaaa1111"), any(), anyString(), anyBoolean(), anyBoolean(), any());
+    // a read that did not run to completion is not remembered as "no release"
+    verify(dockerExec, times(2)).run(any(), eq("bbbbbbb2222"), any(), anyString(), anyBoolean(), anyBoolean(), any());
+    // one that ran and found nothing is — the image genuinely has no release to report
+    verify(dockerExec, times(1)).run(any(), eq("ccccccc3333"), any(), anyString(), anyBoolean(), anyBoolean(), any());
+  }
+
+  @Test
   void aRestartedContainerGetsAFreshUptimeEvenThoughItKeptItsId() {
     Container before = containerInState("aaaaaaa1111", "/live", "running", "Up 3 hours");
     Container after = containerInState("aaaaaaa1111", "/live", "running", "Up 2 seconds");

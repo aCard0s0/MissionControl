@@ -41,7 +41,7 @@ class McpServerDtoMapper {
         row.revision(), row.appliedRevision(), row.revision() > row.appliedRevision(),
         row.checkStatus(), row.checkError(), row.checkedAt(), row.latencyMs(), row.createdAt(), row.updatedAt(),
         // ponytail: one query per row; a GROUP BY over the listing if catalogs grow past dozens
-        links.findByServer(row.id()).size(), lifecycle.imageAsOf(row.id()));
+        links.findByServer(row.id()).size(), lifecycle.imageAsOf(row.id()), lifecycle.imageUpdate(row.id()));
   }
 
   /** How an Agent on the same host reaches this server: a managed one by its Compose

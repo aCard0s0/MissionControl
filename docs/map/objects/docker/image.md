@@ -44,7 +44,9 @@ about whether you are current — which is why [Container](container.md) carries
 - **joins:** [Container](container.md) by `image` + `imageDigest`;
   [upgrade-image](../../processes/upgrade-image.md) consumes a target tag
 - **looks-like-but-is-not:** the image of an [MCP server](../mcp/mcp-server-entry.md), which is
-  allowlisted config on a catalog row and goes through Compose, not through this catalog.
+  allowlisted config on a catalog row and goes through Compose, not through this catalog. It does
+  share one thing: `RegistryTagService.remoteDigest` answers "has this tag moved" for any Docker
+  Hub image, and `mcp/McpComposeLifecycle` uses it to flag a managed service's `imageUpdate`.
 
 ## If you change this
 

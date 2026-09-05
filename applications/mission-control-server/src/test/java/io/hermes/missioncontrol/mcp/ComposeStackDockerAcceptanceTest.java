@@ -93,7 +93,8 @@ class ComposeStackDockerAcceptanceTest {
     compose = new ComposeStackManager(stackDirectory.toString());
     lifecycle = new McpComposeLifecycle(repository, retained, hosts, mock(
         io.hermes.missioncontrol.docker.DockerGateway.class), compose, new ComposeStackRenderer(),
-        configs, Executors.newSingleThreadExecutor());
+        configs, Executors.newSingleThreadExecutor(),
+        mock(io.hermes.missioncontrol.docker.RegistryTagService.class));
 
     repository.insert(managedRow(configs));
   }

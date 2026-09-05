@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.DockerGateway;
 import io.hermes.missioncontrol.docker.DockerHostRef;
+import io.hermes.missioncontrol.docker.RegistryTagService;
 import io.hermes.missioncontrol.errors.UpstreamUnavailableException;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
@@ -58,6 +59,7 @@ class McpComposeLifecycleTest {
   private ComposeStackManager compose;
   private DockerGateway docker;
   private HostService hosts;
+  private RegistryTagService registry;
   private McpComposeLifecycle lifecycle;
 
   @BeforeEach
@@ -71,8 +73,9 @@ class McpComposeLifecycleTest {
     docker = mock(DockerGateway.class);
     hosts = mock(HostService.class);
     when(hosts.ref(HOST)).thenReturn(new DockerHostRef(HOST, "unix:///sock"));
+    registry = mock(RegistryTagService.class);
     lifecycle = new McpComposeLifecycle(repository, retained, hosts, docker, compose,
-        new ComposeStackRenderer(), configs, Executors.newSingleThreadExecutor());
+        new ComposeStackRenderer(), configs, Executors.newSingleThreadExecutor(), registry);
   }
 
   @AfterEach
@@ -425,6 +428,36 @@ class McpComposeLifecycleTest {
   }
 
   @Test
+  void anImageUpdateIsTheRegistryDigestDisagreeingWithTheContainers_andSilenceWhenEitherIsUnknown() {
+    String files = insertIdleManaged("Files");
+    when(compose.containerIdsByService(HOST_REF)).thenReturn(Map.of("mcp-files", "cid-files"));
+    when(registry.remoteDigest(anyString())).thenReturn("sha256:new");
+
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
+        .thenReturn(List.of(container("cid-files", "running", 1L, "sha256:old")));
+    lifecycle.refreshRuntime(repository.findAll());
+    assertEquals(Boolean.TRUE, lifecycle.imageUpdate(files), "the tag moved past what runs");
+
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
+        .thenReturn(List.of(container("cid-files", "running", 1L, "sha256:new")));
+    lifecycle.refreshRuntime(repository.findAll());
+    assertEquals(Boolean.FALSE, lifecycle.imageUpdate(files), "the same image on both sides");
+
+    // a locally built image has no repo digest: nothing to compare, so nothing is claimed
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
+        .thenReturn(List.of(container("cid-files", "running", 1L, null)));
+    lifecycle.refreshRuntime(repository.findAll());
+    assertNull(lifecycle.imageUpdate(files));
+
+    // and a registry that cannot answer — disabled, not Hub, offline — is the same silence
+    when(registry.remoteDigest(anyString())).thenReturn(null);
+    when(docker.listContainers(new DockerHostRef(HOST, "unix:///sock"), true))
+        .thenReturn(List.of(container("cid-files", "running", 1L, "sha256:old")));
+    lifecycle.refreshRuntime(repository.findAll());
+    assertNull(lifecycle.imageUpdate(files));
+  }
+
+  @Test
   void aListingCostsTwoDaemonReadsPerHostRatherThanTwoPerRow() {
     // per row this is a `docker compose ps` fork taken under the host's compose lock plus a
     // full container listing — the same lock a start or a stop holds for the length of its
@@ -562,8 +595,12 @@ class McpComposeLifecycleTest {
   }
 
   private static ContainerDto container(String id, String status, Long startedAt) {
+    return container(id, status, startedAt, null);
+  }
+
+  private static ContainerDto container(String id, String status, Long startedAt, String imageDigest) {
     return new ContainerDto(id, id.substring(0, Math.min(6, id.length())), "mc-mcp-files", HOST,
-        status, "example/files:1", null, null, null, startedAt, null, List.of());
+        status, "example/files:1", null, imageDigest, null, startedAt, null, List.of());
   }
 
   private String insertManaged(String name) {

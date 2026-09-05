@@ -397,6 +397,9 @@ export interface ApiMcpCatalogServer {
   /** When a managed service last started; every start pulls, so also when its image was last
    *  checked against the registry. Null unless running. */
   imageAsOf?: number | null;
+  /** Docker Hub publishes a different digest on the image's tag than the container runs — the
+   *  same rule the Hermes containers use. Null when that cannot be told. */
+  imageUpdate?: boolean | null;
   revision?: number;
   appliedRevision?: number;
   pendingChanges?: boolean;

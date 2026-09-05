@@ -79,6 +79,12 @@
                 <strong>{{ server.name }}</strong>
                 <span class="chip info">{{ server.transport }}</span>
                 @if (server.pendingChanges) { <span class="chip warn">apply required</span> }
+                @if (server.imageUpdate) {
+                  <!-- the registry's digest for this tag differs from the container's — the rule
+                       the Hermes containers use, so the badge means the same thing on both pages -->
+                  <span class="chip warn" [title]="'Docker Hub publishes a newer image on ' + server.image
+                          + (server.runtimeState === 'running' ? ' — pull & restart moves to it' : ' — start pulls it')">update available</span>
+                }
                 @if (operationActive(server.operationState)) {
                   <span class="chip info">{{ server.operationState }}…</span>
                 }
@@ -135,8 +141,11 @@
                   <button class="btn sm" [disabled]="isBusy(server)" (click)="run(server, 'apply')">apply & restart</button>
                 } @else if (server.runtimeState === 'running') {
                   <!-- the same apply: it always pulls, so with nothing pending it is a re-pull -->
-                  <button class="btn sm ghost" [disabled]="isBusy(server)" (click)="run(server, 'apply')"
-                          title="pull the image again and recreate the service on it">pull & restart</button>
+                  <button class="btn sm" [class.primary]="server.imageUpdate" [class.ghost]="!server.imageUpdate"
+                          [disabled]="isBusy(server)" (click)="run(server, 'apply')"
+                          [title]="server.imageUpdate
+                                     ? 'a newer image is published — pull it and recreate the service on it'
+                                     : 'pull the image again and recreate the service on it'">pull & restart</button>
                 }
                 @if (server.runtimeState === 'running') {
                   <button class="btn sm" [disabled]="server.checkStatus === 'checking'" (click)="run(server, 'check')">

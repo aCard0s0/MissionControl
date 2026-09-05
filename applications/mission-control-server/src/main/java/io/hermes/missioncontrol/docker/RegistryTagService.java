@@ -57,6 +57,9 @@ public class RegistryTagService {
   private record Cached(List<ImageTagDto> tags, String detail, long at, boolean ok) {
   }
 
+  private record CachedDigest(String digest, long at, boolean ok) {
+  }
+
   /**
    * The single outbound call this service makes, as a seam.
    *
@@ -89,6 +92,15 @@ public class RegistryTagService {
    */
   private final Map<String, Cached> cache = new ConcurrentHashMap<>();
   private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
+
+  /**
+   * {@link #remoteDigest} answers, keyed by Hub path and tag. This is the per-user-supplied
+   * repository case the comment above warns about: the keys are the images of the managed MCP
+   * catalog, so the set is bounded by the catalog and a deleted entry's key lingers until the
+   * sweep in {@link #remember} drops what has gone unasked-for past its TTL.
+   */
+  private final Map<String, CachedDigest> digests = new ConcurrentHashMap<>();
+  private static final int DIGEST_SWEEP_AT = 256;
 
   private final boolean enabled;
 
@@ -165,6 +177,51 @@ public class RegistryTagService {
     } finally {
       lock.unlock();
     }
+  }
+
+  /**
+   * The registry's current manifest digest for one {@code repository:tag}, or null when it
+   * cannot say — lookups disabled, not a Docker Hub image, or the registry unreachable with no
+   * earlier answer to fall back on.
+   *
+   * <p>Compared against a container's own {@code imageDigest} this is the one honest answer to
+   * "is a newer image published on this tag": the same rule the Hermes containers use, applied
+   * to the images of the managed MCP stack. Cached like {@link #tags}, with the same fallback to
+   * a stale answer through an outage. Never throws.
+   */
+  public String remoteDigest(String imageReference) {
+    if (!enabled || imageReference == null) return null;
+    String[] parts = ImageRef.splitImage(imageReference);
+    String path = ImageRef.dockerHubPath(parts[0]);
+    if (path == null) return null;
+    String key = path + ":" + parts[1];
+
+    CachedDigest hit = digests.get(key);
+    long now = clock.getAsLong();
+    if (hit != null && now - hit.at() < (hit.ok() ? OK_TTL_MS : ERROR_TTL_MS)) return hit.digest();
+
+    ReentrantLock lock = locks.computeIfAbsent("digest " + key, ignored -> new ReentrantLock());
+    if (!lock.tryLock()) return hit == null ? null : hit.digest();
+    try {
+      String digest = text(json.readTree(fetcher.get(HUB + path + "/tags/" + parts[1])), "digest");
+      remember(key, new CachedDigest(digest, now, true));
+      return digest;
+    } catch (Exception e) {
+      log.debug("registry digest lookup failed for {}: {}", key, brief(e));
+      String stale = hit == null ? null : hit.digest();
+      remember(key, new CachedDigest(stale, now, false));
+      return stale;
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private void remember(String key, CachedDigest value) {
+    if (digests.size() >= DIGEST_SWEEP_AT) {
+      long now = clock.getAsLong();
+      digests.entrySet().removeIf(entry -> now - entry.getValue().at() >= OK_TTL_MS);
+    }
+    digests.put(key, value);
   }
 
   private List<ImageTagDto> fetchAll(String path) throws Exception {

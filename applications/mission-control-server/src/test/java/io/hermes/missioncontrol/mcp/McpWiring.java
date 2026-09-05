@@ -65,7 +65,8 @@ final class McpWiring {
       ExecutorService operations) {
     McpConfigStore configs = new McpConfigStore(new SecretsAtRest(cipher()), new ObjectMapper());
     McpComposeLifecycle lifecycle = new McpComposeLifecycle(repository, retained, hosts, docker,
-        compose, new ComposeStackRenderer(), configs, operations);
+        compose, new ComposeStackRenderer(), configs, operations,
+        org.mockito.Mockito.mock(io.hermes.missioncontrol.docker.RegistryTagService.class));
     McpCatalogSeeder seeder = new McpCatalogSeeder(repository, configs);
     return new Graph(
         new McpRegistryService(

@@ -47,4 +47,8 @@ public record McpServerDto(
     int linkedAgents,
     /** When a managed service last started, which — because every start and apply pulls — is the
      *  last moment its image was checked against the registry. Null unless it is running. */
-    Long imageAsOf) {}
+    Long imageAsOf,
+    /** Whether the registry publishes a different image on this tag than the container runs.
+     *  Null when that cannot be told: no container, no repo digest, not a Docker Hub image,
+     *  registry lookups disabled or unreachable. */
+    Boolean imageUpdate) {}

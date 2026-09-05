@@ -516,6 +516,7 @@ export interface McpCatalogServer {
   latencyMs: number | null;
   linkedAgents: number;           // agent profiles carrying this entry
   imageAsOf: number | null;       // last start of a managed service = last image pull/verify
+  imageUpdate: boolean | null;    // the registry moved the tag past what runs; null = cannot tell
   revision: number;
   appliedRevision: number;
   pendingChanges: boolean;

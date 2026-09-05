@@ -52,6 +52,68 @@ class RegistryTagServiceTest {
   }
 
   @Test
+  void oneTagsDigestIsReadFromHubCachedAndServedStaleThroughAnOutage() {
+    long[] now = {0};
+    int[] calls = {0};
+    String[] body = {"{\"name\": \"latest\", \"digest\": \"sha256:aaa\"}"};
+    RegistryTagService.PageFetcher fetcher = url -> {
+      calls[0]++;
+      assertEquals("https://hub.docker.com/v2/repositories/mcp/playwright/tags/latest", url);
+      if (body[0] == null) throw new IllegalStateException("registry responded 503");
+      return body[0];
+    };
+    RegistryTagService service = new RegistryTagService(json, true, fetcher, () -> now[0]);
+
+    assertEquals("sha256:aaa", service.remoteDigest("mcp/playwright:latest"));
+    assertEquals("sha256:aaa", service.remoteDigest("mcp/playwright"), "no tag means latest");
+    assertEquals(1, calls[0], "the second read is the cache");
+
+    // past the TTL the registry is asked again; when it is down the last answer still stands
+    now[0] = 600_001;
+    body[0] = null;
+    assertEquals("sha256:aaa", service.remoteDigest("mcp/playwright:latest"));
+    assertEquals(2, calls[0]);
+
+    // not Hub, and disabled: nothing is even attempted
+    assertNull(service.remoteDigest("ghcr.io/acme/tool:1"));
+    assertNull(service.remoteDigest(null));
+    assertNull(new RegistryTagService(json, false, fetcher, () -> 0).remoteDigest("mcp/playwright:latest"));
+    assertEquals(2, calls[0]);
+  }
+
+  @Test
+  void aDigestLookupThatNeverSucceededIsNullAndNotRetriedUntilTheNegativeTtlPasses() {
+    long[] now = {0};
+    int[] calls = {0};
+    RegistryTagService.PageFetcher fetcher = url -> { calls[0]++; throw new IllegalStateException("registry responded 503"); };
+    RegistryTagService service = new RegistryTagService(json, true, fetcher, () -> now[0]);
+
+    assertNull(service.remoteDigest("mcp/playwright:latest"));
+    assertNull(service.remoteDigest("mcp/playwright:latest"));
+    assertEquals(1, calls[0], "an offline registry is asked once a minute, not once a poll");
+
+    now[0] = 60_001;
+    assertNull(service.remoteDigest("mcp/playwright:latest"));
+    assertEquals(2, calls[0]);
+  }
+
+  @Test
+  void theDigestCacheSweepsWhatHasGoneUnaskedForPastItsTtl() {
+    long[] now = {0};
+    RegistryTagService.PageFetcher fetcher = url -> "{\"digest\": \"sha256:" + url.hashCode() + "\"}";
+    RegistryTagService service = new RegistryTagService(json, true, fetcher, () -> now[0]);
+
+    // a catalog's worth of distinct images, then enough time for all of them to expire
+    for (int i = 0; i < 300; i++) service.remoteDigest("acme/tool-" + i + ":1");
+    now[0] = 600_001;
+    // the write that crosses the sweep threshold drops the expired ones rather than growing forever
+    assertEquals("sha256:" + "https://hub.docker.com/v2/repositories/acme/fresh/tags/1".hashCode(),
+        service.remoteDigest("acme/fresh:1"));
+    assertEquals("sha256:" + "https://hub.docker.com/v2/repositories/acme/tool-0/tags/1".hashCode(),
+        service.remoteDigest("acme/tool-0:1"), "an evicted key is simply fetched again");
+  }
+
+  @Test
   void dropsInactiveTagsBecauseTheyCannotBePulled() throws Exception {
     List<ImageTagDto> tags = RegistryTagService.parseHubPage(json.readTree(PAGE));
     assertTrue(tags.stream().noneMatch(t -> "v2026.1.1".equals(t.tag())));

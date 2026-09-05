@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.mcp;
 
 import io.hermes.missioncontrol.docker.ContainerDto;
 import io.hermes.missioncontrol.docker.DockerGateway;
+import io.hermes.missioncontrol.docker.RegistryTagService;
 import io.hermes.missioncontrol.hosts.HostService;
 import io.hermes.missioncontrol.mcp.ComposeStackRenderer.Deployment;
 import io.hermes.missioncontrol.mcp.McpServerRepository.ServerRow;
@@ -41,6 +42,7 @@ class McpComposeLifecycle {
   private final ComposeStackRenderer renderer;
   private final McpConfigStore configs;
   private final ExecutorService operations;
+  private final RegistryTagService registry;
 
   /**
    * When each managed service's container started, by server id, from the last runtime refresh.
@@ -50,9 +52,16 @@ class McpComposeLifecycle {
    * has without asking a registry itself. Held in memory and not in SQLite: it is the daemon's,
    * and a listing re-reads it anyway.
    */
-  // ponytail: start time as the staleness proxy; compare image digests against the registry
-  // if operators need "a newer image exists" rather than "last pulled 12 days ago"
   private final Map<String, Long> imageAsOf = new ConcurrentHashMap<>();
+
+  /**
+   * Whether the registry has moved the tag past what each container runs, by server id.
+   *
+   * <p>The container's repo digest against the registry's digest for the same tag — the rule
+   * the Hermes containers already use, so "update available" means one thing on both pages.
+   * Absent when either side is unknown, so nothing here can invent a prompt.
+   */
+  private final Map<String, Boolean> imageUpdate = new ConcurrentHashMap<>();
 
   McpComposeLifecycle(
       McpServerRepository repository,
@@ -62,7 +71,8 @@ class McpComposeLifecycle {
       ComposeStackManager compose,
       ComposeStackRenderer renderer,
       McpConfigStore configs,
-      ExecutorService operations) {
+      ExecutorService operations,
+      RegistryTagService registry) {
     this.repository = repository;
     this.retained = retained;
     this.hosts = hosts;
@@ -71,6 +81,7 @@ class McpComposeLifecycle {
     this.renderer = renderer;
     this.configs = configs;
     this.operations = operations;
+    this.registry = registry;
   }
 
   /**
@@ -278,7 +289,7 @@ class McpComposeLifecycle {
         for (ServerRow row : host.getValue()) {
           String containerId = containerIds.get(row.serviceKey());
           ContainerDto container = containerId == null ? null : containers.get(containerId);
-          rememberImageAsOf(row.id(), container);
+          rememberImageFacts(row, container);
           McpRuntimeState runtime = containerId == null
               ? McpRuntimeState.MISSING
               : McpRuntimeState.fromContainerStatus(container == null ? null : container.status());
@@ -314,7 +325,7 @@ class McpComposeLifecycle {
             .findFirst().orElse(null);
         runtime = McpRuntimeState.fromContainerStatus(container == null ? null : container.status());
       }
-      rememberImageAsOf(row.id(), container);
+      rememberImageFacts(row, container);
       if (!runtime.wire().equals(row.runtimeState())) {
         repository.updateRuntime(row.id(), runtime.wire());
         return requireRow(row.id());
@@ -332,9 +343,20 @@ class McpComposeLifecycle {
     return imageAsOf.get(serverId);
   }
 
-  private void rememberImageAsOf(String serverId, ContainerDto container) {
-    if (container == null || container.startedAt() == null) imageAsOf.remove(serverId);
-    else imageAsOf.put(serverId, container.startedAt());
+  /** Whether the registry publishes a different image on this server's tag, or null. */
+  Boolean imageUpdate(String serverId) {
+    return imageUpdate.get(serverId);
+  }
+
+  private void rememberImageFacts(ServerRow row, ContainerDto container) {
+    String id = row.id();
+    if (container == null || container.startedAt() == null) imageAsOf.remove(id);
+    else imageAsOf.put(id, container.startedAt());
+
+    String local = container == null ? null : container.imageDigest();
+    String remote = local == null ? null : registry.remoteDigest(configs.read(row).image());
+    if (local == null || remote == null) imageUpdate.remove(id);
+    else imageUpdate.put(id, !remote.equals(local));
   }
 
   /** Whether the daemon has anything to say about this row: only a managed one, and only while

@@ -171,6 +171,24 @@ describe('McpServersPage roster', () => {
     expect(store.catalog.apply).toHaveBeenCalledWith('browser');
   });
 
+  it('flags a moved tag as an update, the way the containers page does, and leads with the pull', () => {
+    const { fixture } = render(storeStub([
+      server('browser', { runtimeState: 'running', imageUpdate: true }),
+      server('files', { runtimeState: 'running', imageUpdate: false }),
+      server('think', { runtimeState: 'stopped', imageUpdate: null }),
+    ]));
+    const rows = el(fixture).querySelectorAll('.server-row');
+    const pull = (row: Element) =>
+      [...row.querySelectorAll<HTMLButtonElement>('.server-actions button')].find(b => b.textContent!.trim() === 'pull & restart');
+
+    expect(rows[0].textContent).toContain('update available');
+    expect(pull(rows[0])!.classList.contains('primary')).toBe(true);
+    // current, and unknown: no badge — silence rather than an invented prompt
+    expect(rows[1].textContent).not.toContain('update available');
+    expect(pull(rows[1])!.classList.contains('ghost')).toBe(true);
+    expect(rows[2].textContent).not.toContain('update available');
+  });
+
   it('starts or stops a whole managed stack from its header, skipping what is already there', async () => {
     const { fixture, store } = render(storeStub([
       server('browser', { runtimeState: 'running' }),

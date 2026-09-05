@@ -81,7 +81,7 @@ class McpGroupControllerTest {
     return new McpServerDto(id, name, "desc", null, "external", "dh-local", "svc", "http",
         "http://files:8080", "http://files:8080", "img:1", null, List.of(), List.of(), null,
         List.of(), 8080, null, "/mcp", null, List.of(), List.of(), List.of(), null, List.of(),
-        "running", "running", null, null, 1L, 1L, false, "ok", null, 5L, 3L, 1L, 2L, 0, null);
+        "running", "running", null, null, 1L, 1L, false, "ok", null, 5L, 3L, 1L, 2L, 0, null, null);
   }
 
   /** The catalog entry the group names exists and is called {@code name}. */

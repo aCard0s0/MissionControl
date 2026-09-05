@@ -71,7 +71,7 @@ export const catalogServer = (
   headers: [], environment: [], volumes: [], healthcheck: null, supportServices: [],
   desiredState: 'stopped', runtimeState: 'stopped', operationState: 'idle', operationError: null,
   checkStatus: 'unknown', checkError: null, checkedAt: null, latencyMs: null,
-  linkedAgents: 0, imageAsOf: null,
+  linkedAgents: 0, imageAsOf: null, imageUpdate: null,
   revision: 1, appliedRevision: 1, pendingChanges: false, serviceKey: id,
   createdAt: 1, updatedAt: 1, ...patch,
 });
