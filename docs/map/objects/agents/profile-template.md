@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: claude/template-model-picker @ 2b1cf11 · 2026-09-05
+verified: claude/template-model-picker @ 3a8d9db · 2026-09-05
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/templates/
 ---
 
