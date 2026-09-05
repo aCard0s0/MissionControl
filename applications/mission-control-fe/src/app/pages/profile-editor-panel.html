@@ -53,13 +53,18 @@
     <div class="row">
       <div class="field">
         <label for="bp-provider">provider</label>
-        <select id="bp-provider" class="select" [(ngModel)]="form.provider">
+        <select id="bp-provider" class="select" [ngModel]="form.provider" (ngModelChange)="onProvider($event)">
           @for (p of providerChoices(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
         </select>
       </div>
       <div class="field">
-        <label for="bp-model">model</label>
-        <input id="bp-model" class="input" [(ngModel)]="form.model" placeholder="Hermes-4-405B" />
+        <label for="bp-model">model @if (picker.loading()) { <span class="faint">loading…</span> }
+          @else if (picker.sourceLabel()) { <span class="faint">{{ picker.sourceLabel() }}</span> }</label>
+        <input id="bp-model" class="input" [(ngModel)]="picker.model" list="bp-model-list"
+               placeholder="model id" autocomplete="off" />
+        <datalist id="bp-model-list">
+          @for (m of picker.suggestions(); track m) { <option [value]="m"></option> }
+        </datalist>
       </div>
     </div>
 

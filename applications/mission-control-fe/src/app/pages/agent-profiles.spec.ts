@@ -46,6 +46,8 @@ const storeStub = (templates: ProfileTemplate[] = [template()]) => ({
   },
   providers: {
     llmProviders: signal(llm),
+    // the editor loads the chosen provider's catalog; these specs are about the page
+    modelCatalog: vi.fn().mockResolvedValue({ models: [], source: null }),
   },
   endpoints: { endpoints: signal([]) },
   templates: {

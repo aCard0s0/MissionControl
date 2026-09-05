@@ -3,11 +3,13 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { Credential, McpCatalogServer, ProfileTemplate } from '../core/models';
+import {
+  Credential, InferenceEndpoint, LlmProvider, McpCatalogServer, ProfileTemplate,
+} from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
 import { AGENT_ICONS } from '../shared/agent-icon';
-import { TestFixture, el, press, type } from '../testing/dom';
+import { TestFixture, choose, el, field, fill, press, type } from '../testing/dom';
 import { catalogServer as sharedCatalogServer } from '../testing/models';
 import { provideStores } from '../testing/store';
 
@@ -17,6 +19,19 @@ const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
   baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
   secrets: [], createdAt: 1, updatedAt: 1, ...patch,
 });
+
+const llm: LlmProvider[] = [
+  { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
+  { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
+    envVar: 'ANTHROPIC_API_KEY' },
+  { key: 'custom', label: 'Custom endpoint', needsKey: true, oauth: false, hasCatalog: false,
+    envVar: 'CUSTOM_API_KEY' },
+];
+
+const ollama: InferenceEndpoint[] = [{
+  id: 'mp-1', name: 'workstation', url: 'http://10.0.0.5:11434', kind: 'ollama',
+  status: 'connected', version: null, detail: null, canManageModels: true,
+}];
 
 /** Only what the panel reaches for on the store, so nothing here touches a backend. */
 const storeStub = (
@@ -32,9 +47,14 @@ const storeStub = (
     toast: vi.fn(),
   },
   providers: {
-    llmProviders: signal([]),
+    llmProviders: signal(llm),
+    modelCatalog: vi.fn().mockResolvedValue(
+      { models: ['claude-opus-5', 'claude-sonnet-5'], source: 'catalog' }),
   },
-  endpoints: { endpoints: signal([]) },
+  endpoints: {
+    endpoints: signal(ollama),
+    models: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
+  },
   credentials: { credentials: signal(credentials) },
   templates: {
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
@@ -216,6 +236,58 @@ describe('ProfileEditorPanel', () => {
 
     expect(host.closes).toBe(1);
     expect(store.templates.save).not.toHaveBeenCalled();
+  });
+});
+
+const modelInput = (fixture: TestFixture): HTMLInputElement =>
+  field(fixture, 'model').querySelector<HTMLInputElement>('.input')!;
+
+const modelOptions = (fixture: TestFixture): string[] =>
+  Array.from(el(fixture).querySelectorAll<HTMLOptionElement>('#bp-model-list option')).map(o => o.value);
+
+describe('ProfileEditorPanel model', () => {
+  it('offers the provider\'s catalog, keeping a stored model the list does not carry', async () => {
+    // the default draft names Hermes-4-405B; the catalog stub does not — the stored one wins
+    const { fixture, store } = await render(storeStub(), newProfileDraft(), 'closed');
+
+    expect(store.providers.modelCatalog).toHaveBeenCalledWith('nous');
+    expect(modelOptions(fixture)).toEqual(['claude-opus-5', 'claude-sonnet-5']);
+    expect(modelInput(fixture).value).toBe('Hermes-4-405B');
+  });
+
+  it('re-selects from the new provider\'s list on a switch — an endpoint lists what it runs',
+    async () => {
+      const draft = newProfileDraft();
+      const { fixture, store } = await render(storeStub(), draft, 'closed');
+
+      await choose(fixture, 'provider', 'ollama: workstation');
+      fixture.detectChanges();
+
+      expect(store.endpoints.models).toHaveBeenCalledWith('mp-1');
+      expect(draft.provider).toBe('ollama: workstation');
+      expect(modelOptions(fixture)).toEqual(['gemma3:4b']);
+      expect(modelInput(fixture).value).toBe('gemma3:4b');
+    });
+
+  it('offers nothing for a provider without a catalog, so the field stays free text', async () => {
+    const { fixture, store } = await render(storeStub(), newProfileDraft(), 'closed');
+
+    await choose(fixture, 'provider', 'custom');
+
+    expect(store.providers.modelCatalog).not.toHaveBeenCalledWith('custom');
+    expect(modelOptions(fixture)).toEqual([]);
+  });
+
+  it('saves the model the field holds, picked or typed', async () => {
+    const draft = { ...newProfileDraft(), name: 'ops-sre' };
+    const { fixture, store } = await render(storeStub(), draft, 'closed');
+
+    await fill(fixture, 'model', 'claude-sonnet-5');
+    press(fixture, 'create template', '.editor-actions');
+    await fixture.whenStable();
+
+    expect(store.templates.save.mock.calls[0][0]).toMatchObject({ model: 'claude-sonnet-5' });
+    expect(draft.model).toBe('claude-sonnet-5');
   });
 });
 

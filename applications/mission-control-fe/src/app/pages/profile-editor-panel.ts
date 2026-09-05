@@ -12,6 +12,7 @@ import { TemplateStore } from '../core/store/template-store';
 import { McpCatalogServer, ProfileTemplate, TemplateMcp } from '../core/models';
 import { AGENT_ICONS, AgentIconView } from '../shared/agent-icon';
 import { McpEndpointForm } from '../shared/mcp-endpoint-form';
+import { ModelPicker, modelCatalogFor } from '../shared/model-picker';
 import { StatusDot } from '../shared/status-dot';
 import { providerOptions } from '../shared/provider-resolve';
 import {
@@ -75,6 +76,11 @@ export class ProfileEditorPanel {
   protected readonly providerChoices = computed(() =>
     providerOptions(this.providers.llmProviders(), this.endpoints.endpoints()));
 
+  /** The model field and the suggestions behind it: the chosen provider's catalog, or an
+   *  endpoint's installed models. It holds the model while editing; `save` copies it back
+   *  onto the draft, the same way the create dialog reads its picker on submit. */
+  protected readonly picker = new ModelPicker();
+
   /** Categories already in use, offered as a datalist so the library stays tidy
    *  without turning the field into a fixed list. */
   protected readonly templateCategories = computed(() => this.templates.categories());
@@ -94,15 +100,30 @@ export class ProfileEditorPanel {
     // a different draft means a different blueprint (or a fresh one): half-typed
     // rows from the last one must not carry over
     effect(() => {
-      this.draft();
+      const form = this.draft();
       untracked(() => {
         this.resetScratch();
         // the groups close with it — otherwise the next blueprint opens on
         // whatever the last one happened to have expanded
         this.openGroups.set(new Set());
         this.iconOpen.set(false);
+        // show the stored model at once; the catalog load keeps it as `preferred`, so a
+        // model the list does not carry (a fine-tune, a typed id) is not replaced
+        this.picker.model = form.model;
+        void this.picker.load(this.catalogFor(form.provider), { preferred: form.model });
       });
     });
+  }
+
+  // ── provider & model ────────────────────────────────────────────────────
+  protected onProvider(option: string): void {
+    this.draft().provider = option;
+    this.picker.model = '';   // drop the prior provider's model; the load re-selects
+    void this.picker.load(this.catalogFor(option));
+  }
+
+  private catalogFor(option: string) {
+    return modelCatalogFor(option, this.providers, this.endpoints);
   }
 
   // ── icon ────────────────────────────────────────────────────────────────
@@ -273,6 +294,7 @@ export class ProfileEditorPanel {
     const draft = this.draft();
     if (!this.canSave() || this.saving()) return;
     this.saving.set(true);
+    draft.model = this.picker.model;
     const id = await this.templates.save(
       profileDraftToInput(draft, this.endpoints.endpoints()), draft.id ?? undefined);
     this.saving.set(false);
