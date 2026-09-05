@@ -13,6 +13,10 @@
       <div class="field">
         <label for="deploy-agent-name">agent name</label>
         <input id="deploy-agent-name" class="input" [(ngModel)]="name" placeholder="ops-bot" />
+        @if (folded()) {
+          <p class="lock-hint">hermes keeps profile names lowercase — this agent will be created as
+            <code class="mono">{{ name.trim().toLowerCase() }}</code></p>
+        }
       </div>
       @if (!targets().length) {
         <p class="lock-hint">no running containers available — start or deploy one from the Containers page first.</p>

@@ -37,7 +37,7 @@ a managed server that is not running.
 
 `skills/GuideDeploy.java:63` follows the rule
 [profile-edit](../../processes/profile-edit.md) inherits from
-`agents/templates/TemplateApplier.java:60` — *layering onto a profile the caller does not own
+`agents/templates/TemplateApplier.java:87` — *layering onto a profile the caller does not own
 surfaces the error and does not roll back*. Undoing half a guide would mean removing skills
 and MCP entries that may have been on that agent **before the guide ever ran**.
 
@@ -72,7 +72,7 @@ Two orderings are load-bearing:
   (`:244`); index on `category` (`:250`)
 - `SkillGuide` — `skills/SkillGuide.java`
 - `GuideDocument.render` — `skills/GuideDocument.java:30`, the umbrella SKILL.md
-- `SkillDeployer` — `skills/SkillDeployer.java:33`, shared with the skill library
+- `SkillDeployer` — `skills/SkillDeployer.java:34`, shared with the skill library
 - `GuideDeploy` — `skills/GuideDeploy.java:39`, the deploy itself; the controller only
   resolves the guide and the host
 

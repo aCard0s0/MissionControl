@@ -48,6 +48,9 @@ class SchemaUpgrades {
       new AddedColumn("profile_templates", "category", "TEXT"),
       // …and a glyph, drawn beside the name in the list and the editor.
       new AddedColumn("profile_templates", "icon", "TEXT"),
+      // …and two more lists to deploy: rows of the skill library, and guides.
+      new AddedColumn("profile_templates", "library_skill_ids", "TEXT"),
+      new AddedColumn("profile_templates", "guide_ids", "TEXT"),
       // A catalog entry gained a link to where it comes from, for the roster's `repo` button.
       new AddedColumn("mcp_servers", "repo_url", "TEXT"));
 

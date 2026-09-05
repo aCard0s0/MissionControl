@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 /**
  * Writing the API keys a profile's model settings need, and refusing a profile that ended up
@@ -120,6 +122,35 @@ class HermesModelConfigWritesTest {
         new AuxiliaryModelSpec("nous", "Hermes-4-70B", null, "token"));
 
     verifyNoInteractions(env);
+  }
+
+  // ── the routing key the provider does not use ───────────────────────────
+
+  @Test
+  void theOtherRoutingKeyIsUnsetAfterTheSetsAndWithoutCheckingTheExit() {
+    // hermes answers 1 to unsetting a key that is already absent, and builds before v0.21.0 —
+    // where the bare `model` set still wipes the map — have no `unset` at all
+    modelConfig.write(HOST, CONTAINER, PROFILE, "openai", "gpt-5.5", null,
+        new ModelTarget("openai", "gpt-5.5", null));
+
+    InOrder order = inOrder(files);
+    order.verify(files).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "config", "set", "model.provider", "openai"), true);
+    order.verify(files).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "config", "unset", "model.base_url"), false);
+    verify(files, never()).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "config", "unset", "model.provider"), false);
+  }
+
+  @Test
+  void aCustomEndpointUnsetsTheProviderInstead() {
+    modelConfig.write(HOST, CONTAINER, PROFILE, "ollama", "qwen3:8b", "http://x:11434/v1",
+        new ModelTarget("ollama", "qwen3:8b", "http://x:11434/v1"));
+
+    verify(files).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "config", "unset", "model.provider"), false);
+    verify(files, never()).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "config", "unset", "model.base_url"), false);
   }
 
   // ── refusing a profile with no model ────────────────────────────────────

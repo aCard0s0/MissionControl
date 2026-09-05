@@ -9,6 +9,11 @@
   gap: 14px;
   max-height: calc(100dvh - 220px);
   overflow: auto;
+
+  // the pane scrolls; its children do not shrink to fit. Without this an open group
+  // (overflow: hidden, so no minimum height) was squeezed to make room, clipping its
+  // fields and undoing every drag on the SOUL.md resize handle
+  > * { flex: none; }
 }
 
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -133,7 +138,7 @@ textarea.code { resize: vertical; line-height: 1.5; white-space: pre; }
 .add-row {
   display: flex;
   gap: 8px;
-  .input { flex: 1; }
+  .input, .select { flex: 1; }
 }
 
 .add-mcp {

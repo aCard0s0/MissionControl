@@ -34,7 +34,7 @@ class ProfileTemplateRepositoryTest {
   private static ProfileTemplate template(String id, String name) {
     return new ProfileTemplate(id, name, "shield", "a description", "ops", "anthropic", "claude-opus-5",
         "https://api.anthropic.com", "/work", "you are helpful", "remembers things",
-        List.of("skill-a", "skill-b"),
+        List.of("skill-a", "skill-b"), List.of("s-1"), List.of("g-1"),
         List.of(new McpServerSpec("files", "stdio", null, "npx", "-y @modelcontextprotocol/files", true)),
         List.of(new StoredSecret("ANTHROPIC_API_KEY", "enc:v1:abc123")),
         1_700_000_000_000L, 1_700_000_001_000L);
@@ -60,6 +60,8 @@ class ProfileTemplateRepositoryTest {
     assertEquals(1_700_000_001_000L, found.updatedAt());
 
     assertEquals(List.of("skill-a", "skill-b"), found.skills());
+    assertEquals(List.of("s-1"), found.librarySkillIds());
+    assertEquals(List.of("g-1"), found.guideIds());
 
     McpServerSpec spec = found.mcpServers().getFirst();
     assertEquals("files", spec.name());
@@ -80,6 +82,9 @@ class ProfileTemplateRepositoryTest {
 
     ProfileTemplate found = repository.findById("pt-1").orElseThrow();
     assertTrue(found.skills().isEmpty());
+    // a blueprint written before these lists existed reads them as empty, not null
+    assertTrue(found.librarySkillIds().isEmpty());
+    assertTrue(found.guideIds().isEmpty());
     assertTrue(found.mcpServers().isEmpty());
     assertTrue(found.secrets().isEmpty());
   }

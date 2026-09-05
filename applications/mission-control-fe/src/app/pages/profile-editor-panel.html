@@ -53,13 +53,18 @@
     <div class="row">
       <div class="field">
         <label for="bp-provider">provider</label>
-        <select id="bp-provider" class="select" [(ngModel)]="form.provider">
+        <select id="bp-provider" class="select" [ngModel]="form.provider" (ngModelChange)="onProvider($event)">
           @for (p of providerChoices(); track p.value) { <option [value]="p.value">{{ p.label }}</option> }
         </select>
       </div>
       <div class="field">
-        <label for="bp-model">model</label>
-        <input id="bp-model" class="input" [(ngModel)]="form.model" placeholder="Hermes-4-405B" />
+        <label for="bp-model">model @if (picker.loading()) { <span class="faint">loading…</span> }
+          @else if (picker.sourceLabel()) { <span class="faint">{{ picker.sourceLabel() }}</span> }</label>
+        <input id="bp-model" class="input" [(ngModel)]="picker.model" list="bp-model-list"
+               placeholder="model id" autocomplete="off" />
+        <datalist id="bp-model-list">
+          @for (m of picker.suggestions(); track m) { <option [value]="m"></option> }
+        </datalist>
       </div>
     </div>
 
@@ -130,11 +135,27 @@
       @if (groupOpen('skills')) {
         <div class="group-b">
           <div class="chips edit-chips">
-            @for (s of form.skills; track s) {
-              <span class="chip on">{{ s }}<button class="x" type="button" (click)="removeSkill(s)">×</button></span>
+            @for (id of form.librarySkillIds; track id) {
+              <span class="chip" [class.on]="skillLibrary.byId(id)" [class.warn]="!skillLibrary.byId(id)"
+                    [title]="skillLibrary.byId(id) ? 'from the skill library' : 'no longer in the library — a deploy will refuse it'">
+                {{ librarySkillLabel(id) }}{{ skillLibrary.byId(id) ? '' : ' ⚠' }}<button class="x" type="button" (click)="removeLibrarySkill(id)">×</button>
+              </span>
             }
-            @if (!form.skills.length) { <span class="faint mono empty-note">no skills</span> }
+            @for (s of form.skills; track s) {
+              <span class="chip on" title="Skills Hub id">{{ s }}<button class="x" type="button" (click)="removeSkill(s)">×</button></span>
+            }
+            @if (!form.skills.length && !form.librarySkillIds.length) { <span class="faint mono empty-note">no skills</span> }
           </div>
+          <div class="add-row">
+            <select class="select" aria-label="library skill" [(ngModel)]="librarySkillId">
+              <option value="">from the skill library…</option>
+              @for (s of skillLibrary.skills(); track s.id) {
+                <option [value]="s.id">{{ s.name }} · {{ s.kind }}</option>
+              }
+            </select>
+            <button class="btn sm" type="button" [disabled]="!librarySkillId" (click)="addLibrarySkill()">add skill</button>
+          </div>
+          <div class="or mono faint"><span>or a Skills Hub id</span></div>
           <div class="add-row">
             <input class="input" [(ngModel)]="newSkill" placeholder="skill-id e.g. web-research"
                    (keydown.enter)="addSkill()" />
@@ -203,6 +224,46 @@
             }
             <button class="btn sm" type="button" [disabled]="!mcpForm.valid()" (click)="addMcp()">add</button>
           </div>
+        </div>
+      }
+    </div>
+
+    <div class="group" [class.open]="groupOpen('guides')">
+      <button class="group-h" type="button" (click)="toggleGroup('guides')"
+              [attr.aria-expanded]="groupOpen('guides')">
+        <span class="disc">{{ groupOpen('guides') ? '▾' : '▸' }}</span>
+        <span class="group-t mono">guides</span>
+        <span class="spacer"></span>
+        <span class="group-note faint mono">{{ groupNote('guides') }}</span>
+      </button>
+      @if (groupOpen('guides')) {
+        <div class="group-b">
+          @for (id of form.guideIds; track id) {
+            <div class="line mono">
+              @if (guide(id); as g) {
+                <span class="ln-name">{{ g.name }}</span>
+                <span class="ln-detail faint">{{ guideBrings(g) }}</span>
+              } @else {
+                <span class="ln-name">{{ id }}</span>
+                <mc-status status="error" label="no longer in the library" />
+              }
+              <span class="spacer"></span>
+              <button class="btn ghost sm" type="button" (click)="removeGuide(id)">remove</button>
+            </div>
+          }
+          @if (!form.guideIds.length) { <span class="faint mono empty-note">no guides</span> }
+          <div class="add-row">
+            <select class="select" aria-label="guide" [(ngModel)]="guideId">
+              <option value="">select a guide…</option>
+              @for (g of guides.guides(); track g.id) {
+                <option [value]="g.id">{{ g.name }} · {{ g.category }}</option>
+              }
+            </select>
+            <button class="btn sm" type="button" [disabled]="!guideId" (click)="addGuide()">add guide</button>
+          </div>
+          <p class="lock-hint">a guide is deployed whole: its skills, the MCP servers it links, and the guide itself
+            as an umbrella <code class="mono">SKILL.md</code> the agent reads. Edit the guide on the
+            <a routerLink="/skills">Skills</a> page; the next deploy picks the change up.</p>
         </div>
       }
     </div>

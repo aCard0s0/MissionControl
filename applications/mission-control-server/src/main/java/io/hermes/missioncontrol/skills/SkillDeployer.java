@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>This was inline in {@link SkillController} while there was a single caller. A guide
  * deploys several skills in a row and has to report on each one, so the branch now has two
- * callers and the second would have had to duplicate it.
+ * callers and the second would have had to duplicate it. A profile template is the third,
+ * from another package — which is all that {@code public} here means.
  *
  * <p>A {@code hub} row defers to hermes, which resolves the name against the Skills Hub and
  * owns the files it writes. A {@code local} row has no id to resolve — hermes has no
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Component;
  * for a hub skill would plant a stale copy beside the real one.
  */
 @Component
-class SkillDeployer {
+public class SkillDeployer {
 
   private final HermesProfiles profiles;
 
@@ -30,7 +31,7 @@ class SkillDeployer {
     this.profiles = profiles;
   }
 
-  AgentProfileDto deploy(
+  public AgentProfileDto deploy(
       DockerHostRef host, String containerId, String profile, Skill skill) {
     return Skill.LOCAL.equals(skill.kind())
         ? profiles.installSkillFiles(host, containerId, profile, skill.name(),

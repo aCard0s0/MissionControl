@@ -19,10 +19,16 @@ import io.hermes.missioncontrol.agents.api.CreateAgentRequest;
  * the controller's business.
  *
  * <p>The name rule lives in the canonical constructor, so it holds for the template flow as
- * well as the request one, and {@code HermesProfiles} no longer repeats it.
+ * well as the request one, and {@code HermesProfiles} no longer repeats it. So does the case
+ * fold: hermes lower-cases a name on {@code profile create} (its rule is
+ * {@code [a-z0-9][a-z0-9_-]{0,63}}), so {@code Coach} lands at {@code profiles/coach} and every
+ * later {@code -p Coach} misses the directory — argparse then reads the name as a subcommand and
+ * answers with its usage text, and the rollback's {@code test -d profiles/Coach} is false, which
+ * is how a half-built profile survived under a name nothing else could reach.
  *
  * @param containerId the Hermes container the profile is created in
- * @param name        a valid profile name — see {@link ProfilePaths#isValidName}
+ * @param name        a valid profile name — see {@link ProfilePaths#isValidName}; folded to
+ *                    lower case, because that is the directory hermes will create
  * @param provider    the model provider key, or blank/auto to leave it to hermes
  * @param model       the model id, passed verbatim so an OpenRouter namespace survives
  * @param apiKey      written to the profile's .env when the provider takes one; null to skip
@@ -61,6 +67,9 @@ public record ProfileSpec(
     if (containerId == null || containerId.isBlank()) {
       throw new IllegalArgumentException("missing container id");
     }
+    // once, here: the create, the config writes, the .env and the rollback then all name the
+    // directory hermes actually made
+    name = name == null ? null : name.toLowerCase(java.util.Locale.ROOT);
     if (!ProfilePaths.isValidName(name)) {
       throw new IllegalArgumentException("invalid profile name");
     }

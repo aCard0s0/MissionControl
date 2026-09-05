@@ -8,6 +8,7 @@ import io.hermes.missioncontrol.agents.api.AgentSetupDto;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
+import io.hermes.missioncontrol.common.IdList;
 import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.SecretInput;
@@ -193,7 +194,8 @@ public class ProfileTemplateService {
     return new ProfileTemplate(
         id, r.name(), nz(r.icon()), nz(r.description()), category(r.category()), nz(r.provider()), nz(r.model()),
         nz(r.baseUrl()), nz(r.cwd()), nz(r.soul()), nz(r.memory()),
-        nz(r.skills()), snapshots.materialize(r.mcpServers(), existing),
+        nz(r.skills()), IdList.normalize(r.librarySkillIds()), IdList.normalize(r.guideIds()),
+        snapshots.materialize(r.mcpServers(), existing),
         storedSecrets(r.secrets(), existing), created, updated);
   }
 
@@ -253,7 +255,7 @@ public class ProfileTemplateService {
     List<McpServerSpec> mcp = t.mcpServers().stream().map(TemplateSecrets::redacted).toList();
     return new ProfileTemplateDto(
         t.id(), t.name(), t.icon(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
-        t.soul(), t.memory(), t.skills(), mcp, refs, t.createdAt(), t.updatedAt());
+        t.soul(), t.memory(), t.skills(), t.librarySkillIds(), t.guideIds(), mcp, refs, t.createdAt(), t.updatedAt());
   }
 
   private ProfileTemplate require(String id) {

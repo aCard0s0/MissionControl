@@ -26,7 +26,11 @@ public record UpsertProfileTemplateRequest(
     String cwd,
     String soul,
     String memory,
+    /** Skills Hub ids, installed by name. */
     List<String> skills,
+    /** Library rows and guides, by id — the same caps a guide puts on its own lists. */
+    @Size(max = 64) List<@Size(max = 64) String> librarySkillIds,
+    @Size(max = 64) List<@Size(max = 64) String> guideIds,
     List<McpServerSpec> mcpServers,
     List<SecretInput> secrets) {
 }

@@ -229,8 +229,8 @@ describe('toProfileTemplate', () => {
   it('fills in every field a template row can omit', () => {
     expect(toProfileTemplate(minimal)).toEqual({
       id: 'pt-1', name: 'ops', icon: '', description: '', category: 'general', provider: '', model: '',
-      baseUrl: '', cwd: '', soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
-      createdAt: 1, updatedAt: 2,
+      baseUrl: '', cwd: '', soul: '', memory: '', skills: [], librarySkillIds: [], guideIds: [],
+      mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2,
     });
   });
 

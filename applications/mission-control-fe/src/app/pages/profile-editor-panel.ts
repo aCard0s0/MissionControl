@@ -6,12 +6,15 @@ import { RouterLink } from '@angular/router';
 import { McpCatalogStore } from '../core/store/mcp-catalog-store';
 import { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
 import { ProviderStore } from '../core/store/provider-store';
+import { SkillGuideStore } from '../core/store/skill-guide-store';
+import { SkillStore } from '../core/store/skill-store';
 import { StoreContext } from '../core/store/store-context';
 import { CredentialStore } from '../core/store/credential-store';
 import { TemplateStore } from '../core/store/template-store';
-import { McpCatalogServer, ProfileTemplate, TemplateMcp } from '../core/models';
+import { McpCatalogServer, ProfileTemplate, SkillGuide, TemplateMcp } from '../core/models';
 import { AGENT_ICONS, AgentIconView } from '../shared/agent-icon';
 import { McpEndpointForm } from '../shared/mcp-endpoint-form';
+import { ModelPicker, modelCatalogFor } from '../shared/model-picker';
 import { StatusDot } from '../shared/status-dot';
 import { providerOptions } from '../shared/provider-resolve';
 import {
@@ -20,13 +23,19 @@ import {
 } from './profile-editor';
 
 /**
- * The blueprint form: identity, the two files, and the three repeating lists a
- * profile carries — skills, MCP servers and encrypted keys.
+ * The blueprint form: identity, the two files, and the repeating lists a profile
+ * carries — skills, MCP servers, guides and encrypted keys.
  *
  * The page decides which draft exists (new, or loaded from a stored template);
  * this owns everything about editing it, including the scratch fields the "add"
  * rows type into. Those reset whenever a different draft arrives, which is why
  * the page hands over a fresh object each time rather than mutating one in place.
+ *
+ * Skills come from two places and the chip row shows both: a Skills Hub id the
+ * operator types, and a row of the dashboard's skill library picked from a list. A
+ * guide is picked the same way and brings its own skills and MCP servers with it —
+ * the backend resolves both kinds of reference when the blueprint is deployed, so a
+ * later edit to the library or the guide reaches the next deploy without a re-save.
  *
  * What a draft is and what the backend gets are in ./profile-editor, so what is
  * left here is the form's own bookkeeping.
@@ -49,6 +58,8 @@ export class ProfileEditorPanel {
   readonly removeRequested = output<ProfileTemplate>();
 
   protected readonly catalog = inject(McpCatalogStore);
+  protected readonly skillLibrary = inject(SkillStore);
+  protected readonly guides = inject(SkillGuideStore);
   private readonly ctx = inject(StoreContext);
   private readonly providers = inject(ProviderStore);
   private readonly endpoints = inject(InferenceEndpointStore);
@@ -65,7 +76,7 @@ export class ProfileEditorPanel {
   /**
    * Which optional groups are open.
    *
-   * <p>All closed to begin with. The form carries eleven fields and three
+   * <p>All closed to begin with. The form carries eleven fields and four
    * repeating lists, and an operator renaming a blueprint had to scroll past a
    * SOUL.md textarea to reach the save button. What each group holds is on its
    * own header instead, so opening one is a decision rather than a search.
@@ -75,12 +86,21 @@ export class ProfileEditorPanel {
   protected readonly providerChoices = computed(() =>
     providerOptions(this.providers.llmProviders(), this.endpoints.endpoints()));
 
+  /** The model field and the suggestions behind it: the chosen provider's catalog, or an
+   *  endpoint's installed models. It holds the model while editing; `save` copies it back
+   *  onto the draft, the same way the create dialog reads its picker on submit. */
+  protected readonly picker = new ModelPicker();
+
   /** Categories already in use, offered as a datalist so the library stays tidy
    *  without turning the field into a fixed list. */
   protected readonly templateCategories = computed(() => this.templates.categories());
 
   // add-row scratch fields
   protected newSkill = '';
+  /** the library row picked for the skills add-row, or '' */
+  protected librarySkillId = '';
+  /** the guide picked for its add-row, or '' */
+  protected guideId = '';
   /** custom-definition form — templates most often carry a stdio command */
   protected readonly mcpForm = new McpEndpointForm('stdio');
   protected mcpCatalogId = '';
@@ -91,18 +111,37 @@ export class ProfileEditorPanel {
   protected secretCredentialId = '';
 
   constructor() {
+    // LiveSync loads the skill library at boot; the guides are the Skills page's own, and a
+    // deep link to Blueprints never passes through it — so both are read here, cheaply
+    void this.skillLibrary.refresh();
+    void this.guides.refresh();
     // a different draft means a different blueprint (or a fresh one): half-typed
     // rows from the last one must not carry over
     effect(() => {
-      this.draft();
+      const form = this.draft();
       untracked(() => {
         this.resetScratch();
         // the groups close with it — otherwise the next blueprint opens on
         // whatever the last one happened to have expanded
         this.openGroups.set(new Set());
         this.iconOpen.set(false);
+        // show the stored model at once; the catalog load keeps it as `preferred`, so a
+        // model the list does not carry (a fine-tune, a typed id) is not replaced
+        this.picker.model = form.model;
+        void this.picker.load(this.catalogFor(form.provider), { preferred: form.model });
       });
     });
+  }
+
+  // ── provider & model ────────────────────────────────────────────────────
+  protected onProvider(option: string): void {
+    this.draft().provider = option;
+    this.picker.model = '';   // drop the prior provider's model; the load re-selects
+    void this.picker.load(this.catalogFor(option));
+  }
+
+  private catalogFor(option: string) {
+    return modelCatalogFor(option, this.providers, this.endpoints);
   }
 
   // ── icon ────────────────────────────────────────────────────────────────
@@ -133,8 +172,9 @@ export class ProfileEditorPanel {
       case 'endpoint': return form.baseUrl.trim() || form.cwd.trim() || 'defaults';
       case 'soul': return form.soul.trim() ? `${lines(form.soul)} lines` : 'empty';
       case 'memory': return form.memory.trim() ? `${lines(form.memory)} lines` : 'empty';
-      case 'skills': return count(form.skills.length, 'skill');
+      case 'skills': return count(form.skills.length + form.librarySkillIds.length, 'skill');
       case 'mcp': return count(form.mcpServers.length, 'server');
+      case 'guides': return count(form.guideIds.length, 'guide');
       case 'keys': return count(form.secrets.length, 'key');
       default: return '';
     }
@@ -171,6 +211,54 @@ export class ProfileEditorPanel {
   protected removeSkill(skill: string): void {
     const draft = this.draft();
     draft.skills = draft.skills.filter(s => s !== skill);
+  }
+
+  /** A library row's name, or its bare id once the row is gone — the deploy will refuse it. */
+  protected librarySkillLabel(id: string): string {
+    return this.skillLibrary.byId(id)?.name ?? id;
+  }
+
+  protected addLibrarySkill(): void {
+    const id = this.librarySkillId;
+    if (!id || !this.skillLibrary.byId(id)) return;
+    const draft = this.draft();
+    if (!draft.librarySkillIds.includes(id)) draft.librarySkillIds.push(id);
+    this.librarySkillId = '';
+  }
+
+  protected removeLibrarySkill(id: string): void {
+    const draft = this.draft();
+    draft.librarySkillIds = draft.librarySkillIds.filter(s => s !== id);
+  }
+
+  // ── guides ──────────────────────────────────────────────────────────────
+  protected guide(id: string): SkillGuide | null {
+    return this.guides.byId(id);
+  }
+
+  /** What picking this guide puts on the agent besides its own SKILL.md — named, so the
+   *  operator can see the set is complete before deploying rather than after. */
+  protected guideBrings(guide: SkillGuide): string {
+    const skills = guide.skillIds.map(id => this.skillLibrary.byId(id)?.name ?? id);
+    const servers = guide.mcpServerIds.map(id => this.catalog.byId(id)?.name ?? id);
+    const parts = [
+      skills.length ? `skills: ${skills.join(', ')}` : '',
+      servers.length ? `mcp: ${servers.join(', ')}` : '',
+    ].filter(Boolean);
+    return parts.length ? `brings ${parts.join(' · ')}` : 'prose only';
+  }
+
+  protected addGuide(): void {
+    const id = this.guideId;
+    if (!id || !this.guides.byId(id)) return;
+    const draft = this.draft();
+    if (!draft.guideIds.includes(id)) draft.guideIds.push(id);
+    this.guideId = '';
+  }
+
+  protected removeGuide(id: string): void {
+    const draft = this.draft();
+    draft.guideIds = draft.guideIds.filter(g => g !== id);
   }
 
   // ── mcp servers ─────────────────────────────────────────────────────────
@@ -273,6 +361,7 @@ export class ProfileEditorPanel {
     const draft = this.draft();
     if (!this.canSave() || this.saving()) return;
     this.saving.set(true);
+    draft.model = this.picker.model;
     const id = await this.templates.save(
       profileDraftToInput(draft, this.endpoints.endpoints()), draft.id ?? undefined);
     this.saving.set(false);
@@ -288,6 +377,8 @@ export class ProfileEditorPanel {
 
   private resetScratch(): void {
     this.newSkill = '';
+    this.librarySkillId = '';
+    this.guideId = '';
     this.mcpForm.reset();
     this.mcpCatalogId = this.mcpCatalogAlias = '';
     this.secretKey = this.secretValue = this.secretCredentialId = '';

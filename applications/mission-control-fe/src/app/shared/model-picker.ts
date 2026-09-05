@@ -1,5 +1,34 @@
 import { computed, signal } from '@angular/core';
 import { ModelCatalog, ModelSource } from '../core/models';
+import type { InferenceEndpointStore } from '../core/store/inference-endpoint-store';
+import type { ProviderStore } from '../core/store/provider-store';
+import { OLLAMA_PREFIX } from './provider-resolve';
+
+const NO_CATALOG: ModelCatalog = { models: [], source: null };
+
+/**
+ * Where a picker's suggestions come from: an endpoint's installed models, a cloud
+ * provider's catalog, or nothing for a free-text provider. Shared by every form with a
+ * provider dropdown over a model field — the create-agent dialog and the blueprint editor.
+ *
+ * Only the provider catalog carries a `source` worth showing. An endpoint's installed
+ * models were just read off the box the operator picked, and an empty list has nothing
+ * to say about where it came from.
+ */
+export function modelCatalogFor(
+  option: string,
+  providers: Pick<ProviderStore, 'llmProviders' | 'modelCatalog'>,
+  endpoints: Pick<InferenceEndpointStore, 'endpoints' | 'models'>,
+): Promise<ModelCatalog> {
+  if (option.startsWith(OLLAMA_PREFIX)) {
+    const instance = endpoints.endpoints().find(p => OLLAMA_PREFIX + p.name === option);
+    return instance
+      ? endpoints.models(instance.id).then(list => ({ models: list.map(m => m.name), source: null }))
+      : Promise.resolve(NO_CATALOG);
+  }
+  const info = providers.llmProviders().find(p => p.key === option);
+  return info?.hasCatalog ? providers.modelCatalog(option) : Promise.resolve(NO_CATALOG);
+}
 
 /**
  * One model field plus the suggestions behind it. The field is free text backed

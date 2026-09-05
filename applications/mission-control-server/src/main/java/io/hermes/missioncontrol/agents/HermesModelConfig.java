@@ -72,7 +72,14 @@ class HermesModelConfig {
    *  even a hand-set api_mode — from the source profile; the dotted sets then
    *  rebuild model from scratch with only the keys the chosen provider needs.
    *  (`hermes config set` mutates one key and preserves the rest of the map, so a
-   *  full reset is the only way to guarantee no leak.) */
+   *  full reset is the only way to guarantee no leak.)
+   *
+   *  <p>Hermes v0.21.0 (2026.8.31) took the wipe away: a bare {@code model} set is
+   *  redirected to {@code model.default} and every sibling key is kept, so a fresh
+   *  profile — which hermes now seeds with {@code base_url: https://openrouter.ai/…}
+   *  — came out as {@code provider: openai} plus that endpoint. The routing key the
+   *  plan does not set is therefore removed explicitly, as a null-valued entry the
+   *  loop below turns into {@code config unset}. */
   void write(DockerHostRef host, String containerId, String name,
       String provider, String model, String baseUrl, ModelTarget auxiliary) {
     // taken under the profile's lock as one unit: the wipe-then-rebuild above is only safe
@@ -80,7 +87,11 @@ class HermesModelConfig {
     // deliberately leaves the file with `model: ""` for the next set to build back up
     files.serialized(containerId, name, () -> {
       for (String[] kv : modelConfigEntries(provider, model, baseUrl)) {
-        setConfig(host, containerId, name, kv[0], kv[1]);
+        if (kv[1] == null) {
+          cli.unsetConfig(host, containerId, name, kv[0]);
+        } else {
+          setConfig(host, containerId, name, kv[0], kv[1]);
+        }
       }
       for (String[] kv : auxiliaryConfigEntries(
           auxiliary.provider(), auxiliary.model(), auxiliary.baseUrl())) {
@@ -141,8 +152,11 @@ class HermesModelConfig {
    *  any inherited map); {@code model.default} then promotes it back to a map;
    *  finally the one applicable routing key is set — {@code model.provider} for a
    *  standard provider, {@code model.base_url} for a custom/local endpoint, and
-   *  neither when the provider is blank/auto. Kept pure (no I/O) so the
-   *  clone-reset contract is unit-testable. */
+   *  neither when the provider is blank/auto. The routing key that is <em>not</em>
+   *  set follows as a null-valued entry, meaning "unset it": on a hermes whose bare
+   *  {@code model} set no longer wipes, that is what keeps a seeded or cloned
+   *  {@code base_url} from riding along under a standard provider. Kept pure (no
+   *  I/O) so the clone-reset contract is unit-testable. */
   static List<String[]> modelConfigEntries(String provider, String model, String baseUrl) {
     List<String[]> entries = new ArrayList<>();
     entries.add(new String[] {"model", ""});                                   // wipe any clone leftovers
@@ -150,11 +164,15 @@ class HermesModelConfig {
     boolean custom = baseUrl != null && !baseUrl.isBlank();
     if (custom) {
       entries.add(new String[] {"model.base_url", baseUrl});   // custom endpoint owns routing
+      entries.add(new String[] {"model.provider", null});
     } else {
       String normalizedProvider = normalizeProvider(provider);
       if (!normalizedProvider.isBlank() && !"auto".equals(normalizedProvider)) {
         entries.add(new String[] {"model.provider", normalizedProvider});
+      } else {
+        entries.add(new String[] {"model.provider", null});    // auto: hermes decides, nothing pins it
       }
+      entries.add(new String[] {"model.base_url", null});
     }
     return entries;
   }

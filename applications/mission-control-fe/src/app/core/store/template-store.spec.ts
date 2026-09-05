@@ -6,7 +6,8 @@ const template = (id: string, patch: Partial<ApiProfileTemplate> = {}): ApiProfi
   id, name: id, icon: '', description: 'SRE copilot', category: 'ops', provider: 'anthropic',
   model: 'claude-fable-5',
   baseUrl: '', cwd: '/opt/data', soul: '# SOUL', memory: '# MEMORY',
-  skills: ['ops'], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2, ...patch,
+  skills: ['ops'], librarySkillIds: [], guideIds: [], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2,
+  ...patch,
 });
 
 /** The template slice over a container holding one profile. */

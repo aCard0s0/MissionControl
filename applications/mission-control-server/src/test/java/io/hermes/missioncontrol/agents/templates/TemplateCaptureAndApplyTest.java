@@ -26,6 +26,7 @@ import io.hermes.missioncontrol.agents.api.AgentMcpServerDto;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.GatewayDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
+import io.hermes.missioncontrol.agents.api.DeployedPart;
 import io.hermes.missioncontrol.agents.api.ApiKeyStatusDto;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.agents.api.SkillDto;
@@ -34,8 +35,16 @@ import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretInput;
 import io.hermes.missioncontrol.secrets.SecretRef;
 import io.hermes.missioncontrol.secrets.StoredSecret;
+import io.hermes.missioncontrol.skills.GuideDeploy;
+import io.hermes.missioncontrol.skills.Skill;
+import io.hermes.missioncontrol.skills.SkillDeployer;
+import io.hermes.missioncontrol.skills.SkillFile;
+import io.hermes.missioncontrol.skills.SkillGuide;
+import io.hermes.missioncontrol.skills.SkillGuideRepository;
+import io.hermes.missioncontrol.skills.SkillRepository;
 import java.util.Arrays;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -61,6 +70,15 @@ class TemplateCaptureAndApplyTest {
   private final SecretCipher cipher = new SecretCipher("unit-test-key", "", true);
   private final ProfileTemplateService service =
       TemplatesWiring.service(repository, cipher, profiles, setup);
+
+  // the deploys that resolve library skills and guides go through these
+  private final SkillRepository skillLibrary = mock(SkillRepository.class);
+  private final SkillDeployer skillDeployer = mock(SkillDeployer.class);
+  private final SkillGuideRepository guides = mock(SkillGuideRepository.class);
+  private final GuideDeploy guideDeploy = mock(GuideDeploy.class);
+  private final ProfileTemplateService libraryService = TemplatesWiring.service(
+      repository, cipher, profiles, setup,
+      new TemplatesWiring.Libraries(skillLibrary, skillDeployer, guides, guideDeploy));
 
   // ── capture ─────────────────────────────────────────────────────────────
 
@@ -256,6 +274,118 @@ class TemplateCaptureAndApplyTest {
     assertEquals("container is gone", thrown.getSuppressed()[0].getMessage());
   }
 
+  // ── deploy: the name hermes actually uses ───────────────────────────────
+
+  @Test
+  void aMixedCaseNameIsCreatedAndAppliedUnderTheNameHermesFoldsItTo() {
+    // hermes lower-cases on `profile create`, so Coach lives at profiles/coach. Every later
+    // write has to address that directory: `-p Coach` misses it, argparse reads the name as a
+    // subcommand and answers with its usage text — the failure an operator saw as
+    // "usage: hermes [-h] [--version] …" on deploying a blueprint called Coach
+    templateIs(template(t -> t.soul = "be useful"));
+    when(profiles.get(HOST, CONTAINER, "coach")).thenReturn(agent("coach", List.of(), List.of()));
+
+    service.deploy("pt-1", HOST, CONTAINER, "Coach");
+
+    ArgumentCaptor<ProfileSpec> created = ArgumentCaptor.forClass(ProfileSpec.class);
+    verify(profiles).create(eq(HOST), created.capture());
+    assertEquals("coach", created.getValue().name());
+    verify(profiles).updateSoul(HOST, CONTAINER, "coach", "be useful");
+    verify(profiles, never()).updateSoul(eq(HOST), eq(CONTAINER), eq("Coach"), anyString());
+  }
+
+  @Test
+  void theRollbackOfAMixedCaseNameDeletesTheProfileHermesActuallyMade() {
+    // the rollback used to test for profiles/Coach, find nothing, and leave profiles/coach
+    // behind — a half-built agent on hermes' default model, under a name nothing could reach
+    templateIs(template(t -> t.skills = List.of("refactor")));
+    doThrow(new IllegalStateException("skill not found"))
+        .when(profiles).installSkill(HOST, CONTAINER, "coach", "refactor");
+
+    assertThrows(IllegalStateException.class, () -> service.deploy("pt-1", HOST, CONTAINER, "Coach"));
+
+    verify(profiles).delete(HOST, CONTAINER, "coach");
+  }
+
+  // ── deploy: library skills and guides ───────────────────────────────────
+
+  @Test
+  void aLibrarySkillDeploysByTheLibrarysOwnRuleNotByAHubInstall() {
+    Skill local = new Skill("s-1", Skill.LOCAL, "pdf", "", "general", null, "1",
+        List.of(new SkillFile("SKILL.md", "---\nname: pdf\n---\n")), 1L, 1L);
+    when(skillLibrary.find("s-1")).thenReturn(Optional.of(local));
+    templateIs(template(t -> t.librarySkillIds = List.of(" s-1 ")));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+
+    libraryService.deploy("pt-1", HOST, CONTAINER, "scout");
+
+    verify(skillDeployer).deploy(HOST, CONTAINER, "scout", local);
+    verify(profiles, never()).installSkill(any(), anyString(), anyString(), anyString());
+  }
+
+  @Test
+  void aLibrarySkillThatIsGoneFailsTheDeployAndRollsTheProfileBack() {
+    // a guide reports such a part as skipped; a template is creating the agent the operator
+    // asked for. And hermes answers 0 to a hub install of a name it cannot find, so this is
+    // the one place the loss can be said out loud rather than discovered on the agent
+    when(skillLibrary.find("s-gone")).thenReturn(Optional.empty());
+    templateIs(template(t -> t.librarySkillIds = List.of("s-gone")));
+
+    NoSuchElementException gone = assertThrows(NoSuchElementException.class,
+        () -> libraryService.deploy("pt-1", HOST, CONTAINER, "scout"));
+
+    assertEquals("library skill s-gone is no longer in the library", gone.getMessage());
+    verify(profiles).delete(HOST, CONTAINER, "scout");
+    verify(skillDeployer, never()).deploy(any(), anyString(), anyString(), any());
+  }
+
+  @Test
+  void aGuideGoesOnThroughGuideDeployAndAFailedPartRollsTheProfileBack() {
+    SkillGuide guide = guide("g-1", "pdf-triage");
+    when(guides.find("g-1")).thenReturn(Optional.of(guide));
+    when(guideDeploy.onto(guide, HOST, CONTAINER, "scout")).thenReturn(new GuideDeploy.Deployed(null, List.of(
+        DeployedPart.ok("skill", "pdf"),
+        new DeployedPart("mcp", "browser", DeployedPart.FAILED, "managed server is not running"))));
+    templateIs(template(t -> t.guideIds = List.of("g-1")));
+
+    IllegalStateException failure = assertThrows(IllegalStateException.class,
+        () -> libraryService.deploy("pt-1", HOST, CONTAINER, "scout"));
+
+    assertEquals("guide 'pdf-triage': mcp 'browser' failed — managed server is not running",
+        failure.getMessage());
+    verify(profiles).delete(HOST, CONTAINER, "scout");
+  }
+
+  @Test
+  void aGuideWhosePartsLandedOrWereSkippedLetsTheDeployFinish() {
+    // skipped is "already there" or "gone from the guide's own library" — the umbrella document
+    // names only what landed, so the agent is not sent after a part it cannot reach
+    SkillGuide guide = guide("g-1", "pdf-triage");
+    when(guides.find("g-1")).thenReturn(Optional.of(guide));
+    when(guideDeploy.onto(guide, HOST, CONTAINER, "scout")).thenReturn(new GuideDeploy.Deployed(null, List.of(
+        DeployedPart.ok("guide", "pdf-triage"),
+        new DeployedPart("mcp", "browser", DeployedPart.SKIPPED, "already connected"))));
+    templateIs(template(t -> t.guideIds = List.of("g-1")));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+
+    libraryService.deploy("pt-1", HOST, CONTAINER, "scout");
+
+    verify(profiles, never()).delete(any(), anyString(), anyString());
+  }
+
+  @Test
+  void aGuideThatIsGoneFailsTheDeployBeforeAnyOfItIsWritten() {
+    when(guides.find("g-gone")).thenReturn(Optional.empty());
+    templateIs(template(t -> t.guideIds = List.of("g-gone")));
+
+    assertEquals("guide g-gone is no longer in the library",
+        assertThrows(NoSuchElementException.class,
+            () -> libraryService.deploy("pt-1", HOST, CONTAINER, "scout")).getMessage());
+
+    verify(guideDeploy, never()).onto(any(), any(), anyString(), anyString());
+    verify(profiles).delete(HOST, CONTAINER, "scout");
+  }
+
   // ── layer: a profile someone else owns ──────────────────────────────────
 
   @Test
@@ -408,7 +538,12 @@ class TemplateCaptureAndApplyTest {
     Fields fields = new Fields();
     tweak.accept(fields);
     return new ProfileTemplate("pt-1", "ops", "", "desc", "ops", fields.provider, fields.model, fields.baseUrl,
-        "/work", fields.soul, fields.memory, fields.skills, fields.mcpServers, fields.secrets, 1L, 1L);
+        "/work", fields.soul, fields.memory, fields.skills, fields.librarySkillIds, fields.guideIds,
+        fields.mcpServers, fields.secrets, 1L, 1L);
+  }
+
+  private static SkillGuide guide(String id, String name) {
+    return new SkillGuide(id, name, "", "## how the pieces fit", "general", List.of("s-1"), List.of(), 1L, 1L);
   }
 
   private static final class Fields {
@@ -418,12 +553,14 @@ class TemplateCaptureAndApplyTest {
     String soul = "";
     String memory = "";
     List<String> skills = List.of();
+    List<String> librarySkillIds = List.of();
+    List<String> guideIds = List.of();
     List<McpServerSpec> mcpServers = List.of();
     List<StoredSecret> secrets = List.of();
   }
 
   private static UpsertProfileTemplateRequest upsert(List<SecretInput> secrets) {
     return new UpsertProfileTemplateRequest("ops", "", "desc", "ops", "anthropic", "claude-opus-5", "",
-        "/work", "soul", "memory", List.of(), List.of(), secrets);
+        "/work", "soul", "memory", List.of(), List.of(), List.of(), List.of(), secrets);
   }
 }

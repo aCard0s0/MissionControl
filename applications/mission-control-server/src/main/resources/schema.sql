@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS profile_templates (
   cwd         TEXT,
   soul        TEXT,
   memory      TEXT,
-  skills      TEXT,   -- JSON array of skill ids
+  skills      TEXT, library_skill_ids TEXT, guide_ids TEXT,   -- JSON arrays: Skills Hub ids; library skill ids and guide ids (added later; see SchemaUpgrades)
   mcp_servers TEXT,   -- JSON array of McpServerSpec
   secrets     TEXT,   -- JSON array of {key, enc} (AES-GCM ciphertext)
   created_at  INTEGER NOT NULL,

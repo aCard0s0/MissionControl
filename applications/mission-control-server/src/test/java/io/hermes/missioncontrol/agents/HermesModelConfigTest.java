@@ -25,12 +25,19 @@ class HermesModelConfigTest {
   /** The parser needs no collaborators, so nulls are safe for the pure read path. */
   private final HermesModelConfig modelConfig = new HermesModelConfig(null, null, null);
 
+  /** The keys a plan sets. A null value is an unset, and is read through {@link #unsets}. */
   private static Map<String, String> entries(String provider, String model, String baseUrl) {
     Map<String, String> out = new LinkedHashMap<>();
     for (String[] kv : HermesModelConfig.modelConfigEntries(provider, model, baseUrl)) {
-      out.put(kv[0], kv[1]);
+      if (kv[1] != null) out.put(kv[0], kv[1]);
     }
     return out;
+  }
+
+  /** The keys a plan removes, in order. */
+  private static List<String> unsets(String provider, String model, String baseUrl) {
+    return HermesModelConfig.modelConfigEntries(provider, model, baseUrl).stream()
+        .filter(kv -> kv[1] == null).map(kv -> kv[0]).toList();
   }
 
   // ── write planner: modelConfigEntries ──────────────────────────
@@ -65,6 +72,35 @@ class HermesModelConfigTest {
       Map<String, String> e = entries(p, "some-model", null);
       assertEquals(false, e.containsKey("model.provider"), "provider=" + p);
       assertEquals(false, e.containsKey("model.base_url"), "provider=" + p);
+    }
+  }
+
+  @Test
+  void theRoutingKeyAPlanDoesNotSetIsRemovedSoASeededOrClonedOneCannotRideAlong() {
+    // hermes v0.21.0 seeds a fresh profile with base_url: https://openrouter.ai/… and no longer
+    // wipes the model map on a bare `model` set, so `provider: openai` came out of a create still
+    // pointed at openrouter. The wipe stays for older builds; this is what clears it on newer ones.
+    assertEquals(List.of("model.base_url"), unsets("openai", "gpt-5.5", null));
+    assertEquals(List.of("model.provider"), unsets("ollama", "qwen3:8b", "http://host.docker.internal:11434/v1"));
+    for (String p : new String[] {null, "", "auto"}) {
+      assertEquals(List.of("model.provider", "model.base_url"), unsets(p, "m", null), "provider=" + p);
+    }
+  }
+
+  @Test
+  void everyUnsetComesAfterTheSetsSoAWriteNeverRemovesWhatItJustPut() {
+    for (String[] c : new String[][] {
+        {"nous", "Hermes-4-405B", null},
+        {"ollama", "qwen3:8b", "http://x/v1"},
+        {"auto", "m", null}}) {
+      List<String[]> plan = HermesModelConfig.modelConfigEntries(c[0], c[1], c[2]);
+      int firstUnset = plan.size();
+      for (int i = 0; i < plan.size(); i++) {
+        if (plan.get(i)[1] == null) { firstUnset = i; break; }
+      }
+      for (int i = firstUnset; i < plan.size(); i++) {
+        assertEquals(null, plan.get(i)[1], "a set after an unset for provider=" + c[0]);
+      }
     }
   }
 

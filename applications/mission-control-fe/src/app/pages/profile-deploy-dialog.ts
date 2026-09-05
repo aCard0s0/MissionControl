@@ -58,7 +58,9 @@ export class ProfileDeployDialog {
     effect(() => {
       const template = this.template();
       untracked(() => {
-        this.name = template.name;
+        // hermes folds a profile name to lower case on create, so the field shows the name
+        // the agent will actually get rather than one the deploy would silently change
+        this.name = template.name.toLowerCase();
         const targets = this.targets();
         const selected = targets.find(c => c.id === this.containers.selectedContainerId());
         this.containerId = (selected ?? targets[0])?.id ?? '';
@@ -66,9 +68,14 @@ export class ProfileDeployDialog {
     });
   }
 
+  /** True while the typed name is not what hermes would create. */
+  protected folded(): boolean {
+    return this.name !== this.name.toLowerCase();
+  }
+
   protected async deploy(): Promise<void> {
     const template = this.template();
-    const name = this.name.trim();
+    const name = this.name.trim().toLowerCase();
     if (!this.containerId || !name || this.busy()) return;
     // only await when there is something to ask: a blueprint with its key in place must go
     // busy on the click itself, or a second click lands before the first is marked in flight

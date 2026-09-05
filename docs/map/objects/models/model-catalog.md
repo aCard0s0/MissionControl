@@ -39,7 +39,10 @@ All three are now named on both sides: the record comment lists them
 type-check. [docs/api.md:148](../../../api.md) had it right throughout.
 
 The frontend carries it through as `ModelCatalog` (`core/models.ts`) and shows it as a hint on
-the model field — `ModelPicker.sourceLabel` (`shared/model-picker.ts:28`). Worth showing rather
+the model field — `ModelPicker.sourceLabel` (`shared/model-picker.ts:57`). Which list a picker
+loads for a chosen provider option — this catalog, an endpoint's installed models, or nothing —
+is decided once, in `modelCatalogFor` (`shared/model-picker.ts:18`), shared by the create-agent
+dialog and the blueprint editor. Worth showing rather
 than hiding: a shipped list and a list read from the provider are identical in a dropdown, and
 picking a model the provider no longer serves fails much later, at the agent's first turn.
 

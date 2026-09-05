@@ -807,7 +807,9 @@ export interface ProfileTemplate {
   cwd: string;
   soul: string;
   memory: string;
-  skills: string[];               // skill ids to install
+  skills: string[];               // Skills Hub ids, installed by name
+  librarySkillIds: string[];      // rows of the skill library, resolved when deployed
+  guideIds: string[];             // guides — each brings its skills, MCP servers and umbrella SKILL.md
   mcpServers: TemplateMcp[];
   secrets: TemplateSecret[];
   createdAt: number;
@@ -828,6 +830,8 @@ export interface ProfileTemplateInput {
   soul: string;
   memory: string;
   skills: string[];
+  librarySkillIds: string[];
+  guideIds: string[];
   mcpServers: TemplateMcp[];
   secrets: Array<{ key: string; value: string; credentialId?: string }>;
 }

@@ -234,6 +234,8 @@ export function toProfileTemplate(api: ApiProfileTemplate): ProfileTemplate {
     soul: api.soul ?? '',
     memory: api.memory ?? '',
     skills: api.skills ?? [],
+    librarySkillIds: api.librarySkillIds ?? [],
+    guideIds: api.guideIds ?? [],
     mcpServers: (api.mcpServers ?? []).map(m => ({
       name: m.name, transport: m.transport, url: m.url, command: m.command, args: m.args,
       enabled: m.enabled !== false,

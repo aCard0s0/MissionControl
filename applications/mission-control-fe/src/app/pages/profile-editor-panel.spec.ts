@@ -3,38 +3,81 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { Credential, McpCatalogServer, ProfileTemplate } from '../core/models';
+import {
+  Credential, InferenceEndpoint, LlmProvider, McpCatalogServer, ProfileTemplate, Skill, SkillGuide,
+} from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
 import { AGENT_ICONS } from '../shared/agent-icon';
-import { TestFixture, el, press, type } from '../testing/dom';
+import { TestFixture, choose, el, field, fill, press, type } from '../testing/dom';
 import { catalogServer as sharedCatalogServer } from '../testing/models';
 import { provideStores } from '../testing/store';
 
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
   id: 't-1', name: 'ops-sre', icon: '', description: '', category: 'ops', provider: 'anthropic',
   model: 'claude-opus-5',
-  baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
-  secrets: [], createdAt: 1, updatedAt: 1, ...patch,
+  baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], librarySkillIds: [], guideIds: [],
+  mcpServers: [], secrets: [], createdAt: 1, updatedAt: 1, ...patch,
 });
+
+/** A local row of the skill library. */
+const librarySkill = (id: string, name: string): Skill => ({
+  id, kind: 'local', name, description: '', category: 'general', repoUrl: '', version: '',
+  files: [{ path: 'SKILL.md', body: '# skill' }], createdAt: 1, updatedAt: 1,
+});
+
+const guide = (id: string, name: string, patch: Partial<SkillGuide> = {}): SkillGuide => ({
+  id, name, description: '', body: '## how', category: 'general', skillIds: [], mcpServerIds: [],
+  createdAt: 1, updatedAt: 1, ...patch,
+});
+
+const llm: LlmProvider[] = [
+  { key: 'nous', label: 'Nous Portal', needsKey: false, oauth: true, hasCatalog: true, envVar: null },
+  { key: 'anthropic', label: 'Anthropic', needsKey: true, oauth: false, hasCatalog: true,
+    envVar: 'ANTHROPIC_API_KEY' },
+  { key: 'custom', label: 'Custom endpoint', needsKey: true, oauth: false, hasCatalog: false,
+    envVar: 'CUSTOM_API_KEY' },
+];
+
+const ollama: InferenceEndpoint[] = [{
+  id: 'mp-1', name: 'workstation', url: 'http://10.0.0.5:11434', kind: 'ollama',
+  status: 'connected', version: null, detail: null, canManageModels: true,
+}];
 
 /** Only what the panel reaches for on the store, so nothing here touches a backend. */
 const storeStub = (
   templates: ProfileTemplate[] = [],
   catalog: McpCatalogServer[] = [],
   credentials: Credential[] = [],
+  library: Skill[] = [],
+  guides: SkillGuide[] = [],
 ) => ({
   catalog: {
     servers: signal(catalog),
     byId: (id: string | null) => catalog.find(s => s.id === id) ?? null,
   },
+  skillLibrary: {
+    skills: signal(library),
+    byId: (id: string | null) => library.find(s => s.id === id) ?? null,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  },
+  guides: {
+    guides: signal(guides),
+    byId: (id: string | null) => guides.find(g => g.id === id) ?? null,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  },
   ctx: {
     toast: vi.fn(),
   },
   providers: {
-    llmProviders: signal([]),
+    llmProviders: signal(llm),
+    modelCatalog: vi.fn().mockResolvedValue(
+      { models: ['claude-opus-5', 'claude-sonnet-5'], source: 'catalog' }),
   },
-  endpoints: { endpoints: signal([]) },
+  endpoints: {
+    endpoints: signal(ollama),
+    models: vi.fn().mockResolvedValue([{ name: 'gemma3:4b' }]),
+  },
   credentials: { credentials: signal(credentials) },
   templates: {
     byId: (id: string | null) => templates.find(t => t.id === id) ?? null,
@@ -219,6 +262,58 @@ describe('ProfileEditorPanel', () => {
   });
 });
 
+const modelInput = (fixture: TestFixture): HTMLInputElement =>
+  field(fixture, 'model').querySelector<HTMLInputElement>('.input')!;
+
+const modelOptions = (fixture: TestFixture): string[] =>
+  Array.from(el(fixture).querySelectorAll<HTMLOptionElement>('#bp-model-list option')).map(o => o.value);
+
+describe('ProfileEditorPanel model', () => {
+  it('offers the provider\'s catalog, keeping a stored model the list does not carry', async () => {
+    // the default draft names Hermes-4-405B; the catalog stub does not — the stored one wins
+    const { fixture, store } = await render(storeStub(), newProfileDraft(), 'closed');
+
+    expect(store.providers.modelCatalog).toHaveBeenCalledWith('nous');
+    expect(modelOptions(fixture)).toEqual(['claude-opus-5', 'claude-sonnet-5']);
+    expect(modelInput(fixture).value).toBe('Hermes-4-405B');
+  });
+
+  it('re-selects from the new provider\'s list on a switch — an endpoint lists what it runs',
+    async () => {
+      const draft = newProfileDraft();
+      const { fixture, store } = await render(storeStub(), draft, 'closed');
+
+      await choose(fixture, 'provider', 'ollama: workstation');
+      fixture.detectChanges();
+
+      expect(store.endpoints.models).toHaveBeenCalledWith('mp-1');
+      expect(draft.provider).toBe('ollama: workstation');
+      expect(modelOptions(fixture)).toEqual(['gemma3:4b']);
+      expect(modelInput(fixture).value).toBe('gemma3:4b');
+    });
+
+  it('offers nothing for a provider without a catalog, so the field stays free text', async () => {
+    const { fixture, store } = await render(storeStub(), newProfileDraft(), 'closed');
+
+    await choose(fixture, 'provider', 'custom');
+
+    expect(store.providers.modelCatalog).not.toHaveBeenCalledWith('custom');
+    expect(modelOptions(fixture)).toEqual([]);
+  });
+
+  it('saves the model the field holds, picked or typed', async () => {
+    const draft = { ...newProfileDraft(), name: 'ops-sre' };
+    const { fixture, store } = await render(storeStub(), draft, 'closed');
+
+    await fill(fixture, 'model', 'claude-sonnet-5');
+    press(fixture, 'create template', '.editor-actions');
+    await fixture.whenStable();
+
+    expect(store.templates.save.mock.calls[0][0]).toMatchObject({ model: 'claude-sonnet-5' });
+    expect(draft.model).toBe('claude-sonnet-5');
+  });
+});
+
 /** The managed catalog entry these tests connect to. */
 const catalogServer = (patch: Partial<McpCatalogServer> = {}): McpCatalogServer =>
   sharedCatalogServer('mcp-browser', {
@@ -242,9 +337,9 @@ const section = (fixture: TestFixture, label: string): HTMLElement => {
 const rowInput = (fixture: TestFixture, label: string, index = 0): HTMLInputElement =>
   section(fixture, label).querySelectorAll<HTMLInputElement>('.add-row .input')[index];
 
-/** Presses the add button of the section this label names. */
+/** Presses the add button of the typed row in the section this label names. */
 const addRow = (fixture: TestFixture, label: string): void =>
-  press(fixture, 'add', section(fixture, label).querySelector('.add-row')!);
+  press(fixture, 'add', rowInput(fixture, label).closest('.add-row')!);
 
 /** Points the snapshot picker at a catalog entry. */
 const pickCatalog = async (
@@ -313,6 +408,82 @@ describe('ProfileEditorPanel skills', () => {
     fixture.detectChanges();
 
     expect(draft.skills).toEqual(['web-research']);
+  });
+});
+
+describe('ProfileEditorPanel library skills and guides', () => {
+  const pdf = librarySkill('s-pdf', 'pdf');
+  const triage = guide('g-1', 'pdf-triage', { skillIds: ['s-pdf'], mcpServerIds: ['mcp-browser'] });
+
+  it('reads both libraries when it opens, so a deep link to Blueprints finds them filled', async () => {
+    const { store } = await render(storeStub());
+
+    expect(store.skillLibrary.refresh).toHaveBeenCalled();
+    expect(store.guides.refresh).toHaveBeenCalled();
+  });
+
+  it('adds a library skill by id once, and shows it by name beside the typed hub ids', async () => {
+    const draft = { ...newProfileDraft(), skills: ['web-research'] };
+    const { fixture } = await render(storeStub([], [], [], [pdf]), draft);
+
+    await pickCatalog(fixture, 's-pdf');
+    press(fixture, 'add skill');
+    await pickCatalog(fixture, 's-pdf');
+    press(fixture, 'add skill');
+
+    expect(draft.librarySkillIds).toEqual(['s-pdf']);
+    expect(draft.skills).toEqual(['web-research']);
+    const chips = Array.from(el(fixture).querySelectorAll('.edit-chips .chip')).map(c => c.textContent?.trim());
+    expect(chips).toEqual(['pdf×', 'web-research×']);
+  });
+
+  it('marks a library skill the library no longer holds, and still lets it be removed', async () => {
+    const draft = { ...newProfileDraft(), librarySkillIds: ['s-gone'] };
+    const { fixture } = await render(storeStub(), draft);
+
+    const chip = el(fixture).querySelector<HTMLElement>('.edit-chips .chip')!;
+    expect(chip.classList.contains('warn')).toBe(true);
+    expect(chip.textContent).toContain('s-gone ⚠');
+
+    chip.querySelector<HTMLButtonElement>('.x')!.click();
+    expect(draft.librarySkillIds).toEqual([]);
+  });
+
+  it('adds a guide once and says what it brings, by name', async () => {
+    const draft = newProfileDraft();
+    const { fixture } = await render(storeStub([], [catalogServer()], [], [pdf], [triage]), draft);
+
+    await pickCatalog(fixture, 'g-1');
+    press(fixture, 'add guide');
+    await pickCatalog(fixture, 'g-1');
+    press(fixture, 'add guide');
+
+    expect(draft.guideIds).toEqual(['g-1']);
+    const line = section(fixture, 'guides').querySelector('.line')!;
+    expect(line.textContent).toContain('pdf-triage');
+    expect(line.textContent).toContain('brings skills: pdf · mcp: browser');
+  });
+
+  it('says so when a picked guide is gone from the library, and removes it on request', async () => {
+    const draft = { ...newProfileDraft(), guideIds: ['g-gone'] };
+    const { fixture } = await render(storeStub(), draft);
+
+    const line = section(fixture, 'guides').querySelector('.line')!;
+    expect(line.textContent).toContain('g-gone');
+    expect(line.textContent).toContain('no longer in the library');
+
+    press(fixture, 'remove', line);
+    expect(draft.guideIds).toEqual([]);
+  });
+
+  it('counts both kinds of skill on the closed group, and the guides on theirs', async () => {
+    const draft = { ...newProfileDraft(), skills: ['web-research'], librarySkillIds: ['s-pdf'], guideIds: ['g-1'] };
+    const { fixture } = await render(storeStub([], [], [], [pdf], [triage]), draft, 'closed');
+
+    const notes = Array.from(el(fixture).querySelectorAll('.group-h'))
+      .map(h => `${h.querySelector('.group-t')?.textContent?.trim()}: ${h.querySelector('.group-note')?.textContent?.trim()}`);
+    expect(notes).toContain('skills: 2 skills');
+    expect(notes).toContain('guides: 1 guide');
   });
 });
 
@@ -565,7 +736,8 @@ describe('ProfileEditorPanel optional groups', () => {
 
     // and nothing from a group, however much the blueprint carries
     expect(el(fixture).querySelector('.group-b')).toBeNull();
-    expect(el(fixture).querySelectorAll('.group-h').length).toBe(6);
+    // endpoint, soul, memory, skills, tools, guides, keys
+    expect(el(fixture).querySelectorAll('.group-h').length).toBe(7);
   });
 
   it('says what a folded group holds, so opening it is a decision not a search', async () => {

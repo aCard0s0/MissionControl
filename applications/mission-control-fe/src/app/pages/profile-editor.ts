@@ -45,7 +45,11 @@ export interface ProfileDraft {
   cwd: string;
   soul: string;
   memory: string;
+  /** Skills Hub ids, typed */
   skills: string[];
+  /** library rows and guides, picked — both resolved by the backend at deploy time */
+  librarySkillIds: string[];
+  guideIds: string[];
   mcpServers: EditorTemplateMcp[];
   secrets: SecretRow[];
 }
@@ -94,6 +98,8 @@ export function newProfileDraft(): ProfileDraft {
     soul: '# SOUL.md\n\nDescribe this agent\'s personality and directives.\n',
     memory: '# MEMORY.md\n\n',
     skills: [],
+    librarySkillIds: [],
+    guideIds: [],
     mcpServers: [],
     secrets: [],
   };
@@ -121,6 +127,8 @@ export function profileDraftFrom(template: ProfileTemplate, providerOption: stri
     soul: template.soul,
     memory: template.memory,
     skills: [...template.skills],
+    librarySkillIds: [...template.librarySkillIds],
+    guideIds: [...template.guideIds],
     mcpServers: template.mcpServers.map(detachedTemplateMcp),
     secrets: template.secrets.map(secret => ({
       key: secret.key, value: '', set: secret.set, recoverable: secret.recoverable,
@@ -149,6 +157,8 @@ export function profileDraftToInput(
     soul: draft.soul,
     memory: draft.memory,
     skills: draft.skills,
+    librarySkillIds: draft.librarySkillIds,
+    guideIds: draft.guideIds,
     mcpServers: draft.mcpServers,
     secrets: draft.secrets.map(secret => ({
       key: secret.key, value: secret.value, credentialId: secret.credentialId || undefined,

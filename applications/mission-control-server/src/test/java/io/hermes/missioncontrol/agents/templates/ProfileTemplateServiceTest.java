@@ -49,7 +49,7 @@ class ProfileTemplateServiceTest {
   private static UpsertProfileTemplateRequest request(String name, List<SecretInput> secrets) {
     return new UpsertProfileTemplateRequest(
         name, "", "desc", "ops", "anthropic", "claude-opus-4-8", "", "/opt/data",
-        "soul", "memory", List.of(), List.of(), secrets);
+        "soul", "memory", List.of(), List.of(), List.of(), List.of(), secrets);
   }
 
   @Test
@@ -198,7 +198,7 @@ class ProfileTemplateServiceTest {
     ProfileTemplateService catalogService =
         TemplatesWiring.service(repository, cipher, null, null, registry);
     UpsertProfileTemplateRequest input = new UpsertProfileTemplateRequest(
-        "ops", "", "", "ops", "nous", "model", "", "/opt/data", "", "", List.of(),
+        "ops", "", "", "ops", "nous", "model", "", "/opt/data", "", "", List.of(), List.of(), List.of(),
         List.of(new McpServerSpec(
             "tools", null, null, null, null, true, "mcp-1", null, null)),
         List.of());
@@ -232,7 +232,7 @@ class ProfileTemplateServiceTest {
     ProfileTemplateService catalogService =
         TemplatesWiring.service(repository, cipher, null, null, registry);
     UpsertProfileTemplateRequest input = new UpsertProfileTemplateRequest(
-        "ops", "", "updated", "ops", "nous", "model", "", "/opt/data", "", "", List.of(),
+        "ops", "", "updated", "ops", "nous", "model", "", "/opt/data", "", "", List.of(), List.of(), List.of(),
         List.of(new McpServerSpec(
             "tools", "http", "https://tools.example.test/mcp", null, null, true)),
         List.of());
@@ -304,10 +304,10 @@ class ProfileTemplateServiceTest {
 
     service.create(new UpsertProfileTemplateRequest(
         "ops", "", "desc", "  ", "anthropic", "m", "", "/opt/data", "", "",
-        List.of(), List.of(), List.of()));
+        List.of(), List.of(), List.of(), List.of(), List.of()));
     service.create(new UpsertProfileTemplateRequest(
         "sre", "", "desc", " Incident Response ", "anthropic", "m", "", "/opt/data", "", "",
-        List.of(), List.of(), List.of()));
+        List.of(), List.of(), List.of(), List.of(), List.of()));
 
     ArgumentCaptor<ProfileTemplate> written = ArgumentCaptor.forClass(ProfileTemplate.class);
     verify(repository, times(2)).insert(written.capture());
@@ -317,15 +317,32 @@ class ProfileTemplateServiceTest {
   }
 
   @Test
+  void libraryAndGuideIdsAreTrimmedDedupedAndKeptInTheOperatorsOrder() {
+    when(repository.existsByName(any())).thenReturn(false);
+
+    service.create(new UpsertProfileTemplateRequest(
+        "ops", "", "desc", "ops", "anthropic", "m", "", "/opt/data", "", "",
+        List.of("web-research"), List.of(" s-2 ", "s-1", "s-2", "  "),
+        java.util.Arrays.asList("g-1", null, "g-1"),   // List.of refuses a null; a stored row can carry one
+        List.of(), List.of()));
+
+    ArgumentCaptor<ProfileTemplate> written = ArgumentCaptor.forClass(ProfileTemplate.class);
+    verify(repository).insert(written.capture());
+    assertEquals(List.of("web-research"), written.getValue().skills());
+    assertEquals(List.of("s-2", "s-1"), written.getValue().librarySkillIds());
+    assertEquals(List.of("g-1"), written.getValue().guideIds());
+  }
+
+  @Test
   void theIconTheEditorSentIsStoredAndABlankOneStaysBlank() {
     when(repository.existsByName(any())).thenReturn(false);
 
     service.create(new UpsertProfileTemplateRequest(
         "ops", "shield", "desc", "ops", "anthropic", "m", "", "/opt/data", "", "",
-        List.of(), List.of(), List.of()));
+        List.of(), List.of(), List.of(), List.of(), List.of()));
     service.create(new UpsertProfileTemplateRequest(
         "sre", null, "desc", "ops", "anthropic", "m", "", "/opt/data", "", "",
-        List.of(), List.of(), List.of()));
+        List.of(), List.of(), List.of(), List.of(), List.of()));
 
     ArgumentCaptor<ProfileTemplate> written = ArgumentCaptor.forClass(ProfileTemplate.class);
     verify(repository, times(2)).insert(written.capture());
@@ -344,7 +361,7 @@ class ProfileTemplateServiceTest {
 
     service.update("pt-1", new UpsertProfileTemplateRequest(
         "ops", "", "desc", "Review", "anthropic", "m", "", "/opt/data", "", "",
-        List.of(), List.of(), List.of()));
+        List.of(), List.of(), List.of(), List.of(), List.of()));
 
     ArgumentCaptor<ProfileTemplate> written = ArgumentCaptor.forClass(ProfileTemplate.class);
     verify(repository).update(written.capture());

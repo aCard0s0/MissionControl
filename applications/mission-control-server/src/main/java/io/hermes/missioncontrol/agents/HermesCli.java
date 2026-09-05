@@ -62,6 +62,13 @@ class HermesCli {
     run(host, containerId, profileName, List.of("config", "set", key, value));
   }
 
+  /** {@code hermes -p <profile> config unset <key>}, unchecked: hermes answers 1 when the key
+   *  is already absent, and builds before v0.21.0 have no {@code unset} at all — in both cases
+   *  there is nothing left to remove. */
+  void unsetConfig(DockerHostRef host, String containerId, String profileName, String key) {
+    run(host, containerId, profileName, List.of("config", "unset", key), false);
+  }
+
   /**
    * Appends {@code flag=value} only when the value is worth sending.
    *

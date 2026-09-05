@@ -602,6 +602,8 @@ export interface ApiProfileTemplate {
   soul: string;
   memory: string;
   skills: string[];
+  librarySkillIds: string[];
+  guideIds: string[];
   mcpServers: TemplateMcp[];
   secrets: ApiTemplateSecret[];
   createdAt: number;

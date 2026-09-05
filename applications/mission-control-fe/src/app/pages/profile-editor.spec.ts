@@ -54,7 +54,8 @@ const ollama: InferenceEndpoint[] = [{
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
   id: 't-1', name: 'ops-sre', icon: '', description: 'runs the fleet', category: 'ops', provider: 'anthropic',
   model: 'claude-opus-5', baseUrl: '', cwd: '', soul: '# SOUL.md\n', memory: '# MEMORY.md\n',
-  skills: ['web-research'], mcpServers: [], secrets: [], createdAt: 1, updatedAt: 2, ...patch,
+  skills: ['web-research'], librarySkillIds: ['s-pdf'], guideIds: ['g-1'], mcpServers: [], secrets: [],
+  createdAt: 1, updatedAt: 2, ...patch,
 });
 
 const draft = (patch: Partial<ProfileDraft> = {}): ProfileDraft =>
@@ -69,6 +70,8 @@ describe('Agent Profile draft', () => {
     expect(fresh.soul).toContain('# SOUL.md');
     expect(fresh.memory).toContain('# MEMORY.md');
     expect(fresh.skills).toEqual([]);
+    expect(fresh.librarySkillIds).toEqual([]);
+    expect(fresh.guideIds).toEqual([]);
     // blank, not 'general': the backend owns the default, so an operator who never
     // touches the field cannot end up filing one blueprint under a literal 'general'
     // while another carries whatever the frontend guessed
@@ -102,9 +105,13 @@ describe('Agent Profile draft', () => {
     const loaded = profileDraftFrom(template, 'anthropic');
 
     loaded.skills.push('extra');
+    loaded.librarySkillIds.push('s-extra');
+    loaded.guideIds.push('g-extra');
     loaded.mcpServers[0].name = 'edited';
 
     expect(template.skills).toEqual(['web-research']);
+    expect(template.librarySkillIds).toEqual(['s-pdf']);
+    expect(template.guideIds).toEqual(['g-1']);
     expect(template.mcpServers[0].name).toBe('tools');
   });
 });
@@ -150,6 +157,13 @@ describe('Agent Profile save request', () => {
       model: 'claude-opus-5', cwd: '/opt/data',
       soul: '  leading space is content  ',
     });
+  });
+
+  it('sends the picked library skills and guides as the ids the backend resolves on deploy', () => {
+    const input = profileDraftToInput(
+      draft({ skills: ['web-research'], librarySkillIds: ['s-pdf'], guideIds: ['g-1'] }), ollama);
+
+    expect(input).toMatchObject({ skills: ['web-research'], librarySkillIds: ['s-pdf'], guideIds: ['g-1'] });
   });
 
   it('flattens an ollama option into the bare provider plus its endpoint', () => {

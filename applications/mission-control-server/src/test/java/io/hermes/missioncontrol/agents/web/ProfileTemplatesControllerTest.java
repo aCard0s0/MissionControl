@@ -54,7 +54,7 @@ class ProfileTemplatesControllerTest {
 
   private static ProfileTemplateDto template() {
     return new ProfileTemplateDto("pt-1", "researcher", "beaker", "digs", "research", "anthropic", "claude-opus-5",
-        null, "/work", "soul", "memory", List.of(), List.of(), List.of(), 1L, 2L);
+        null, "/work", "soul", "memory", List.of(), List.of(), List.of(), List.of(), List.of(), 1L, 2L);
   }
 
   @Test
