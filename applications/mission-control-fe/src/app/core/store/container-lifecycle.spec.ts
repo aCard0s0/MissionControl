@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HERMES_BASELINE } from '../container-resources';
+import { NO_HOST_ACCESS } from '../host-access';
 import { apiContainer, liveError, liveNotice, testSlices } from '../../testing/store';
 
 /** The three slices a lifecycle action touches, sharing one stubbed backend. */
@@ -46,7 +47,7 @@ describe('ContainerLifecycle deploy', () => {
       await deployed;
 
       // a caller that says nothing about size gets the recommendation, never no limit
-      expect(deploy).toHaveBeenCalledWith('dh-local', 'hermes-lab', 'v1', [], HERMES_BASELINE);
+      expect(deploy).toHaveBeenCalledWith('dh-local', 'hermes-lab', 'v1', [], HERMES_BASELINE, NO_HOST_ACCESS);
     });
 
   it('sends a raised ceiling through to the backend', async () => {
@@ -58,7 +59,7 @@ describe('ContainerLifecycle deploy', () => {
     await deployed;
 
     expect(deploy).toHaveBeenCalledWith(
-      'dh-local', 'hermes-lab', 'v1', [], { memoryMb: 8192, cpus: 4 });
+      'dh-local', 'hermes-lab', 'v1', [], { memoryMb: 8192, cpus: 4 }, NO_HOST_ACCESS);
   });
 
   it('answers an empty id and says why a deploy failed', async () => {

@@ -18,19 +18,21 @@ An inbound route on one [profile's](profile.md) hermes webhook listener. `Webhoo
 Same rule as [Cron job](cron-job.md) — read the file, write through the CLI — plus three
 constraints that only exist here.
 
-**Mission Control never carries webhook traffic and never publishes a port for it.** The
-mapping that makes a route reachable is the operator's own `docker run -p`. That is a decision,
-not a gap, and `docs/architecture.md` argues it at length: the listener is per profile and every
-profile defaults to 8644, Docker cannot add a port mapping to a running container, and host
-ports are one namespace per host. Proxying through the dashboard was rejected separately —
-Mission Control has no authentication of any kind, so a proxy route would be an unauthenticated
-public trigger for agent runs.
+**Mission Control never carries webhook traffic, and publishes a port only when a deploy asks
+for one.** The mapping that makes a route reachable is create-time: the *host access* group on
+the deploy form (its webhook preset publishes 8644 on `127.0.0.1`), or the operator's own
+`docker run -p` when recreating by hand. Nothing is published on demand, and `docs/architecture.md`
+argues why: the listener is per profile and every profile defaults to 8644, Docker cannot add a
+port mapping to a running container, and host ports are one namespace per host. Proxying through
+the dashboard was rejected separately — Mission Control has no authentication of any kind, so a
+proxy route would be an unauthenticated public trigger for agent runs.
 
 Three consequences, all implemented:
 
-- **`WebhookPlatformDto.published` is always `false`** (`agents/HermesWebhooks.java:34`). The page
-  shows the route URL with the listener's own port, not the `localhost` hermes prints, and says
-  the route is unreachable until the port is exposed.
+- **`WebhookPlatformDto.published` is read from the daemon**, never remembered: `PublishedPorts`
+  inspects the container's port bindings, so a port mapped by hand counts the same as one the
+  form asked for. Until then the page shows the route URL with the listener's own port, not the
+  `localhost` hermes prints, and says the route is unreachable.
 - **A manual `-p` survives an image update** — port bindings, exposed ports and
   `PublishAllPorts` are copied onto the replacement container. Without that, moving to a newer
   tag would silently un-expose the listener with nothing on any page to say hooks had stopped.

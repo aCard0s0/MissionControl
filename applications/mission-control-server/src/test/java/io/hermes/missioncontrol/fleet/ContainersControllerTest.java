@@ -34,6 +34,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import io.hermes.missioncontrol.docker.HostAccess;
 
 /**
  * The container endpoints. The gateway is a mock — what is being pinned here is the layer
@@ -200,7 +201,7 @@ class ContainersControllerTest {
     verifyNoInteractions(docker);
 
     when(hosts.requireConnected("dh-local")).thenReturn(HOST);
-    when(docker.deploy(HOST, "scout", "v1", List.of("default"), ContainerResources.BASELINE))
+    when(docker.deploy(HOST, "scout", "v1", List.of("default"), ContainerResources.BASELINE, HostAccess.NONE))
         .thenReturn("newid123");
 
     mvc.perform(post("/api/containers")

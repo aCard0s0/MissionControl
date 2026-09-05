@@ -23,18 +23,20 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import io.hermes.missioncontrol.docker.PublishedPorts;
 
 /**
  * A profile's inbound webhook routes, which hermes owns.
  *
  * <p>Two things have to be true before a route can fire: the profile's {@code webhook}
  * platform is enabled in its config (that is the listener, with its own bind address and
- * port), and a route exists under it. Mission Control manages both and nothing more — it
- * never carries webhook traffic itself, and never publishes a port for one. An agent
- * container therefore has no port mapped, so a route is configured but unreachable from
- * outside the docker network until an operator exposes it deliberately;
- * {@link WebhookPlatformDto#published()} is how the page says so, and
- * docs/architecture.md records why that is a decision rather than a gap.
+ * port), and a route exists under it. Mission Control manages both and never carries webhook
+ * traffic itself. Whether a route is reachable from outside the docker network is a third
+ * thing: a host port mapping, which is create-time — asked for on the deploy form or added
+ * by hand when the container was recreated — and recorded only by the daemon.
+ * {@link WebhookPlatformDto#published()} reads it from there, so the page claims
+ * reachability exactly when the daemon does; docs/architecture.md records why the mapping is
+ * the operator's choice rather than something a deploy guesses.
  *
  * <p>Reads come from {@code webhook_subscriptions.json}, writes from {@code hermes webhook},
  * for the same reasons as the schedule: the file is the data, the CLI owns generating the
@@ -68,16 +70,18 @@ public class HermesWebhooks {
   private final ObjectMapper objectMapper;
   private final ProfileInventory inventory;
   private final HermesConfigEditor config;
+  private final PublishedPorts publishedPorts;
 
   HermesWebhooks(
       HermesContainerFiles files,
       HermesCli cli, ObjectMapper objectMapper, ProfileInventory inventory,
-      HermesConfigEditor config) {
+      HermesConfigEditor config, PublishedPorts publishedPorts) {
     this.files = files;
     this.cli = cli;
     this.objectMapper = objectMapper;
     this.inventory = inventory;
     this.config = config;
+    this.publishedPorts = publishedPorts;
   }
 
   public WebhooksDto list(DockerHostRef host, String containerId, String profileName) {
@@ -353,13 +357,15 @@ public class HermesWebhooks {
     Map<?, ?> extra = childMap(webhook, "extra");
     Object enabled = webhook.get("enabled");
     Object port = extra.get("port");
+    Integer listenerPort = port instanceof Number number ? number.intValue() : null;
     return new WebhookPlatformDto(
         Boolean.TRUE.equals(enabled) || "true".equals(String.valueOf(enabled)),
         extra.get("host") == null ? null : String.valueOf(extra.get("host")),
-        port instanceof Number number ? number.intValue() : null,
-        // Mission Control publishes no port for an agent container, so a route is never
-        // reachable from outside the docker network on its own
-        false);
+        listenerPort,
+        // reachable only through a host mapping, which the daemon alone records — read, not
+        // remembered, so a port an operator mapped by hand counts the same as one a deploy asked for
+        publishedPorts.of(host, containerId)
+            .contains(listenerPort != null ? listenerPort : DEFAULT_PORT));
   }
 
   // ── writing ────────────────────────────────────────────────────────────────

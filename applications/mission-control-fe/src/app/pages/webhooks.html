@@ -138,10 +138,11 @@
         </div>
         @if (!listenerOf(w.agentId)?.published) {
           <p class="lock-hint warn">
-            Nothing outside the docker network can reach this yet — Mission Control does not
-            publish an agent port. Expose the listener yourself with
+            Nothing outside the docker network can reach this yet — no host port is published for
+            {{ listenerPort(w.agentId) }}. A port is opened when a container is created: pick the
+            webhook listener under host access when deploying, add
             <code class="mono">-p 127.0.0.1:{{ listenerPort(w.agentId) }}:{{ listenerPort(w.agentId) }}</code>
-            when the container is next recreated, or run the sender inside the same network.
+            when this one is next recreated, or run the sender inside the same network.
           </p>
         }
         @if (tested()[routeKey(w)]; as output) {

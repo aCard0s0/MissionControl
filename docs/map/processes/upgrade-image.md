@@ -39,6 +39,9 @@ Two parts of the copied set are load-bearing and easy to lose:
   [webhook listener](../objects/agents/webhook-subscription.md) is reachable, and a mapping
   cannot be re-applied to a running container. Without this, a tag bump silently un-exposes the
   listener with nothing on any page to say hooks had stopped arriving.
+- **The `/dev/shm` size** — carried, and *applied* to a container from before it existed: 64 MB
+  is Docker's default, not a choice, and the browser tool fails under it
+  (`ContainerResources.SHM_SIZE_BYTES`).
 
 ## Steps
 

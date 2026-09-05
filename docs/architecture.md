@@ -135,24 +135,42 @@ A route's HMAC secret is stored by hermes in plaintext and the sending provider
 needs it, so the listing carries only a masked tail and revealing it in full is a
 separate, deliberate request.
 
-#### Exposing a webhook listener is the operator's job, deliberately
+#### Host access is the operator's choice at deploy time, never a guess
 
-Mission Control never carries webhook traffic and **never publishes a port for it**.
-It manages the listener and the routes; the mapping that makes a route reachable is
-the operator's own `docker run -p`. That is a decision rather than a gap, for three
-reasons that all point the same way:
+Mission Control never carries webhook traffic, and an agent container gets no port, mount or
+environment variable the operator did not ask for. What it does offer is the one moment Docker
+allows any of those to be set: **the deploy**. The form's *host access* group takes published
+ports, environment variables and bind mounts, with presets for the Hermes features that need
+them — hermes' own dashboard (9119, behind a generated basic-auth password), the API server
+(8642, with a generated key; also what `hermes peer` talks to), a webhook listener (8644) and a
+repository mount. Every port binds `127.0.0.1` unless the operator changes it, the same default
+`./mc` uses for the dashboard itself. `HostAccess` holds the rules; `HermesDeployer` applies them
+to the gateway container only, never to the one-shots that seed the volume.
 
-- The listener is **per profile**, and every profile defaults to port 8644. A container
-  with three agents can have three listeners on three ports, and which ports those are
-  is only decided when an operator enables them — long after the container was created.
-  A deploy-time publish could only guess, and would reserve a host port for a feature
-  most agents never turn on.
-- **Docker cannot add a port mapping to a running container.** Publishing on demand, at
-  the moment a listener is enabled, would mean recreating the agent container and
-  restarting the agent every time someone toggles a webhook.
-- Host ports are **one namespace per host**. Two agent containers cannot both hold 8644,
-  so Mission Control would have to allocate and record host ports itself — a second
-  source of truth about a mapping the operator can change underneath it.
+Two things a deploy always does, because they cost nothing and cannot be added later: it maps
+`host.docker.internal` to the host gateway, which is how a Linux container reaches an inference
+server on its host (Docker Desktop resolves the name on its own), and it gives `/dev/shm` the
+1 GB hermes' Docker guide asks for, so the browser tool's Chromium does not crash. A writable
+mount also widens `HERMES_WRITE_SAFE_ROOT` to cover it — the image confines hermes' file tools
+to `/opt/data`, and a repository the agent cannot write to is the first thing an operator would
+hit — unless the operator set that variable themselves.
+
+Two mounts are refused with a 400 and the reason: the Docker socket, or a directory that carries
+it, because an agent holding it has root-equivalent control of the host — the same rule the MCP
+catalog applies — and anything shadowing `/opt/data` or `/opt/hermes`.
+
+Why nothing is published *unless asked*, and never on demand:
+
+- The webhook listener is **per profile**, and every profile defaults to port 8644. A container
+  with three agents can have three listeners on three ports, and which ports those are is only
+  decided when an operator enables them — long after the container was created. A deploy can
+  only publish what the operator names.
+- **Docker cannot add a port mapping to a running container.** Publishing on demand, at the
+  moment a listener is enabled, would mean recreating the agent container and restarting the
+  agent every time someone toggles a webhook.
+- Host ports are **one namespace per host**. The daemon refuses a second container on a taken
+  port, the deploy rolls back, and the operator picks another — Mission Control allocates
+  nothing and records nothing.
 
 Proxying inbound hooks through the dashboard was considered and rejected for a different
 reason: Mission Control has no authentication of any kind, so a proxy route would be an
@@ -162,22 +180,25 @@ ask an operator to do.
 
 Three things follow, and are implemented:
 
-- **The page never claims reachability.** It shows the route URL with the listener's own
-  port, not the `localhost` hermes prints, and says the route is unreachable until the
-  port is exposed. `WebhookPlatformDto.published` is always `false`: Mission Control
-  publishes nothing itself and does not inspect manual mappings.
-- **A manual `-p` survives an image update.** The upgrade copies port bindings, exposed
-  ports and `PublishAllPorts` onto the replacement container, alongside the binds and
-  networks. Without that, moving an agent to a newer tag would silently un-expose its
-  listener, with nothing on any page to say the hooks had stopped arriving.
+- **The page claims reachability exactly when the daemon does.** `WebhookPlatformDto.published`
+  is read from the container's port bindings (`PublishedPorts`), never remembered from a deploy —
+  so a port an operator mapped by hand counts the same as one the form asked for. Until then the
+  page shows the route URL with the listener's own port, not the `localhost` hermes prints, and
+  says the route is unreachable.
+- **Host access survives an image update.** The upgrade copies port bindings, exposed ports,
+  `PublishAllPorts`, binds, environment and `--add-host` entries onto the replacement container.
+  Without that, moving an agent to a newer tag would silently un-expose its listener, with
+  nothing on any page to say the hooks had stopped arriving.
 - **One listener port per container, not per profile.** Enabling a listener refuses a port
   another profile in the same container already holds, and walks a defaulted one up from
   8644 to the first free port. Profiles share one network namespace, so a second listener
   on 8644 never binds — and hermes reports that only in the gateway log of a profile
   nobody has open.
 
-Bind it deliberately when you do expose it: `-p 127.0.0.1:8644:8644` unless the sending
-provider is off-host, which is the same default `./mc` uses for the dashboard itself.
+Two Hermes features stay out of reach even so. The Docker terminal backend needs the daemon
+socket inside the agent container, which is the one mount this dashboard refuses. And an OAuth
+provider login (Nous Portal, Codex, MiniMax, xAI) needs a browser to reach a loopback callback
+inside the container; publishing that port helps only when the browser runs on the docker host.
 
 ## Terminal
 
@@ -307,6 +328,12 @@ Mission Control deploys Hermes containers with:
 - `gateway run` as the command
 - a per-container volume mounted at `/opt/data`
 - restart policy `unless-stopped`
+- a 1 GB `/dev/shm` — what the vendor's Docker guide asks for, so the browser tool's Chromium
+  does not crash under Docker's 64 MB default
+- `host.docker.internal` mapped to the host gateway, so a local inference server is reachable on
+  Linux daemons too
+- published ports, environment variables and bind mounts **only when the deploy asked for them**
+  (`HostAccess`, above) — nothing otherwise
 - bounded readiness checks followed by creation of requested named profiles
 
 The current Hermes image initializes the default profile on first boot. Mission
@@ -325,7 +352,7 @@ touching the Agent's data:
   or an unreachable registry costs no downtime.
 - The old container is **renamed aside**, not removed. The replacement is created
   under the original name with the same labels, binds, restart policy, command,
-  user-defined networks and published ports — notably the managed MCP network, which
+  user-defined networks, published ports, resource ceilings and `/dev/shm` size — notably the managed MCP network, which
   is attached after deploy and would otherwise be silently lost, and any port an
   operator mapped by hand to reach a webhook listener. Only once the replacement
   passes readiness is the parked original removed; any failure restores it.
@@ -359,10 +386,12 @@ way a webhook listener is reachable.
   and the backend refuses to delete the local socket host.
 - Plain `./mc start --ts=off` binds to `127.0.0.1`; setting `BIND_ADDRESS`
   explicitly can expose the unauthenticated dashboard and prints a warning.
-- Agent containers publish no ports at all. Exposing a profile's webhook listener is
-  the operator's own `docker run -p`, and `127.0.0.1` is the right bind unless the
-  sending provider is off-host. That listener does authenticate — hermes verifies an
-  HMAC signature per route — which the dashboard itself has no equivalent of.
+- Agent containers publish no ports unless the deploy asked. Every published port binds
+  `127.0.0.1` unless the operator changes it, and the Docker socket cannot be mounted into
+  an agent. A webhook listener does authenticate — hermes verifies an HMAC signature per
+  route — which the dashboard itself has no equivalent of. The dashboard and API-server
+  presets generate a password and a key; like every container environment variable, both
+  are visible to anyone with daemon access.
 
 ## Development
 

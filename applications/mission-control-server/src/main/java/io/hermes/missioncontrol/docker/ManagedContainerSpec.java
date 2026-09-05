@@ -42,5 +42,9 @@ public record ManagedContainerSpec(
     /** Memory ceiling in bytes, or null on a container created before this was set. */
     Long memory,
     /** CPU ceiling in billionths of a core, or null. */
-    Long nanoCpus) {
+    Long nanoCpus,
+    /** {@code /dev/shm} size in bytes, or null on a container created before it was set. */
+    Long shmSize,
+    /** {@code --add-host} entries; the host gateway alias is always among them on a replacement. */
+    List<String> extraHosts) {
 }

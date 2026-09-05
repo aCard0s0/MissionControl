@@ -1,5 +1,6 @@
 import { ApiContainer, ApiImageTags, ApiLogLine, ApiStats } from './api-types';
-import { ContainerResources } from '../models';
+import { ContainerResources, HostAccess } from '../models';
+import { NO_HOST_ACCESS } from '../host-access';
 import { ApiHttp, seg } from './http';
 
 /** `/api/containers` and `/api/images` — Agent container inventory, telemetry
@@ -31,11 +32,12 @@ export class ContainersApi {
 
   deploy(
     hostId: string, name: string, version: string, profiles: string[],
-    resources: ContainerResources,
+    resources: ContainerResources, access: HostAccess = NO_HOST_ACCESS,
   ): Promise<{ id: string }> {
     return this.http.post('/api/containers', {
       hostId, name, version, profiles,
       memoryMb: resources.memoryMb, cpus: resources.cpus,
+      ports: access.ports, env: access.env, mounts: access.mounts,
     });
   }
 

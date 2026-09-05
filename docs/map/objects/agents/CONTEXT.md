@@ -7,7 +7,7 @@ here is keyed `(hostId, containerId, profileName)`.
 |---|---|
 | [profile](profile.md) | the agent identity: SOUL, config, skills, sessions. All the paths and the CLI spelling. |
 | [cron-job](cron-job.md) | scheduled runs. Hermes fires them; we manage them. |
-| [webhook-subscription](webhook-subscription.md) | inbound routes. We publish no port, deliberately. |
+| [webhook-subscription](webhook-subscription.md) | inbound routes. A port is published only when a deploy asks; reachability is read from the daemon. |
 | [profile-template](profile-template.md) | the one dashboard-owned noun here — a recipe, in SQLite. |
 
 Stubs with no card body: skills (`HermesSkills`), sessions (`HermesSessions`), SOUL and config

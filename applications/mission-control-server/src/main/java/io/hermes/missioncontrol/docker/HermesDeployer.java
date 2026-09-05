@@ -21,6 +21,9 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.Ports;
+import java.util.ArrayList;
 
 /**
  * Creating a new Hermes container, its data volume, and its seed profiles.
@@ -48,7 +51,7 @@ public class HermesDeployer {
 
   public String deploy(
       DockerHostRef host, String name, String version, List<String> profiles,
-      ContainerResources resources) {
+      ContainerResources resources, HostAccess access) {
     DockerClient client = clients.forUrl(host.url());
     String tag = ImageStore.tagOf(version);
     String image = images.reference(tag);
@@ -75,9 +78,14 @@ public class HermesDeployer {
       // One-shot containers run the image's normal init hooks before their main
       // command. This seeds the default profile and creates named profiles while
       // the long-running gateway is still stopped, avoiding restart/exec races.
-      runOneShot(host, client, image, dataHostConfig, List.of("true"), "initialize Hermes data volume");
+      // They get the operator's environment too, and not only for consistency: the init hook
+      // is env-driven, and without API_SERVER_KEY in sight it generates one into .env — which
+      // hermes then prefers over the key the gateway was given, so every request with the
+      // operator's key is refused.
+      List<String> env = environment(access);
+      runOneShot(host, client, image, dataHostConfig, env, List.of("true"), "initialize Hermes data volume");
       for (String profile : seedProfiles) {
-        runOneShot(host, client, image, dataHostConfig,
+        runOneShot(host, client, image, dataHostConfig, env,
             List.of("profile", "create", profile, "--no-alias"),
             "create seed profile " + profile);
       }
@@ -85,25 +93,46 @@ public class HermesDeployer {
       // The ceiling goes on the gateway, not on the one-shots above: those run the image's
       // init hooks for seconds and a limit there would turn a tight-but-workable size into a
       // deploy that fails during seeding, which reads as a broken image rather than a small box.
+      // Ports and mounts go on the gateway alone: the one-shots seed a volume and are gone,
+      // and a published port on one would be a second listener fighting the gateway for the
+      // same host port.
+      List<Bind> binds = new ArrayList<>();
+      binds.add(new Bind(volumeName, new Volume(ManagedContainer.DATA_MOUNT), AccessMode.rw));
+      for (HostAccess.Mount mount : access.mounts()) {
+        binds.add(new Bind(mount.source(), new Volume(mount.target()),
+            mount.readOnly() ? AccessMode.ro : AccessMode.rw));
+      }
+      Ports portBindings = new Ports();
+      List<ExposedPort> exposed = new ArrayList<>();
+      for (HostAccess.PortMapping port : access.ports()) {
+        ExposedPort containerPort = ExposedPort.tcp(port.containerPort());
+        exposed.add(containerPort);
+        portBindings.bind(containerPort, Ports.Binding.bindIpAndPort(port.bindIp(), port.hostPort()));
+      }
       HostConfig hostConfig = HostConfig.newHostConfig()
-          .withBinds(new Bind(volumeName, new Volume(ManagedContainer.DATA_MOUNT), AccessMode.rw))
+          .withBinds(binds)
           .withRestartPolicy(RestartPolicy.unlessStoppedRestart())
           .withMemory(resources.memoryBytes())
-          .withNanoCPUs(resources.nanoCpus());
+          .withNanoCPUs(resources.nanoCpus())
+          .withShmSize(ContainerResources.SHM_SIZE_BYTES)
+          .withPortBindings(portBindings)
+          .withExtraHosts(HostAccess.HOST_GATEWAY);
 
       CreateContainerResponse created;
       try {
-        created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
+        created = createContainer(client, image, name, labels, hostConfig, env, exposed);
       } catch (NotFoundException missingImage) {
         images.pull(host, images.hermesRepository(), tag);
-        created = createContainer(client, image, name, labels, hostConfig, List.of("gateway", "run"));
+        created = createContainer(client, image, name, labels, hostConfig, env, exposed);
       }
       containerId = created.getId();
       client.startContainerCmd(containerId).exec();
       readiness.validate(host, client, containerId, seedProfiles);
-      log.info("deployed {} from {} on {} — container {}, volume {}, seed profiles {}, {} MB / {} cpus",
+      log.info("deployed {} from {} on {} — container {}, volume {}, seed profiles {}, {} MB / {} cpus, "
+              + "{} published port(s), {} mount(s)",
           name, image, host.id(), shortId(containerId), volumeName,
-          seedProfiles.isEmpty() ? "none" : seedProfiles, resources.memoryMb(), resources.cpus());
+          seedProfiles.isEmpty() ? "none" : seedProfiles, resources.memoryMb(), resources.cpus(),
+          access.ports().size(), access.mounts().size());
       return containerId;
     } catch (RuntimeException failure) {
       // The deploy pulls an image and runs bootstrap containers, so a failure can arrive
@@ -120,12 +149,35 @@ public class HermesDeployer {
 
   private static CreateContainerResponse createContainer(
       DockerClient client, String image, String name, Map<String, String> labels,
-      HostConfig hostConfig, List<String> command) {
+      HostConfig hostConfig, List<String> env, List<ExposedPort> exposed) {
     var create = client.createContainerCmd(image)
         .withName(name)
         .withLabels(labels)
         .withHostConfig(hostConfig);
-    return create.withCmd(command).exec();
+    if (!env.isEmpty()) create.withEnv(env);
+    if (!exposed.isEmpty()) create.withExposedPorts(exposed);
+    return create.withCmd(List.of("gateway", "run")).exec();
+  }
+
+  /**
+   * The operator's variables, plus the write-safe root widened over their writable mounts —
+   * unless they set it themselves. The image confines hermes' file tools to {@code /opt/data},
+   * so a repository mounted for the agent to work in would be the first thing it could not
+   * write to, and hermes reports that only as a denied tool call.
+   */
+  static List<String> environment(HostAccess access) {
+    List<String> env = new ArrayList<>();
+    boolean writeRootSet = false;
+    for (HostAccess.EnvVar var : access.env()) {
+      env.add(var.line());
+      writeRootSet |= HostAccess.WRITE_SAFE_ROOT.equals(var.key());
+    }
+    List<String> writable = access.mounts().stream()
+        .filter(m -> !m.readOnly()).map(HostAccess.Mount::target).toList();
+    if (!writeRootSet && !writable.isEmpty()) {
+      env.add(HostAccess.WRITE_SAFE_ROOT + "=" + ManagedContainer.DATA_MOUNT + ":" + String.join(":", writable));
+    }
+    return env;
   }
 
   static List<String> normalizeProfiles(List<String> profiles) {
@@ -141,17 +193,17 @@ public class HermesDeployer {
 
   void runOneShot(
       DockerHostRef host, DockerClient client, String image, HostConfig hostConfig,
-      List<String> command, String operation) {
+      List<String> env, List<String> command, String operation) {
     String helperId = null;
     RuntimeException failure = null;
     try {
       CreateContainerResponse helper;
       try {
-        helper = createHelper(client, image, hostConfig, command);
+        helper = createHelper(client, image, hostConfig, env, command);
       } catch (NotFoundException missingImage) {
         String[] parts = ImageRef.splitImage(image);
         images.pull(host, parts[0], parts[1]);
-        helper = createHelper(client, image, hostConfig, command);
+        helper = createHelper(client, image, hostConfig, env, command);
       }
       helperId = helper.getId();
       client.startContainerCmd(helperId).exec();
@@ -195,12 +247,14 @@ public class HermesDeployer {
   }
 
   private static CreateContainerResponse createHelper(
-      DockerClient client, String image, HostConfig hostConfig, List<String> command) {
-    return client.createContainerCmd(image)
+      DockerClient client, String image, HostConfig hostConfig, List<String> env,
+      List<String> command) {
+    var create = client.createContainerCmd(image)
         .withLabels(ManagedContainer.bootstrapLabels())
         .withHostConfig(hostConfig)
-        .withCmd(command)
-        .exec();
+        .withCmd(command);
+    if (!env.isEmpty()) create.withEnv(env);
+    return create.exec();
   }
 
   private void rollback(

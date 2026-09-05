@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import io.hermes.missioncontrol.docker.PublishedPorts;
 
 /**
  * The parsers, against output captured from a real hermes container.
@@ -255,7 +256,8 @@ class HermesCliFixtureTest {
             ? WEBHOOK_LISTENER_CONFIG : captured);
 
     List<WebhookSubscriptionDto> routes =
-        new HermesWebhooks(files, new HermesCli(files), json, new ProfileInventory(files), new HermesConfigEditor())
+        new HermesWebhooks(files, new HermesCli(files), json, new ProfileInventory(files), new HermesConfigEditor(),
+            mock(PublishedPorts.class))
             .list(HOST, CONTAINER, "default").subscriptions();
 
     assertFalse(routes.isEmpty(), version + ": the captured routes parsed to nothing");

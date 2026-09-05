@@ -38,7 +38,9 @@ volume are rolled back**.
 2. Create the `mc-hermes-<name>` volume (`docker/ManagedContainer.java:42`).
 3. Run bootstrap one-shots, labelled `mc.bootstrap` (`:38`), to seed the volume.
 4. Create the gateway container with `gateway run`, the volume at `/opt/data`, restart policy
-   `unless-stopped`, and the `mc.*` labels (`docker/ManagedContainer.java:82`).
+   `unless-stopped`, and the `mc.*` labels (`docker/ManagedContainer.java:82`) — plus whatever
+   host access the request named: published ports, environment, bind mounts
+   (`docker/HostAccess.java`), and always `host.docker.internal` and a 1 GB `/dev/shm`.
 5. Bounded readiness checks (`docker/DeploymentReadiness.java`), then create the requested named
    profiles.
 6. On any failure after step 2: roll back the container **and** the volume
@@ -49,10 +51,14 @@ volume are rolled back**.
 - **Hits:** `ManagedContainer` labels — and therefore `ContainerUpgrader`, `ContainerLifecycle`
   and `ContainerInventory`, which all read them; `TemplateApplier` when deploying from a
   template; `pages/agent-create-dialog.ts`, `profile-deploy-dialog.ts`.
-- **Does not hit:** port publishing. **Agent containers publish no ports at all** — exposing a
-  profile's [webhook listener](../objects/agents/webhook-subscription.md) is the operator's own
-  `docker run -p`, and a deploy-time publish could only guess at a port that is decided long
-  after. Also does not attach the MCP network: that happens when a
+- **Hits, only when asked:** host access. `HostAccess` validates ports, environment and mounts
+  (the Docker socket and anything on `/opt/data` or `/opt/hermes` are refused), `HermesDeployer`
+  applies them to the gateway container alone, and a writable mount widens
+  `HERMES_WRITE_SAFE_ROOT`. A published port is what makes a profile's
+  [webhook listener](../objects/agents/webhook-subscription.md) reachable; nothing is published
+  the operator did not name, because the listener's port is decided long after the container is
+  created. `ContainerUpgrader` carries all of it onto a replacement.
+- **Does not hit:** the MCP network: that happens when a
   [link](../objects/mcp/agent-mcp-link.md) is made.
 
 ## Surfaces

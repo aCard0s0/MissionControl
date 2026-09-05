@@ -137,8 +137,8 @@ describe('WebhooksPage', () => {
   it('warns that nothing outside the docker network can reach a route yet', () => {
     const { fixture } = render(storeStub([route('grafana', 'a-1')], [listener('a-1')]));
 
-    expect(el(fixture).textContent).toContain('does not');
-    expect(el(fixture).textContent).toContain('publish an agent port');
+    expect(el(fixture).textContent).toContain('no host port is published for 8644');
+    expect(el(fixture).textContent).toContain('webhook listener under host access');
   });
 
   it('narrows the list to one agent', () => {

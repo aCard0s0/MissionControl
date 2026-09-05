@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DockerHost, HermesContainer, ImageCatalog, ImageTag } from '../core/models';
 import { HERMES_BASELINE } from '../core/container-resources';
+import { NO_HOST_ACCESS } from '../core/host-access';
 import { ContainersPage, normalizeSeedProfiles } from './containers';
 import {
   TestFixture, button, buttonWith, choose, el, field, fill, press, settle, stubConfirm, text, type,
@@ -352,7 +353,7 @@ describe('ContainersPage deploy', () => {
     await settle(fixture);
 
     expect(store.lifecycle.deploy).toHaveBeenCalledWith(
-      'hermes-staging', 'latest', ['ops', 'research-team'], 'dh-local', HERMES_BASELINE);
+      'hermes-staging', 'latest', ['ops', 'research-team'], 'dh-local', HERMES_BASELINE, NO_HOST_ACCESS);
     expect(store.containers.select).toHaveBeenCalledWith('c-new');
     expect(el(fixture).querySelector('.modal')).toBeNull();
   });
@@ -807,6 +808,14 @@ describe('ContainersPage removal', () => {
 });
 
 describe('ContainersPage deploy resources', () => {
+  const accessChip = (fixture: TestFixture, label: string): HTMLButtonElement => {
+    const match = Array.from(
+      el(fixture).querySelectorAll<HTMLButtonElement>('.access .chip'))
+      .find(c => (c.textContent ?? '').trim() === label);
+    if (!match) throw new Error(`no host-access preset labelled "${label}"`);
+    return match;
+  };
+
   const resourceChip = (fixture: TestFixture, label: string): HTMLButtonElement => {
     const match = Array.from(
       el(fixture).querySelectorAll<HTMLButtonElement>('.resources .chip'))
@@ -824,6 +833,56 @@ describe('ContainersPage deploy resources', () => {
     expect(text(fixture)).toContain('Hermes recommends 2–4 GB and 2 cores');
   });
 
+  it('opens nothing to the host until a preset or a row asks for it', async () => {
+    const { fixture } = render(storeStub([]));
+    await openDeploy(fixture);
+
+    expect(text(fixture)).toContain('nothing is opened unless you ask');
+    expect(el(fixture).querySelector('.access .kv-row')).toBeNull();
+  });
+
+  it('a preset adds the rows its Hermes feature needs, and they go out with the deploy', async () => {
+    const { fixture, store } = render(storeStub([]));
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    accessChip(fixture, '+ hermes dashboard').click();
+    accessChip(fixture, '+ hermes dashboard').click();     // a second press changes nothing
+    fixture.detectChanges();
+    await settle(fixture);
+
+    const rows = el(fixture).querySelectorAll('.access .kv-row');
+    expect(rows.length).toBe(4);                             // one port, three variables
+    press(fixture, 'deploy');
+    await settle(fixture);
+
+    expect(store.lifecycle.deploy).toHaveBeenCalledWith(
+      'hermes-staging', 'latest', [], 'dh-local', HERMES_BASELINE, expect.objectContaining({
+        ports: [{ containerPort: 9119, hostPort: 9119, hostIp: '127.0.0.1' }],
+        env: expect.arrayContaining([
+          { key: 'HERMES_DASHBOARD', value: '1' },
+          { key: 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME', value: 'operator' },
+          { key: 'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD', value: expect.stringMatching(/^[0-9a-f]{32}$/) },
+        ]),
+        mounts: [],
+      }));
+  });
+
+  it('a half-filled row is dropped rather than sent', async () => {
+    const { fixture, store } = render(storeStub([]));
+    await openDeploy(fixture);
+    await fill(fixture, 'container name', 'hermes-staging');
+
+    press(fixture, '+ mount');
+    await settle(fixture);
+    expect(el(fixture).querySelectorAll('.access .kv-row.mounts').length).toBe(1);
+    press(fixture, 'deploy');
+    await settle(fixture);
+
+    expect(store.lifecycle.deploy).toHaveBeenCalledWith(
+      'hermes-staging', 'latest', [], 'dh-local', HERMES_BASELINE, NO_HOST_ACCESS);
+  });
+
   it('deploys the raised ceiling rather than the baseline', async () => {
     const { fixture, store } = render(storeStub([]));
     await openDeploy(fixture);
@@ -836,7 +895,7 @@ describe('ContainersPage deploy resources', () => {
     await settle(fixture);
 
     expect(store.lifecycle.deploy).toHaveBeenCalledWith(
-      'hermes-staging', 'latest', [], 'dh-local', { memoryMb: 8192, cpus: 4 });
+      'hermes-staging', 'latest', [], 'dh-local', { memoryMb: 8192, cpus: 4 }, NO_HOST_ACCESS);
   });
 
   it('warns at the floor that browser automation will not fit', async () => {
