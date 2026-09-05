@@ -32,6 +32,14 @@ public record ContainerResources(int memoryMb, double cpus) {
   /** What a deploy uses when the operator does not raise it. */
   public static final ContainerResources BASELINE = new ContainerResources(2048, 2.0);
 
+  /**
+   * {@code /dev/shm} for every deployed gateway. The vendor's Docker guide asks for
+   * {@code --shm-size=1g}: Chromium keeps its render buffers in shared memory, and under
+   * Docker's 64 MB default the browser tool works on a demo page and crashes on a real one.
+   * Not operator-settable — nothing about an agent asks for less.
+   */
+  public static final long SHM_SIZE_BYTES = 1L << 30;
+
   public ContainerResources {
     if (memoryMb < MIN_MEMORY_MB || memoryMb > MAX_MEMORY_MB) {
       throw new IllegalArgumentException(

@@ -42,6 +42,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
+import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.ExposedPort;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
 
 /**
  * What a deploy that actually reaches the end builds: the labels, bind and restart
@@ -85,7 +89,7 @@ class HermesDeployerTest {
     when(state.getRunning()).thenReturn(true);
 
     String containerId = subject.deploy(
-        HOST, "demo", "latest", List.of("ops"), ContainerResources.BASELINE);
+        HOST, "demo", "latest", List.of("ops"), ContainerResources.BASELINE, HostAccess.NONE);
 
     assertEquals("main-id", containerId);
     verify(createVolume).withName("mc-hermes-demo");
@@ -111,6 +115,8 @@ class HermesDeployerTest {
     // the ceiling the caller asked for, in the units the daemon takes
     assertEquals(2048L * 1024 * 1024, hostConfig.getValue().getMemory());
     assertEquals(2_000_000_000L, hostConfig.getValue().getNanoCPUs());
+    // the vendor's shm floor for Chromium; Docker's default is 64 MB
+    assertEquals(1L << 30, hostConfig.getValue().getShmSize());
     verify(main).withCmd(List.of("gateway", "run"));
   }
 
@@ -130,12 +136,65 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    subject.deploy(HOST, "demo", "latest", List.of(), new ContainerResources(8192, 4.0));
+    subject.deploy(HOST, "demo", "latest", List.of(), new ContainerResources(8192, 4.0), HostAccess.NONE);
 
     ArgumentCaptor<HostConfig> hostConfig = ArgumentCaptor.forClass(HostConfig.class);
     verify(main).withHostConfig(hostConfig.capture());
     assertEquals(8192L * 1024 * 1024, hostConfig.getValue().getMemory());
     assertEquals(4_000_000_000L, hostConfig.getValue().getNanoCPUs());
+  }
+
+  @Test
+  void hostAccessLandsOnTheGatewayAloneAndWidensTheWriteSafeRoot() {
+    stubMissingVolume("mc-hermes-demo");
+    stubCreateVolume();
+    CreateContainerCmd init = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    CreateContainerCmd main = mock(CreateContainerCmd.class, Answers.RETURNS_SELF);
+    CreateContainerResponse initCreated = createdWithId("init-id");
+    CreateContainerResponse mainCreated = createdWithId("main-id");
+    when(client.createContainerCmd("hermes/image:latest")).thenReturn(init, main);
+    when(init.exec()).thenReturn(initCreated);
+    when(main.exec()).thenReturn(mainCreated);
+    stubOneShot("init-id", 0);
+    stubStart("main-id");
+    ContainerState state = stubState("main-id");
+    when(state.getRunning()).thenReturn(true);
+    HostAccess access = new HostAccess(
+        List.of(new HostAccess.PortMapping(9119, 9119, ""), new HostAccess.PortMapping(8644, 18644, "0.0.0.0")),
+        List.of(new HostAccess.EnvVar("HERMES_DASHBOARD", "1")),
+        List.of(new HostAccess.Mount("/srv/repo", "/work", false), new HostAccess.Mount("/srv/docs", "/docs", true)));
+
+    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, access);
+
+    ArgumentCaptor<HostConfig> hostConfig = ArgumentCaptor.forClass(HostConfig.class);
+    verify(main).withHostConfig(hostConfig.capture());
+    HostConfig gateway = hostConfig.getValue();
+    assertEquals(List.of("mc-hermes-demo:/opt/data:rw", "/srv/repo:/work:rw", "/srv/docs:/docs:ro"),
+        java.util.Arrays.stream(gateway.getBinds()).map(Bind::toString).toList(),
+        "the data volume stays first; a read-only mount stays read-only");
+    var bindings = gateway.getPortBindings().getBindings();
+    assertEquals("127.0.0.1:9119", bindings.get(ExposedPort.tcp(9119))[0].toString(), "blank bind address means loopback");
+    assertEquals("0.0.0.0:18644", bindings.get(ExposedPort.tcp(8644))[0].toString());
+    assertEquals(List.of(HostAccess.HOST_GATEWAY), List.of(gateway.getExtraHosts()));
+    verify(main).withExposedPorts(List.of(ExposedPort.tcp(9119), ExposedPort.tcp(8644)));
+    // the write-safe root covers the writable mount only: hermes would otherwise refuse every
+    // write into the repository the operator mounted for exactly that
+    verify(main).withEnv(List.of("HERMES_DASHBOARD=1", "HERMES_WRITE_SAFE_ROOT=/opt/data:/work"));
+    // the one-shot that seeds the volume gets the environment — its init hook would otherwise
+    // generate an API_SERVER_KEY into .env that hermes prefers over the operator's — but no port
+    verify(init).withEnv(List.of("HERMES_DASHBOARD=1", "HERMES_WRITE_SAFE_ROOT=/opt/data:/work"));
+    verify(init, never()).withExposedPorts(anyList());
+  }
+
+  @Test
+  void anOperatorsOwnWriteSafeRootIsLeftAlone() {
+    HostAccess access = new HostAccess(List.of(),
+        List.of(new HostAccess.EnvVar("HERMES_WRITE_SAFE_ROOT", "/work/one")),
+        List.of(new HostAccess.Mount("/srv/a", "/work/one", false), new HostAccess.Mount("/srv/b", "/work/two", false)));
+    assertEquals(List.of("HERMES_WRITE_SAFE_ROOT=/work/one"), HermesDeployer.environment(access));
+    assertEquals(List.of(), HermesDeployer.environment(HostAccess.NONE), "nothing asked for, nothing set");
+    assertEquals(List.of(), HermesDeployer.environment(new HostAccess(List.of(), List.of(),
+        List.of(new HostAccess.Mount("/srv/docs", "/docs", true)))), "a read-only mount widens nothing");
   }
 
   @Test
@@ -156,7 +215,7 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE);
+    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE);
 
     ArgumentCaptor<HostConfig> oneShot = ArgumentCaptor.forClass(HostConfig.class);
     verify(init).withHostConfig(oneShot.capture());
@@ -183,7 +242,7 @@ class HermesDeployerTest {
     when(state.getRunning()).thenReturn(true);
 
     String containerId = subject.deploy(
-        HOST, "demo", "latest", List.of("ops", "research"), ContainerResources.BASELINE);
+        HOST, "demo", "latest", List.of("ops", "research"), ContainerResources.BASELINE, HostAccess.NONE);
 
     assertEquals("main-id", containerId);
 
@@ -223,7 +282,7 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    String containerId = subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE);
+    String containerId = subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE);
 
     assertEquals("main-id", containerId);
     // the repository must be pulled without the tag glued on twice, and at the tag
@@ -253,7 +312,7 @@ class HermesDeployerTest {
     stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
+        () -> subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE));
 
     assertTrue(failure.getMessage().contains("exited before readiness checks"), failure.getMessage());
     // an exec against a dead container blocks or reports a confusing daemon error
@@ -282,7 +341,7 @@ class HermesDeployerTest {
     RemoveVolumeCmd removeVolume = stubRemoveVolume("mc-hermes-demo");
 
     UpstreamUnavailableException failure = assertThrows(UpstreamUnavailableException.class,
-        () -> subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
+        () -> subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE));
 
     assertTrue(failure.getMessage().contains("stopped during readiness checks"), failure.getMessage());
     // a half-deployed Agent left behind would block the next deploy on its volume
@@ -306,7 +365,7 @@ class HermesDeployerTest {
     ContainerState state = stubState("main-id");
     when(state.getRunning()).thenReturn(true);
 
-    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE);
+    subject.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE);
 
     ArgumentCaptor<List<String>> command = ArgumentCaptor.forClass(List.class);
     verify(dockerExec).runAsUser(eq(HOST), eq("main-id"), eq("hermes"), command.capture(),

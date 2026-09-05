@@ -16,6 +16,10 @@ import { TerminalIcon } from '../shared/terminal-icon';
 import {
   CPU_PRESETS, HERMES_BASELINE, MEMORY_PRESETS_MB, formatMemory, memoryNote,
 } from '../core/container-resources';
+import {
+  HOST_ACCESS_PRESETS, HostAccessPreset, applyPreset, compactAccess, emptyAccess,
+} from '../core/host-access';
+import { EnvVar, HostAccess, Mount, PortMapping } from '../core/models';
 import { errorMessage } from '../core/errors';
 import { pct, uptime } from '../core/format';
 import {
@@ -66,6 +70,36 @@ export class ContainersPage {
   // Signals rather than plain fields: the hint under them reads off the chosen memory.
   protected readonly deployMemoryMb = signal(HERMES_BASELINE.memoryMb);
   protected readonly deployCpus = signal(HERMES_BASELINE.cpus);
+
+  /** Ports, variables and mounts the deploy opens to the host — nothing until asked. Plain
+   *  rows under ngModel, the way the MCP editor keeps its environment. */
+  protected deployAccess: HostAccess = emptyAccess();
+  protected readonly accessPresets = HOST_ACCESS_PRESETS;
+
+  protected preset(id: HostAccessPreset): void {
+    this.deployAccess = applyPreset(this.deployAccess, id);
+  }
+
+  protected addPort(): void {
+    this.deployAccess.ports.push({ containerPort: 0, hostPort: 0, hostIp: '127.0.0.1' });
+  }
+
+  protected addVariable(): void {
+    this.deployAccess.env.push({ key: '', value: '' });
+  }
+
+  protected addMount(): void {
+    this.deployAccess.mounts.push({ source: '', target: '', readOnly: false });
+  }
+
+  protected removeRow(rows: PortMapping[] | EnvVar[] | Mount[], index: number): void {
+    rows.splice(index, 1);
+  }
+
+  protected accessOpen(): boolean {
+    const a = this.deployAccess;
+    return a.ports.length + a.env.length + a.mounts.length > 0;
+  }
   protected readonly memoryPresets = MEMORY_PRESETS_MB;
   protected readonly cpuPresets = CPU_PRESETS;
   protected readonly formatMemory = formatMemory;
@@ -217,6 +251,7 @@ export class ContainersPage {
     // the starting point every time, not whatever was typed once
     this.deployMemoryMb.set(HERMES_BASELINE.memoryMb);
     this.deployCpus.set(HERMES_BASELINE.cpus);
+    this.deployAccess = emptyAccess();
     this.deployHost = this.connectedHosts()[0]?.id ?? '';
     this.deployTags.set([]);
     this.tagsError.set(null);
@@ -248,7 +283,7 @@ export class ContainersPage {
     this.deployBusy.set(true);
     this.deployFailed.set(false);
     const id = await this.lifecycle.deploy(name, this.deployVersion, profiles, this.deployHost,
-      { memoryMb: this.deployMemoryMb(), cpus: this.deployCpus() });
+      { memoryMb: this.deployMemoryMb(), cpus: this.deployCpus() }, compactAccess(this.deployAccess));
     this.deployBusy.set(false);
     if (!id) {
       this.deployFailed.set(true);

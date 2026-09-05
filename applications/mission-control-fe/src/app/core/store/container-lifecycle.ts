@@ -1,7 +1,8 @@
 import { inject, Injectable } from '@angular/core';
 import { HERMES_BASELINE } from '../container-resources';
 import { isFloatingTag } from '../image-policy';
-import { ContainerResources, ContainerStatus } from '../models';
+import { ContainerResources, ContainerStatus, HostAccess } from '../models';
+import { NO_HOST_ACCESS } from '../host-access';
 import { ActivityStore } from './activity-store';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';
@@ -23,11 +24,12 @@ export class ContainerLifecycle {
   async deploy(
     name: string, version: string, profileNames: string[], hostId = 'dh-local',
     resources: ContainerResources = HERMES_BASELINE,
+    access: HostAccess = NO_HOST_ACCESS,
   ): Promise<string> {
     return this.activity.run(`deploying ${name}`, async () => {
       try {
         const r = await this.ctx.api.containers.deploy(
-          hostId, name, version, profileNames, resources);
+          hostId, name, version, profileNames, resources, access);
         await new Promise(resolve => setTimeout(resolve, 600));
         await this.containers.refresh();
         this.containers.select(r.id);

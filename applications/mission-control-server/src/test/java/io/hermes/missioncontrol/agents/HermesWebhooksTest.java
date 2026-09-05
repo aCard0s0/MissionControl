@@ -25,6 +25,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
+import io.hermes.missioncontrol.docker.PublishedPorts;
+import java.util.Set;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * A profile's webhook routes: what hermes' own {@code webhook_subscriptions.json} means, and
@@ -110,8 +114,12 @@ class HermesWebhooksTest {
   private static final String PROFILES_PREFIX = "/opt/data/profiles/";
 
   private final Exec exec = new Exec();
+  /** Nothing published unless a test says so — the daemon's answer for a container Mission
+   *  Control deployed without asking for a port. */
+  private final PublishedPorts published = mock(PublishedPorts.class);
   private final HermesWebhooks webhooks =
-      new HermesWebhooks(exec, new HermesCli(exec), new ObjectMapper(), new ProfileInventory(exec), new HermesConfigEditor());
+      new HermesWebhooks(exec, new HermesCli(exec), new ObjectMapper(), new ProfileInventory(exec),
+          new HermesConfigEditor(), published);
 
   private static String fixture() throws IOException {
     return Files.readString(
@@ -241,10 +249,16 @@ class HermesWebhooksTest {
   }
 
   @Test
-  void neverClaimsARouteIsReachable_becauseNoAgentPortIsPublished() throws IOException {
-    // Mission Control publishes no port for an agent container, so a configured route is
-    // unreachable from outside the docker network until an operator exposes it
+  void aRouteIsUnreachableUntilTheDaemonPublishesTheListenerPort() throws IOException {
+    // reachability is a host port mapping, and the daemon is its only record — so it is read
+    // there, never inferred from what a deploy asked for
     assertFalse(listed().platform().published());
+
+    when(published.of(HOST, CONTAINER)).thenReturn(Set.of(8644));
+    assertTrue(listed().platform().published());
+
+    when(published.of(HOST, CONTAINER)).thenReturn(Set.of(9119));
+    assertFalse(listed().platform().published(), "some other published port is not this listener");
   }
 
   @Test
@@ -441,7 +455,8 @@ class HermesWebhooksTest {
 
     Exec other = new Exec();
     other.config = ENABLED_CONFIG;
-    HermesWebhooks fresh = new HermesWebhooks(other, new HermesCli(other), new ObjectMapper(), new ProfileInventory(other), new HermesConfigEditor());
+    HermesWebhooks fresh = new HermesWebhooks(other, new HermesCli(other), new ObjectMapper(),
+        new ProfileInventory(other), new HermesConfigEditor(), published);
     assertEquals("delivered", fresh.test(HOST, CONTAINER, "default", "grafana"));
     assertEquals(List.of("hermes", "webhook", "test", "grafana"),
         other.hermesCommands().getFirst());

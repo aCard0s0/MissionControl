@@ -142,7 +142,9 @@ class ContainerUpgraderInspectTest {
         .withRestartPolicy(RestartPolicy.unlessStoppedRestart())
         .withNetworkMode("bridge")
         .withMemory(2048L * 1024 * 1024)
-        .withNanoCPUs(2_000_000_000L);
+        .withNanoCPUs(2_000_000_000L)
+        .withShmSize(1L << 30)
+        .withExtraHosts("host.docker.internal:host-gateway", "ollama:10.0.0.9");
     InspectContainerResponse inspected = mock(InspectContainerResponse.class);
     when(inspected.getConfig()).thenReturn(config);
     when(inspected.getHostConfig()).thenReturn(hostConfig);
@@ -166,6 +168,8 @@ class ContainerUpgraderInspectTest {
     assertEquals(1, spec.binds().size());
     assertEquals(2048L * 1024 * 1024, spec.memory());
     assertEquals(2_000_000_000L, spec.nanoCpus());
+    assertEquals(1L << 30, spec.shmSize());
+    assertEquals(List.of("host.docker.internal:host-gateway", "ollama:10.0.0.9"), spec.extraHosts());
     assertTrue(spec.wasRunning());
   }
 
@@ -297,6 +301,9 @@ class ContainerUpgraderInspectTest {
     HostConfig replacement = hostConfigOf(create);
     assertEquals(2048L * 1024 * 1024, replacement.getMemory());
     assertEquals(2_000_000_000L, replacement.getNanoCPUs());
+    assertEquals(1L << 30, replacement.getShmSize());
+    assertEquals(List.of("host.docker.internal:host-gateway", "ollama:10.0.0.9"),
+        List.of(replacement.getExtraHosts()), "an operator's own --add-host survives, unduplicated");
   }
 
   @Test
@@ -309,6 +316,11 @@ class ContainerUpgraderInspectTest {
 
     assertNull(hostConfigOf(create).getMemory());
     assertNull(hostConfigOf(create).getNanoCPUs());
+    // the shm floor is the exception: 64 MB is Docker's default, not a choice, and the
+    // browser tool is documented to fail under it
+    assertEquals(1L << 30, hostConfigOf(create).getShmSize());
+    assertEquals(List.of("host.docker.internal:host-gateway"), List.of(hostConfigOf(create).getExtraHosts()),
+        "and so is the host gateway alias — harmless, and what reaches a local inference server");
   }
 
   @Test
@@ -432,6 +444,8 @@ class ContainerUpgraderInspectTest {
             .withPortBindings(new Ports(WEBHOOK_PORT, Ports.Binding.bindIpAndPort("127.0.0.1", 8644)))
             .withMemory(2048L * 1024 * 1024)
             .withNanoCPUs(2_000_000_000L)
+            .withShmSize(1L << 30)
+            .withExtraHosts("host.docker.internal:host-gateway", "ollama:10.0.0.9")
         : null;
     if (publishAllPorts) {
       hostConfig = (hostConfig == null ? HostConfig.newHostConfig() : hostConfig)

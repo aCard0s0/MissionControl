@@ -762,6 +762,35 @@ export interface ContainerResources {
   cpus: number;
 }
 
+/** A container port published on the host; a blank `hostIp` binds loopback. */
+export interface PortMapping {
+  containerPort: number;
+  hostPort: number;
+  hostIp: string;
+}
+
+export interface EnvVar {
+  key: string;
+  value: string;
+}
+
+/** A host directory bound into the container. */
+export interface Mount {
+  source: string;
+  target: string;
+  readOnly: boolean;
+}
+
+/**
+ * What a deploy opens between the container and its host. All create-time — Docker cannot
+ * add any of it to a running container — so it is asked on the deploy form or not at all.
+ */
+export interface HostAccess {
+  ports: PortMapping[];
+  env: EnvVar[];
+  mounts: Mount[];
+}
+
 export interface ProfileTemplate {
   id: string;
   name: string;

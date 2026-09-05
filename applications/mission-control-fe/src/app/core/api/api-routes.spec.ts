@@ -48,12 +48,19 @@ const cases: Record<string, Case> = {
   },
   'containers.deploy': {
     call: a => a.containers.deploy(
-      'dh-local', 'hermes-prod', 'v1', ['ops'], { memoryMb: 4096, cpus: 4 }),
+      'dh-local', 'hermes-prod', 'v1', ['ops'], { memoryMb: 4096, cpus: 4 }, {
+        ports: [{ containerPort: 9119, hostPort: 9119, hostIp: '127.0.0.1' }],
+        env: [{ key: 'HERMES_DASHBOARD', value: '1' }],
+        mounts: [{ source: '/srv/repo', target: '/work', readOnly: false }],
+      }),
     method: 'POST',
     url: '/api/containers',
     body: {
       hostId: 'dh-local', name: 'hermes-prod', version: 'v1', profiles: ['ops'],
       memoryMb: 4096, cpus: 4,
+      ports: [{ containerPort: 9119, hostPort: 9119, hostIp: '127.0.0.1' }],
+      env: [{ key: 'HERMES_DASHBOARD', value: '1' }],
+      mounts: [{ source: '/srv/repo', target: '/work', readOnly: false }],
     },
   },
   'containers.start': {

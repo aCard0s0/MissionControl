@@ -120,7 +120,8 @@ public class ContainersController {
   public Map<String, String> deploy(@Valid @RequestBody DeployRequest request) {
     String containerId = docker.deploy(
         hosts.requireConnected(request.hostId()),
-        request.name(), request.version(), request.profiles(), request.resources());
+        request.name(), request.version(), request.profiles(), request.resources(),
+        request.hostAccess());
     return Map.of("id", containerId);
   }
 

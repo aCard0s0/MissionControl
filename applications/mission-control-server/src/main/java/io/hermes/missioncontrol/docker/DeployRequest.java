@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import jakarta.validation.Valid;
 
 /**
  * @param version image tag to deploy; null or blank means 'latest'. Constrained exactly
@@ -30,7 +31,18 @@ public record DeployRequest(
         message = "invalid profile name") String> profiles,
     @Min(ContainerResources.MIN_MEMORY_MB) @Max(ContainerResources.MAX_MEMORY_MB)
     Integer memoryMb,
-    @DecimalMin("1.0") @DecimalMax("64.0") Double cpus) {
+    @DecimalMin("1.0") @DecimalMax("64.0") Double cpus,
+    @Valid @Size(max = 32) List<HostAccess.PortMapping> ports,
+    @Valid @Size(max = 64) List<HostAccess.EnvVar> env,
+    @Valid @Size(max = 16) List<HostAccess.Mount> mounts) {
+
+  /**
+   * What the operator asked to open to the host. The path rules are checked here rather than
+   * at binding time, so a refused mount answers 400 with its reason instead of a parse error.
+   */
+  public HostAccess hostAccess() {
+    return new HostAccess(ports, env, mounts);
+  }
 
   /** What this deploy should run under: what it asked for, or the recommendation. */
   public ContainerResources resources() {

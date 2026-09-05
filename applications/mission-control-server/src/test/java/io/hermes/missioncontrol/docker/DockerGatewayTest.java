@@ -115,7 +115,7 @@ class DockerGatewayTest {
     when(inspect.exec()).thenReturn(mock(InspectVolumeResponse.class));
 
     assertThrows(ResourceConflictException.class,
-        () -> gateway.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE));
   }
 
   @Test
@@ -138,7 +138,7 @@ class DockerGatewayTest {
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
     assertThrows(RuntimeException.class,
-        () -> gateway.deploy(HOST, "demo", "latest", List.of("ops"), ContainerResources.BASELINE));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of("ops"), ContainerResources.BASELINE, HostAccess.NONE));
     verify(removeVolume).exec();
   }
 
@@ -155,7 +155,7 @@ class DockerGatewayTest {
 
     RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
         () -> deployer.runOneShot(HOST, client, "hermes/image:latest",
-            HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
+            HostConfig.newHostConfig(), List.of(), List.of("true"), "initialize Hermes data volume"));
 
     assertEquals("initialize Hermes data volume timed out", failure.getMessage());
     verify(client).removeContainerCmd("helper-id");
@@ -177,7 +177,7 @@ class DockerGatewayTest {
     // and the surviving helper still holds the data volume, so that rollback could not
     // delete it either, leaving a half-removed deploy nothing can retry over.
     assertDoesNotThrow(() -> deployer.runOneShot(HOST, client, "hermes/image:latest",
-        HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
+        HostConfig.newHostConfig(), List.of(), List.of("true"), "initialize Hermes data volume"));
 
     verify(reap).exec();
   }
@@ -196,7 +196,7 @@ class DockerGatewayTest {
 
     RuntimeException failure = assertThrows(UpstreamUnavailableException.class,
         () -> deployer.runOneShot(HOST, client, "hermes/image:latest",
-            HostConfig.newHostConfig(), List.of("true"), "initialize Hermes data volume"));
+            HostConfig.newHostConfig(), List.of(), List.of("true"), "initialize Hermes data volume"));
 
     // the seeding failure is the diagnosis an operator needs; the tidy-up error must not
     // displace it, only ride along
@@ -237,7 +237,7 @@ class DockerGatewayTest {
     when(client.removeVolumeCmd("mc-hermes-demo")).thenReturn(removeVolume);
 
     assertThrows(RuntimeException.class,
-        () -> gateway.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE));
+        () -> gateway.deploy(HOST, "demo", "latest", List.of(), ContainerResources.BASELINE, HostAccess.NONE));
 
     verify(removeMain).exec();
     verify(removeVolume).exec();

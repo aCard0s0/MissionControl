@@ -120,7 +120,7 @@
 }
 
 // ── deploy: resource ceiling ────────────────────────────────────────────────
-.resources {
+.resources, .access {
   .res-row {
     display: flex;
     flex-wrap: wrap;
@@ -149,4 +149,32 @@
   }
 
   .lock-hint { margin: 4px 0 0; }
+}
+
+// ── deploy: host access ──────────────────────────────────────────────────────
+.access {
+  .section-label { display: block; margin: 8px 0 4px; }
+  .kv-row {
+    display: grid;
+    grid-template-columns: minmax(140px, .8fr) minmax(180px, 1.3fr) auto;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+
+    &.ports { grid-template-columns: minmax(110px, .7fr) minmax(110px, .9fr) minmax(90px, .7fr) auto; }
+    &.mounts { grid-template-columns: minmax(160px, 1.2fr) minmax(110px, .8fr) auto auto; }
+  }
+  .ro-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--dim);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .access .kv-row, .access .kv-row.ports, .access .kv-row.mounts { grid-template-columns: 1fr auto; }
+  .access .kv-row .input:not(:first-child) { grid-column: 1 / -1; }
 }

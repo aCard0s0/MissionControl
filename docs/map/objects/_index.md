@@ -13,10 +13,12 @@ is most of the value.
 | ✓ | [Container](docker/container.md) | `docker/ManagedContainer.java` | the `mc.*` label vocabulary that marks one as ours. |
 | ✓ | [Image](docker/image.md) | `docker/ImageRef.java` | tags: pulled vs published, and how they order. |
 | · | Container stats | `docker/ContainerStats{Reader,Streams}.java` | 3 s poll; network rates derived client-side from cumulative counters. |
-| · | Container resources | `docker/ContainerResources.java` | CPU/memory limits as reported. |
+| · | Container resources | `docker/ContainerResources.java` | CPU/memory ceilings, and the 1 GB `/dev/shm` floor the browser tool needs. |
 | · | Log line | `docker/{ContainerLogReader,LogLineDto}.java` | container-scoped: Docker stdout/stderr has no reliable profile identity. |
 | · | Daemon info | `docker/DaemonInfo.java` | engine + API version behind a host's probe. |
 | · | Managed container spec | `docker/ManagedContainerSpec.java` | exactly what an upgrade must copy onto the replacement. |
+| · | Host access | `docker/HostAccess.java` | ports, env and mounts a deploy opens to the host. Create-time; the Docker socket is refused. |
+| · | Published ports | `docker/PublishedPorts.java` | which container ports the daemon maps on the host, read live — what makes a webhook route `published`. |
 | · | Parked container | `docker/ParkedContainerName.java` | `-mc-upgrade-<hex>` leftovers; hidden from the fleet, reachable via `?all=true`. |
 | · | Deployment readiness | `docker/DeploymentReadiness.java` | bounded readiness checks; `hermes gateway status`. |
 
@@ -26,7 +28,7 @@ is most of the value.
 |---|---|---|---|
 | ✓ | [Profile](agents/profile.md) | `agents/ProfilePaths.java` | **the UI's "Agent"**. Every in-container path and the CLI spelling. |
 | ✓ | [Cron job](agents/cron-job.md) | `agents/HermesCron.java` | read `cron/jobs.json`, write via `hermes cron`. |
-| ✓ | [Webhook subscription](agents/webhook-subscription.md) | `agents/HermesWebhooks.java` | inbound routes. We publish no port, deliberately. |
+| ✓ | [Webhook subscription](agents/webhook-subscription.md) | `agents/HermesWebhooks.java` | inbound routes. A port is published only when a deploy asks; reachability is read from the daemon. |
 | ✓ | [Profile template](agents/profile-template.md) | `agents/templates/` | the one dashboard-owned noun here. Encrypted secrets. |
 | · | Skill | `agents/HermesSkills.java` | `SkillDto`, `SkillContentDto`. Files under the profile's skills dir. **Not** the [Skill library](dashboard/skill-library.md): this one exists because a container has it. |
 | · | Session | `agents/HermesSessions.java` | conversation history; `SessionDto`. |

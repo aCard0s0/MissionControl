@@ -121,8 +121,8 @@ public class DockerGateway {
 
   public String deploy(
       DockerHostRef host, String name, String version, List<String> profiles,
-      ContainerResources resources) {
-    return deployer.deploy(host, name, version, profiles, resources);
+      ContainerResources resources, HostAccess access) {
+    return deployer.deploy(host, name, version, profiles, resources, access);
   }
 
   public ManagedContainerSpec inspectManaged(DockerHostRef host, String containerId) {

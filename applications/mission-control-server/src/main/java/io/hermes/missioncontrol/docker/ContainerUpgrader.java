@@ -17,6 +17,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Moving a managed container onto another tag of the Hermes image.
@@ -98,7 +100,10 @@ public class ContainerUpgrader {
         state != null && Boolean.TRUE.equals(state.getRunning()),
         dataVolume,
         hostConfig == null ? null : hostConfig.getMemory(),
-        hostConfig == null ? null : hostConfig.getNanoCPUs());
+        hostConfig == null ? null : hostConfig.getNanoCPUs(),
+        hostConfig == null ? null : hostConfig.getShmSize(),
+        hostConfig == null || hostConfig.getExtraHosts() == null
+            ? List.of() : List.of(hostConfig.getExtraHosts()));
   }
 
   /** The networks the replacement has to be connected to by hand: the primary and the
@@ -244,6 +249,16 @@ public class ContainerUpgrader {
     // container running fine on a quiet afternoon would say so.
     if (spec.memory() != null && spec.memory() > 0) hostConfig.withMemory(spec.memory());
     if (spec.nanoCpus() != null && spec.nanoCpus() > 0) hostConfig.withNanoCPUs(spec.nanoCpus());
+    // Unlike the ceilings, absent here means Docker's 64 MB default — which no operator chose
+    // and which the vendor documents as too small for the browser tool — so the floor is
+    // applied rather than carried.
+    hostConfig.withShmSize(spec.shmSize() != null && spec.shmSize() > 0
+        ? spec.shmSize() : ContainerResources.SHM_SIZE_BYTES);
+    // Same rule for the host gateway alias: carried when present, added when not. It is how
+    // a Linux container reaches an inference server on its host, and it costs nothing.
+    Set<String> extraHosts = new LinkedHashSet<>(spec.extraHosts());
+    extraHosts.add(HostAccess.HOST_GATEWAY);
+    hostConfig.withExtraHosts(extraHosts.toArray(new String[0]));
 
     var create = client.createContainerCmd(image)
         .withName(spec.name())
