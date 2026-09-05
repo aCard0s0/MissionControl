@@ -66,11 +66,7 @@ class TemplateApplier {
   /** Creates the profile from the template's own model settings, then applies it. All or
    *  nothing: a failure anywhere drops the profile this call created. */
   AgentProfileDto deployNew(ProfileTemplate template, DockerHostRef host, String containerId, String name) {
-    ProfileSpec spec = new ProfileSpec(
-        containerId, name,
-        blankTo(template.provider(), "nous"),
-        blankTo(template.model(), "Hermes-4-405B"),
-        null, null, blankTo(template.baseUrl(), null), null);
+    ProfileSpec spec = specFor(template, containerId, name);
     // spec.name(), not name: the spec folded it to the directory hermes actually created, and
     // the apply and the rollback both have to address that one. The whole of it sits inside the
     // creating window, so the Agents page does not list — and a shell cannot start hermes on —
@@ -93,6 +89,33 @@ class TemplateApplier {
     return apply(template, host, containerId, name);
   }
 
+  /**
+   * Applies the template, model settings included, onto a profile that already exists and that
+   * nobody configured yet: a new container's {@code default} profile, which the image creates
+   * on first boot with hermes' own defaults. {@link #layerOnto} leaves the model alone because
+   * the caller chose one; here the template is the only thing that has.
+   *
+   * <p>No rollback of its own — there is no profile to drop, the container deploy that calls
+   * this undoes the whole container — but the same creating window as {@link #deployNew}, so
+   * the Agents page does not list a default agent that is still being written to.
+   */
+  AgentProfileDto configureAndApply(
+      ProfileTemplate template, DockerHostRef host, String containerId, String name) {
+    return profiles.whileCreating(containerId, name, () -> {
+      profiles.configureModel(host, specFor(template, containerId, name));
+      return apply(template, host, containerId, name);
+    });
+  }
+
+  /** The template's model settings as the spec a profile is created or configured from. */
+  private static ProfileSpec specFor(ProfileTemplate template, String containerId, String name) {
+    return new ProfileSpec(
+        containerId, name,
+        blankTo(template.provider(), "nous"),
+        blankTo(template.model(), "Hermes-4-405B"),
+        null, null, blankTo(template.baseUrl(), null), null);
+  }
+
   /** Best-effort cleanup of a profile the caller created and could not finish configuring. */
   void rollback(DockerHostRef host, String containerId, String name, RuntimeException failure) {
     try {
@@ -110,6 +133,10 @@ class TemplateApplier {
     }
     if (!template.memory().isBlank()) {
       profiles.updateMemory(host, containerId, name, template.memory());
+    }
+    // the editor has always offered a working dir; until now nothing wrote it
+    if (template.cwd() != null && !template.cwd().isBlank()) {
+      profiles.setWorkingDir(host, containerId, name, template.cwd().trim());
     }
     for (String skill : template.skills()) {
       if (skill != null && !skill.isBlank()) {

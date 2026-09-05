@@ -192,14 +192,7 @@ public class HermesProfiles implements ContainerWork {
     try {
       files.exec(host, containerId, command);
       created = true;
-      ModelTarget auxiliary = HermesModelConfig.auxiliaryTarget(
-          spec.provider(), spec.model(), spec.baseUrl(), spec.auxiliary());
-      modelConfig.write(host, containerId, profileName,
-          spec.provider(), spec.model(), spec.baseUrl(), auxiliary);
-      modelConfig.assertConfigured(host, containerId, profileName);
-      env.seedIfMissing(host, containerId, profileName);
-      modelConfig.writeApiKey(host, containerId, profileName, spec.provider(), spec.apiKey());
-      modelConfig.writeAuxiliaryApiKey(host, containerId, profileName, auxiliary, spec.auxiliary());
+      configureModel(host, spec);
       return profileName;
     } catch (RuntimeException failure) {
       if (created) {
@@ -235,6 +228,31 @@ public class HermesProfiles implements ContainerWork {
     } finally {
       if (marked) creating.remove(key);
     }
+  }
+
+  /**
+   * Writes the model settings a spec carries onto a profile that exists: {@code model.*} and the
+   * auxiliary pins, the {@code .env} seed and the API key(s). The second half of
+   * {@link #createProfileBare}, on its own for the one profile this class never creates — the
+   * {@code default} profile the image initializes, which a container deploy may hand a blueprint.
+   * Throws rather than rolls back: what owns the profile decides what a failure costs.
+   */
+  public void configureModel(DockerHostRef host, ProfileSpec spec) {
+    String containerId = spec.containerId();
+    String profileName = spec.name();
+    ModelTarget auxiliary = HermesModelConfig.auxiliaryTarget(
+        spec.provider(), spec.model(), spec.baseUrl(), spec.auxiliary());
+    modelConfig.write(host, containerId, profileName,
+        spec.provider(), spec.model(), spec.baseUrl(), auxiliary);
+    modelConfig.assertConfigured(host, containerId, profileName);
+    env.seedIfMissing(host, containerId, profileName);
+    modelConfig.writeApiKey(host, containerId, profileName, spec.provider(), spec.apiKey());
+    modelConfig.writeAuxiliaryApiKey(host, containerId, profileName, auxiliary, spec.auxiliary());
+  }
+
+  /** The directory the agent's terminal tool starts in — {@code terminal.cwd}. */
+  public void setWorkingDir(DockerHostRef host, String containerId, String name, String cwd) {
+    modelConfig.writeWorkingDir(host, containerId, name, cwd);
   }
 
   private static String creatingKey(String containerId, String name) {

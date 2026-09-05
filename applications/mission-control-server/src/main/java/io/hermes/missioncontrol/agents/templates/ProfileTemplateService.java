@@ -150,6 +150,17 @@ public class ProfileTemplateService {
     });
   }
 
+  /**
+   * Applies a template, model settings included, to a new container's {@code default} profile.
+   *
+   * <p>The one profile this code never creates: the image initializes it on first boot, so
+   * there is no {@code hermes profile create} to run and nothing profile-shaped to roll back —
+   * the container deploy that calls this rolls the whole container back on a failure instead.
+   */
+  public AgentProfileDto applyToDefault(String id, DockerHostRef host, String containerId) {
+    return applier.configureAndApply(require(id), host, containerId, "default");
+  }
+
   // ── capture from a running agent ───────────────────────────────────────────
   // No @Transactional: this reads the agent over docker (slow) before its single
   // atomic insert, and the datasource pool is size 1 — holding the sole connection

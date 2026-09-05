@@ -221,6 +221,8 @@ class TemplateCaptureAndApplyTest {
     InOrder order = inOrder(profiles, setup);
     order.verify(profiles).create(eq(HOST), any());
     order.verify(profiles).updateSoul(HOST, CONTAINER, "scout", "be useful");
+    // the editor always offered a working dir; for a long time nothing wrote it
+    order.verify(profiles).setWorkingDir(HOST, CONTAINER, "scout", "/work");
     order.verify(profiles).installSkill(HOST, CONTAINER, "scout", "refactor");
     order.verify(profiles).addMcpServer(eq(HOST), eq(CONTAINER), eq("scout"), any(McpServerDefinition.class));
     order.verify(setup).putEnv(HOST, CONTAINER, "scout",
@@ -272,6 +274,75 @@ class TemplateCaptureAndApplyTest {
 
     assertSame(original, thrown);
     assertEquals("container is gone", thrown.getSuppressed()[0].getMessage());
+  }
+
+  @Test
+  void nullAndBlankReferencesAreSkippedRatherThanLookedUp() {
+    // List.of refuses nulls, but a stored row can carry them, and a blueprint written before
+    // the working dir existed reads it back as null
+    templateIs(template(t -> {
+      t.cwd = null;
+      t.librarySkillIds = Arrays.asList(null, "  ");
+      t.guideIds = Arrays.asList(null, "");
+    }));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+
+    libraryService.deploy("pt-1", HOST, CONTAINER, "scout");
+
+    verify(profiles, never()).setWorkingDir(any(), anyString(), anyString(), anyString());
+    verify(skillLibrary, never()).find(anyString());
+    verify(guides, never()).find(anyString());
+  }
+
+  @Test
+  void aBlankWorkingDirWritesNothing() {
+    templateIs(template(t -> t.cwd = "  "));
+    when(profiles.get(HOST, CONTAINER, "scout")).thenReturn(agent("scout", List.of(), List.of()));
+
+    service.deploy("pt-1", HOST, CONTAINER, "scout");
+
+    verify(profiles, never()).setWorkingDir(any(), anyString(), anyString(), anyString());
+  }
+
+  // ── apply to a new container's default profile ──────────────────────────
+
+  @Test
+  void theDefaultProfileGetsTheTemplatesModelSettingsThenItsContentsInsideTheWindow() {
+    // the image creates `default` itself, so there is nothing to `profile create`; what the
+    // template has that a layered-on profile does not get is the model
+    templateIs(template(t -> {
+      t.provider = "openai";
+      t.model = "gpt-5.2";
+      t.soul = "be useful";
+    }));
+    when(profiles.get(HOST, CONTAINER, "default")).thenReturn(agent("default", List.of(), List.of()));
+
+    service.applyToDefault("pt-1", HOST, CONTAINER);
+
+    ArgumentCaptor<ProfileSpec> configured = ArgumentCaptor.forClass(ProfileSpec.class);
+    InOrder order = inOrder(profiles);
+    order.verify(profiles).whileCreating(eq(CONTAINER), eq("default"), any());
+    order.verify(profiles).configureModel(eq(HOST), configured.capture());
+    order.verify(profiles).updateSoul(HOST, CONTAINER, "default", "be useful");
+    assertEquals("default", configured.getValue().name());
+    assertEquals("openai", configured.getValue().provider());
+    assertEquals("gpt-5.2", configured.getValue().model());
+    verify(profiles, never()).create(any(), any());
+    verify(profiles, never()).createProfileBare(any(), any());
+  }
+
+  @Test
+  void aFailureOnTheDefaultProfileIsThrownAndDropsNoProfile() {
+    // the container deploy that asked for this rolls the whole container back; a profile-level
+    // delete here would run `hermes profile delete default`, which is not a thing
+    templateIs(template(t -> t.soul = "be useful"));
+    doThrow(new IllegalStateException("soul write failed"))
+        .when(profiles).updateSoul(HOST, CONTAINER, "default", "be useful");
+
+    assertEquals("soul write failed", assertThrows(IllegalStateException.class,
+        () -> service.applyToDefault("pt-1", HOST, CONTAINER)).getMessage());
+
+    verify(profiles, never()).delete(any(), anyString(), anyString());
   }
 
   // ── deploy: the name hermes actually uses ───────────────────────────────
@@ -553,7 +624,7 @@ class TemplateCaptureAndApplyTest {
     Fields fields = new Fields();
     tweak.accept(fields);
     return new ProfileTemplate("pt-1", "ops", "", "desc", "ops", fields.provider, fields.model, fields.baseUrl,
-        "/work", fields.soul, fields.memory, fields.skills, fields.librarySkillIds, fields.guideIds,
+        fields.cwd, fields.soul, fields.memory, fields.skills, fields.librarySkillIds, fields.guideIds,
         fields.mcpServers, fields.secrets, 1L, 1L);
   }
 
@@ -565,6 +636,7 @@ class TemplateCaptureAndApplyTest {
     String provider = "anthropic";
     String model = "claude-opus-5";
     String baseUrl = "";
+    String cwd = "/work";
     String soul = "";
     String memory = "";
     List<String> skills = List.of();

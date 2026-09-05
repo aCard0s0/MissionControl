@@ -100,6 +100,14 @@ class HermesModelConfig {
     });
   }
 
+  /** {@code terminal.cwd}, through hermes' own writer like the model keys. Here rather than
+   *  beside SOUL.md because this class already reads it back ({@link ConfigInfo#cwd}), and a
+   *  key read in one place and written in another is how the two drift. */
+  void writeWorkingDir(DockerHostRef host, String containerId, String name, String cwd) {
+    if (cwd == null || cwd.isBlank()) throw new IllegalArgumentException("missing working dir");
+    files.serialized(containerId, name, () -> setConfig(host, containerId, name, "terminal.cwd", cwd.trim()));
+  }
+
   /** Writes the profile's own API key, when the chosen provider takes one and the
    *  request carried a non-blank value. */
   void writeApiKey(DockerHostRef host, String containerId, String name, String provider, String apiKey) {

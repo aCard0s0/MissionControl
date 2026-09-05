@@ -153,6 +153,18 @@ class HermesModelConfigWritesTest {
         List.of("hermes", "-p", PROFILE, "config", "unset", "model.base_url"), false);
   }
 
+  // ── the working dir ─────────────────────────────────────────────────────
+
+  @Test
+  void theWorkingDirGoesThroughHermesOwnWriterAndABlankOneIsRefused() {
+    modelConfig.writeWorkingDir(HOST, CONTAINER, PROFILE, " /work ");
+
+    verify(files).exec(HOST, CONTAINER,
+        List.of("hermes", "-p", PROFILE, "config", "set", "terminal.cwd", "/work"), true);
+    assertThrows(IllegalArgumentException.class,
+        () -> modelConfig.writeWorkingDir(HOST, CONTAINER, PROFILE, "  "));
+  }
+
   // ── refusing a profile with no model ────────────────────────────────────
 
   @Test
