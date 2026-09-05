@@ -214,11 +214,11 @@ ciphertext to send back.
 |---|---|---|
 | `GET /api/profile-templates` | — | |
 | `GET /api/profile-templates/{id}` | — | |
-| `POST /api/profile-templates` | `{ name, icon?, description?, category?, provider?, model?, baseUrl?, cwd?, soul?, memory?, skills?, mcpServers?, secrets? }` | each secret is `{ key, value?, credentialId? }` — see [credentials](#credentials--dashboard-owned-state-in-sqlite) for the id form |
+| `POST /api/profile-templates` | `{ name, icon?, description?, category?, provider?, model?, baseUrl?, cwd?, soul?, memory?, skills?, librarySkillIds?, guideIds?, mcpServers?, secrets? }` | `skills` are Skills Hub ids installed by name; `librarySkillIds` and `guideIds` name rows of the [skill library](#skills--dashboard-owned-state-in-sqlite) and its guides, resolved when the template is deployed. Each secret is `{ key, value?, credentialId? }` — see [credentials](#credentials--dashboard-owned-state-in-sqlite) for the id form |
 | `PUT /api/profile-templates/{id}` | same as POST | |
 | `DELETE /api/profile-templates/{id}` | — | |
 | `POST /api/profile-templates/capture` | `{ hostId, containerId, name, templateName? }` | builds a template out of a live profile |
-| `POST /api/profile-templates/{id}/deploy` | `{ hostId, containerId, name? }` | creates the profile and answers with it — enriched with its catalog links like every other profile this API returns |
+| `POST /api/profile-templates/{id}/deploy` | `{ hostId, containerId, name? }` | creates the profile and answers with it — enriched with its catalog links like every other profile this API returns. `name` is folded to lower case, which is what `hermes profile create` does with it. A library skill or guide the template names that is gone answers 404 and the profile is rolled back; a guide's parts go on through the same path as its own deploy, and one that fails rolls the profile back too |
 
 ## Credentials — dashboard-owned state in SQLite
 

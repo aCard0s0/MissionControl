@@ -102,7 +102,8 @@
             <div class="role dim">{{ t.description || '—' }}</div>
             <div class="model mono faint">{{ t.provider || 'auto' }} / {{ t.model || '—' }}</div>
             <div class="chips">
-              <span class="chip">{{ t.skills.length }} skills</span>
+              <span class="chip">{{ t.skills.length + t.librarySkillIds.length }} skills</span>
+              @if (t.guideIds.length) { <span class="chip info">{{ t.guideIds.length }} guides</span> }
               @if (t.mcpServers.length) { <span class="chip info">{{ t.mcpServers.length }} mcp</span> }
               @if (t.secrets.length) { <span class="chip on">{{ t.secrets.length }} keys</span> }
             </div>

@@ -6,6 +6,10 @@ import io.hermes.missioncontrol.credentials.CredentialService;
 import io.hermes.missioncontrol.mcp.McpRegistryService;
 import io.hermes.missioncontrol.secrets.SecretCipher;
 import io.hermes.missioncontrol.secrets.SecretsAtRest;
+import io.hermes.missioncontrol.skills.GuideDeploy;
+import io.hermes.missioncontrol.skills.SkillDeployer;
+import io.hermes.missioncontrol.skills.SkillGuideRepository;
+import io.hermes.missioncontrol.skills.SkillRepository;
 
 /**
  * Builds the template collaborator graph the way Spring does, for tests that drive a whole flow
@@ -25,6 +29,34 @@ final class TemplatesWiring {
 
   private TemplatesWiring() {}
 
+  /** The skill library and guide collaborators a deploy resolves its references through. */
+  record Libraries(
+      SkillRepository skills, SkillDeployer skillDeployer,
+      SkillGuideRepository guides, GuideDeploy guideDeploy) {
+
+    /** For the flows whose template names neither a library skill nor a guide. */
+    static final Libraries NONE = new Libraries(null, null, null, null);
+  }
+
+  static ProfileTemplateService service(
+      ProfileTemplateRepository repository,
+      SecretCipher cipher,
+      HermesProfiles profiles,
+      HermesSetup setup,
+      McpRegistryService registry,
+      CredentialService credentials,
+      Libraries libraries) {
+    TemplateSecrets secrets = new TemplateSecrets(new SecretsAtRest(cipher));
+    return new ProfileTemplateService(
+        repository,
+        secrets,
+        applier(profiles, setup, secrets, libraries),
+        new TemplateMcpSnapshots(registry, secrets),
+        profiles,
+        setup,
+        credentials);
+  }
+
   static ProfileTemplateService service(
       ProfileTemplateRepository repository,
       SecretCipher cipher,
@@ -32,15 +64,7 @@ final class TemplatesWiring {
       HermesSetup setup,
       McpRegistryService registry,
       CredentialService credentials) {
-    TemplateSecrets secrets = new TemplateSecrets(new SecretsAtRest(cipher));
-    return new ProfileTemplateService(
-        repository,
-        secrets,
-        new TemplateApplier(profiles, setup, secrets),
-        new TemplateMcpSnapshots(registry, secrets),
-        profiles,
-        setup,
-        credentials);
+    return service(repository, cipher, profiles, setup, registry, credentials, Libraries.NONE);
   }
 
   /** For the flows where no secret names a saved credential. */
@@ -62,6 +86,16 @@ final class TemplatesWiring {
     return service(repository, cipher, profiles, setup, null, null);
   }
 
+  /** For the deploys that resolve library skills or guides, and nothing else. */
+  static ProfileTemplateService service(
+      ProfileTemplateRepository repository,
+      SecretCipher cipher,
+      HermesProfiles profiles,
+      HermesSetup setup,
+      Libraries libraries) {
+    return service(repository, cipher, profiles, setup, null, null, libraries);
+  }
+
   /**
    * The applier on its own, for the two tests that assert what layering onto a caller-owned
    * profile does. They used to reach it through {@code ProfileTemplateService.applyExisting},
@@ -69,6 +103,13 @@ final class TemplatesWiring {
    * {@link TemplateApplier#deployNew} and {@link TemplateApplier#layerOnto} directly.
    */
   static TemplateApplier applier(HermesProfiles profiles, HermesSetup setup, SecretCipher cipher) {
-    return new TemplateApplier(profiles, setup, new TemplateSecrets(new SecretsAtRest(cipher)));
+    return applier(profiles, setup, new TemplateSecrets(new SecretsAtRest(cipher)), Libraries.NONE);
+  }
+
+  private static TemplateApplier applier(
+      HermesProfiles profiles, HermesSetup setup, TemplateSecrets secrets, Libraries libraries) {
+    return new TemplateApplier(
+        profiles, setup, secrets,
+        libraries.skills(), libraries.skillDeployer(), libraries.guides(), libraries.guideDeploy());
   }
 }

@@ -121,9 +121,11 @@ is refused with **nothing** written — not even the valid `SKILL.md` earlier in
   tab. Different lifetime, different owner: that one exists because a container has it, this
   one exists because an operator kept it. The FE spells the collision out too —
   `models.ts` `SkillRef` vs `Skill`, and `api.agents` vs `api.skills`.
-- **looks-like-but-is-not:** a **Profile template** (`profile_templates.skills`), which
-  holds skill *ids* to install when deploying a whole new agent. A blueprint creates an
-  agent; this layers one skill onto an agent that exists.
+- **looks-like-but-is-not:** a **Profile template**, which creates a whole new agent. Its
+  `skills` column holds Skills Hub ids to install by name; its `library_skill_ids` column names
+  rows *here*, by id, the way a [guide](guide.md) does — resolved when the blueprint is deployed,
+  through the same `SkillDeployer`. A blueprint creates an agent; this layers one skill onto an
+  agent that exists.
 - **looks-like-but-is-not:** a [skill group](skill-group.md). A group is filing and has
   no deploy at all; `category` on a row here is a filter, not a group. Both are on this
   page and neither is the other.

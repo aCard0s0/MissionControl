@@ -40,6 +40,31 @@ class HermesProfilesRollbackTest {
   }
 
   @Test
+  void aMixedCaseNameIsCreatedAndRolledBackUnderTheNameHermesFoldsItTo() {
+    // hermes lower-cases the name on create, so `Coach` lives at profiles/coach: a delete that
+    // said Coach found no directory and left the half-built profile behind
+    DockerExecService dockerExec = mock(DockerExecService.class);
+    HermesProfiles profiles = AgentsWiring.profiles(dockerExec);
+    ProfileSpec spec = new ProfileSpec(
+        "cid", "Coach", "anthropic", "model", null, null, null, null);
+    when(dockerExec.runAsUser(any(), anyString(), anyString(), any(), anyString(), anyBoolean(), anyBoolean(),
+        any(Duration.class)))
+        .thenReturn(new DockerExecService.ExecResult(0, "", ""))
+        .thenThrow(new RuntimeException("config failed"))
+        .thenReturn(new DockerExecService.ExecResult(0, "", ""));
+
+    assertThrows(RuntimeException.class, () -> profiles.createProfileBare(HOST, spec));
+
+    assertEquals("coach", spec.name());
+    verify(dockerExec).runAsUser(
+        HOST, "cid", "hermes", List.of("hermes", "profile", "create", "coach"),
+        "Hermes command", true, false, Duration.ofSeconds(30));
+    verify(dockerExec).runAsUser(
+        HOST, "cid", "hermes", List.of("hermes", "profile", "delete", "coach", "--yes"),
+        "Hermes command", true, false, Duration.ofSeconds(30));
+  }
+
+  @Test
   void aProfileCountsAsCreatingFromTheFirstExecUntilTheCreateIsOver() {
     // the directory exists after the first exec, so this is the window the inventory must
     // not report the profile in, and a stop would roll it back

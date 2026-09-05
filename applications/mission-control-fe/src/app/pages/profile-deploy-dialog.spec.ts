@@ -70,6 +70,23 @@ describe('ProfileDeployDialog', () => {
     expect(el(fixture).querySelector<HTMLInputElement>('.input')!.value).toBe('ops-sre');
   });
 
+  it('proposes the name hermes will actually create, and says so when a typed one differs', async () => {
+    // hermes folds a profile name to lower case on create; a blueprint called Coach used to be
+    // sent as Coach, created as coach, and then every later write missed it
+    const { fixture } = render(storeStub('c-1'), template({ name: 'Coach' }));
+    await settle(fixture);
+    const name = el(fixture).querySelector<HTMLInputElement>('#deploy-agent-name')!;
+    expect(name.value).toBe('coach');
+    expect(text(fixture)).not.toContain('keeps profile names lowercase');
+
+    name.value = 'Fitness-Coach';
+    name.dispatchEvent(new Event('input'));
+    await settle(fixture);
+
+    expect(text(fixture)).toContain('keeps profile names lowercase');
+    expect(text(fixture)).toContain('fitness-coach');
+  });
+
   it('falls back to the first container when none is selected', async () => {
     const { fixture } = render(storeStub());
     await settle(fixture);
@@ -96,6 +113,20 @@ describe('ProfileDeployDialog', () => {
 
     expect(store.templates.deploy).toHaveBeenCalledWith('t-1', 'c-1', 'ops-sre');
     expect(host.deployedId).toBe('a-new');
+  });
+
+  it('deploys under the folded name, whatever case was typed', async () => {
+    const { fixture, store } = render(storeStub('c-1'));
+    await settle(fixture);
+    const name = el(fixture).querySelector<HTMLInputElement>('#deploy-agent-name')!;
+    name.value = ' Coach ';
+    name.dispatchEvent(new Event('input'));
+    await settle(fixture);
+
+    submit(fixture).click();
+    await settle(fixture);
+
+    expect(store.templates.deploy).toHaveBeenCalledWith('t-1', 'c-1', 'coach');
   });
 
   it('stays open when the deploy is refused, and says the form is still there', async () => {

@@ -17,6 +17,8 @@ public record ProfileTemplateDto(
     String soul,
     String memory,
     List<String> skills,
+    List<String> librarySkillIds,
+    List<String> guideIds,
     List<McpServerSpec> mcpServers,
     List<SecretRef> secrets,
     long createdAt,

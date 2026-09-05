@@ -186,7 +186,7 @@ const CARRIES: readonly Carries[] = ['skills', 'mcp', 'keys'];
 
 export function carried(t: ProfileTemplate, what: Carries): boolean {
   switch (what) {
-    case 'skills': return t.skills.length > 0;
+    case 'skills': return t.skills.length + t.librarySkillIds.length + t.guideIds.length > 0;
     case 'mcp': return t.mcpServers.length > 0;
     case 'keys': return t.secrets.length > 0;
   }
@@ -198,7 +198,7 @@ export function carried(t: ProfileTemplate, what: Carries): boolean {
 function haystack(t: ProfileTemplate): string {
   return [
     t.name, t.description, t.category, t.provider, t.model,
-    ...t.skills,
+    ...t.skills, ...t.librarySkillIds, ...t.guideIds,
     ...t.mcpServers.map(m => m.name),
     ...t.secrets.map(s => s.key),
   ].join(' ').toLowerCase();

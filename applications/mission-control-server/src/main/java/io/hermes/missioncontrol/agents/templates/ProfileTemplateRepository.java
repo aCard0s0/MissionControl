@@ -44,6 +44,8 @@ public class ProfileTemplateRepository {
         rs.getString("soul"),
         rs.getString("memory"),
         readList(rs.getString("skills"), String.class, strict),
+        readList(rs.getString("library_skill_ids"), String.class, strict),
+        readList(rs.getString("guide_ids"), String.class, strict),
         readList(rs.getString("mcp_servers"), McpServerSpec.class, strict),
         readList(rs.getString("secrets"), StoredSecret.class, strict),
         rs.getLong("created_at"),
@@ -82,21 +84,21 @@ public class ProfileTemplateRepository {
     jdbc.update(
         "INSERT INTO profile_templates "
             + "(id, name, icon, description, category, provider, model, base_url, cwd, soul, memory, "
-            + "skills, mcp_servers, secrets, created_at, updated_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            + "skills, library_skill_ids, guide_ids, mcp_servers, secrets, created_at, updated_at) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         t.id(), t.name(), t.icon(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
-        t.soul(), t.memory(), writeJson(t.skills()), writeJson(t.mcpServers()), writeJson(t.secrets()),
-        t.createdAt(), t.updatedAt());
+        t.soul(), t.memory(), writeJson(t.skills()), writeJson(t.librarySkillIds()), writeJson(t.guideIds()),
+        writeJson(t.mcpServers()), writeJson(t.secrets()), t.createdAt(), t.updatedAt());
   }
 
   public void update(ProfileTemplate t) {
     jdbc.update(
         "UPDATE profile_templates SET name = ?, icon = ?, description = ?, category = ?, provider = ?, "
-            + "model = ?, base_url = ?, cwd = ?, soul = ?, memory = ?, skills = ?, mcp_servers = ?, "
-            + "secrets = ?, updated_at = ? WHERE id = ?",
+            + "model = ?, base_url = ?, cwd = ?, soul = ?, memory = ?, skills = ?, library_skill_ids = ?, "
+            + "guide_ids = ?, mcp_servers = ?, secrets = ?, updated_at = ? WHERE id = ?",
         t.name(), t.icon(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
-        t.soul(), t.memory(), writeJson(t.skills()), writeJson(t.mcpServers()), writeJson(t.secrets()),
-        t.updatedAt(), t.id());
+        t.soul(), t.memory(), writeJson(t.skills()), writeJson(t.librarySkillIds()), writeJson(t.guideIds()),
+        writeJson(t.mcpServers()), writeJson(t.secrets()), t.updatedAt(), t.id());
   }
 
   public void delete(String id) {

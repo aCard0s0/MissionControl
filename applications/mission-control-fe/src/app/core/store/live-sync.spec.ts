@@ -685,7 +685,8 @@ describe('live registries', () => {
     stubBackend(store.ctx, { templates: { create, update } });
     const input = {
       name: 'ops', icon: '', description: '', category: 'ops', provider: 'anthropic', model: 'claude-fable-5',
-      baseUrl: '', cwd: '', soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
+      baseUrl: '', cwd: '', soul: '', memory: '', skills: [], librarySkillIds: [], guideIds: [],
+      mcpServers: [], secrets: [],
     };
 
     expect(await store.templates.save(input)).toBe('pt-new');
@@ -705,7 +706,7 @@ describe('live registries', () => {
 
     expect(await store.templates.save({
       name: 'ops', icon: '', description: '', category: '', provider: '', model: '', baseUrl: '', cwd: '',
-      soul: '', memory: '', skills: [], mcpServers: [], secrets: [],
+      soul: '', memory: '', skills: [], librarySkillIds: [], guideIds: [], mcpServers: [], secrets: [],
     })).toBe('');
     expect(liveError(store.ctx)).toBe('save template failed: name taken');
     expect(store.templates.templates()).toHaveLength(before);

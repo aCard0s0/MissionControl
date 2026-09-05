@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  Credential, InferenceEndpoint, LlmProvider, McpCatalogServer, ProfileTemplate,
+  Credential, InferenceEndpoint, LlmProvider, McpCatalogServer, ProfileTemplate, Skill, SkillGuide,
 } from '../core/models';
 import { ProfileDraft, newProfileDraft, profileDraftFrom } from './profile-editor';
 import { ProfileEditorPanel } from './profile-editor-panel';
@@ -16,8 +16,19 @@ import { provideStores } from '../testing/store';
 const stored = (patch: Partial<ProfileTemplate> = {}): ProfileTemplate => ({
   id: 't-1', name: 'ops-sre', icon: '', description: '', category: 'ops', provider: 'anthropic',
   model: 'claude-opus-5',
-  baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], mcpServers: [],
-  secrets: [], createdAt: 1, updatedAt: 1, ...patch,
+  baseUrl: '', cwd: '/opt/data', soul: '', memory: '', skills: [], librarySkillIds: [], guideIds: [],
+  mcpServers: [], secrets: [], createdAt: 1, updatedAt: 1, ...patch,
+});
+
+/** A local row of the skill library. */
+const librarySkill = (id: string, name: string): Skill => ({
+  id, kind: 'local', name, description: '', category: 'general', repoUrl: '', version: '',
+  files: [{ path: 'SKILL.md', body: '# skill' }], createdAt: 1, updatedAt: 1,
+});
+
+const guide = (id: string, name: string, patch: Partial<SkillGuide> = {}): SkillGuide => ({
+  id, name, description: '', body: '## how', category: 'general', skillIds: [], mcpServerIds: [],
+  createdAt: 1, updatedAt: 1, ...patch,
 });
 
 const llm: LlmProvider[] = [
@@ -38,10 +49,22 @@ const storeStub = (
   templates: ProfileTemplate[] = [],
   catalog: McpCatalogServer[] = [],
   credentials: Credential[] = [],
+  library: Skill[] = [],
+  guides: SkillGuide[] = [],
 ) => ({
   catalog: {
     servers: signal(catalog),
     byId: (id: string | null) => catalog.find(s => s.id === id) ?? null,
+  },
+  skillLibrary: {
+    skills: signal(library),
+    byId: (id: string | null) => library.find(s => s.id === id) ?? null,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  },
+  guides: {
+    guides: signal(guides),
+    byId: (id: string | null) => guides.find(g => g.id === id) ?? null,
+    refresh: vi.fn().mockResolvedValue(undefined),
   },
   ctx: {
     toast: vi.fn(),
@@ -314,9 +337,9 @@ const section = (fixture: TestFixture, label: string): HTMLElement => {
 const rowInput = (fixture: TestFixture, label: string, index = 0): HTMLInputElement =>
   section(fixture, label).querySelectorAll<HTMLInputElement>('.add-row .input')[index];
 
-/** Presses the add button of the section this label names. */
+/** Presses the add button of the typed row in the section this label names. */
 const addRow = (fixture: TestFixture, label: string): void =>
-  press(fixture, 'add', section(fixture, label).querySelector('.add-row')!);
+  press(fixture, 'add', rowInput(fixture, label).closest('.add-row')!);
 
 /** Points the snapshot picker at a catalog entry. */
 const pickCatalog = async (
@@ -385,6 +408,82 @@ describe('ProfileEditorPanel skills', () => {
     fixture.detectChanges();
 
     expect(draft.skills).toEqual(['web-research']);
+  });
+});
+
+describe('ProfileEditorPanel library skills and guides', () => {
+  const pdf = librarySkill('s-pdf', 'pdf');
+  const triage = guide('g-1', 'pdf-triage', { skillIds: ['s-pdf'], mcpServerIds: ['mcp-browser'] });
+
+  it('reads both libraries when it opens, so a deep link to Blueprints finds them filled', async () => {
+    const { store } = await render(storeStub());
+
+    expect(store.skillLibrary.refresh).toHaveBeenCalled();
+    expect(store.guides.refresh).toHaveBeenCalled();
+  });
+
+  it('adds a library skill by id once, and shows it by name beside the typed hub ids', async () => {
+    const draft = { ...newProfileDraft(), skills: ['web-research'] };
+    const { fixture } = await render(storeStub([], [], [], [pdf]), draft);
+
+    await pickCatalog(fixture, 's-pdf');
+    press(fixture, 'add skill');
+    await pickCatalog(fixture, 's-pdf');
+    press(fixture, 'add skill');
+
+    expect(draft.librarySkillIds).toEqual(['s-pdf']);
+    expect(draft.skills).toEqual(['web-research']);
+    const chips = Array.from(el(fixture).querySelectorAll('.edit-chips .chip')).map(c => c.textContent?.trim());
+    expect(chips).toEqual(['pdf×', 'web-research×']);
+  });
+
+  it('marks a library skill the library no longer holds, and still lets it be removed', async () => {
+    const draft = { ...newProfileDraft(), librarySkillIds: ['s-gone'] };
+    const { fixture } = await render(storeStub(), draft);
+
+    const chip = el(fixture).querySelector<HTMLElement>('.edit-chips .chip')!;
+    expect(chip.classList.contains('warn')).toBe(true);
+    expect(chip.textContent).toContain('s-gone ⚠');
+
+    chip.querySelector<HTMLButtonElement>('.x')!.click();
+    expect(draft.librarySkillIds).toEqual([]);
+  });
+
+  it('adds a guide once and says what it brings, by name', async () => {
+    const draft = newProfileDraft();
+    const { fixture } = await render(storeStub([], [catalogServer()], [], [pdf], [triage]), draft);
+
+    await pickCatalog(fixture, 'g-1');
+    press(fixture, 'add guide');
+    await pickCatalog(fixture, 'g-1');
+    press(fixture, 'add guide');
+
+    expect(draft.guideIds).toEqual(['g-1']);
+    const line = section(fixture, 'guides').querySelector('.line')!;
+    expect(line.textContent).toContain('pdf-triage');
+    expect(line.textContent).toContain('brings skills: pdf · mcp: browser');
+  });
+
+  it('says so when a picked guide is gone from the library, and removes it on request', async () => {
+    const draft = { ...newProfileDraft(), guideIds: ['g-gone'] };
+    const { fixture } = await render(storeStub(), draft);
+
+    const line = section(fixture, 'guides').querySelector('.line')!;
+    expect(line.textContent).toContain('g-gone');
+    expect(line.textContent).toContain('no longer in the library');
+
+    press(fixture, 'remove', line);
+    expect(draft.guideIds).toEqual([]);
+  });
+
+  it('counts both kinds of skill on the closed group, and the guides on theirs', async () => {
+    const draft = { ...newProfileDraft(), skills: ['web-research'], librarySkillIds: ['s-pdf'], guideIds: ['g-1'] };
+    const { fixture } = await render(storeStub([], [], [], [pdf], [triage]), draft, 'closed');
+
+    const notes = Array.from(el(fixture).querySelectorAll('.group-h'))
+      .map(h => `${h.querySelector('.group-t')?.textContent?.trim()}: ${h.querySelector('.group-note')?.textContent?.trim()}`);
+    expect(notes).toContain('skills: 2 skills');
+    expect(notes).toContain('guides: 1 guide');
   });
 });
 
@@ -637,7 +736,8 @@ describe('ProfileEditorPanel optional groups', () => {
 
     // and nothing from a group, however much the blueprint carries
     expect(el(fixture).querySelector('.group-b')).toBeNull();
-    expect(el(fixture).querySelectorAll('.group-h').length).toBe(6);
+    // endpoint, soul, memory, skills, tools, guides, keys
+    expect(el(fixture).querySelectorAll('.group-h').length).toBe(7);
   });
 
   it('says what a folded group holds, so opening it is a decision not a search', async () => {

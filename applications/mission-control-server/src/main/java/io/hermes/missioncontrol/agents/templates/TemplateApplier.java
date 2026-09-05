@@ -5,24 +5,37 @@ import io.hermes.missioncontrol.agents.HermesSetup;
 import io.hermes.missioncontrol.agents.McpServerDefinition;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
+import io.hermes.missioncontrol.agents.api.DeployedPart;
 import io.hermes.missioncontrol.agents.api.EnvEntry;
 import io.hermes.missioncontrol.docker.DockerHostRef;
 import io.hermes.missioncontrol.secrets.StoredSecret;
+import io.hermes.missioncontrol.skills.GuideDeploy;
+import io.hermes.missioncontrol.skills.Skill;
+import io.hermes.missioncontrol.skills.SkillDeployer;
+import io.hermes.missioncontrol.skills.SkillGuide;
+import io.hermes.missioncontrol.skills.SkillGuideRepository;
+import io.hermes.missioncontrol.skills.SkillRepository;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Writing a template's contents — soul, memory, skills, MCP entries, secrets — onto a live
- * agent profile.
+ * Writing a template's contents — soul, memory, skills, MCP entries, guides, secrets — onto a
+ * live agent profile.
  *
  * <p>Split out of {@link ProfileTemplateService} because this is the only part that reaches a
  * container, and because it carries a rule that is easy to get wrong: a half-applied template
  * leaves a misconfigured profile, so the profile is rolled back <em>only</em> when this code
  * created it. {@link #deployNew} owns the profile and is all-or-nothing;
  * {@link #layerOnto} writes into a profile someone else owns and only surfaces the error.
+ *
+ * <p>Library skills and guides are references, resolved here at deploy time the way a guide
+ * resolves its own parts. The difference is what a missing one means: a guide layers onto an
+ * agent that exists and reports the part as skipped, while a template is creating the agent the
+ * operator asked for, so a row that is gone fails the deploy and the rollback runs.
  */
 @Component
 class TemplateApplier {
@@ -32,25 +45,39 @@ class TemplateApplier {
   private final HermesProfiles profiles;
   private final HermesSetup setup;
   private final TemplateSecrets secrets;
+  private final SkillRepository skillLibrary;
+  private final SkillDeployer skillDeployer;
+  private final SkillGuideRepository guides;
+  private final GuideDeploy guideDeploy;
 
-  TemplateApplier(HermesProfiles profiles, HermesSetup setup, TemplateSecrets secrets) {
+  TemplateApplier(
+      HermesProfiles profiles, HermesSetup setup, TemplateSecrets secrets,
+      SkillRepository skillLibrary, SkillDeployer skillDeployer,
+      SkillGuideRepository guides, GuideDeploy guideDeploy) {
     this.profiles = profiles;
     this.setup = setup;
     this.secrets = secrets;
+    this.skillLibrary = skillLibrary;
+    this.skillDeployer = skillDeployer;
+    this.guides = guides;
+    this.guideDeploy = guideDeploy;
   }
 
   /** Creates the profile from the template's own model settings, then applies it. All or
    *  nothing: a failure anywhere drops the profile this call created. */
   AgentProfileDto deployNew(ProfileTemplate template, DockerHostRef host, String containerId, String name) {
-    profiles.create(host, new ProfileSpec(
+    ProfileSpec spec = new ProfileSpec(
         containerId, name,
         blankTo(template.provider(), "nous"),
         blankTo(template.model(), "Hermes-4-405B"),
-        null, null, blankTo(template.baseUrl(), null), null));
+        null, null, blankTo(template.baseUrl(), null), null);
+    profiles.create(host, spec);
+    // spec.name(), not name: the spec folded it to the directory hermes actually created, and
+    // the apply and the rollback both have to address that one
     try {
-      return apply(template, host, containerId, name);
+      return apply(template, host, containerId, spec.name());
     } catch (RuntimeException failure) {
-      rollback(host, containerId, name, failure);
+      rollback(host, containerId, spec.name(), failure);
       throw failure;
     }
   }
@@ -85,15 +112,51 @@ class TemplateApplier {
         profiles.installSkill(host, containerId, name, skill.trim());
       }
     }
+    for (String skillId : template.librarySkillIds()) {
+      if (skillId == null || skillId.isBlank()) continue;
+      Skill skill = skillLibrary.find(skillId.trim()).orElseThrow(() -> new NoSuchElementException(
+          "library skill " + skillId.trim() + " is no longer in the library"));
+      skillDeployer.deploy(host, containerId, name, skill);
+    }
     for (McpServerSpec server : template.mcpServers()) {
       if (server == null || server.name() == null || server.name().isBlank()) continue;
       profiles.addMcpServer(host, containerId, name, definitionOf(server));
+    }
+    for (String guideId : template.guideIds()) {
+      if (guideId == null || guideId.isBlank()) continue;
+      SkillGuide guide = guides.find(guideId.trim()).orElseThrow(() -> new NoSuchElementException(
+          "guide " + guideId.trim() + " is no longer in the library"));
+      deployGuide(guide, host, containerId, name);
     }
     List<EnvEntry> env = environment(template);
     if (!env.isEmpty()) {
       setup.putEnv(host, containerId, name, env);
     }
     return profiles.get(host, containerId, name);
+  }
+
+  /**
+   * A guide goes on through {@link GuideDeploy} — its skills, its MCP servers and the umbrella
+   * SKILL.md, in the order that class keeps — which reports per part and never throws. That is
+   * the right shape for layering onto someone else's agent and the wrong one here, where the
+   * template is all or nothing: a failed part becomes the failure, so the caller's rollback runs.
+   *
+   * <p>ponytail: a skipped part (a skill gone from the guide's library, a server already linked)
+   * is logged and let through — the umbrella document names only what landed, so the agent is
+   * not told about a part it cannot reach. Tighten to a failure if a silently thinner guide
+   * ever bites.
+   */
+  private void deployGuide(SkillGuide guide, DockerHostRef host, String containerId, String name) {
+    for (DeployedPart part : guideDeploy.onto(guide, host, containerId, name).parts()) {
+      if (DeployedPart.FAILED.equals(part.status())) {
+        throw new IllegalStateException("guide '" + guide.name() + "': " + part.kind() + " '"
+            + part.name() + "' failed — " + part.detail());
+      }
+      if (DeployedPart.SKIPPED.equals(part.status())) {
+        log.warn("template deploy: guide '{}' skipped {} '{}': {}",
+            guide.name(), part.kind(), part.name(), part.detail());
+      }
+    }
   }
 
   /** A snapshot's stdio environment applies only to a stdio server, and its headers only to a
