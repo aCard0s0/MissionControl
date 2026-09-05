@@ -65,7 +65,7 @@ class HermesModelConfig {
    *  contain a slash (e.g. {@code anthropic/claude-sonnet-4}) are stored intact.
    *  Custom/local endpoints (ollama, vLLM, …) set {@code model.base_url} and own
    *  their routing, so they carry no provider; standard providers (nous,
-   *  openrouter, anthropic, openai, …) set {@code model.provider}.
+   *  openrouter, anthropic, openai-api, …) set {@code model.provider}.
    *
    *  <p>The map is first wiped to an empty scalar ({@code model: ""}) so a
    *  {@code --clone}'d profile cannot leak ANY stale key — provider, base_url, or

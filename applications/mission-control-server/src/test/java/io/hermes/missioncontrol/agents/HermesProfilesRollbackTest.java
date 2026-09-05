@@ -89,6 +89,33 @@ class HermesProfilesRollbackTest {
   }
 
   @Test
+  void aCallerCanHoldTheCreatingWindowOpenPastTheBareCreate() {
+    // a blueprint deploy layers a dozen writes onto the profile after createProfileBare returns;
+    // the window has to cover them, and the bare create's own close must not end it early
+    HermesProfiles profiles = AgentsWiring.profiles(mock(DockerExecService.class));
+
+    List<String> seenInside = profiles.whileCreating("cid", "ops", () -> {
+      // createProfileBare's own window for the same profile, opened and closed while ours is up
+      profiles.whileCreating("cid", "ops", () -> null);
+      return profiles.creating("cid");
+    });
+
+    assertEquals(List.of("ops"), seenInside);
+    assertEquals(List.of(), profiles.creating("cid"));
+  }
+
+  @Test
+  void theWindowClosesWhenTheWorkThrows() {
+    HermesProfiles profiles = AgentsWiring.profiles(mock(DockerExecService.class));
+
+    assertThrows(IllegalStateException.class, () -> profiles.whileCreating("cid", "ops", () -> {
+      throw new IllegalStateException("apply failed");
+    }));
+
+    assertEquals(List.of(), profiles.creating("cid"));
+  }
+
+  @Test
   void configWriteThatLeavesNoModelDeletesNewProfile() {
     // every exec "succeeds" but config.yaml reads back empty — the state that
     // produced a profile whose auxiliary chain had no provider to resolve to

@@ -272,7 +272,7 @@ blank:
 
 | Method & path | Body | Notes |
 |---|---|---|
-| `GET /api/providers` | — | the LLM **vendor** registry: `{ key, label, needsKey, oauth, hasCatalog, envVar }` per vendor. Compiled in, not stored — it mirrors hermes' own `CANONICAL_PROVIDERS` order and provider records, and a database row would let it drift from the CLI it has to agree with. The picker, the "needs an API key?" rule and the provider→catalog decision all read this one list |
+| `GET /api/providers` | — | the LLM **vendor** registry: `{ key, label, needsKey, oauth, hasCatalog, envVar }` per vendor. Compiled in, not stored — it mirrors hermes' own `CANONICAL_PROVIDERS` order and provider records, and a database row would let it drift from the CLI it has to agree with. The picker, the "needs an API key?" rule and the provider→catalog decision all read this one list. API-key OpenAI is `openai-api`, hermes' spelling since v0.21.0; the retired `openai` is accepted on every write and folded to it |
 | `GET /api/models/{provider}` | — | what the picker offers. A list stored by the background refresh wins (`source: catalog`); otherwise the curated `mc.models` list from `application.yml` (`source: config`). 404 for a provider with neither |
 | `POST /api/models/{provider}` | `{ apiKey }` | live fetch from the provider's `/v1/models` (truth source); falls back to the config list on any failure |
 

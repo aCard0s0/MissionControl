@@ -71,15 +71,19 @@ class TemplateApplier {
         blankTo(template.provider(), "nous"),
         blankTo(template.model(), "Hermes-4-405B"),
         null, null, blankTo(template.baseUrl(), null), null);
-    profiles.create(host, spec);
     // spec.name(), not name: the spec folded it to the directory hermes actually created, and
-    // the apply and the rollback both have to address that one
-    try {
-      return apply(template, host, containerId, spec.name());
-    } catch (RuntimeException failure) {
-      rollback(host, containerId, spec.name(), failure);
-      throw failure;
-    }
+    // the apply and the rollback both have to address that one. The whole of it sits inside the
+    // creating window, so the Agents page does not list — and a shell cannot start hermes on —
+    // a profile whose key is still a few writes away.
+    return profiles.whileCreating(containerId, spec.name(), () -> {
+      profiles.create(host, spec);
+      try {
+        return apply(template, host, containerId, spec.name());
+      } catch (RuntimeException failure) {
+        rollback(host, containerId, spec.name(), failure);
+        throw failure;
+      }
+    });
   }
 
   /** Applies the template onto a profile the caller already owns. The profile is left in

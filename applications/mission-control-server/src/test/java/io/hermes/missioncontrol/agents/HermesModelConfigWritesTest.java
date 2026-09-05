@@ -135,7 +135,7 @@ class HermesModelConfigWritesTest {
 
     InOrder order = inOrder(files);
     order.verify(files).exec(HOST, CONTAINER,
-        List.of("hermes", "-p", PROFILE, "config", "set", "model.provider", "openai"), true);
+        List.of("hermes", "-p", PROFILE, "config", "set", "model.provider", "openai-api"), true);
     order.verify(files).exec(HOST, CONTAINER,
         List.of("hermes", "-p", PROFILE, "config", "unset", "model.base_url"), false);
     verify(files, never()).exec(HOST, CONTAINER,

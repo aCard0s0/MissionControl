@@ -2,6 +2,7 @@ package io.hermes.missioncontrol.agents.templates;
 
 import io.hermes.missioncontrol.agents.HermesProfiles;
 import io.hermes.missioncontrol.agents.HermesSetup;
+import io.hermes.missioncontrol.agents.ModelProviderRegistry;
 import io.hermes.missioncontrol.agents.ProfileSpec;
 import io.hermes.missioncontrol.agents.api.AgentProfileDto;
 import io.hermes.missioncontrol.agents.api.AgentSetupDto;
@@ -135,13 +136,18 @@ public class ProfileTemplateService {
    */
   public AgentProfileDto createFromTemplate(String id, DockerHostRef host, ProfileSpec spec) {
     ProfileTemplate template = require(id);
-    profiles.createProfileBare(host, spec);
-    try {
-      return applier.layerOnto(template, host, spec.containerId(), spec.name());
-    } catch (RuntimeException failure) {
-      applier.rollback(host, spec.containerId(), spec.name(), failure);
-      throw failure;
-    }
+    // the profile stays inside the creating window until the blueprint has landed on it: the
+    // Agents page would otherwise list it — and a shell opened on it would start hermes — while
+    // its key is still a few writes away
+    return profiles.whileCreating(spec.containerId(), spec.name(), () -> {
+      profiles.createProfileBare(host, spec);
+      try {
+        return applier.layerOnto(template, host, spec.containerId(), spec.name());
+      } catch (RuntimeException failure) {
+        applier.rollback(host, spec.containerId(), spec.name(), failure);
+        throw failure;
+      }
+    });
   }
 
   // ── capture from a running agent ───────────────────────────────────────────
@@ -172,7 +178,7 @@ public class ProfileTemplateService {
         ? agentName + "-template" : templateName);
     ProfileTemplate template = new ProfileTemplate(
         newId(), name, "", "Captured from " + agentName, CAPTURED_CATEGORY,
-        agent.provider(), agent.model(), "", agent.cwd(),
+        ModelProviderRegistry.normalizeKey(agent.provider()), agent.model(), "", agent.cwd(),
         agent.soul(), agent.memoryMd(), skills, mcp, captured, now, now);
     repository.insert(template);
     return toDto(template);
@@ -192,7 +198,8 @@ public class ProfileTemplateService {
   private ProfileTemplate build(
       String id, UpsertProfileTemplateRequest r, ProfileTemplate existing, long created, long updated) {
     return new ProfileTemplate(
-        id, r.name(), nz(r.icon()), nz(r.description()), category(r.category()), nz(r.provider()), nz(r.model()),
+        id, r.name(), nz(r.icon()), nz(r.description()), category(r.category()),
+        ModelProviderRegistry.normalizeKey(r.provider()), nz(r.model()),
         nz(r.baseUrl()), nz(r.cwd()), nz(r.soul()), nz(r.memory()),
         nz(r.skills()), IdList.normalize(r.librarySkillIds()), IdList.normalize(r.guideIds()),
         snapshots.materialize(r.mcpServers(), existing),
@@ -254,7 +261,11 @@ public class ProfileTemplateService {
         .toList();
     List<McpServerSpec> mcp = t.mcpServers().stream().map(TemplateSecrets::redacted).toList();
     return new ProfileTemplateDto(
-        t.id(), t.name(), t.icon(), t.description(), t.category(), t.provider(), t.model(), t.baseUrl(), t.cwd(),
+        t.id(), t.name(), t.icon(), t.description(), t.category(),
+        // served under the registry's current key: a blueprint saved as `openai` before hermes
+        // renamed it has to pick the right option in the editor and deploy under a name hermes
+        // still resolves, and the next save then stores it that way for good
+        ModelProviderRegistry.normalizeKey(t.provider()), t.model(), t.baseUrl(), t.cwd(),
         t.soul(), t.memory(), t.skills(), t.librarySkillIds(), t.guideIds(), mcp, refs, t.createdAt(), t.updatedAt());
   }
 

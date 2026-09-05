@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -184,7 +185,9 @@ public class HermesProfiles implements ContainerWork {
       command.addAll(List.of("--clone", "--clone-from", cloneFrom));
     }
     String key = creatingKey(containerId, profileName);
-    creating.add(key);
+    // false when a caller already holds the window through whileCreating: then it is theirs to
+    // close, and closing it here would list the profile while they are still writing to it
+    boolean marked = creating.add(key);
     boolean created = false;
     try {
       files.exec(host, containerId, command);
@@ -210,7 +213,27 @@ public class HermesProfiles implements ContainerWork {
       }
       throw failure;
     } finally {
-      creating.remove(key);
+      if (marked) creating.remove(key);
+    }
+  }
+
+  /**
+   * Keeps {@code name} inside the creating window for the whole of {@code work}.
+   *
+   * <p>For the callers that layer more onto a profile after {@link #createProfileBare} returns —
+   * a blueprint's soul, skills, MCP entries and keys. Without this the window closed with the
+   * bare create, the Agents page listed the profile a dozen writes early, and a shell opened on
+   * it started hermes before its API key had landed, which hermes reports as "No inference
+   * provider is configured yet". One try/finally here rather than a begin/end pair, because a
+   * window left open would refuse every stop of that container until the dashboard restarted.
+   */
+  public <T> T whileCreating(String containerId, String name, Supplier<T> work) {
+    String key = creatingKey(containerId, name);
+    boolean marked = creating.add(key);
+    try {
+      return work.get();
+    } finally {
+      if (marked) creating.remove(key);
     }
   }
 

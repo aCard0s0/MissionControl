@@ -63,6 +63,10 @@ JSON-encoded columns: `skills` (Skills Hub ids), `library_skill_ids` (skill libr
 `guide_ids` (guide ids), `mcp_servers` (`McpServerSpec`), `secrets` (`{key, enc}`, AES-GCM
 ciphertext).
 
+`provider` is stored and served through `ModelProviderRegistry.normalizeKey`, so a blueprint
+saved as `openai` before hermes renamed that key reads, deploys and re-saves as `openai-api` —
+see [provider](../models/provider-registry.md), "When hermes renames a key".
+
 ## Connected to
 
 - **owns:** its encrypted secrets and its MCP snapshot (`TemplateMcpSnapshots`,
