@@ -1,7 +1,7 @@
 ---
 type: process
 status: verified
-verified: claude/hermes-openai-api-key @ PENDING · 2026-09-05
+verified: claude/hermes-openai-api-key @ 6b6a014 · 2026-09-05
 consumes: [container, image, profile, profile-template]
 produces: [container, profile]
 ---

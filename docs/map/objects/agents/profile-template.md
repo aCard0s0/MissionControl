@@ -3,7 +3,7 @@ type: object
 cluster: agents
 universe: live
 status: verified
-verified: claude/hermes-openai-api-key @ PENDING · 2026-09-05
+verified: claude/hermes-openai-api-key @ 6b6a014 · 2026-09-05
 entity: applications/mission-control-server/src/main/java/io/hermes/missioncontrol/agents/templates/
 ---
 
