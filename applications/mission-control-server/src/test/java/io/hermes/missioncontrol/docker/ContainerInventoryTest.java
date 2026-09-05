@@ -26,6 +26,7 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.ContainerPort;
 import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.docker.DockerExecService.ExecResult;
 import java.time.Instant;
@@ -194,6 +195,34 @@ class ContainerInventoryTest {
     assertEquals(List.of(), fleet.get("blank").profiles());
     assertEquals(List.of(), fleet.get("plain").profiles());
     assertEquals(List.of(), fleet.get("foreign").profiles());
+  }
+
+  @Test
+  void publishedPortsAreReportedOncePerContainerPortWithTheAddressABrowserCanUse() {
+    Container published = container("aaaaaaa1111", "/published", "hermes/image:v1");
+    when(published.getPorts()).thenReturn(new ContainerPort[] {
+        // an all-interfaces binding is listed twice by the daemon; the IPv4 row is the one to keep
+        new ContainerPort().withIp("::").withPrivatePort(9119).withPublicPort(9119).withType("tcp"),
+        new ContainerPort().withIp("0.0.0.0").withPrivatePort(9119).withPublicPort(9119).withType("tcp"),
+        // a second IPv6 row after the IPv4 one changes nothing
+        new ContainerPort().withIp("::").withPrivatePort(9119).withPublicPort(9119).withType("tcp"),
+        new ContainerPort().withIp("127.0.0.1").withPrivatePort(8644).withPublicPort(18644).withType("tcp"),
+        // exposed by the image but never published, and a row the daemon left half-filled
+        new ContainerPort().withPrivatePort(8642).withType("tcp"),
+        new ContainerPort().withPublicPort(7000).withType("tcp"),
+        // no address at all is reported as a blank one rather than failing the listing
+        new ContainerPort().withPrivatePort(8080).withPublicPort(8080).withType("tcp")});
+    Container plain = container("bbbbbbb2222", "/plain", "hermes/image:v1");
+    when(plain.getPorts()).thenReturn(null);
+    stubListing(published, plain);
+
+    Map<String, ContainerDto> fleet = byName(subject.listContainers(HOST, false));
+
+    assertEquals(List.of(
+        new PublishedPortDto(8080, "", 8080), new PublishedPortDto(8644, "127.0.0.1", 18644),
+        new PublishedPortDto(9119, "0.0.0.0", 9119)),
+        fleet.get("published").ports());
+    assertEquals(List.of(), fleet.get("plain").ports());
   }
 
   @Test

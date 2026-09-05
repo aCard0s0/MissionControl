@@ -493,6 +493,81 @@ class ContainerUpgraderInspectTest {
   }
 
   @Test
+  void hostAccessAskedForOnAnUpdateIsLaidOverWhatTheContainerAlreadyHad() {
+    CreateContainerCmd create = upgradeHarness(true);
+    HostAccess access = new HostAccess(
+        List.of(new HostAccess.PortMapping(9119, 9119, "")),
+        List.of(new HostAccess.EnvVar("HERMES_DASHBOARD", "1")),
+        List.of(new HostAccess.Mount("/srv/repo", "/work", false)));
+
+    upgrader.upgrade(HOST, ID, "1.3", access);
+
+    HostConfig replacement = hostConfigOf(create);
+    Map<ExposedPort, Ports.Binding[]> bound = replacement.getPortBindings().getBindings();
+    // the operator's own webhook mapping is still there, the dashboard's is beside it
+    assertEquals("8644", bound.get(WEBHOOK_PORT)[0].getHostPortSpec());
+    assertEquals("127.0.0.1", bound.get(ExposedPort.tcp(9119))[0].getHostIp());
+    assertEquals("9119", bound.get(ExposedPort.tcp(9119))[0].getHostPortSpec());
+    verify(create).withExposedPorts(List.of(WEBHOOK_PORT, ExposedPort.tcp(9119)));
+    // the image's environment is kept and the variable added; the writable mount widens the
+    // write-safe root the same way a deploy would, and the bind sits beside the data volume
+    verify(create).withEnv(List.of("TZ=UTC", "HERMES_DASHBOARD=1", "HERMES_WRITE_SAFE_ROOT=/opt/data:/work"));
+    assertEquals(List.of("mc-hermes-demo:/opt/data:rw", "/srv/repo:/work:rw"),
+        java.util.Arrays.stream(replacement.getBinds()).map(Bind::toString).toList());
+  }
+
+  @Test
+  void hostAccessOnAContainerWithNothingOptionalSetStartsFromNothing() {
+    // deployed before host access existed: no port bindings, no environment of its own. The
+    // update's rows are then the whole of both, and a read-only mount stays read-only.
+    CreateContainerCmd create = upgradeHarness(false);
+
+    upgrader.upgrade(HOST, ID, "1.3", new HostAccess(
+        List.of(new HostAccess.PortMapping(8644, 8644, "")), List.of(),
+        List.of(new HostAccess.Mount("/srv/docs", "/docs", true))));
+
+    HostConfig replacement = hostConfigOf(create);
+    Ports.Binding[] bound = replacement.getPortBindings().getBindings().get(WEBHOOK_PORT);
+    assertEquals("8644", bound[0].getHostPortSpec());
+    assertEquals(List.of("/srv/docs:/docs:ro"),
+        java.util.Arrays.stream(replacement.getBinds()).map(Bind::toString).toList());
+    verify(create).withExposedPorts(List.of(WEBHOOK_PORT));
+    verify(create).withEnv(List.of());   // a read-only mount widens nothing, and there was nothing else
+  }
+
+  @Test
+  void aPortAskedForAgainIsRemappedRatherThanBoundTwice() {
+    CreateContainerCmd create = upgradeHarness(true);
+
+    upgrader.upgrade(HOST, ID, "1.3", new HostAccess(
+        List.of(new HostAccess.PortMapping(8644, 18644, "0.0.0.0")), List.of(), List.of()));
+
+    Ports.Binding[] bound = hostConfigOf(create).getPortBindings().getBindings().get(WEBHOOK_PORT);
+    assertEquals(1, bound.length);
+    assertEquals("0.0.0.0", bound[0].getHostIp());
+    assertEquals("18644", bound[0].getHostPortSpec());
+    verify(create).withExposedPorts(List.of(WEBHOOK_PORT));   // not listed twice either
+  }
+
+  @Test
+  void theTagItAlreadyRunsIsARecreateOnceHostAccessComesWithIt() {
+    // the one moment a port can be added to an existing Agent is a recreate, and an update
+    // onto the same image is exactly that — refusing it would leave "recreate by hand" as the
+    // only way to expose a listener on a container deployed without one
+    CreateContainerCmd create = upgradeHarness(true);
+    InspectImageResponse same = mock(InspectImageResponse.class);
+    when(same.getId()).thenReturn("sha256:current");
+    InspectImageCmd inspectImage = mock(InspectImageCmd.class);
+    when(inspectImage.exec()).thenReturn(same);
+    when(client.inspectImageCmd(anyString())).thenReturn(inspectImage);
+
+    upgrader.upgrade(HOST, ID, "1.2", new HostAccess(
+        List.of(new HostAccess.PortMapping(8642, 8642, "")), List.of(), List.of()));
+
+    verify(create).exec();
+  }
+
+  @Test
   void anImageThatIsNotPresentLocallyIsPulledFirst() {
     // pulling before the container is touched means a bad tag costs nothing
     CreateContainerCmd create = upgradeHarness(true);

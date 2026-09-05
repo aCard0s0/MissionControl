@@ -5,13 +5,18 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * What an operator asks the daemon to open between a Hermes container and its host at deploy
- * time: published ports, environment variables and bind mounts. All three are create-time —
- * Docker cannot add any of them to a running container — so a deploy is the one moment they can
- * be set, and {@link ContainerUpgrader} carries them onto a replacement.
+ * What an operator asks the daemon to open between a Hermes container and its host: published
+ * ports, environment variables and bind mounts. All three are create-time — Docker cannot add
+ * any of them to a running container — so they are set on the deploy, or on the recreate an
+ * image update already is: {@link ContainerUpgrader} carries the original's onto the
+ * replacement and lays any asked for on the update over them.
  *
  * <p>Nothing here is guessed. A Hermes feature that needs one of these — its own dashboard on
  * 9119, the API server on 8642, a webhook listener on 8644, a repository to work in — stays
@@ -48,6 +53,35 @@ public record HostAccess(List<PortMapping> ports, List<EnvVar> env, List<Mount> 
     return ports.isEmpty() && env.isEmpty() && mounts.isEmpty();
   }
 
+  /**
+   * A container's environment with this access laid over it: the operator's variables replace
+   * any line carrying the same key, and the write-safe root is widened over the writable mounts
+   * — unless the operator set it themselves. The image confines hermes' file tools to
+   * {@code /opt/data}, so a repository mounted for the agent to work in would be the first thing
+   * it could not write to, and hermes reports that only as a denied tool call.
+   *
+   * <p>{@code current} is empty on a deploy and the original container's {@code Config.Env} on
+   * an update, which is how a root a previous deploy already widened keeps what it had.
+   */
+  public List<String> environment(List<String> current) {
+    Map<String, String> env = new LinkedHashMap<>();
+    for (String line : current) {
+      int eq = line.indexOf('=');
+      env.put(eq < 0 ? line : line.substring(0, eq), eq < 0 ? "" : line.substring(eq + 1));
+    }
+    for (EnvVar var : this.env) env.put(var.key(), var.value());
+    List<String> writable = mounts.stream().filter(m -> !m.readOnly()).map(Mount::target).toList();
+    if (!writable.isEmpty() && this.env.stream().noneMatch(v -> WRITE_SAFE_ROOT.equals(v.key()))) {
+      Set<String> roots = new LinkedHashSet<>();
+      for (String root : env.getOrDefault(WRITE_SAFE_ROOT, ManagedContainer.DATA_MOUNT).split(":")) {
+        if (!root.isBlank()) roots.add(root);
+      }
+      roots.addAll(writable);
+      env.put(WRITE_SAFE_ROOT, String.join(":", roots));
+    }
+    return env.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).toList();
+  }
+
   /** A container port and the host port it is published on. A blank {@code hostIp} binds
    *  loopback — the same default {@code ./mc} uses for the dashboard itself. */
   public record PortMapping(
@@ -64,10 +98,6 @@ public record HostAccess(List<PortMapping> ports, List<EnvVar> env, List<Mount> 
       @NotBlank @Pattern(regexp = "[A-Za-z_][A-Za-z0-9_]*", message = "invalid variable name")
       String key,
       @NotNull String value) {
-
-    public String line() {
-      return key + "=" + value;
-    }
   }
 
   /** A host directory bound into the container. */

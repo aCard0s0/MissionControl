@@ -2,7 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { HERMES_BASELINE } from '../container-resources';
 import { isFloatingTag } from '../image-policy';
 import { ContainerResources, ContainerStatus, HostAccess } from '../models';
-import { NO_HOST_ACCESS } from '../host-access';
+import { NO_HOST_ACCESS, hasAccess } from '../host-access';
 import { ActivityStore } from './activity-store';
 import { ContainerStore } from './container-store';
 import { ImageCatalogStore } from './image-catalog-store';
@@ -71,8 +71,10 @@ export class ContainerLifecycle {
    * replaces the container against the same data volume, so profiles, souls,
    * skills and credentials survive. **The container id changes** — callers
    * holding an id must re-read it. Resolves to the new id, or '' on failure.
+   * `access` is added to what the container already has, and is what makes the
+   * tag it already runs a legitimate target: the recreate is then the point.
    */
-  async update(id: string, version: string): Promise<string> {
+  async update(id: string, version: string, access: HostAccess = NO_HOST_ACCESS): Promise<string> {
     const container = this.containers.byId(id);
     if (!container) {
       this.ctx.gone('container');
@@ -82,10 +84,10 @@ export class ContainerLifecycle {
     // A floating tag matching what the container already runs is the whole point of asking:
     // `latest` moved, and the local copy is what is stale. Dropping it as a no-op here is why
     // 'update to latest' did nothing — the backend re-pulls floating tags precisely for this.
-    if (version === container.version && !isFloatingTag(version)) return '';
+    if (version === container.version && !isFloatingTag(version) && !hasAccess(access)) return '';
     const wasSelected = this.containers.selectedContainerId() === id;
     try {
-      const r = await this.ctx.api.containers.update(container.hostId, id, version);
+      const r = await this.ctx.api.containers.update(container.hostId, id, version, access);
       await this.containers.refresh();
       if (wasSelected) this.containers.select(r.id);
       void this.images.refresh(container.hostId, true);   // the tag is pulled now

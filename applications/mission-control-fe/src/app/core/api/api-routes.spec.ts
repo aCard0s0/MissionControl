@@ -77,7 +77,7 @@ const cases: Record<string, Case> = {
   },
   'containers.update': {
     call: a => a.containers.update('dh-local', 'c-1', 'v2'), method: 'POST',
-    url: '/api/containers/dh-local/c-1/update', body: { version: 'v2' },
+    url: '/api/containers/dh-local/c-1/update', body: { version: 'v2', ports: [], env: [], mounts: [] },
   },
   'containers.imageTags': {
     call: a => a.containers.imageTags('dh-local'), method: 'GET',

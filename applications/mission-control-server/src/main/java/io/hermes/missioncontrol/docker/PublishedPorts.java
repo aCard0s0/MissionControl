@@ -1,7 +1,11 @@
 package io.hermes.missioncontrol.docker;
 
+import com.github.dockerjava.api.model.ContainerPort;
 import com.github.dockerjava.api.model.HostConfig;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +24,24 @@ public class PublishedPorts {
 
   public PublishedPorts(DockerClients clients) {
     this.clients = clients;
+  }
+
+  /**
+   * The published ports a fleet listing already carries, one row per container port — the
+   * daemon lists an all-interfaces binding twice, as {@code 0.0.0.0} and {@code ::}, and the
+   * IPv4 row is the one a browser can be sent to.
+   */
+  static List<PublishedPortDto> fromListing(ContainerPort[] ports) {
+    Map<Integer, PublishedPortDto> byPort = new TreeMap<>();
+    if (ports == null) return List.of();
+    for (ContainerPort port : ports) {
+      if (port.getPrivatePort() == null || port.getPublicPort() == null) continue;
+      PublishedPortDto seen = byPort.get(port.getPrivatePort());
+      if (seen != null && !seen.hostIp().contains(":")) continue;
+      byPort.put(port.getPrivatePort(), new PublishedPortDto(
+          port.getPrivatePort(), port.getIp() == null ? "" : port.getIp(), port.getPublicPort()));
+    }
+    return List.copyOf(byPort.values());
   }
 
   /** The container ports with at least one host binding; empty when none are published. */

@@ -233,6 +233,20 @@ describe('ContainerLifecycle update', () => {
     expect(liveError(ctx)).toBeNull();
   });
 
+  it('recreates on the tag it already runs once host access comes with it', async () => {
+    // the recreate is the point then: a port, variable or mount is create-time, and an
+    // update onto the same image is the one way to add one to an existing Agent
+    const update = vi.fn().mockResolvedValue({ id: 'c-new' });
+    const list = vi.fn().mockResolvedValue([apiContainer()]);
+    const { lifecycle } = await loaded({
+      list, update, imageTags: vi.fn().mockResolvedValue({ repository: 'r', tags: [] }),
+    });
+    const access = { ports: [{ containerPort: 8644, hostPort: 8644, hostIp: '127.0.0.1' }], env: [], mounts: [] };
+
+    expect(await lifecycle.update('c-1', 'v2026.8.3', access)).toBe('c-new');
+    expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'v2026.8.3', access);
+  });
+
   it('says so when the container to update is no longer there', async () => {
     const update = vi.fn();
     const { lifecycle, ctx } = await loaded({ update });

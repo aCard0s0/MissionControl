@@ -16,10 +16,9 @@ import { TerminalIcon } from '../shared/terminal-icon';
 import {
   CPU_PRESETS, HERMES_BASELINE, MEMORY_PRESETS_MB, formatMemory, memoryNote,
 } from '../core/container-resources';
-import {
-  HOST_ACCESS_PRESETS, HostAccessPreset, applyPreset, compactAccess, emptyAccess,
-} from '../core/host-access';
-import { EnvVar, HostAccess, Mount, PortMapping } from '../core/models';
+import { compactAccess, dashboardUrl, emptyAccess, hasAccess } from '../core/host-access';
+import { HostAccess } from '../core/models';
+import { HostAccessEditor } from '../shared/host-access-editor';
 import { errorMessage } from '../core/errors';
 import { pct, uptime } from '../core/format';
 import {
@@ -38,7 +37,7 @@ export function normalizeSeedProfiles(value: string): string[] {
 @Component({
   selector: 'mc-containers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, StatusDot, Sparkline, Reveal, TerminalIcon, Scrim],
+  imports: [FormsModule, StatusDot, Sparkline, Reveal, TerminalIcon, Scrim, HostAccessEditor],
   templateUrl: './containers.html',
   styleUrl: './containers.scss',
 })
@@ -72,34 +71,8 @@ export class ContainersPage {
   protected readonly deployCpus = signal(HERMES_BASELINE.cpus);
 
   /** Ports, variables and mounts the deploy opens to the host — nothing until asked. Plain
-   *  rows under ngModel, the way the MCP editor keeps its environment. */
+   *  rows edited in place by the editor, the way the MCP editor keeps its environment. */
   protected deployAccess: HostAccess = emptyAccess();
-  protected readonly accessPresets = HOST_ACCESS_PRESETS;
-
-  protected preset(id: HostAccessPreset): void {
-    this.deployAccess = applyPreset(this.deployAccess, id);
-  }
-
-  protected addPort(): void {
-    this.deployAccess.ports.push({ containerPort: 0, hostPort: 0, hostIp: '127.0.0.1' });
-  }
-
-  protected addVariable(): void {
-    this.deployAccess.env.push({ key: '', value: '' });
-  }
-
-  protected addMount(): void {
-    this.deployAccess.mounts.push({ source: '', target: '', readOnly: false });
-  }
-
-  protected removeRow(rows: PortMapping[] | EnvVar[] | Mount[], index: number): void {
-    rows.splice(index, 1);
-  }
-
-  protected accessOpen(): boolean {
-    const a = this.deployAccess;
-    return a.ports.length + a.env.length + a.mounts.length > 0;
-  }
   protected readonly memoryPresets = MEMORY_PRESETS_MB;
   protected readonly cpuPresets = CPU_PRESETS;
   protected readonly formatMemory = formatMemory;
@@ -122,6 +95,9 @@ export class ContainersPage {
   protected readonly updatingBusy = signal(false);
   protected readonly updateTargets = signal<ImageTag[]>([]);
   protected updateVersion = '';
+  /** What the update adds to the container's host access. The recreate an update already is
+   *  happens to be the one moment Docker lets a port, variable or mount be added to an Agent. */
+  protected updateAccess: HostAccess = emptyAccess();
 
   protected readonly connectedHosts = computed(() =>
     this.hosts.hosts().filter(h => h.status === 'connected'));
@@ -185,7 +161,29 @@ export class ContainersPage {
   protected optionLabel(c: HermesContainer, t: ImageTag): string {
     const release = targetVersion(t, this.images.catalog()[c.hostId]);
     const name = release === t.tag ? t.tag : `${t.tag} — ${release}`;
+    if (t.tag === c.version && !isFloatingTag(t.tag)) return `${name} — current`;
     return `${name}${t.pulled ? '' : ' — not pulled'}`;
+  }
+
+  /** True when the chosen target is the image the container already runs, so the recreate is
+   *  for the host access alone. A floating tag re-pulled is a real move and never this. */
+  protected sameImage(c: HermesContainer): boolean {
+    return this.updateVersion === c.version && !isFloatingTag(this.updateVersion);
+  }
+
+  /** Recreating for no reason would drop every Agent's session, so the same image needs a row. */
+  protected canUpdate(c: HermesContainer): boolean {
+    return !!this.updateVersion && !this.updatingBusy()
+      && (!this.sameImage(c) || hasAccess(compactAccess(this.updateAccess)));
+  }
+
+  protected updateLabel(c: HermesContainer): string {
+    return this.sameImage(c) ? 'recreate with host access' : `update to ${this.updateVersion}`;
+  }
+
+  /** Where hermes' own web UI answers for this container, or null while nothing publishes it. */
+  protected dashboardUrl(c: HermesContainer): string | null {
+    return dashboardUrl(c, this.hosts.byId(c.hostId)?.url ?? '', location.hostname);
   }
 
   /** Everything this container could move to: newer releases, or the same tag re-pulled. */
@@ -208,11 +206,18 @@ export class ContainersPage {
     return this.updateTargets().find(t => t.tag === this.updateVersion)?.pulled ?? true;
   }
 
-  protected beginUpdate(c: HermesContainer): void {
+  /**
+   * Opens the update dialog — on the newest release, or with `sameImage` on the tag the
+   * container already runs, which is how host access is added to an existing Agent. The
+   * current tag is always among the options for the same reason.
+   */
+  protected beginUpdate(c: HermesContainer, sameImage = false): void {
+    if (this.updatingBusy()) return;
     const targets = this.targetsFor(c);
-    if (!targets.length || this.updatingBusy()) return;
-    this.updateTargets.set(targets);
-    this.updateVersion = targets[0].tag;
+    const current: ImageTag = { tag: c.version, pulled: true, digest: c.imageDigest };
+    this.updateTargets.set(targets.some(t => t.tag === c.version) ? targets : [...targets, current]);
+    this.updateVersion = sameImage ? c.version : targets[0]?.tag ?? c.version;
+    this.updateAccess = emptyAccess();
     this.updating.set(c);
   }
 
@@ -225,10 +230,10 @@ export class ContainersPage {
 
   protected async confirmUpdate(): Promise<void> {
     const c = this.updating();
-    if (!c || !this.updateVersion || this.updatingBusy()) return;
+    if (!c || !this.canUpdate(c)) return;
     this.updatingBusy.set(true);
     try {
-      if (await this.lifecycle.update(c.id, this.updateVersion)) {
+      if (await this.lifecycle.update(c.id, this.updateVersion, compactAccess(this.updateAccess))) {
         this.updating.set(null);
         this.updateTargets.set([]);
         this.updateVersion = '';

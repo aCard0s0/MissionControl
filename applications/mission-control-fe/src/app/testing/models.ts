@@ -22,7 +22,7 @@ export const container = (id: string, patch: Partial<HermesContainer> = {}): Her
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
   image: HERMES_IMAGE, version: 'v2026.7.20', imageDigest: null, release: null, startedAt: 1,
   cpu: 0, ram: 512, ramTotal: 4096, disk: 2, diskTotal: 0, netIn: 0, netOut: 0,
-  cpuHist: [], ramHist: [], netHist: [], ...patch,
+  cpuHist: [], ramHist: [], netHist: [], published: [], ...patch,
 });
 
 export const dockerHost = (id: string, patch: Partial<DockerHost> = {}): DockerHost => ({

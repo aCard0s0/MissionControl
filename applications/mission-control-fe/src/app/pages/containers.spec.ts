@@ -599,7 +599,10 @@ describe('ContainersPage image update', () => {
     pressUpdate(fixture);
 
     const options = Array.from(field(fixture, 'target version').querySelectorAll('option'));
-    expect(options.map(o => o.textContent?.trim())).toEqual(['v2026.8.3', 'v2026.7.30']);
+    // the tag it runs is always among them: a recreate on the same image is how host access is
+    // added to an existing Agent, and it needs a way to be chosen
+    expect(options.map(o => o.textContent?.trim()))
+      .toEqual(['v2026.8.3', 'v2026.7.30', 'v2026.7.20 — current']);
     expect(text(fixture)).toContain('update to v2026.8.3');
   });
 
@@ -630,7 +633,7 @@ describe('ContainersPage image update', () => {
     press(fixture, 'update to v2026.7.30');
     await settle(fixture);
 
-    expect(store.lifecycle.update).toHaveBeenCalledWith('hermes-prod', 'v2026.7.30');
+    expect(store.lifecycle.update).toHaveBeenCalledWith('hermes-prod', 'v2026.7.30', NO_HOST_ACCESS);
     expect(el(fixture).querySelector('.modal')).toBeNull();
   });
 
@@ -674,6 +677,53 @@ describe('ContainersPage image update', () => {
 
     expect(el(fixture).querySelector('.modal')).toBeNull();
     expect(store.lifecycle.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContainersPage host access', () => {
+  const published = (hostIp: string, hostPort = 9119) => [{ containerPort: 9119, hostIp, hostPort }];
+
+  it('recreates a container on the image it runs, once host access is asked for', async () => {
+    // no newer tag, so no update badge — and still the only way to publish a port on an Agent
+    // deployed without one, which used to mean a hand-typed docker run
+    const { fixture, store } = render(storeStub([container('hermes-prod')]));
+    expect(el(fixture).querySelector('.btn.upd')).toBeNull();
+
+    press(fixture, 'host access');
+
+    const options = Array.from(field(fixture, 'target version').querySelectorAll('option'));
+    expect(options.map(o => o.textContent?.trim())).toEqual(['v2026.7.20 — current']);
+    // nothing asked yet: recreating for no reason would drop every Agent's session
+    expect(button(fixture, 'recreate with host access').disabled).toBe(true);
+
+    const chip = Array.from(el(fixture).querySelectorAll<HTMLButtonElement>('.access .chip'))
+      .find(c => (c.textContent ?? '').trim() === '+ webhook listener');
+    chip!.click();
+    fixture.detectChanges();
+    press(fixture, 'recreate with host access');
+    await settle(fixture);
+
+    expect(store.lifecycle.update).toHaveBeenCalledWith('hermes-prod', 'v2026.7.20', {
+      ports: [{ containerPort: 8644, hostPort: 8644, hostIp: '127.0.0.1' }], env: [], mounts: [],
+    });
+    expect(el(fixture).querySelector('.modal')).toBeNull();
+  });
+
+  it('links to hermes\u2019 own dashboard once 9119 is published, where a browser can reach it', () => {
+    const { fixture } = render(storeStub([
+      container('hermes-prod', { published: published('0.0.0.0') }),
+      container('hermes-edge', { hostId: 'dh-edge', published: published('0.0.0.0', 19119) }),
+      container('hermes-loop', { published: published('127.0.0.1') }),
+      container('hermes-plain', { published: [{ containerPort: 8644, hostIp: '127.0.0.1', hostPort: 8644 }] }),
+      container('hermes-off', { status: 'stopped', published: published('0.0.0.0') }),
+    ]));
+
+    const links = Array.from(el(fixture).querySelectorAll<HTMLAnchorElement>('a.dash'))
+      .map(a => a.getAttribute('href'));
+    // the local socket is this machine, so the page's own host; a remote daemon is named by its
+    // url; a loopback bind stays as bound, since only the docker host itself can reach it
+    expect(links).toEqual([
+      `http://${location.hostname}:9119`, 'http://10.0.0.5:19119', 'http://127.0.0.1:9119']);
   });
 });
 

@@ -8,9 +8,14 @@ import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.ContainerConfig;
+import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.Ports;
+import com.github.dockerjava.api.model.Volume;
+import com.github.dockerjava.api.model.AccessMode;
 import io.hermes.missioncontrol.config.AppProperties;
 import io.hermes.missioncontrol.errors.ResourceConflictException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,6 +144,17 @@ public class ContainerUpgrader {
    * rollback target: the original container object, its id, and its logs.
    */
   public UpgradeResult upgrade(DockerHostRef host, String containerId, String version) {
+    return upgrade(host, containerId, version, HostAccess.NONE);
+  }
+
+  /**
+   * As above, with host access laid over what the container already has. A port, variable or
+   * mount is create-time, so the recreate an update already is happens to be the one moment
+   * one can be added to an existing Agent — which is why the tag it already runs is allowed
+   * here when access comes with it.
+   */
+  public UpgradeResult upgrade(
+      DockerHostRef host, String containerId, String version, HostAccess access) {
     DockerClient client = clients.forUrl(host.url());
     ManagedContainerSpec spec = inspectManaged(client, containerId);
 
@@ -163,7 +179,8 @@ public class ContainerUpgrader {
     }
     log.info("upgrading {} on {}: {} -> {}, container {}",
         spec.name(), host.id(), spec.tag(), tag, shortId(spec.id()));
-    if (tag.equals(spec.tag()) && targetImageId != null && targetImageId.equals(spec.imageId())) {
+    if (tag.equals(spec.tag()) && targetImageId != null && targetImageId.equals(spec.imageId())
+        && access.isEmpty()) {
       throw new ResourceConflictException("already running " + tag);
     }
 
@@ -179,7 +196,7 @@ public class ContainerUpgrader {
       // would otherwise leave the Agent down with nothing putting it back
       client.renameContainerCmd(spec.id()).withName(parkedName).exec();
 
-      newContainerId = createReplacement(client, spec, image);
+      newContainerId = createReplacement(client, spec, image, access);
 
       for (var network : spec.extraNetworks().entrySet()) {
         networks.connect(host, newContainerId, network.getKey(), network.getValue());
@@ -209,9 +226,11 @@ public class ContainerUpgrader {
       log.warn("upgraded {} but could not remove the parked container {}: {}",
           spec.name(), parkedName, leftover.getMessage());
     }
-    log.info("upgraded {} {} -> {} on {} — container {} -> {}, {}",
+    log.info("upgraded {} {} -> {} on {} — container {} -> {}, {}{}",
         spec.name(), spec.tag(), tag, host.id(), shortId(spec.id()), shortId(newContainerId),
-        result.running() ? "running" : "left stopped");
+        result.running() ? "running" : "left stopped",
+        access.isEmpty() ? "" : ", " + access.ports().size() + " port(s), " + access.env().size()
+            + " variable(s), " + access.mounts().size() + " mount(s) added");
     return result;
   }
 
@@ -236,13 +255,19 @@ public class ContainerUpgrader {
   }
 
   private static String createReplacement(
-      DockerClient client, ManagedContainerSpec spec, String image) {
-    HostConfig hostConfig = HostConfig.newHostConfig().withBinds(spec.binds().toArray(new Bind[0]));
+      DockerClient client, ManagedContainerSpec spec, String image, HostAccess access) {
+    List<Bind> binds = new ArrayList<>(spec.binds());
+    for (HostAccess.Mount mount : access.mounts()) {
+      binds.add(new Bind(mount.source(), new Volume(mount.target()),
+          mount.readOnly() ? AccessMode.ro : AccessMode.rw));
+    }
+    HostConfig hostConfig = HostConfig.newHostConfig().withBinds(binds.toArray(new Bind[0]));
     if (spec.restartPolicy() != null) hostConfig.withRestartPolicy(spec.restartPolicy());
     if (spec.primaryNetwork() != null) hostConfig.withNetworkMode(spec.primaryNetwork());
     // an operator's own `-p` — the documented way to reach a webhook listener — is a create-time
     // setting, so it is gone for good if the replacement does not carry it
-    if (spec.portBindings() != null) hostConfig.withPortBindings(spec.portBindings());
+    Ports portBindings = publishedPorts(spec, access);
+    if (portBindings != null) hostConfig.withPortBindings(portBindings);
     if (spec.publishAllPorts()) hostConfig.withPublishAllPorts(true);
     // Create-time like the ports above, and just as invisible when it goes missing: an
     // update that dropped the ceiling would leave the agent unbounded, and nothing about a
@@ -264,15 +289,47 @@ public class ContainerUpgrader {
         .withName(spec.name())
         .withLabels(spec.labels())
         .withHostConfig(hostConfig);
-    if (!spec.exposedPorts().isEmpty()) create.withExposedPorts(spec.exposedPorts());
+    List<ExposedPort> exposed = new ArrayList<>(spec.exposedPorts());
+    for (HostAccess.PortMapping port : access.ports()) {
+      if (!exposed.contains(ExposedPort.tcp(port.containerPort()))) {
+        exposed.add(ExposedPort.tcp(port.containerPort()));
+      }
+    }
+    if (!exposed.isEmpty()) create.withExposedPorts(exposed);
     if (spec.cmd() != null) create.withCmd(spec.cmd());
     if (spec.entrypoint() != null) create.withEntrypoint(spec.entrypoint());
-    if (spec.env() != null) create.withEnv(spec.env());
+    if (spec.env() != null || !access.isEmpty()) {
+      create.withEnv(access.environment(spec.env() == null ? List.of() : spec.env()));
+    }
     if (spec.user() != null && !spec.user().isBlank()) create.withUser(spec.user());
     if (spec.workingDir() != null && !spec.workingDir().isBlank()) {
       create.withWorkingDir(spec.workingDir());
     }
     return create.exec().getId();
+  }
+
+  /**
+   * The original's port bindings with the update's laid over them: a container port asked for
+   * again is remapped rather than bound twice, since one host port per container port is what
+   * the daemon would accept anyway. Null when neither side publishes anything, so a container
+   * that had no mappings is recreated without a {@code PortBindings} block, as before.
+   */
+  private static Ports publishedPorts(ManagedContainerSpec spec, HostAccess access) {
+    if (spec.portBindings() == null && access.ports().isEmpty()) return null;
+    Ports merged = new Ports();
+    if (spec.portBindings() != null) {
+      spec.portBindings().getBindings().forEach((port, bindings) -> {
+        boolean remapped = access.ports().stream()
+            .anyMatch(p -> ExposedPort.tcp(p.containerPort()).equals(port));
+        if (remapped || bindings == null) return;
+        for (Ports.Binding binding : bindings) merged.bind(port, binding);
+      });
+    }
+    for (HostAccess.PortMapping port : access.ports()) {
+      merged.bind(ExposedPort.tcp(port.containerPort()),
+          Ports.Binding.bindIpAndPort(port.bindIp(), port.hostPort()));
+    }
+    return merged;
   }
 
   /**

@@ -94,6 +94,18 @@
               {{ isUpdating(c.id) ? 'updating…' : 'update ' + targetLabel(c, target) }}
             </button>
           }
+          <button class="btn sm ghost" type="button" [disabled]="isUpdating(c.id)"
+                  title="publish a port, add a variable or a mount — recreates the container on the image it runs"
+                  (click)="beginUpdate(c, true); $event.stopPropagation()">host access</button>
+          @if (dashboardUrl(c); as url) {
+            <!-- hermes' own web UI, read off the daemon's port bindings — a loopback bind only
+                 answers a browser on the docker host itself, which the title says -->
+            <a class="btn sm ghost dash" [href]="url" target="_blank" rel="noopener"
+               [title]="'hermes’ own dashboard on ' + url
+                 + ' — a 127.0.0.1 bind is reachable from the docker host only. User operator; '
+                 + 'the password is HERMES_DASHBOARD_BASIC_AUTH_PASSWORD in the container’s environment'"
+               (click)="$event.stopPropagation()">dashboard ↗</a>
+          }
           <!-- icon-only: the row is already crowded, and a shell needs no label -->
           <button class="btn sm ghost term" type="button"
                   [disabled]="c.status === 'stopped' || isUpdating(c.id)"
@@ -247,72 +259,15 @@
             and grows into the host filesystem. Hermes suggests keeping 2+ GB free for it.
           </p>
         </div>
-        <div class="field access" role="group" aria-labelledby="ctr-access">
-          <span class="field-cap" id="ctr-access">host access — nothing is opened unless you ask</span>
-
-          <div class="res-row">
-            <span class="res-lbl">presets</span>
-            @for (p of accessPresets; track p.id) {
-              <button class="chip" type="button" [title]="p.hint" (click)="preset(p.id)">+ {{ p.label }}</button>
-            }
-          </div>
-          <div class="res-row">
-            <span class="res-lbl">custom</span>
-            <button class="btn sm ghost" type="button" (click)="addPort()">+ port</button>
-            <button class="btn sm ghost" type="button" (click)="addVariable()">+ variable</button>
-            <button class="btn sm ghost" type="button" (click)="addMount()">+ mount</button>
-          </div>
-
-          @if (deployAccess.ports.length) {
-            <span class="section-label mono">PUBLISHED PORTS</span>
-            @for (p of deployAccess.ports; track $index; let i = $index) {
-              <div class="kv-row ports">
-                <input class="input mono" type="number" min="1" max="65535" [(ngModel)]="p.containerPort"
-                       placeholder="container port" aria-label="container port" />
-                <input class="input mono" [(ngModel)]="p.hostIp" placeholder="127.0.0.1" aria-label="bind address" />
-                <input class="input mono" type="number" min="1" max="65535" [(ngModel)]="p.hostPort"
-                       placeholder="host port" aria-label="host port" />
-                <button class="btn sm danger ghost" type="button" (click)="removeRow(deployAccess.ports, i)">remove</button>
-              </div>
-            }
-          }
-          @if (deployAccess.env.length) {
-            <span class="section-label mono">ENVIRONMENT</span>
-            @for (e of deployAccess.env; track $index; let i = $index) {
-              <div class="kv-row">
-                <input class="input mono" [(ngModel)]="e.key" placeholder="VARIABLE_NAME" aria-label="variable name" />
-                <input class="input mono" [(ngModel)]="e.value" placeholder="value" aria-label="variable value" />
-                <button class="btn sm danger ghost" type="button" (click)="removeRow(deployAccess.env, i)">remove</button>
-              </div>
-            }
-          }
-          @if (deployAccess.mounts.length) {
-            <span class="section-label mono">MOUNTS</span>
-            @for (m of deployAccess.mounts; track $index; let i = $index) {
-              <div class="kv-row mounts">
-                <input class="input mono" [(ngModel)]="m.source" placeholder="/path/on/the/docker/host" aria-label="host path" />
-                <input class="input mono" [(ngModel)]="m.target" placeholder="/work" aria-label="container path" />
-                <label class="ro-toggle mono"><input type="checkbox" [(ngModel)]="m.readOnly" /> read-only</label>
-                <button class="btn sm danger ghost" type="button" (click)="removeRow(deployAccess.mounts, i)">remove</button>
-              </div>
-            }
-          }
-
-          @if (accessOpen()) {
-            <p class="lock-hint">
-              A port bound to 127.0.0.1 is reachable from this docker host only; 0.0.0.0 opens it to
-              the network. A generated password or key is visible only here and in the container's
-              environment — copy it now. A writable mount is added to the agent's write-safe root;
-              the Docker socket is refused.
-            </p>
-          } @else {
-            <p class="lock-hint">
-              Hermes' own dashboard, its API server, a webhook listener and a repository to work in
-              each need something opened to the host, and Docker can only do that when the container
-              is created. Ask here, or recreate the container by hand later.
-            </p>
-          }
-        </div>
+        <mc-host-access-editor [(access)]="deployAccess"
+                               caption="host access — nothing is opened unless you ask">
+          <p class="lock-hint">
+            Hermes' own dashboard, its API server, a webhook listener and a repository to work in
+            each need something opened to the host, and Docker can only do that when the container
+            is created. Ask here, or add it later from the card's <b>host access</b> — which
+            recreates the container on the image it runs.
+          </p>
+        </mc-host-access-editor>
         @if (deployBusy()) {
           <p class="lock-hint">the image pull and the create run on the host, not in this window —
             close it and keep working; progress follows you in the top right.</p>
@@ -355,6 +310,13 @@
             }
           </select>
         </div>
+        <mc-host-access-editor [(access)]="updateAccess"
+                               caption="host access — added to what the container already has">
+          <p class="lock-hint">
+            Ports, variables and mounts the container already has are kept. A row here adds one, or
+            remaps a port it already publishes — the recreate is the one moment Docker allows that.
+          </p>
+        </mc-host-access-editor>
         <p class="lock-hint">profiles, SOUL and memory files, skills and sessions live in the data volume and are kept</p>
         <p class="lock-hint">the container name is kept — its container id and short id change</p>
         @if (c.status === 'stopped') {
@@ -371,9 +333,9 @@
         }
         <div class="modal-actions">
           <button class="btn ghost" [disabled]="updatingBusy()" (click)="cancelUpdate()">cancel</button>
-          <button class="btn primary" [disabled]="!updateVersion || updatingBusy()" (click)="confirmUpdate()">
+          <button class="btn primary" [disabled]="!canUpdate(c)" (click)="confirmUpdate()">
             @if (updatingBusy()) { <span class="spin" aria-hidden="true"></span> }
-            {{ updatingBusy() ? updateStage() : 'update to ' + updateVersion }}
+            {{ updatingBusy() ? updateStage() : updateLabel(c) }}
           </button>
         </div>
       </div>

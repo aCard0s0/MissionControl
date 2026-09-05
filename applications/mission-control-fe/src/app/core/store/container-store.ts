@@ -98,6 +98,7 @@ export class ContainerStore {
             cpu: old?.cpu ?? 0, ram: old?.ram ?? 0, ramTotal: old?.ramTotal ?? 0,
             netIn: old?.netIn ?? 0, netOut: old?.netOut ?? 0,
             cpuHist: old?.cpuHist ?? [], ramHist: old?.ramHist ?? [], netHist: old?.netHist ?? [],
+            published: c.ports ?? [],
           };
         });
       });

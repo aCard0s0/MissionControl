@@ -52,7 +52,7 @@ class ContainerUpdateServiceTest {
   }
 
   private void stubUpgrade() {
-    when(docker.upgrade(any(), anyString(), anyString()))
+    when(docker.upgrade(any(), anyString(), anyString(), any()))
         .thenReturn(new UpgradeResult(OLD_ID, NEW_ID, "v2026.7.1", "v2026.8.3", true));
   }
 
@@ -122,7 +122,7 @@ class ContainerUpdateServiceTest {
 
   @Test
   void aFailedUpgradePropagatesAndRemapsNothing() {
-    when(docker.upgrade(any(), anyString(), anyString()))
+    when(docker.upgrade(any(), anyString(), anyString(), any()))
         .thenThrow(new IllegalArgumentException("not a Mission Control-managed container"));
     seedBoardTask(OLD_ID);
 

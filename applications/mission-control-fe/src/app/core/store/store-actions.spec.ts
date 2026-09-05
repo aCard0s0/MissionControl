@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { liveError, storeSlices, stubBackend } from '../../testing/store';
+import { NO_HOST_ACCESS } from '../host-access';
 
 // What an operator action leaves behind, across the slices it touches: a write
 // that only lands once the backend agrees, a removal that takes its jobs and
@@ -200,7 +201,7 @@ describe('store actions: container updates', () => {
     store.containers.select('c-1');
 
     expect(await store.lifecycle.update('c-1', 'v2026.9.1')).toBe('c-updated');
-    expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'v2026.9.1');
+    expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'v2026.9.1', NO_HOST_ACCESS);
     expect(store.containers.selectedContainerId()).toBe('c-updated');
     expect(store.containers.selected()?.version).toBe('v2026.9.1');
   });
@@ -245,7 +246,7 @@ describe('store actions: container updates', () => {
 
     await store.lifecycle.update('c-1', 'latest');
 
-    expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'latest');
+    expect(update).toHaveBeenCalledWith('dh-local', 'c-1', 'latest', NO_HOST_ACCESS);
   });
 
   it('caches the image catalog per host and refetches only when forced', async () => {

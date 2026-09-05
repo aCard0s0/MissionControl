@@ -42,9 +42,14 @@ public class ContainerUpdateService {
    * @return the id of the replacement container
    */
   public String update(DockerHostRef host, String containerId, String version) {
-    log.info("update requested for container {} on {} -> {}",
-        shortId(containerId), host.id(), version);
-    UpgradeResult result = docker.upgrade(host, containerId, version);
+    return update(host, containerId, version, HostAccess.NONE);
+  }
+
+  /** As above, with host access to lay over what the container already has. */
+  public String update(DockerHostRef host, String containerId, String version, HostAccess access) {
+    log.info("update requested for container {} on {} -> {}{}",
+        shortId(containerId), host.id(), version, access.isEmpty() ? "" : " with host access");
+    UpgradeResult result = docker.upgrade(host, containerId, version, access);
     remap(host.id(), result.oldContainerId(), result.newContainerId());
     return result.newContainerId();
   }

@@ -159,25 +159,10 @@ public class HermesDeployer {
     return create.withCmd(List.of("gateway", "run")).exec();
   }
 
-  /**
-   * The operator's variables, plus the write-safe root widened over their writable mounts —
-   * unless they set it themselves. The image confines hermes' file tools to {@code /opt/data},
-   * so a repository mounted for the agent to work in would be the first thing it could not
-   * write to, and hermes reports that only as a denied tool call.
-   */
+  /** The operator's variables, with the write-safe root widened over their writable mounts —
+   *  {@link HostAccess#environment} over an environment that is empty, this being a new container. */
   static List<String> environment(HostAccess access) {
-    List<String> env = new ArrayList<>();
-    boolean writeRootSet = false;
-    for (HostAccess.EnvVar var : access.env()) {
-      env.add(var.line());
-      writeRootSet |= HostAccess.WRITE_SAFE_ROOT.equals(var.key());
-    }
-    List<String> writable = access.mounts().stream()
-        .filter(m -> !m.readOnly()).map(HostAccess.Mount::target).toList();
-    if (!writeRootSet && !writable.isEmpty()) {
-      env.add(HostAccess.WRITE_SAFE_ROOT + "=" + ManagedContainer.DATA_MOUNT + ":" + String.join(":", writable));
-    }
-    return env;
+    return access.environment(List.of());
   }
 
   static List<String> normalizeProfiles(List<String> profiles) {

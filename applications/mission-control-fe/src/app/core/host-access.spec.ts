@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { applyPreset, compactAccess, emptyAccess, randomSecret } from './host-access';
+import {
+  applyPreset, compactAccess, dashboardUrl, emptyAccess, hasAccess, publishedUrl, randomSecret,
+} from './host-access';
+import { container } from '../testing/models';
+
+describe('published ports', () => {
+  const port = (hostIp: string, hostPort = 9119) => ({ containerPort: 9119, hostIp, hostPort });
+
+  it('sends a browser to the daemon for an all-interfaces bind, and keeps a loopback bind as bound', () => {
+    // the local socket is this machine, so the name the page itself was reached by
+    expect(publishedUrl(port('0.0.0.0'), 'unix:///var/run/docker.sock', 'ops.example')).toBe('http://ops.example:9119');
+    expect(publishedUrl(port('::', 19119), 'unix:///var/run/docker.sock', 'ops.example')).toBe('http://ops.example:19119');
+    expect(publishedUrl(port(''), 'unix:///var/run/docker.sock', 'ops.example')).toBe('http://ops.example:9119');
+    // a remote daemon is named by its url, whatever the page was reached by
+    expect(publishedUrl(port('0.0.0.0'), 'tcp://10.0.0.5:2376', 'ops.example')).toBe('http://10.0.0.5:9119');
+    // only the docker host itself can reach a loopback bind, so nothing else is pretended
+    expect(publishedUrl(port('127.0.0.1'), 'tcp://10.0.0.5:2376', 'ops.example')).toBe('http://127.0.0.1:9119');
+    expect(publishedUrl(port('192.168.1.20', 8080), 'unix:///sock', 'ops.example')).toBe('http://192.168.1.20:8080');
+  });
+
+  it('links the dashboard only while a running container publishes its port', () => {
+    const on = container('c', { published: [port('0.0.0.0'), { containerPort: 8644, hostIp: '127.0.0.1', hostPort: 8644 }] });
+    expect(dashboardUrl(on, 'unix:///sock', 'ops.example')).toBe('http://ops.example:9119');
+    expect(dashboardUrl(container('c'), 'unix:///sock', 'ops.example')).toBeNull();
+    expect(dashboardUrl(container('c', { published: [{ containerPort: 8644, hostIp: '', hostPort: 8644 }] }), 'unix:///sock', 'x')).toBeNull();
+    expect(dashboardUrl(container('c', { status: 'stopped', published: [port('0.0.0.0')] }), 'unix:///sock', 'x')).toBeNull();
+  });
+
+  it('knows an empty request from one that asks for something', () => {
+    expect(hasAccess(emptyAccess())).toBe(false);
+    expect(hasAccess({ ...emptyAccess(), env: [{ key: 'A', value: '1' }] })).toBe(true);
+  });
+});
 
 describe('host access presets', () => {
   const fixed = () => 'deadbeefdeadbeefdeadbeefdeadbeef';

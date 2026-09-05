@@ -13,10 +13,16 @@ container, so this is a **replacement** — done without touching the Agent's da
 
 ## Input → Movement → Output
 
-A container id and a target tag go in. The tag is pulled, the original is renamed aside, a
-replacement is created under the original name with the original's binds, networks, ports,
-labels, command and restart policy, and the volume is reattached. Out comes a new container id —
-and the dashboard's own rows are repointed at it.
+A container id, a target tag and — optionally — host access go in. The tag is pulled, the
+original is renamed aside, a replacement is created under the original name with the original's
+binds, networks, ports, labels, command and restart policy plus whatever the update asked to
+open, and the volume is reattached. Out comes a new container id — and the dashboard's own rows
+are repointed at it.
+
+The host access is why the tag the container already runs is a legitimate target: a port,
+variable or mount is create-time, so the recreate an update already is happens to be the one
+moment one can be added to an existing Agent (`docker/ContainerUpgrader.java:143`). With nothing
+asked, the same tag is still refused as a 409.
 
 ## Why this shape
 
@@ -48,7 +54,11 @@ Two parts of the copied set are load-bearing and easy to lose:
 1. `inspectManaged` — refuse anything this dashboard did not deploy (`:55`).
 2. Pull the target tag.
 3. `ParkedContainerName.of(name, id)` → `-mc-upgrade-<hex>`; rename (`:167`, `:175`).
-4. Stop before replace (`:214`), then `createReplacement` under the original name (`:233`).
+4. Stop before replace (`:214`), then `createReplacement` under the original name (`:233`) —
+   with the update's ports, variables and mounts laid over the copied set: a port asked for again
+   is remapped rather than bound twice (`publishedPorts`), a variable replaces the line carrying
+   its key and a writable mount widens the write-safe root the container already had
+   (`docker/HostAccess.java:66`).
 5. Readiness. On failure → `rollback` (`:271`).
 6. Remove the parked original; a transient failure here is a **warning, not an error** (`:204`).
 7. **Repoint** `board_tasks` and `mcp_agent_links` at the new id, in one transaction
@@ -58,7 +68,9 @@ Two parts of the copied set are load-bearing and easy to lose:
 
 ## If you change this
 
-- **Hits:** `ManagedContainerSpec` (what gets copied), `ParkedContainerName`,
+- **Hits:** `ManagedContainerSpec` (what gets copied), `HostAccess` (what gets laid over it —
+  shared with [deploy-agent](deploy-agent.md), so a rule changed here changes the deploy form's
+  too), `ParkedContainerName`,
   `ContainerInventory` (parked leftovers are hidden from the fleet, reachable via `?all=true`);
   **all three** `ContainerIdListener` implementations — `board/BoardRepository`,
   `mcp/AgentMcpLinkRepository` and `agents/HermesProfileMcp` (an in-memory tool-count cache, not
@@ -71,7 +83,7 @@ Two parts of the copied set are load-bearing and easy to lose:
 
 | Surface | Role |
 |---|---|
-| `PUT /api/containers/{hostId}/{id}` | entry |
+| `POST /api/containers/{hostId}/{id}/update` | entry — `{ version, ports?, env?, mounts? }` |
 | the registry | pulled first |
 | SQLite `board_tasks`, `mcp_agent_links` | repointed |
 
