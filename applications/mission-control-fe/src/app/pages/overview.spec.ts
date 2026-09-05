@@ -15,6 +15,7 @@ const container: HermesContainer = {
   id: 'c-1', name: 'hermes-prod', shortId: 'c1', hostId: 'dh-local', status: 'running',
   image: 'hermes', version: 'v1', imageDigest: null, release: null, startedAt: 1, cpu: 12, ram: 512, ramTotal: 2048,
   disk: 4, diskTotal: 40, netIn: 1, netOut: 2, cpuHist: [1, 2], ramHist: [1, 2], netHist: [1, 2],
+  published: [],
 };
 
 const log = (level: LogEntry['level'], msg: string): LogEntry =>

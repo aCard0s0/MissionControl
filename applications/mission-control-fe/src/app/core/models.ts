@@ -154,6 +154,9 @@ export interface HermesContainer {
   cpuHist: number[];
   ramHist: number[];
   netHist: number[];
+  /** Container ports published on the host, as the daemon lists them — the only record there is
+   *  of what a deploy asked for or an operator mapped by hand. */
+  published: PortMapping[];
 }
 
 /** A skill installed **on** an agent, read through from that container's disk.
@@ -782,8 +785,9 @@ export interface Mount {
 }
 
 /**
- * What a deploy opens between the container and its host. All create-time — Docker cannot
- * add any of it to a running container — so it is asked on the deploy form or not at all.
+ * What a form opens between the container and its host. All create-time — Docker cannot add
+ * any of it to a running container — so it is asked on the deploy, or on the update that
+ * recreates the container anyway.
  */
 export interface HostAccess {
   ports: PortMapping[];

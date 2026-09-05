@@ -1,0 +1,60 @@
+:host { display: block; }
+
+// the browser's fieldset chrome would draw a box around what is styled as a plain field
+fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { padding: 0; }
+
+.res-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.res-lbl {
+  width: 54px;
+  flex: none;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+// the presets are a choice, not a status, so they take the filter bar's pressable chip
+.chip {
+  cursor: pointer;
+  background: var(--panel);
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+
+  &:hover { border-color: var(--faint); }
+}
+
+.section-label { display: block; margin: 8px 0 4px; }
+
+.kv-row {
+  display: grid;
+  grid-template-columns: minmax(140px, .8fr) minmax(180px, 1.3fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+
+  &.ports { grid-template-columns: minmax(110px, .7fr) minmax(110px, .9fr) minmax(90px, .7fr) auto; }
+  &.mounts { grid-template-columns: minmax(160px, 1.2fr) minmax(110px, .8fr) auto auto; }
+}
+
+.ro-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+:host ::ng-deep .lock-hint { margin: 4px 0 0; }
+
+@media (max-width: 640px) {
+  .kv-row, .kv-row.ports, .kv-row.mounts { grid-template-columns: 1fr auto; }
+  .kv-row .input:not(:first-child) { grid-column: 1 / -1; }
+}

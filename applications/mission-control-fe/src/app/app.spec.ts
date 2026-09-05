@@ -13,7 +13,7 @@ const container = (id: string, patch: Partial<HermesContainer> = {}): HermesCont
   id, name: id, shortId: id.slice(0, 4), hostId: 'dh-local', status: 'running',
   image: 'nousresearch/hermes-agent', version: 'v2026.8.3', imageDigest: null, release: null, startedAt: 1,
   cpu: 12, ram: 512, ramTotal: 4096, disk: 1, diskTotal: 0, netIn: 0, netOut: 0,
-  cpuHist: [], ramHist: [], netHist: [], ...patch,
+  cpuHist: [], ramHist: [], netHist: [], published: [], ...patch,
 });
 
 /** Only what the shell and the terminal panel it hosts reach for. */

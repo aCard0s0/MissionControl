@@ -41,6 +41,7 @@ import io.hermes.missioncontrol.skills.UpstreamCheck;
 import io.hermes.missioncontrol.credentials.api.CredentialDto;
 import io.hermes.missioncontrol.credentials.api.CredentialEntryDto;
 import io.hermes.missioncontrol.docker.ContainerDto;
+import io.hermes.missioncontrol.docker.PublishedPortDto;
 import io.hermes.missioncontrol.docker.ImageTagDto;
 import io.hermes.missioncontrol.docker.ImageTagsDto;
 import io.hermes.missioncontrol.docker.LogLineDto;
@@ -109,6 +110,7 @@ class ApiContractTest {
   static {
     // docker / fleet
     CONTRACT.put("ApiContainer", ContainerDto.class);
+    CONTRACT.put("ApiPublishedPort", PublishedPortDto.class);
     CONTRACT.put("ApiStats", StatsDto.class);
     CONTRACT.put("ApiLogLine", LogLineDto.class);
     CONTRACT.put("ApiImageTag", ImageTagDto.class);

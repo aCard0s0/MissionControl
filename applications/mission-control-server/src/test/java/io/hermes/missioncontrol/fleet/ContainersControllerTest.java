@@ -72,7 +72,7 @@ class ContainersControllerTest {
 
   private static ContainerDto container(String id, String hostId) {
     return new ContainerDto(id, id.substring(0, 3), "hermes-" + id, hostId, "running",
-        "hermes/agent:v1", "v1", null, null, 1L, null, List.of());
+        "hermes/agent:v1", "v1", null, null, 1L, null, List.of(), List.of());
   }
 
   @Test
@@ -220,7 +220,7 @@ class ContainersControllerTest {
     verifyNoInteractions(updates);
 
     when(hosts.requireConnected("dh-local")).thenReturn(HOST);
-    when(updates.update(HOST, "abc123", "v2")).thenReturn("replacement456");
+    when(updates.update(HOST, "abc123", "v2", HostAccess.NONE)).thenReturn("replacement456");
 
     // the container id changes on an update, so the caller has to be told the new one
     mvc.perform(post("/api/containers/dh-local/abc123/update")
@@ -228,6 +228,31 @@ class ContainersControllerTest {
             .content("{\"version\":\"v2\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value("replacement456"));
+  }
+
+  @Test
+  void updateCarriesHostAccessAndRefusesTheSameMountsADeployWould() throws Exception {
+    when(hosts.requireConnected("dh-local")).thenReturn(HOST);
+    HostAccess dashboard = new HostAccess(
+        List.of(new HostAccess.PortMapping(9119, 9119, "")),
+        List.of(new HostAccess.EnvVar("HERMES_DASHBOARD", "1")), List.of());
+    when(updates.update(HOST, "abc123", "v2", dashboard)).thenReturn("replacement456");
+
+    // the tag it already runs is a legitimate target once host access comes with it — the
+    // recreate is then the point, and the service decides, not the request's validation
+    mvc.perform(post("/api/containers/dh-local/abc123/update")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"version\":\"v2\",\"ports\":[{\"containerPort\":9119,\"hostPort\":9119,\"hostIp\":\"\"}],"
+                + "\"env\":[{\"key\":\"HERMES_DASHBOARD\",\"value\":\"1\"}]}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value("replacement456"));
+
+    mvc.perform(post("/api/containers/dh-local/abc123/update")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"version\":\"v2\",\"mounts\":[{\"source\":\"/var/run/docker.sock\","
+                + "\"target\":\"/var/run/docker.sock\",\"readOnly\":false}]}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("Docker socket")));
   }
 
   @Test

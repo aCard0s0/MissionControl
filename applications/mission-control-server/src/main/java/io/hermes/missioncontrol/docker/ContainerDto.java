@@ -21,5 +21,8 @@ public record ContainerDto(
     String release,
     Long startedAt,       // epoch ms, null when not running
     Double sizeRootFsGb,  // null when the daemon did not report size
-    List<String> profiles) {
+    List<String> profiles,
+    /** Container ports published on the host, one row per container port. Read from the daemon's
+     *  listing, never remembered — a port mapped by hand counts the same as one a deploy asked for. */
+    List<PublishedPortDto> ports) {
 }

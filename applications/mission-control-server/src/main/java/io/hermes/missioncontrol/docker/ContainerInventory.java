@@ -310,7 +310,7 @@ public class ContainerInventory {
     return new ContainerDto(
         c.getId(), c.getId().substring(0, Math.min(7, c.getId().length())), name, hostId,
         status, imageParts[0], imageParts[1], imageDigest(client, c, digestCache), release,
-        startedAt, sizeGb, profiles);
+        startedAt, sizeGb, profiles, PublishedPorts.fromListing(c.getPorts()));
   }
 
   /** The Hermes release this container's image carries, or null when it cannot say. */

@@ -136,15 +136,17 @@ public class ContainersController {
   }
 
   /**
-   * Recreates the container on another image tag, reusing its data volume. The
-   * container id changes, so the replacement's id is returned.
+   * Recreates the container on another image tag — or on the same one, to open host access it
+   * was deployed without — reusing its data volume. The container id changes, so the
+   * replacement's id is returned.
    */
   @PostMapping("/{hostId}/{id}/update")
   public Map<String, String> update(
       @PathVariable String hostId,
       @PathVariable String id,
       @Valid @RequestBody UpdateContainerRequest request) {
-    return Map.of("id", updates.update(hosts.requireConnected(hostId), id, request.version()));
+    return Map.of("id", updates.update(
+        hosts.requireConnected(hostId), id, request.version(), request.hostAccess()));
   }
 
   @DeleteMapping("/{hostId}/{id}")

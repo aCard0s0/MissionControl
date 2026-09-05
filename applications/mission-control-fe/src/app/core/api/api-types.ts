@@ -83,6 +83,14 @@ export interface ApiContainer {
   startedAt: number | null;
   sizeRootFsGb: number | null;
   profiles: string[];
+  /** Container ports the daemon publishes on the host, one row per container port. */
+  ports: ApiPublishedPort[];
+}
+
+export interface ApiPublishedPort {
+  containerPort: number;
+  hostIp: string;
+  hostPort: number;
 }
 
 export interface ApiStats {

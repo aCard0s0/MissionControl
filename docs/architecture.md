@@ -135,17 +135,23 @@ A route's HMAC secret is stored by hermes in plaintext and the sending provider
 needs it, so the listing carries only a masked tail and revealing it in full is a
 separate, deliberate request.
 
-#### Host access is the operator's choice at deploy time, never a guess
+#### Host access is the operator's choice, never a guess
 
 Mission Control never carries webhook traffic, and an agent container gets no port, mount or
-environment variable the operator did not ask for. What it does offer is the one moment Docker
-allows any of those to be set: **the deploy**. The form's *host access* group takes published
-ports, environment variables and bind mounts, with presets for the Hermes features that need
-them — hermes' own dashboard (9119, behind a generated basic-auth password), the API server
-(8642, with a generated key; also what `hermes peer` talks to), a webhook listener (8644) and a
-repository mount. Every port binds `127.0.0.1` unless the operator changes it, the same default
-`./mc` uses for the dashboard itself. `HostAccess` holds the rules; `HermesDeployer` applies them
-to the gateway container only, never to the one-shots that seed the volume.
+environment variable the operator did not ask for. What it does offer are the two moments Docker
+allows any of those to be set: **the deploy**, and **the recreate an image update already is**.
+The same *host access* group sits on both forms and takes published ports, environment variables
+and bind mounts, with presets for the Hermes features that need them — hermes' own dashboard
+(9119, behind a generated basic-auth password), the API server (8642, with a generated key; also
+what `hermes peer` talks to), a webhook listener (8644) and a repository mount. Every port binds
+`127.0.0.1` unless the operator changes it, the same default `./mc` uses for the dashboard itself.
+`HostAccess` holds the rules; `HermesDeployer` applies them to the gateway container only, never
+to the one-shots that seed the volume; `ContainerUpgrader` lays an update's over what the
+container already has. On the update the tag the container already runs is a legitimate target
+once access comes with it — the recreate is then the point — and the card's *host access* button
+opens the dialog on exactly that, so publishing a port on an existing Agent is one dialog rather
+than a hand-typed `docker run`. Nothing is ever removed this way: a row adds, or remaps a port the
+container already publishes.
 
 Two things a deploy always does, because they cost nothing and cannot be added later: it maps
 `host.docker.internal` to the host gateway, which is how a Linux container reaches an inference
@@ -185,20 +191,32 @@ Three things follow, and are implemented:
   so a port an operator mapped by hand counts the same as one the form asked for. Until then the
   page shows the route URL with the listener's own port, not the `localhost` hermes prints, and
   says the route is unreachable.
-- **Host access survives an image update.** The upgrade copies port bindings, exposed ports,
-  `PublishAllPorts`, binds, environment and `--add-host` entries onto the replacement container.
-  Without that, moving an agent to a newer tag would silently un-expose its listener, with
-  nothing on any page to say the hooks had stopped arriving.
+- **Host access survives an image update, and an update can add to it.** The upgrade copies
+  port bindings, exposed ports, `PublishAllPorts`, binds, environment and `--add-host` entries
+  onto the replacement container, then lays the update's own rows over them — a port asked for
+  again is remapped rather than bound twice, a variable replaces the line carrying its key, and a
+  writable mount widens the write-safe root the container already had. Without the copy, moving
+  an agent to a newer tag would silently un-expose its listener, with nothing on any page to say
+  the hooks had stopped arriving.
+- **The card links to hermes' own dashboard** once the daemon says 9119 is published, at the
+  address a browser can reach: a remote daemon by its URL, the local socket by the name this
+  page was reached by, and a loopback bind as bound — reachable from the docker host alone, which
+  the link says.
 - **One listener port per container, not per profile.** Enabling a listener refuses a port
   another profile in the same container already holds, and walks a defaulted one up from
   8644 to the first free port. Profiles share one network namespace, so a second listener
   on 8644 never binds — and hermes reports that only in the gateway log of a profile
   nobody has open.
 
-Two Hermes features stay out of reach even so. The Docker terminal backend needs the daemon
-socket inside the agent container, which is the one mount this dashboard refuses. And an OAuth
-provider login (Nous Portal, Codex, MiniMax, xAI) needs a browser to reach a loopback callback
-inside the container; publishing that port helps only when the browser runs on the docker host.
+Two Hermes features stay out of reach even so. The Docker terminal backend — and the agent
+running `docker build` or `docker run` itself — needs the daemon socket inside the agent
+container, which is the one mount this dashboard refuses. And the OAuth logins that use a
+loopback redirect need a browser to reach `127.0.0.1:<port>` *inside the container*: Spotify on
+a fixed 43827, which a deploy can publish and an `ssh -L` from the operator's machine can reach,
+and remote MCP servers with `auth: oauth`, which pick a port at login time and instead offer to
+take the redirect URL pasted back. Nous Portal, OpenAI Codex, xAI, MiniMax and Anthropic use a
+device-code flow — open the printed URL in any browser — so they work from the web terminal as
+they are ([hermes' OAuth guide](https://hermes-agent.nousresearch.com/docs/guides/oauth-over-ssh)).
 
 ## Terminal
 
@@ -360,6 +378,11 @@ touching the Agent's data:
   profiles, souls, memory, skills, sessions and credentials carry over. No
   bootstrap one-shots run — the profiles already exist, and the `mc.profiles`
   label records only what the original deploy seeded, not what exists now.
+- **Host access asked for on the update is laid over the copied set** — new ports, variables
+  and mounts, a remapped port replacing its old binding — and the tag the container already
+  runs is accepted as the target when access comes with it. That is how a port is published on
+  an Agent deployed without one; an update onto the same image with nothing asked is still
+  refused as a 409, since recreating for no reason drops every Agent's session.
 - A container that was **stopped stays stopped**; an operator parked it on purpose.
 - Recreating mints a new container id, so `board_tasks` and `mcp_agent_links`
   rows are repointed at it in one transaction. A failed remap is logged but does
@@ -386,7 +409,7 @@ way a webhook listener is reachable.
   and the backend refuses to delete the local socket host.
 - Plain `./mc start --ts=off` binds to `127.0.0.1`; setting `BIND_ADDRESS`
   explicitly can expose the unauthenticated dashboard and prints a warning.
-- Agent containers publish no ports unless the deploy asked. Every published port binds
+- Agent containers publish no ports unless a deploy or an update asked. Every published port binds
   `127.0.0.1` unless the operator changes it, and the Docker socket cannot be mounted into
   an agent. A webhook listener does authenticate — hermes verifies an HMAC signature per
   route — which the dashboard itself has no equivalent of. The dashboard and API-server

@@ -18,11 +18,12 @@ An inbound route on one [profile's](profile.md) hermes webhook listener. `Webhoo
 Same rule as [Cron job](cron-job.md) — read the file, write through the CLI — plus three
 constraints that only exist here.
 
-**Mission Control never carries webhook traffic, and publishes a port only when a deploy asks
-for one.** The mapping that makes a route reachable is create-time: the *host access* group on
-the deploy form (its webhook preset publishes 8644 on `127.0.0.1`), or the operator's own
-`docker run -p` when recreating by hand. Nothing is published on demand, and `docs/architecture.md`
-argues why: the listener is per profile and every profile defaults to 8644, Docker cannot add a
+**Mission Control never carries webhook traffic, and publishes a port only when asked.** The
+mapping that makes a route reachable is create-time: the *host access* group on the deploy form
+(its webhook preset publishes 8644 on `127.0.0.1`), the same group on the container's update —
+which recreates it, on the image it already runs if need be
+([upgrade-image](../../processes/upgrade-image.md)) — or the operator's own `docker run -p`.
+Nothing is published on demand, and `docs/architecture.md` argues why: the listener is per profile and every profile defaults to 8644, Docker cannot add a
 port mapping to a running container, and host ports are one namespace per host. Proxying through
 the dashboard was rejected separately — Mission Control has no authentication of any kind, so a
 proxy route would be an unauthenticated public trigger for agent runs.
@@ -77,7 +78,7 @@ only a masked tail; revealing it in full is a separate, deliberate request.
 |---|---|
 | `…/{name}/webhooks` | reads / writes |
 | `hermes webhook …` | the only writer |
-| the operator's `docker run -p` | the only thing that exposes it |
+| a deploy's or an update's host access, or the operator's `docker run -p` | the only things that expose it |
 
 ## See
 

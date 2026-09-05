@@ -1,0 +1,64 @@
+<!-- a fieldset rather than role=group with an id: two of these sit in one page, and a legend
+     names its group without either needing to know about the other -->
+<fieldset class="field access">
+  <legend class="field-cap">{{ caption() }}</legend>
+
+  <div class="res-row">
+    <span class="res-lbl">presets</span>
+    @for (p of presets; track p.id) {
+      <button class="chip" type="button" [title]="p.hint" (click)="preset(p.id)">+ {{ p.label }}</button>
+    }
+  </div>
+  <div class="res-row">
+    <span class="res-lbl">custom</span>
+    <button class="btn sm ghost" type="button" (click)="addPort()">+ port</button>
+    <button class="btn sm ghost" type="button" (click)="addVariable()">+ variable</button>
+    <button class="btn sm ghost" type="button" (click)="addMount()">+ mount</button>
+  </div>
+
+  @if (access().ports.length) {
+    <span class="section-label mono">PUBLISHED PORTS</span>
+    @for (p of access().ports; track $index; let i = $index) {
+      <div class="kv-row ports">
+        <input class="input mono" type="number" min="1" max="65535" [(ngModel)]="p.containerPort"
+               placeholder="container port" aria-label="container port" />
+        <input class="input mono" [(ngModel)]="p.hostIp" placeholder="127.0.0.1" aria-label="bind address" />
+        <input class="input mono" type="number" min="1" max="65535" [(ngModel)]="p.hostPort"
+               placeholder="host port" aria-label="host port" />
+        <button class="btn sm danger ghost" type="button" (click)="removeRow(access().ports, i)">remove</button>
+      </div>
+    }
+  }
+  @if (access().env.length) {
+    <span class="section-label mono">ENVIRONMENT</span>
+    @for (e of access().env; track $index; let i = $index) {
+      <div class="kv-row">
+        <input class="input mono" [(ngModel)]="e.key" placeholder="VARIABLE_NAME" aria-label="variable name" />
+        <input class="input mono" [(ngModel)]="e.value" placeholder="value" aria-label="variable value" />
+        <button class="btn sm danger ghost" type="button" (click)="removeRow(access().env, i)">remove</button>
+      </div>
+    }
+  }
+  @if (access().mounts.length) {
+    <span class="section-label mono">MOUNTS</span>
+    @for (m of access().mounts; track $index; let i = $index) {
+      <div class="kv-row mounts">
+        <input class="input mono" [(ngModel)]="m.source" placeholder="/path/on/the/docker/host" aria-label="host path" />
+        <input class="input mono" [(ngModel)]="m.target" placeholder="/work" aria-label="container path" />
+        <label class="ro-toggle mono"><input type="checkbox" [(ngModel)]="m.readOnly" /> read-only</label>
+        <button class="btn sm danger ghost" type="button" (click)="removeRow(access().mounts, i)">remove</button>
+      </div>
+    }
+  }
+
+  @if (open()) {
+    <p class="lock-hint">
+      A port bound to 127.0.0.1 is reachable from this docker host only; 0.0.0.0 opens it to
+      the network. A generated password or key is visible only here and in the container's
+      environment — copy it now. A writable mount is added to the agent's write-safe root;
+      the Docker socket is refused.
+    </p>
+  } @else {
+    <ng-content />
+  }
+</fieldset>

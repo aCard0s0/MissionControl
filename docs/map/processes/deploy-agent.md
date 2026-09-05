@@ -57,7 +57,8 @@ volume are rolled back**.
   `HERMES_WRITE_SAFE_ROOT`. A published port is what makes a profile's
   [webhook listener](../objects/agents/webhook-subscription.md) reachable; nothing is published
   the operator did not name, because the listener's port is decided long after the container is
-  created. `ContainerUpgrader` carries all of it onto a replacement.
+  created. `ContainerUpgrader` carries all of it onto a replacement, and lays an update's own on
+  top — [upgrade-image](upgrade-image.md) is how a port is added to an Agent deployed without one.
 - **Does not hit:** the MCP network: that happens when a
   [link](../objects/mcp/agent-mcp-link.md) is made.
 

@@ -57,10 +57,14 @@ export class ContainersApi {
    * Recreates the container on `version`, reusing its data volume, and resolves
    * to the replacement's id. Allowed far longer than the default budget: a cold
    * host pulls the image first, then the new container has to pass readiness.
+   * `access` is laid over the ports, variables and mounts the container already has.
    */
-  update(hostId: string, id: string, version: string): Promise<{ id: string }> {
+  update(
+    hostId: string, id: string, version: string, access: HostAccess = NO_HOST_ACCESS,
+  ): Promise<{ id: string }> {
     return this.http.post(
-      `/api/containers/${seg(hostId)}/${seg(id)}/update`, { version }, 300_000);
+      `/api/containers/${seg(hostId)}/${seg(id)}/update`,
+      { version, ports: access.ports, env: access.env, mounts: access.mounts }, 300_000);
   }
 
   imageTags(hostId: string): Promise<ApiImageTags> {

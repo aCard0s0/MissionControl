@@ -1,9 +1,36 @@
-import { HostAccess } from './models';
+import { HermesContainer, HostAccess, PortMapping } from './models';
 
 /** What a deploy asks for when the operator opens nothing. */
 export const NO_HOST_ACCESS: HostAccess = { ports: [], env: [], mounts: [] };
 
 export const emptyAccess = (): HostAccess => ({ ports: [], env: [], mounts: [] });
+
+export const hasAccess = (a: HostAccess): boolean =>
+  a.ports.length + a.env.length + a.mounts.length > 0;
+
+/** The port hermes' own web UI listens on — the dashboard preset's, and the one the card links to. */
+export const HERMES_DASHBOARD_PORT = 9119;
+
+/**
+ * Where a browser reaches a published port. A loopback bind is reachable from the docker host
+ * alone, so its address is kept as bound and the caller says so; an all-interfaces bind takes the
+ * daemon's own name — a remote host's, or for the local socket the name this page was reached by,
+ * which is the same machine.
+ */
+export function publishedUrl(port: PortMapping, hostUrl: string, pageHost: string): string {
+  const ip = port.hostIp.trim();
+  const everyInterface = !ip || ip === '0.0.0.0' || ip === '::';
+  const remote = /^tcp:\/\/([^:/]+)/.exec(hostUrl)?.[1];
+  return `http://${everyInterface ? remote ?? pageHost : ip}:${port.hostPort}`;
+}
+
+/** The address of hermes' own dashboard on this container, or null while nothing publishes it —
+ *  a stopped container included, since there is nothing listening to send anyone to. */
+export function dashboardUrl(c: HermesContainer, hostUrl: string, pageHost: string): string | null {
+  if (c.status === 'stopped') return null;
+  const port = c.published.find(p => p.containerPort === HERMES_DASHBOARD_PORT);
+  return port ? publishedUrl(port, hostUrl, pageHost) : null;
+}
 
 export type HostAccessPreset = 'dashboard' | 'api-server' | 'webhook' | 'repo';
 
@@ -44,7 +71,7 @@ export function applyPreset(access: HostAccess, preset: HostAccessPreset, secret
   };
   switch (preset) {
     case 'dashboard':
-      port(9119);
+      port(HERMES_DASHBOARD_PORT);
       set('HERMES_DASHBOARD', '1');
       set('HERMES_DASHBOARD_BASIC_AUTH_USERNAME', 'operator');
       set('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD', secret());

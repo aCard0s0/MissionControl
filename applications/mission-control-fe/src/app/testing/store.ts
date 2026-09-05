@@ -66,7 +66,7 @@ export const apiContainer = (patch: Partial<ApiContainer> = {}): ApiContainer =>
   id: 'c-1', shortId: 'aa11bb2', name: 'hermes-prod', hostId: 'dh-local', status: 'running',
   image: 'nousresearch/hermes-agent', version: 'v2026.8.3', imageDigest: null, release: null,
   startedAt: 10, sizeRootFsGb: 2,
-  profiles: ['atlas'], ...patch,
+  profiles: ['atlas'], ports: [], ...patch,
 });
 
 /** One profile as the backend reports it. */
